@@ -19,7 +19,8 @@
     "elysia": "latest",
     "nanoid": "^5.0.7",
     "pg": "^8.11.5",
-    "postgres": "^3.4.4"
+    "postgres": "^3.4.4",
+    "redis": "^4.6.13"
   },
   "devDependencies": {
     "bun-types": "latest",
