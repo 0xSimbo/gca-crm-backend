@@ -18,7 +18,7 @@
 
 You can download the npm module by running
 
-`bun install @glowlabs/crm-bindings elysia@1.0.16 @elysiajs/eden@1.0.12`
+`bun install @glowlabs-org/crm-bindings elysia@1.0.16 @elysiajs/eden@1.0.12`
 
 You can then go to <a href="./eden-client.ts">this example </a> to get a quickstart into consuming the API.
 
