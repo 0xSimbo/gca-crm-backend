@@ -1,7 +1,8 @@
 import { Elysia, t } from "elysia";
-import { db } from "@/db/db";
+import { db } from "../../db/db";
 import { eq, inArray } from "drizzle-orm";
-import { UserType, userWeeklyReward, users } from "@/db/schema";
+import { userWeeklyReward, users } from "../../db/schema";
+import { formatUnits } from "viem";
 
 export const GetUserRewardsQueryBody = t.Object({
   wallet: t.String({
@@ -25,16 +26,17 @@ export const rewardsRouter = new Elysia({ prefix: "/rewards" }).post(
     if (!user) throw new Error("User Is Not Found");
     const userSerialized = {
       id: user.id,
-      totalUSDGRewards: user.totalUSDGRewards.toString(),
-      totalGlowRewards: user.totalGlowRewards.toString(),
+      totalUSDGRewards: formatUnits(user.totalUSDGRewards, 2),
+      totalGlowRewards: formatUnits(user.totalGlowRewards, 2),
       weeklyRewards: user.weeklyRewards.map((r) => {
         return {
           weekNumber: r.weekNumber,
           usdgWeight: r.usdgWeight.toString(),
           glowWeight: r.glowWeight.toString(),
-          usdgRewards: r.usdgRewards.toString(),
-          glowRewards: r.glowRewards.toString(),
+          usdgRewards: formatUnits(r.usdgRewards, 2),
+          glowRewards: formatUnits(r.glowRewards, 2),
           indexInReports: r.indexInReports,
+          claimProof: r.claimProof,
         };
       }),
     };

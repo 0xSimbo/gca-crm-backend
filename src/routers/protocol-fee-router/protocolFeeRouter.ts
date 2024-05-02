@@ -1,4 +1,4 @@
-import { Elysia, t, UnwrapSchema } from "elysia";
+import { Elysia, t } from "elysia";
 import { getRedisKey, setRedisKey } from "../../lib/redis-client";
 
 const LatitudeLongitudeQueryParamSchema = t.Object({

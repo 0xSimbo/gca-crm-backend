@@ -1,7 +1,6 @@
 import { addresses } from "@glowlabs-org/guarded-launch-ethers-sdk";
 import { viemClient } from "../web3-providers/viem-client";
-import { ethersProvider } from "../web3-providers/ethers-provider";
-import { minerPoolAndGCAAbi } from "@/abis/MinerPoolAndGCA.abi";
+import { minerPoolAndGCAAbi } from "../../abis/MinerPoolAndGCA.abi";
 /**
  * @returns {BigInt} - the amount of USDG Rewards In A Bucket
             - has 6 decimals

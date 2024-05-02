@@ -83,6 +83,7 @@ export const userWeeklyReward = pgTable(
       .default(sql`'0'::bigint`)
       .notNull(),
     indexInReports: integer("index_in_reports").notNull(),
+    claimProof: varchar("claim_proof", { length: 66 }).array().notNull(),
   },
   (t) => {
     return {
