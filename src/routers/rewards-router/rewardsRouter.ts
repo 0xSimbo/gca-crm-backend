@@ -3,14 +3,25 @@ import { db } from "../../db/db";
 import { eq, inArray } from "drizzle-orm";
 import { userWeeklyReward, users } from "../../db/schema";
 import { formatUnits } from "viem";
+import { TAG } from "../../constants";
 
-export const GetUserRewardsQueryBody = t.Object({
-  wallet: t.String({
-    minLength: 42,
-    maxLength: 42,
-  }),
-  weekNumbers: t.Array(t.Number()),
-});
+export const GetUserRewardsQueryBody = t.Object(
+  {
+    wallet: t.String({
+      minLength: 42,
+      maxLength: 42,
+    }),
+    weekNumbers: t.Array(t.Number()),
+  },
+  {
+    examples: [
+      {
+        wallet: "0x2e2771032d119fe590FD65061Ad3B366C8e9B7b9",
+        weekNumbers: [19, 20],
+      },
+    ],
+  }
+);
 export const rewardsRouter = new Elysia({ prefix: "/rewards" }).post(
   "/user-rewards",
   async ({ body }) => {
@@ -43,15 +54,16 @@ export const rewardsRouter = new Elysia({ prefix: "/rewards" }).post(
       };
       return userSerialized;
     } catch (e) {
-      console.log(e);
+      console.log("[rewardsRouter] user-rewards", e);
       throw new Error("Error Occured");
     }
   },
   {
     body: GetUserRewardsQueryBody,
     detail: {
-      summary: "A post route to get information regarding the user rewards",
-      tags: ["rewards", "users", "usdg", "glow"],
+      summary: "Find Rewards Information For Farms",
+      description: `This route takes in a wallet address and an array of week numbers and returns the rewards information for the user. This includes the total USDG and GLOW rewards, as well as the rewards for each week in the array. It also includes the proof that the farms need to claim from the on-chain merkle root.`,
+      tags: [TAG.REWARDS],
     },
   }
 );
