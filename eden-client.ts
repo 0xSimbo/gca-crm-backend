@@ -1,19 +1,14 @@
-import { edenTreaty } from "@elysiajs/eden";
-import { ApiType } from "./lib/esm";
+// import { edenTreaty } from "@elysiajs/eden";
+// import { ApiType } from "./lib/esm/src";
 
-const apiClient = edenTreaty<ApiType>("http://localhost:3000");
-async function main() {
-  const response = await apiClient.typedBody.hello.post({
-    age: 10,
-    name: "Eden",
-  });
-  const data = response.data;
-  if (!data) {
-    throw new Error("No data");
-  } else {
-    const { age, name } = data;
-    console.log(`Hello ${name}, you are ${age} years old`);
-  }
-}
+// const apiClient = edenTreaty<ApiType>("http://localhost:3000");
+// async function main() {
+//   const res = await apiClient.rewards["user-rewards"].post({
+//     wallet: "0x0000000000000000000000000000000000000000",
+//     weekNumbers: [10, 11, 12],
+//   });
 
-main();
+//   const user = res.data;
+// }
+
+// main();

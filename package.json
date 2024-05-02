@@ -5,26 +5,29 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "dev": "bun run --watch src/index.ts",
-    "build:types": "npm run build:cjs && npm run build:esm",
+    "build:types": "rm -rf lib && npm run build:cjs && npm run build:esm",
     "build:cjs": "tsc  --module commonjs --outDir ./lib/cjs  && node postbuild-cjs.mjs",
     "build:esm": "tsc  --module es2015 --outDir ./lib/esm   && node postbuild-esm.mjs",
-    "db:push": "drizzle-kit push:pg",
+    "db:push": "bun test && drizzle-kit push:pg",
     "studio": "drizzle-kit studio"
   },
   "dependencies": {
     "@elysiajs/cors": "^0.8.0",
     "@elysiajs/eden": "^0.8.1",
     "@elysiajs/swagger": "^0.8.5",
+    "@glowlabs-org/guarded-launch-ethers-sdk": "^0.0.3",
     "drizzle-orm": "^0.30.1",
     "elysia": "latest",
+    "ethers": "5.7.2",
     "nanoid": "^5.0.7",
     "pg": "^8.11.5",
     "postgres": "^3.4.4",
-    "redis": "^4.6.13"
+    "redis": "^4.6.13",
+    "viem": "^2.9.30"
   },
   "devDependencies": {
     "bun-types": "latest",
-    "drizzle-kit": "^0.20.14"
+    "drizzle-kit": "latest"
   },
   "files": [
     "lib"
@@ -39,7 +42,7 @@
     "require": "./lib/cjs/index.js"
   },
   "engines": {
-    "node": ">=16"
+    "node": ">=18"
   },
   "module": "src/index.js"
 }
