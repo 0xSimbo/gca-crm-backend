@@ -5,7 +5,7 @@ name: Node.js Package
 
 on:
   push:
-    branches: [dev]
+    branches: [main]
   release:
     types: [created]
 
@@ -21,6 +21,7 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{secrets.NPM_TOKEN}}
       - run: |
-      - run: npm install
-      - run: npm run build:types
+      - run: npm i -g bun
+      - run: npx bun install
+      - run: npx bun run build:types
       - run: npm publish

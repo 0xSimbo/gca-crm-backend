@@ -18,13 +18,11 @@
 
 You can download the npm module by running
 
-`bun install @elysiajs/eden`
-
-`bun install @glowlabs/crm-sdk`
+`bun install @glowlabs/crm-bindings elysia@1.0.16 @elysiajs/eden@1.0.12`
 
 You can then go to <a href="./eden-client.ts">this example </a> to get a quickstart into consuming the API.
 
-Swagger docs are also available <a href="http://localhost:3000/swagger"> here </a>
+Swagger docs are also available <a href="http://localhost:300/swagger"> here </a>
 
 ### For Contributors
 
@@ -33,6 +31,7 @@ Swagger docs are also available <a href="http://localhost:3000/swagger"> here </
 ```bash
 DATABASE_URL="postgresql://postgres:<password>@<host>:<port>/<database>?sslmode=disable"
 REDIS_URL=<YOUR_REDIS_URL>
+MAINNET_RPC=<YOUR_MAINNET_RPC>
 ```
 
 Install dependencies
