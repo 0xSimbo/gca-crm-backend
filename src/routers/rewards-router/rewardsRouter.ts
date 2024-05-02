@@ -14,34 +14,38 @@ export const GetUserRewardsQueryBody = t.Object({
 export const rewardsRouter = new Elysia({ prefix: "/rewards" }).post(
   "/user-rewards",
   async ({ body }) => {
-    const user = await db.query.users.findFirst({
-      where: eq(users.id, body.wallet),
-      with: {
-        weeklyRewards: {
-          where: inArray(userWeeklyReward.weekNumber, body.weekNumbers),
+    try {
+      const user = await db.query.users.findFirst({
+        where: eq(users.id, body.wallet),
+        with: {
+          weeklyRewards: {
+            where: inArray(userWeeklyReward.weekNumber, body.weekNumbers),
+          },
         },
-      },
-    });
+      });
 
-    if (!user) throw new Error("User Is Not Found");
-    const userSerialized = {
-      id: user.id,
-      totalUSDGRewards: formatUnits(user.totalUSDGRewards, 2),
-      totalGlowRewards: formatUnits(user.totalGlowRewards, 2),
-      weeklyRewards: user.weeklyRewards.map((r) => {
-        return {
-          weekNumber: r.weekNumber,
-          usdgWeight: r.usdgWeight.toString(),
-          glowWeight: r.glowWeight.toString(),
-          usdgRewards: formatUnits(r.usdgRewards, 2),
-          glowRewards: formatUnits(r.glowRewards, 2),
-          indexInReports: r.indexInReports,
-          claimProof: r.claimProof,
-        };
-      }),
-    };
-
-    return userSerialized;
+      if (!user) throw new Error("User Is Not Found");
+      const userSerialized = {
+        id: user.id,
+        totalUSDGRewards: formatUnits(user.totalUSDGRewards, 2),
+        totalGlowRewards: formatUnits(user.totalGlowRewards, 2),
+        weeklyRewards: user.weeklyRewards.map((r) => {
+          return {
+            weekNumber: r.weekNumber,
+            usdgWeight: r.usdgWeight.toString(),
+            glowWeight: r.glowWeight.toString(),
+            usdgRewards: formatUnits(r.usdgRewards, 2),
+            glowRewards: formatUnits(r.glowRewards, 2),
+            indexInReports: r.indexInReports,
+            claimProof: r.claimProof,
+          };
+        }),
+      };
+      return userSerialized;
+    } catch (e) {
+      console.log(e);
+      throw new Error("Error Occured");
+    }
   },
   {
     body: GetUserRewardsQueryBody,
@@ -49,5 +53,5 @@ export const rewardsRouter = new Elysia({ prefix: "/rewards" }).post(
       summary: "A post route to get information regarding the user rewards",
       tags: ["rewards", "users", "usdg", "glow"],
     },
-  },
+  }
 );
