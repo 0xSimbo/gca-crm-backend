@@ -6,6 +6,11 @@ import { rewardsRouter } from "./routers/rewards-router/rewardsRouter";
 import { userWeeklyReward, users } from "./db/schema";
 import { db } from "./db/db";
 import { updateUserRewardsForWeek } from "./crons/update-user-rewards/update-user-rewards-for-week";
+import {
+  estimateProductionAndDebt,
+  estimateProtocolFees,
+  protocolFeeAssumptions,
+} from "./constants/protocol-fee-assumptions";
 
 const PORT = process.env.PORT || 3005;
 const app = new Elysia()
@@ -33,7 +38,7 @@ const app = new Elysia()
   .listen(PORT);
 
 console.log(
-  `🦊 Elysia is running at ${app.server?.hostname}:${app.server?.port}`,
+  `🦊 Elysia is running at ${app.server?.hostname}:${app.server?.port}`
 );
 
 export type ApiType = typeof app;

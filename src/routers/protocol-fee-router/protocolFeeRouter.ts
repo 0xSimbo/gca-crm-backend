@@ -1,7 +1,12 @@
-import { Elysia, t } from "elysia";
+import { Elysia, t, UnwrapSchema } from "elysia";
 import { getRedisKey, setRedisKey } from "../../lib/redis-client";
 import { TAG } from "../../constants";
-
+import { getSunlightHoursAndCertificates } from "./utils/get-sunlight-hours-and-certificates";
+import {
+  estimateProtocolFees,
+  EstimateProtocolFeeArgs,
+  protocolFeeAssumptions,
+} from "../../constants/protocol-fee-assumptions";
 const LatitudeLongitudeQueryParamSchema = t.Object(
   {
     //takes a string, but parses it into a float
@@ -23,36 +28,108 @@ const LatitudeLongitudeQueryParamSchema = t.Object(
   }
 );
 
-export const protocolFeeRouter = new Elysia({ prefix: "/protocolFees" }).get(
-  "/sunlightAndCertificates",
-  async ({ query }) => {
-    const redisKey = `sunlightAndCertificates-${query.latitude}-${query.longitude}`;
-    const cachedData = await getRedisKey<{
-      average_sunlight: number;
-      average_carbon_certificates: number;
-    }>(redisKey);
-    if (cachedData) {
-      return cachedData;
-    } else {
-      const res = await fetch(
-        `http://95.217.194.59:35015/api/v1/geo-stats?latitude=${query.latitude}&longitude=${query.longitude}`
-      );
-      const data = (await res.json()) as {
-        average_sunlight: number;
-        average_carbon_certificates: number;
-      };
-      await setRedisKey(redisKey, JSON.stringify(data), 60);
-      return data;
-    }
+// type EstimateProtocolFeeArgs = {
+//   powerOutputMWH: number;
+//   hoursOfSunlightPerDay: number;
+//   electricityPricePerKWH: number;
+//   cashflowDiscount: number;
+//   latitude: number;
+//   longitude: number;
+// }
+
+const EstimateProtocolFeeArgsSchema = t.Object(
+  {
+    powerOutputMWH: t.String({ example: "0.00608" }),
+    electricityPricePerKWH: t.String({ example: "0.14" }),
+    cashflowDiscount: t.Optional(t.String({ example: "0.1" })),
+    latitude: t.String({ example: "36.00238522277973" }), // {example: "36.00238522277973"
+    longitude: t.String({ example: "-115.19910714668856" }), // {example: "-115.19910714668856"}
   },
   {
-    query: LatitudeLongitudeQueryParamSchema,
-    detail: {
-      summary:
-        "Gets the average sunlight and carbon certificates for a given latitude and longitude",
-      description:
-        "This route takes in a latitude and longitude and returns the average sunlight and carbon certificates",
-      tags: [TAG.PROTOCOL_FEES],
-    },
+    examples: [
+      {
+        powerOutputMWH: "0.00608",
+        electricityPricePerKWH: "0.14",
+        cashflowDiscount: "0.1",
+        latitude: "36.00238522277973",
+        longitude: "-115.19910714668856",
+      },
+    ],
   }
 );
+
+type EstimateProtocolFeeArgsType = UnwrapSchema<
+  typeof EstimateProtocolFeeArgsSchema
+>;
+
+export const protocolFeeRouter = new Elysia({ prefix: "/protocolFees" })
+  .get(
+    "/sunlightAndCertificates",
+    async ({ query }) => {
+      const parsedQuery = {
+        latitude: parseFloat(query.latitude),
+        longitude: parseFloat(query.longitude),
+      };
+      const sunlightHoursAndCertificates =
+        await getSunlightHoursAndCertificates(parsedQuery);
+
+      return sunlightHoursAndCertificates;
+    },
+    {
+      query: LatitudeLongitudeQueryParamSchema,
+      detail: {
+        summary:
+          "Gets the average sunlight and carbon certificates for a given latitude and longitude",
+        description:
+          "This route takes in a latitude and longitude and returns the average sunlight and carbon certificates",
+        tags: [TAG.PROTOCOL_FEES],
+      },
+    }
+  )
+  .get(
+    "/estimateFees",
+    async ({ query }) => {
+      const parsedQuery = {
+        powerOutputMWH: parseFloat(query.powerOutputMWH),
+        electricityPricePerKWH: parseFloat(query.electricityPricePerKWH),
+        cashflowDiscount: query.cashflowDiscount
+          ? parseFloat(query.cashflowDiscount)
+          : protocolFeeAssumptions.cashflowDiscount,
+        latitude: parseFloat(query.latitude),
+        longitude: parseFloat(query.longitude),
+      };
+
+      const { average_carbon_certificates, average_sunlight } =
+        await getSunlightHoursAndCertificates({
+          latitude: parsedQuery.latitude,
+          longitude: parsedQuery.longitude,
+        });
+
+      const args: EstimateProtocolFeeArgs = {
+        powerOutputMWH: parsedQuery.powerOutputMWH,
+        hoursOfSunlightPerDay: average_sunlight,
+        electricityPricePerKWH: parsedQuery.electricityPricePerKWH,
+        cashflowDiscount: parsedQuery.cashflowDiscount,
+        latitude: parsedQuery.latitude,
+        longitude: parsedQuery.longitude,
+      };
+
+      const estimatedProtocolFees = estimateProtocolFees(args);
+
+      return {
+        ...estimatedProtocolFees,
+        protocolFeeAssumptions,
+        cashflowDiscount: parsedQuery.cashflowDiscount,
+      };
+    },
+    {
+      query: EstimateProtocolFeeArgsSchema,
+
+      detail: {
+        summary: "Estimate protocol fees",
+        description:
+          "Estimate protocol fees for a given latitude and longitude",
+        tags: [TAG.PROTOCOL_FEES],
+      },
+    }
+  );

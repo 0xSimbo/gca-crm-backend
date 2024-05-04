@@ -1,0 +1,318 @@
+import { StateCoordinates } from "../../types";
+
+export const stateCoordinates: { [state: string]: StateCoordinates } = {
+  Alabama: {
+    northernmost: { latitude: 35.008028, longitude: -88.201526 },
+    southernmost: { latitude: 30.220695, longitude: -87.634026 },
+    westernmost: { latitude: 34.988869, longitude: -88.474265 },
+    easternmost: { latitude: 35.009046, longitude: -85.606675 },
+  },
+  Alaska: {
+    northernmost: { latitude: 71.5388, longitude: -141.0 },
+    southernmost: { latitude: 51.0, longitude: -178.114746 },
+    westernmost: { latitude: 71.5388, longitude: -179.148909 },
+    easternmost: { latitude: 71.383354, longitude: -130.0 },
+  },
+  Arizona: {
+    northernmost: { latitude: 37.004259, longitude: -114.818267 },
+    southernmost: { latitude: 31.332177, longitude: -112.720703 },
+    westernmost: { latitude: 36.999086, longitude: -114.044495 },
+    easternmost: { latitude: 37.004259, longitude: -109.045223 },
+  },
+  Arkansas: {
+    northernmost: { latitude: 36.499626, longitude: -89.640625 },
+    southernmost: { latitude: 33.004107, longitude: -89.737793 },
+    westernmost: { latitude: 36.499626, longitude: -94.61792 },
+    easternmost: { latitude: 36.499626, longitude: -89.640625 },
+  },
+  California: {
+    northernmost: { latitude: 42.009502, longitude: -124.399414 },
+    southernmost: { latitude: 32.534156, longitude: -117.124939 },
+    westernmost: { latitude: 41.997312, longitude: -124.400635 },
+    easternmost: { latitude: 34.998503, longitude: -114.131127 },
+  },
+  Colorado: {
+    northernmost: { latitude: 41.003444, longitude: -109.045223 },
+    southernmost: { latitude: 36.993076, longitude: -102.041016 },
+    westernmost: { latitude: 41.003444, longitude: -109.045223 },
+    easternmost: { latitude: 37.000104, longitude: -102.041016 },
+  },
+  Connecticut: {
+    northernmost: { latitude: 42.050587, longitude: -73.487854 },
+    southernmost: { latitude: 41.20438, longitude: -73.437195 },
+    westernmost: { latitude: 42.050587, longitude: -73.487854 },
+    easternmost: { latitude: 41.20438, longitude: -71.787273 },
+  },
+  Delaware: {
+    northernmost: { latitude: 39.839537, longitude: -75.791016 },
+    southernmost: { latitude: 38.45113, longitude: -75.048828 },
+    westernmost: { latitude: 39.839537, longitude: -75.791016 },
+    easternmost: { latitude: 38.45113, longitude: -74.983521 },
+  },
+  Florida: {
+    northernmost: { latitude: 31.001227, longitude: -87.634026 },
+    southernmost: { latitude: 24.396308, longitude: -81.993103 },
+    westernmost: { latitude: 31.001227, longitude: -87.634026 },
+    easternmost: { latitude: 24.396308, longitude: -79.974365 },
+  },
+  Georgia: {
+    northernmost: { latitude: 35.000659, longitude: -85.605955 },
+    southernmost: { latitude: 30.355758, longitude: -85.605955 },
+    westernmost: { latitude: 35.000659, longitude: -85.605955 },
+    easternmost: { latitude: 34.955099, longitude: -80.751343 },
+  },
+  Hawaii: {
+    northernmost: { latitude: 28.402123, longitude: -178.334961 },
+    southernmost: { latitude: 18.910781, longitude: -154.806213 },
+    westernmost: { latitude: 28.402123, longitude: -178.334961 },
+    easternmost: { latitude: 20.210907, longitude: -154.806213 },
+  },
+  Idaho: {
+    northernmost: { latitude: 49.0, longitude: -116.916504 },
+    southernmost: { latitude: 42.0, longitude: -111.043701 },
+    westernmost: { latitude: 49.0, longitude: -117.026367 },
+    easternmost: { latitude: 42.0, longitude: -111.043701 },
+  },
+  Illinois: {
+    northernmost: { latitude: 42.508337, longitude: -90.641724 },
+    southernmost: { latitude: 36.986926, longitude: -87.494812 },
+    westernmost: { latitude: 42.508337, longitude: -91.513672 },
+    easternmost: { latitude: 36.986926, longitude: -87.494812 },
+  },
+  Indiana: {
+    northernmost: { latitude: 41.761367, longitude: -84.80957 },
+    southernmost: { latitude: 37.771742, longitude: -84.80957 },
+    westernmost: { latitude: 41.761367, longitude: -87.527924 },
+    easternmost: { latitude: 37.771742, longitude: -84.80957 },
+  },
+  Iowa: {
+    northernmost: { latitude: 43.501391, longitude: -91.561279 },
+    southernmost: { latitude: 40.375443, longitude: -95.316162 },
+    westernmost: { latitude: 43.501391, longitude: -96.639404 },
+    easternmost: { latitude: 40.375443, longitude: -90.140381 },
+  },
+  Kansas: {
+    northernmost: { latitude: 40.003444, longitude: -94.621582 },
+    southernmost: { latitude: 36.993076, longitude: -102.041016 },
+    westernmost: { latitude: 40.003444, longitude: -102.041016 },
+    easternmost: { latitude: 36.993076, longitude: -94.621582 },
+  },
+  Kentucky: {
+    northernmost: { latitude: 39.147102, longitude: -89.571533 },
+    southernmost: { latitude: 36.497461, longitude: -89.537659 },
+    westernmost: { latitude: 39.147102, longitude: -89.571533 },
+    easternmost: { latitude: 36.497461, longitude: -81.964111 },
+  },
+  Louisiana: {
+    northernmost: { latitude: 33.019786, longitude: -88.820801 },
+    southernmost: { latitude: 28.928772, longitude: -88.820801 },
+    westernmost: { latitude: 33.019786, longitude: -94.043579 },
+    easternmost: { latitude: 28.928772, longitude: -88.820801 },
+  },
+  Maine: {
+    northernmost: { latitude: 47.459207, longitude: -67.315674 },
+    southernmost: { latitude: 42.977764, longitude: -70.715332 },
+    westernmost: { latitude: 47.459207, longitude: -71.08429 },
+    easternmost: { latitude: 42.977764, longitude: -66.949463 },
+  },
+  Maryland: {
+    northernmost: { latitude: 39.723043, longitude: -79.477539 },
+    southernmost: { latitude: 37.914878, longitude: -75.048828 },
+    westernmost: { latitude: 39.723043, longitude: -79.477539 },
+    easternmost: { latitude: 37.914878, longitude: -75.048828 },
+  },
+  Massachusetts: {
+    northernmost: { latitude: 42.886446, longitude: -70.810547 },
+    southernmost: { latitude: 41.186922, longitude: -73.508301 },
+    westernmost: { latitude: 42.886446, longitude: -73.508301 },
+    easternmost: { latitude: 41.186922, longitude: -70.810547 },
+  },
+  Michigan: {
+    northernmost: { latitude: 48.306852, longitude: -82.128906 },
+    southernmost: { latitude: 41.696629, longitude: -82.456055 },
+    westernmost: { latitude: 48.306852, longitude: -90.393066 },
+    easternmost: { latitude: 41.696629, longitude: -82.128906 },
+  },
+  Minnesota: {
+    northernmost: { latitude: 49.383134, longitude: -89.561768 },
+    southernmost: { latitude: 43.499754, longitude: -96.556396 },
+    westernmost: { latitude: 49.384358, longitude: -97.23999 },
+    easternmost: { latitude: 43.499754, longitude: -89.561768 },
+  },
+  Mississippi: {
+    northernmost: { latitude: 34.996496, longitude: -88.165283 },
+    southernmost: { latitude: 30.143372, longitude: -88.47168 },
+    westernmost: { latitude: 34.996496, longitude: -91.638184 },
+    easternmost: { latitude: 30.143372, longitude: -88.165283 },
+  },
+  Missouri: {
+    northernmost: { latitude: 40.613952, longitude: -89.537659 },
+    southernmost: { latitude: 35.995785, longitude: -89.537659 },
+    westernmost: { latitude: 40.613952, longitude: -95.774536 },
+    easternmost: { latitude: 35.995785, longitude: -89.537659 },
+  },
+  Montana: {
+    northernmost: { latitude: 49.001843, longitude: -104.039307 },
+    southernmost: { latitude: 44.357649, longitude: -111.043701 },
+    westernmost: { latitude: 49.001843, longitude: -116.05072 },
+    easternmost: { latitude: 44.357649, longitude: -104.039307 },
+  },
+  Nebraska: {
+    northernmost: { latitude: 43.001555, longitude: -95.313721 },
+    southernmost: { latitude: 39.999224, longitude: -95.313721 },
+    westernmost: { latitude: 43.001555, longitude: -104.05426 },
+    easternmost: { latitude: 39.999224, longitude: -95.313721 },
+  },
+  Nevada: {
+    northernmost: { latitude: 42.002207, longitude: -114.040527 },
+    southernmost: { latitude: 35.001857, longitude: -114.040527 },
+    westernmost: { latitude: 42.002207, longitude: -120.005493 },
+    easternmost: { latitude: 35.001857, longitude: -114.040527 },
+  },
+  NewHampshire: {
+    northernmost: { latitude: 45.303597, longitude: -70.703125 },
+    southernmost: { latitude: 42.697649, longitude: -71.67572 },
+    westernmost: { latitude: 45.303597, longitude: -72.557983 },
+    easternmost: { latitude: 42.697649, longitude: -70.703125 },
+  },
+  NewJersey: {
+    northernmost: { latitude: 41.357551, longitude: -73.893433 },
+    southernmost: { latitude: 38.928578, longitude: -74.891968 },
+    westernmost: { latitude: 41.357551, longitude: -75.565186 },
+    easternmost: { latitude: 38.928578, longitude: -73.893433 },
+  },
+
+  NewMexico: {
+    northernmost: { latitude: 36.999086, longitude: -109.045223 },
+    southernmost: { latitude: 31.332177, longitude: -103.001709 },
+    westernmost: { latitude: 36.999086, longitude: -109.045223 },
+    easternmost: { latitude: 31.332177, longitude: -103.001709 },
+  },
+  NewYork: {
+    northernmost: { latitude: 45.015851, longitude: -79.76259 },
+    southernmost: { latitude: 40.477399, longitude: -74.25909 },
+    westernmost: { latitude: 45.015851, longitude: -79.76259 },
+    easternmost: { latitude: 40.477399, longitude: -71.856224 },
+  },
+  NorthCarolina: {
+    northernmost: { latitude: 36.588116, longitude: -80.751343 },
+    southernmost: { latitude: 33.752879, longitude: -78.554688 },
+    westernmost: { latitude: 36.588116, longitude: -84.320984 },
+    easternmost: { latitude: 33.752879, longitude: -75.400391 },
+  },
+  NorthDakota: {
+    northernmost: { latitude: 49.000239, longitude: -97.228088 },
+    southernmost: { latitude: 45.935871, longitude: -104.048004 },
+    westernmost: { latitude: 49.000239, longitude: -104.048004 },
+    easternmost: { latitude: 45.935871, longitude: -96.554928 },
+  },
+  Ohio: {
+    northernmost: { latitude: 41.977523, longitude: -80.518799 },
+    southernmost: { latitude: 38.405968, longitude: -82.825623 },
+    westernmost: { latitude: 41.977523, longitude: -84.820557 },
+    easternmost: { latitude: 38.405968, longitude: -80.518799 },
+  },
+  Oklahoma: {
+    northernmost: { latitude: 37.001483, longitude: -94.61792 },
+    southernmost: { latitude: 33.619922, longitude: -94.61792 },
+    westernmost: { latitude: 37.001483, longitude: -103.002014 },
+    easternmost: { latitude: 33.619922, longitude: -94.61792 },
+  },
+  Oregon: {
+    northernmost: { latitude: 46.292024, longitude: -116.463837 },
+    southernmost: { latitude: 41.991794, longitude: -124.566998 },
+    westernmost: { latitude: 46.292024, longitude: -124.566998 },
+    easternmost: { latitude: 41.991794, longitude: -116.463837 },
+  },
+  Pennsylvania: {
+    northernmost: { latitude: 42.269597, longitude: -80.518799 },
+    southernmost: { latitude: 39.719801, longitude: -75.038147 },
+    westernmost: { latitude: 42.269597, longitude: -80.518799 },
+    easternmost: { latitude: 39.719801, longitude: -74.689941 },
+  },
+  RhodeIsland: {
+    northernmost: { latitude: 42.018798, longitude: -71.862183 },
+    southernmost: { latitude: 41.146154, longitude: -71.855316 },
+    westernmost: { latitude: 42.018798, longitude: -71.862183 },
+    easternmost: { latitude: 41.146154, longitude: -71.1203 },
+  },
+  SouthCarolina: {
+    northernmost: { latitude: 35.207472, longitude: -83.350037 },
+    southernmost: { latitude: 32.032458, longitude: -78.553238 },
+    westernmost: { latitude: 35.207472, longitude: -83.350037 },
+    easternmost: { latitude: 32.032458, longitude: -78.553238 },
+  },
+
+  SouthDakota: {
+    northernmost: { latitude: 45.943161, longitude: -96.434326 },
+    southernmost: { latitude: 42.479635, longitude: -104.057617 },
+    westernmost: { latitude: 45.943161, longitude: -104.057617 },
+    easternmost: { latitude: 42.479635, longitude: -96.434326 },
+  },
+  Tennessee: {
+    northernmost: { latitude: 36.678118, longitude: -81.677246 },
+    southernmost: { latitude: 34.982948, longitude: -88.071289 },
+    westernmost: { latitude: 36.678118, longitude: -90.310059 },
+    easternmost: { latitude: 34.982948, longitude: -81.677246 },
+  },
+  Texas: {
+    northernmost: { latitude: 36.500705, longitude: -103.002014 },
+    southernmost: { latitude: 25.837377, longitude: -93.508301 },
+    westernmost: { latitude: 36.500705, longitude: -106.646118 },
+    easternmost: { latitude: 25.837377, longitude: -93.508301 },
+  },
+  Utah: {
+    northernmost: { latitude: 42.001666, longitude: -109.045223 },
+    southernmost: { latitude: 36.997537, longitude: -114.041748 },
+    westernmost: { latitude: 42.001666, longitude: -114.041748 },
+    easternmost: { latitude: 36.997537, longitude: -109.045223 },
+  },
+  Vermont: {
+    northernmost: { latitude: 45.015851, longitude: -73.258057 },
+    southernmost: { latitude: 42.726839, longitude: -73.437195 },
+    westernmost: { latitude: 45.015851, longitude: -73.437195 },
+    easternmost: { latitude: 42.726839, longitude: -71.464844 },
+  },
+  Virginia: {
+    northernmost: { latitude: 39.466012, longitude: -75.853271 },
+    southernmost: { latitude: 36.540852, longitude: -75.853271 },
+    westernmost: { latitude: 39.466012, longitude: -83.675537 },
+    easternmost: { latitude: 36.540852, longitude: -75.24231 },
+  },
+  Washington: {
+    northernmost: { latitude: 49.002494, longitude: -116.918945 },
+    southernmost: { latitude: 45.543408, longitude: -124.848633 },
+    westernmost: { latitude: 49.002494, longitude: -124.848633 },
+    easternmost: { latitude: 45.543408, longitude: -116.918945 },
+  },
+  WestVirginia: {
+    northernmost: { latitude: 40.638969, longitude: -77.719727 },
+    southernmost: { latitude: 37.202744, longitude: -82.643738 },
+    westernmost: { latitude: 40.638969, longitude: -82.643738 },
+    easternmost: { latitude: 37.202744, longitude: -77.719727 },
+  },
+  Wisconsin: {
+    northernmost: { latitude: 47.303668, longitude: -86.248779 },
+    southernmost: { latitude: 42.491919, longitude: -90.418701 },
+    westernmost: { latitude: 47.303668, longitude: -92.888184 },
+    easternmost: { latitude: 42.491919, longitude: -86.248779 },
+  },
+  Wyoming: {
+    northernmost: { latitude: 45.005419, longitude: -104.055176 },
+    southernmost: { latitude: 41.003444, longitude: -111.056519 },
+    westernmost: { latitude: 45.005419, longitude: -111.056519 },
+    easternmost: { latitude: 41.003444, longitude: -104.055176 },
+  },
+};
+
+export const stateBoundaries = Object.entries(stateCoordinates).map(
+  ([state, coordinates]) => ({
+    state,
+    boundary: [
+      coordinates.northernmost,
+      coordinates.southernmost,
+      coordinates.easternmost,
+      coordinates.westernmost,
+    ],
+  })
+);

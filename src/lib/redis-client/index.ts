@@ -34,13 +34,17 @@ export async function setRedisKey(key: string, value: string, ttl: number) {
 export async function getRedisKey<T>(key: string): Promise<T | undefined> {
   const client = await getRedisClient();
   const value = await client.get(key);
+  if (value == "") return undefined;
   //If the typeof t is a string, return the string
+  try {
+    return JSON.parse(value!) as T;
+  } catch (e) {}
+
+  try {
+    return parseFloat(value!) as unknown as T;
+  } catch (e) {}
+
   if (typeof value === "string") {
     return value as unknown as T;
   }
-  //if it's a number,
-  if (typeof value === "number") {
-    return value as unknown as T;
-  }
-  return value ? JSON.parse(value) : undefined;
 }
