@@ -120,6 +120,10 @@ export const protocolFeeRouter = new Elysia({ prefix: "/protocolFees" })
         ...estimatedProtocolFees,
         protocolFeeAssumptions,
         cashflowDiscount: parsedQuery.cashflowDiscount,
+        referenceData: {
+          averageCarbonCertificates: average_carbon_certificates,
+          averageSunlight: average_sunlight,
+        },
       };
     },
     {
