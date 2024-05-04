@@ -44,6 +44,7 @@ const EstimateProtocolFeeArgsSchema = t.Object(
     cashflowDiscount: t.Optional(t.String({ example: "0.1" })),
     latitude: t.String({ example: "36.00238522277973" }), // {example: "36.00238522277973"
     longitude: t.String({ example: "-115.19910714668856" }), // {example: "-115.19910714668856"}
+    escalatorReference: t.Optional(t.String()),
   },
   {
     examples: [
@@ -97,6 +98,9 @@ export const protocolFeeRouter = new Elysia({ prefix: "/protocolFees" })
           : protocolFeeAssumptions.cashflowDiscount,
         latitude: parseFloat(query.latitude),
         longitude: parseFloat(query.longitude),
+        escalatorReference: query.escalatorReference
+          ? parseFloat(query.escalatorReference)
+          : undefined,
       };
 
       const { average_carbon_certificates, average_sunlight } =
@@ -112,6 +116,7 @@ export const protocolFeeRouter = new Elysia({ prefix: "/protocolFees" })
         cashflowDiscount: parsedQuery.cashflowDiscount,
         latitude: parsedQuery.latitude,
         longitude: parsedQuery.longitude,
+        escalatorReference: parsedQuery.escalatorReference,
       };
 
       const estimatedProtocolFees = estimateProtocolFees(args);

@@ -54,6 +54,7 @@ export type EstimateProtocolFeeArgs = {
   cashflowDiscount: number;
   latitude: number;
   longitude: number;
+  escalatorReference: number | undefined;
 };
 export function estimateProtocolFees(args: EstimateProtocolFeeArgs) {
   console.log(`args = ${JSON.stringify(args)}`);
@@ -74,9 +75,12 @@ export function estimateProtocolFees(args: EstimateProtocolFeeArgs) {
 
   console.log("Found state: ", foundState);
 
-  const escalatorReference = statesWithEscalatorFees.find((state) => {
-    return state.state.trim() == foundState.trim();
-  });
+  const escalatorReference =
+    args.escalatorReference ||
+    statesWithEscalatorFees.find((state) => {
+      return state.state.trim() == foundState.trim();
+    })?.percent;
+
   if (!escalatorReference) {
     throw new Error("Escalator reference not found");
   }
@@ -87,7 +91,7 @@ export function estimateProtocolFees(args: EstimateProtocolFeeArgs) {
   //   protocolFeeAssumptions.commitmentPeriod,
   // );
   const pv = calculatePV(
-    -escalatorReference.percent,
+    -escalatorReference,
     protocolFeeAssumptions.commitmentPeriod,
     firstYearPrice
   );
