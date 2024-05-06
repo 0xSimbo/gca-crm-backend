@@ -1,0 +1,224 @@
+{
+  "data": {
+    "__schema": {
+      "types": [
+        { "name": "UserWeeklyRewardInsertInput", "fields": null },
+        { "name": "String", "fields": null },
+        { "name": "Int", "fields": null },
+        { "name": "UserWeeklyRewardUpdateInput", "fields": null },
+        { "name": "UserWeeklyRewardFilters", "fields": null },
+        { "name": "UserWeeklyRewardUserIdFilters", "fields": null },
+        { "name": "Boolean", "fields": null },
+        { "name": "UserWeeklyRewardUserIdfiltersOr", "fields": null },
+        { "name": "UserWeeklyRewardWeekNumberFilters", "fields": null },
+        { "name": "UserWeeklyRewardWeekNumberfiltersOr", "fields": null },
+        { "name": "UserWeeklyRewardUsdgWeightFilters", "fields": null },
+        { "name": "UserWeeklyRewardUsdgWeightfiltersOr", "fields": null },
+        { "name": "UserWeeklyRewardGlowWeightFilters", "fields": null },
+        { "name": "UserWeeklyRewardGlowWeightfiltersOr", "fields": null },
+        { "name": "UserWeeklyRewardUsdgRewardsFilters", "fields": null },
+        { "name": "UserWeeklyRewardUsdgRewardsfiltersOr", "fields": null },
+        { "name": "UserWeeklyRewardGlowRewardsFilters", "fields": null },
+        { "name": "UserWeeklyRewardGlowRewardsfiltersOr", "fields": null },
+        { "name": "UserWeeklyRewardIndexInReportsFilters", "fields": null },
+        { "name": "UserWeeklyRewardIndexInReportsfiltersOr", "fields": null },
+        { "name": "UserWeeklyRewardClaimProofFilters", "fields": null },
+        { "name": "UserWeeklyRewardClaimProoffiltersOr", "fields": null },
+        { "name": "UserWeeklyRewardFiltersOr", "fields": null },
+        { "name": "UserWeeklyRewardOrderBy", "fields": null },
+        { "name": "InnerOrder", "fields": null },
+        { "name": "OrderDirection", "fields": null },
+        { "name": "UsersInsertInput", "fields": null },
+        { "name": "UsersUpdateInput", "fields": null },
+        { "name": "UsersFilters", "fields": null },
+        { "name": "UserIdFilters", "fields": null },
+        { "name": "UserIdfiltersOr", "fields": null },
+        { "name": "UserTotalUSDGRewardsFilters", "fields": null },
+        { "name": "UserTotalUSDGRewardsfiltersOr", "fields": null },
+        { "name": "UserTotalGlowRewardsFilters", "fields": null },
+        { "name": "UserTotalGlowRewardsfiltersOr", "fields": null },
+        { "name": "UsersFiltersOr", "fields": null },
+        { "name": "UsersOrderBy", "fields": null },
+        {
+          "name": "UserWeeklyRewardSelectItem",
+          "fields": [
+            { "name": "userId", "description": null },
+            { "name": "weekNumber", "description": null },
+            { "name": "usdgWeight", "description": "BigInt" },
+            { "name": "glowWeight", "description": "BigInt" },
+            { "name": "usdgRewards", "description": "BigInt" },
+            { "name": "glowRewards", "description": "BigInt" },
+            { "name": "indexInReports", "description": null },
+            { "name": "claimProof", "description": "Array<String>" },
+            { "name": "user", "description": null }
+          ]
+        },
+        {
+          "name": "UserWeeklyRewardUserRelation",
+          "fields": [
+            { "name": "id", "description": null },
+            { "name": "totalUSDGRewards", "description": "BigInt" },
+            { "name": "totalGlowRewards", "description": "BigInt" }
+          ]
+        },
+        { "name": "UserWeeklyRewardUserRelationFilters", "fields": null },
+        { "name": "UserWeeklyRewardUserRelationFiltersOr", "fields": null },
+        {
+          "name": "UserWeeklyRewardItem",
+          "fields": [
+            { "name": "userId", "description": null },
+            { "name": "weekNumber", "description": null },
+            { "name": "usdgWeight", "description": "BigInt" },
+            { "name": "glowWeight", "description": "BigInt" },
+            { "name": "usdgRewards", "description": "BigInt" },
+            { "name": "glowRewards", "description": "BigInt" },
+            { "name": "indexInReports", "description": null },
+            { "name": "claimProof", "description": "Array<String>" }
+          ]
+        },
+        {
+          "name": "UsersSelectItem",
+          "fields": [
+            { "name": "id", "description": null },
+            { "name": "totalUSDGRewards", "description": "BigInt" },
+            { "name": "totalGlowRewards", "description": "BigInt" },
+            { "name": "weeklyRewards", "description": null }
+          ]
+        },
+        {
+          "name": "UsersWeeklyRewardsRelation",
+          "fields": [
+            { "name": "userId", "description": null },
+            { "name": "weekNumber", "description": null },
+            { "name": "usdgWeight", "description": "BigInt" },
+            { "name": "glowWeight", "description": "BigInt" },
+            { "name": "usdgRewards", "description": "BigInt" },
+            { "name": "glowRewards", "description": "BigInt" },
+            { "name": "indexInReports", "description": null },
+            { "name": "claimProof", "description": "Array<String>" }
+          ]
+        },
+        { "name": "UsersWeeklyRewardsRelationFilters", "fields": null },
+        { "name": "UsersWeeklyRewardsRelationFiltersOr", "fields": null },
+        { "name": "UsersWeeklyRewardsRelationOrder", "fields": null },
+        {
+          "name": "UsersItem",
+          "fields": [
+            { "name": "id", "description": null },
+            { "name": "totalUSDGRewards", "description": "BigInt" },
+            { "name": "totalGlowRewards", "description": "BigInt" }
+          ]
+        },
+        {
+          "name": "Query",
+          "fields": [
+            { "name": "userweeklyreward", "description": null },
+            { "name": "userweeklyrewardSingle", "description": null },
+            { "name": "users", "description": null },
+            { "name": "usersSingle", "description": null }
+          ]
+        },
+        {
+          "name": "Mutation",
+          "fields": [
+            { "name": "insertIntoUserWeeklyReward", "description": null },
+            { "name": "insertIntoUserWeeklyRewardSingle", "description": null },
+            { "name": "updateUserWeeklyReward", "description": null },
+            { "name": "deleteFromUserWeeklyReward", "description": null },
+            { "name": "insertIntoUsers", "description": null },
+            { "name": "insertIntoUsersSingle", "description": null },
+            { "name": "updateUsers", "description": null },
+            { "name": "deleteFromUsers", "description": null }
+          ]
+        },
+        {
+          "name": "__Schema",
+          "fields": [
+            { "name": "description", "description": null },
+            {
+              "name": "types",
+              "description": "A list of all types supported by this server."
+            },
+            {
+              "name": "queryType",
+              "description": "The type that query operations will be rooted at."
+            },
+            {
+              "name": "mutationType",
+              "description": "If this server supports mutation, the type that mutation operations will be rooted at."
+            },
+            {
+              "name": "subscriptionType",
+              "description": "If this server support subscription, the type that subscription operations will be rooted at."
+            },
+            {
+              "name": "directives",
+              "description": "A list of all directives supported by this server."
+            }
+          ]
+        },
+        {
+          "name": "__Type",
+          "fields": [
+            { "name": "kind", "description": null },
+            { "name": "name", "description": null },
+            { "name": "description", "description": null },
+            { "name": "specifiedByURL", "description": null },
+            { "name": "fields", "description": null },
+            { "name": "interfaces", "description": null },
+            { "name": "possibleTypes", "description": null },
+            { "name": "enumValues", "description": null },
+            { "name": "inputFields", "description": null },
+            { "name": "ofType", "description": null }
+          ]
+        },
+        { "name": "__TypeKind", "fields": null },
+        {
+          "name": "__Field",
+          "fields": [
+            { "name": "name", "description": null },
+            { "name": "description", "description": null },
+            { "name": "args", "description": null },
+            { "name": "type", "description": null },
+            { "name": "isDeprecated", "description": null },
+            { "name": "deprecationReason", "description": null }
+          ]
+        },
+        {
+          "name": "__InputValue",
+          "fields": [
+            { "name": "name", "description": null },
+            { "name": "description", "description": null },
+            { "name": "type", "description": null },
+            {
+              "name": "defaultValue",
+              "description": "A GraphQL-formatted string representing the default value for this input value."
+            },
+            { "name": "isDeprecated", "description": null },
+            { "name": "deprecationReason", "description": null }
+          ]
+        },
+        {
+          "name": "__EnumValue",
+          "fields": [
+            { "name": "name", "description": null },
+            { "name": "description", "description": null },
+            { "name": "isDeprecated", "description": null },
+            { "name": "deprecationReason", "description": null }
+          ]
+        },
+        {
+          "name": "__Directive",
+          "fields": [
+            { "name": "name", "description": null },
+            { "name": "description", "description": null },
+            { "name": "isRepeatable", "description": null },
+            { "name": "locations", "description": null },
+            { "name": "args", "description": null }
+          ]
+        },
+        { "name": "__DirectiveLocation", "fields": null }
+      ]
+    }
+  }
+}

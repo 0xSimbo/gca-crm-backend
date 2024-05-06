@@ -1,24 +1,31 @@
+// export type ApiType = typeof app;
+import { buildSchema } from "drizzle-graphql";
+import { db } from "./db/db";
+import { apollo } from "@elysiajs/apollo";
 import { Elysia } from "elysia";
 import { swagger } from "@elysiajs/swagger";
 import { cors } from "@elysiajs/cors";
 import { protocolFeeRouter } from "./routers/protocol-fee-router/protocolFeeRouter";
 import { rewardsRouter } from "./routers/rewards-router/rewardsRouter";
 import { userWeeklyReward, users } from "./db/schema";
-import { db } from "./db/db";
 import { updateUserRewardsForWeek } from "./crons/update-user-rewards/update-user-rewards-for-week";
-import {
-  estimateProductionAndDebt,
-  estimateProtocolFees,
-  protocolFeeAssumptions,
-} from "./constants/protocol-fee-assumptions";
 
-const PORT = process.env.PORT || 3005;
+const PORT = process.env.PORT || 4000;
+const { schema } = buildSchema(db);
+
 const app = new Elysia()
+  // .onRequest(({ set, request }) => {
+  //   //const headers
+  //   const apiKey = request.headers.get("x-api-key");
+  //   set.status = 401;
+  //   return "Unauthorized";
+  // })
+  .use(apollo({ schema }))
   .use(cors())
   .use(swagger({ autoDarkMode: true, path: "/swagger" }))
   .use(protocolFeeRouter)
   .use(rewardsRouter)
-  .get("/", () => "Hello Elysia")
+  // .get("/", () => "HelloF Elysia")
   .get("/test-cron", async () => {
     try {
       for (let i = 10; i < 23; ++i) {
@@ -40,5 +47,3 @@ const app = new Elysia()
 console.log(
   `🦊 Elysia is running at ${app.server?.hostname}:${app.server?.port}`
 );
-
-export type ApiType = typeof app;

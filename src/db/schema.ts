@@ -89,7 +89,7 @@ export const userWeeklyReward = pgTable(
     return {
       pk: primaryKey({ columns: [t.userId, t.weekNumber] }),
     };
-  },
+  }
 );
 
 /**
@@ -105,7 +105,7 @@ export const UserWeeklyRewardRelations = relations(
       fields: [userWeeklyReward.userId],
       references: [users.id],
     }),
-  }),
+  })
 );
 
 export type UserType = InferSelectModel<typeof users>;
