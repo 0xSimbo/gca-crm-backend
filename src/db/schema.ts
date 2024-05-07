@@ -4,8 +4,14 @@ import {
   integer,
   primaryKey,
   bigint,
+  pgEnum,
+  timestamp,
 } from "drizzle-orm/pg-core";
 import { relations, type InferSelectModel, sql } from "drizzle-orm";
+
+export const accountRoles = ["FARM_OWNER", "GCA", "ADMIN"] as const;
+
+export const accountRoleEnum = pgEnum("role", accountRoles);
 
 /**
     * @dev
@@ -89,7 +95,7 @@ export const userWeeklyReward = pgTable(
     return {
       pk: primaryKey({ columns: [t.userId, t.weekNumber] }),
     };
-  },
+  }
 );
 
 /**
@@ -105,8 +111,41 @@ export const UserWeeklyRewardRelations = relations(
       fields: [userWeeklyReward.userId],
       references: [users.id],
     }),
-  }),
+  })
 );
 
 export type UserType = InferSelectModel<typeof users>;
 export type UserWeeklyRewardType = InferSelectModel<typeof userWeeklyReward>;
+
+export const accounts = pgTable("accounts", {
+  id: varchar("wallet", { length: 42 }).primaryKey().notNull(),
+  role: accountRoleEnum("role"),
+  createdAt: timestamp("createdAt").notNull().defaultNow(),
+});
+export type AccountType = InferSelectModel<typeof accounts>;
+
+export const farmOwners = pgTable("farmOwners", {
+  id: varchar("wallet", { length: 42 }).primaryKey().notNull(),
+  createdAt: timestamp("createdAt").notNull().defaultNow(),
+  firstName: varchar("first_name", { length: 255 }).notNull(),
+  lastName: varchar("last_name", { length: 255 }).notNull(),
+  email: varchar("email", { length: 255 }).notNull(),
+  companyName: varchar("company_name", { length: 255 }),
+  companyAddress: varchar("company_address", { length: 255 }),
+});
+export type farmOwnerType = InferSelectModel<typeof farmOwners>;
+
+export const gcas = pgTable("gcas", {
+  id: varchar("wallet", { length: 42 }).primaryKey().notNull(),
+  createdAt: timestamp("createdAt").notNull().defaultNow(),
+  publicEncriptionKey: varchar("public_encription_key", {
+    length: 255,
+  }).notNull(),
+  serverUrls: varchar("server_urls", { length: 255 }).array().notNull(),
+});
+export type gcaType = InferSelectModel<typeof gcas>;
+
+export const accountsRelations = relations(accounts, ({ one }) => ({
+  farmOwner: one(farmOwners),
+  gca: one(gcas),
+}));
