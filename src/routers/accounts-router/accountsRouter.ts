@@ -161,6 +161,7 @@ export const accountsRouter = new Elysia({ prefix: "/accounts" })
       beforeHandle: async ({ body: { wallet, message, signature }, set }) => {
         try {
           const recoveredAddress = await siweHandler(message, signature);
+          console.log(recoveredAddress, wallet);
           if (recoveredAddress !== wallet) {
             return (set.status = 401);
           }
@@ -209,6 +210,7 @@ export const accountsRouter = new Elysia({ prefix: "/accounts" })
       }) => {
         try {
           const recoveredAddress = await siweHandler(message, signature);
+          console.log(recoveredAddress, wallet);
           if (recoveredAddress !== wallet) {
             return (set.status = 401);
           }
@@ -262,6 +264,7 @@ export const accountsRouter = new Elysia({ prefix: "/accounts" })
       }) => {
         try {
           const recoveredAddress = await siweHandler(message, signature);
+          console.log(recoveredAddress, wallet);
           if (recoveredAddress !== wallet) {
             return (set.status = 401);
           }
