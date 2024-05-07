@@ -1,6 +1,6 @@
 {
   "name": "@glowlabs-org/crm-bindings",
-  "version": "0.0.16",
+  "version": "0.0.17",
   "description": "A library containing all API bindings for the Elysia App",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
@@ -31,6 +31,7 @@
   },
   "devDependencies": {
     "@types/bun": "^1.1.1",
+    "@types/jsonwebtoken": "^9.0.6",
     "bun-types": "latest",
     "drizzle-kit": "latest"
   },

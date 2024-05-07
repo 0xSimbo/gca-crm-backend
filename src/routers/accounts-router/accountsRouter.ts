@@ -15,8 +15,10 @@ import {
   siweParams,
   siweParamsExample,
 } from "../../handlers/siweHandler";
+import { recoverAddressHandler } from "../../handlers/recoverAddressHandler";
+import { updateRole } from "../../db/mutations/accounts/updateRole";
 
-export const LoginQueryBody = t.Object(siweParams, {
+export const LoginOrSignupQueryBody = t.Object(siweParams, {
   examples: [siweParamsExample],
 });
 
@@ -46,7 +48,7 @@ export const CreateFarmOwnerQueryBody = t.Object(
         })
       ),
     }),
-    siweParams: t.Object(siweParams),
+    recoverAddressParams: t.Object(siweParams),
   },
   {
     examples: [
@@ -58,7 +60,7 @@ export const CreateFarmOwnerQueryBody = t.Object(
           companyName: "Solar Energy",
           companyAddress: "123 John Doe Street",
         },
-        siweParams: siweParamsExample,
+        recoverAddressParams: siweParamsExample,
       },
     ],
   }
@@ -79,7 +81,7 @@ export const CreateGCAQueryBody = t.Object(
         })
       ),
     }),
-    siweParams: t.Object(siweParams),
+    recoverAddressParams: t.Object(siweParams),
   },
   {
     examples: [
@@ -88,7 +90,7 @@ export const CreateGCAQueryBody = t.Object(
           publicEncriptionKey: publicEncriptionKeyExample,
           serverUrls: ["https://api.elysia.land"],
         },
-        siweParams: siweParamsExample,
+        recoverAddressParams: siweParamsExample,
       },
     ],
   }
@@ -137,31 +139,32 @@ export const accountsRouter = new Elysia({ prefix: "/accounts" })
     }
   )
   .post(
-    "/login",
-    async ({ body, set }) => {
+    "/loginOrSignup",
+    async ({ body }) => {
       try {
-        const account = await FindFirstById(body.wallet);
+        let account = await FindFirstById(body.wallet);
 
         if (!account) {
-          return (set.status = 404);
+          await createAccount(body.wallet, "UNKNOWN");
+          account = await FindFirstById(body.wallet);
         }
+
         return account;
       } catch (e) {
-        console.log("[accountsRouter] login", e);
+        console.log("[accountsRouter] loginOrSignup", e);
         throw new Error("Error Occured");
       }
     },
     {
-      body: LoginQueryBody,
+      body: LoginOrSignupQueryBody,
       detail: {
-        summary: "Login",
-        description: `Login to an account. If the account does not exist, it will return a 404 error.`,
+        summary: "Login or Signup",
+        description: `Login or Signup with wallet address. If the account does not exist, it will create a new account with the wallet address.`,
         tags: [TAG.ACCOUNTS],
       },
       beforeHandle: async ({ body: { wallet, message, signature }, set }) => {
         try {
           const recoveredAddress = await siweHandler(message, signature);
-          console.log(recoveredAddress, wallet);
           if (recoveredAddress !== wallet) {
             return (set.status = 401);
           }
@@ -175,16 +178,16 @@ export const accountsRouter = new Elysia({ prefix: "/accounts" })
     "/create-farm-owner",
     async ({ body, set }) => {
       try {
-        const wallet = body.siweParams.wallet;
+        const wallet = body.recoverAddressParams.wallet;
         const account = await FindFirstById(wallet);
         if (!account) {
-          await createAccount(wallet, "FARM_OWNER");
+          throw new Error("Account not found");
         }
 
-        if (account?.farmOwner) {
+        if (account.farmOwner) {
           throw new Error("Farm Owner already exists");
         }
-
+        await updateRole(wallet, "FARM_OWNER");
         await createFarmOwner({
           id: wallet,
           ...body.fields,
@@ -204,13 +207,15 @@ export const accountsRouter = new Elysia({ prefix: "/accounts" })
       },
       beforeHandle: async ({
         body: {
-          siweParams: { message, signature, wallet },
+          recoverAddressParams: { message, signature, wallet },
         },
         set,
       }) => {
         try {
-          const recoveredAddress = await siweHandler(message, signature);
-          console.log(recoveredAddress, wallet);
+          const recoveredAddress = await recoverAddressHandler(
+            message,
+            signature
+          );
           if (recoveredAddress !== wallet) {
             return (set.status = 401);
           }
@@ -224,13 +229,13 @@ export const accountsRouter = new Elysia({ prefix: "/accounts" })
     "/create-gca",
     async ({ body }) => {
       try {
-        const wallet = body.siweParams.wallet;
+        const wallet = body.recoverAddressParams.wallet;
         const account = await FindFirstById(wallet);
         if (!account) {
-          await createAccount(wallet, "GCA");
+          throw new Error("Account not found");
         }
 
-        if (account?.gca) {
+        if (account.gca) {
           throw new Error("GCA already exists");
         }
 
@@ -244,6 +249,7 @@ export const accountsRouter = new Elysia({ prefix: "/accounts" })
           throw new Error("This wallet is not a GCA");
         }
 
+        await updateRole(wallet, "GCA");
         await createGca({
           id: wallet,
           createdAt: new Date(),
@@ -258,13 +264,15 @@ export const accountsRouter = new Elysia({ prefix: "/accounts" })
       body: CreateGCAQueryBody,
       beforeHandle: async ({
         body: {
-          siweParams: { message, signature, wallet },
+          recoverAddressParams: { message, signature, wallet },
         },
         set,
       }) => {
         try {
-          const recoveredAddress = await siweHandler(message, signature);
-          console.log(recoveredAddress, wallet);
+          const recoveredAddress = await recoverAddressHandler(
+            message,
+            signature
+          );
           if (recoveredAddress !== wallet) {
             return (set.status = 401);
           }
