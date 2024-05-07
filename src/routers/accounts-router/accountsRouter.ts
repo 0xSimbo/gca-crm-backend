@@ -10,7 +10,7 @@ import {
 } from "@glowlabs-org/guarded-launch-ethers-sdk";
 import { Wallet } from "ethers";
 
-export const FindOrCreateAccountQueryBody = t.Object(
+export const LoginOrSignupQueryBody = t.Object(
   {
     wallet: t.String({
       minLength: 42,
@@ -74,10 +74,10 @@ export const accountsRouter = new Elysia({ prefix: "/accounts" }).post(
     }
   },
   {
-    body: FindOrCreateAccountQueryBody,
+    body: LoginOrSignupQueryBody,
     detail: {
-      summary: "Find or create an account",
-      description: `This route takes in a wallet address, message, and signature and returns the user account if it exists. If the account does not exist, it will create a new account.`,
+      summary: "Login or Signup",
+      description: `Login or Signup with your wallet address. If the account does not exist, it will be created.`,
       tags: [TAG.ACCOUNTS],
     },
     beforeHandle: async ({ body }) => {

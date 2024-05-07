@@ -4,4 +4,5 @@ export const DB_DECIMALS = 2;
 export enum TAG {
   PROTOCOL_FEES = "Protocol Fees",
   REWARDS = "Rewards",
+  ACCOUNTS = "Accounts",
 }
