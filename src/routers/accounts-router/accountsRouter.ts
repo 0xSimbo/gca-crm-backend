@@ -1,43 +1,94 @@
 import { Elysia, t } from "elysia";
-import { accountRoleEnum, accountRoles } from "../../db/schema";
 import { TAG } from "../../constants";
 import { FindFirstById } from "../../db/queries/accounts/findFirstById";
 import { createAccount } from "../../db/mutations/accounts/createAccount";
-import { SiweMessage } from "siwe";
 import {
   MinerPoolAndGCA__factory,
   addresses,
 } from "@glowlabs-org/guarded-launch-ethers-sdk";
 import { Wallet } from "ethers";
+import { createFarmOwner } from "../../db/mutations/farm-owners/createFarmOwner";
+import { publicEncriptionKeyExample } from "../../examples/publicEncriptionKey";
+import { createGca } from "../../db/mutations/gcas/createGca";
+import {
+  siweHandler,
+  siweParams,
+  siweParamsExample,
+} from "../../handlers/siweHandler";
 
-export const LoginOrSignupQueryBody = t.Object(
+export const LoginQueryBody = t.Object(siweParams, {
+  examples: [siweParamsExample],
+});
+
+export const CreateFarmOwnerQueryBody = t.Object(
   {
-    wallet: t.String({
-      example: "0x2e2771032d119fe590FD65061Ad3B366C8e9B7b9",
-      minLength: 42,
-      maxLength: 42,
+    fields: t.Object({
+      firstName: t.String({
+        example: "John",
+        minLength: 2,
+      }),
+      lastName: t.String({
+        example: "Doe",
+        minLength: 2,
+      }),
+      email: t.String({
+        example: "JohnDoe@gmail.com",
+        minLength: 2,
+      }),
+      companyName: t.Nullable(
+        t.String({
+          example: "John Doe Farms",
+        })
+      ),
+      companyAddress: t.Nullable(
+        t.String({
+          example: "123 John Doe Street",
+        })
+      ),
     }),
-    message: t.String({
-      example: "Sign this message to verify your wallet",
-      minLength: 1,
-    }),
-    signature: t.String({
-      example: "0x" + "a".repeat(130) + "1b", // 132 characters
-      minLength: 132,
-      maxLength: 132,
-    }),
-    role: t.String({
-      example: "UNKNOWN",
-      enum: accountRoles,
-    }),
+    siweParams: t.Object(siweParams),
   },
   {
     examples: [
       {
-        wallet: "0x2e2771032d119fe590FD65061Ad3B366C8e9B7b9",
-        message: "Sign this message to verify your wallet",
-        signature: "0x" + "a".repeat(130) + "1b", // 132 characters
-        role: "FARM_OWNER",
+        fields: {
+          firstName: "John",
+          lastName: "Doe",
+          email: "JohnDoe@gmail.com",
+          companyName: "Solar Energy",
+          companyAddress: "123 John Doe Street",
+        },
+        siweParams: siweParamsExample,
+      },
+    ],
+  }
+);
+
+// key generated with ssh-keygen -t rsa -b 4096
+export const CreateGCAQueryBody = t.Object(
+  {
+    fields: t.Object({
+      publicEncriptionKey: t.String({
+        example: publicEncriptionKeyExample,
+        minLength: 716,
+        maxLength: 716,
+      }),
+      serverUrls: t.Array(
+        t.String({
+          example: "https://api.elysia.land",
+        })
+      ),
+    }),
+    siweParams: t.Object(siweParams),
+  },
+  {
+    examples: [
+      {
+        fields: {
+          publicEncriptionKey: publicEncriptionKeyExample,
+          serverUrls: ["https://api.elysia.land"],
+        },
+        siweParams: siweParamsExample,
       },
     ],
   }
@@ -60,59 +111,6 @@ export const GetAccountByIdQueryParamSchema = t.Object(
 );
 
 export const accountsRouter = new Elysia({ prefix: "/accounts" })
-  .post(
-    "/loginOrSignup",
-    async ({ body }) => {
-      try {
-        const account = await FindFirstById(body.wallet);
-
-        if (!account) {
-          if (body.role === "ADMIN") {
-            throw new Error("Admin account not found");
-          }
-          if (body.role === "GCA") {
-            const signer = new Wallet(process.env.PRIVATE_KEY!!);
-            const minerPoolAndGCA = MinerPoolAndGCA__factory.connect(
-              addresses.gcaAndMinerPoolContract,
-              signer
-            );
-            const isGca = await minerPoolAndGCA["isGCA(address)"](body.wallet);
-            if (!isGca) {
-              throw new Error("This wallet is not a GCA");
-            }
-          }
-
-          await createAccount(
-            body.wallet,
-            body.role as (typeof accountRoleEnum.enumValues)[number]
-          );
-          return await FindFirstById(body.wallet);
-        }
-        return account;
-      } catch (e) {
-        console.log("[accountsRouter] loginOrSignup", e);
-        throw new Error("Error Occured");
-      }
-    },
-    {
-      body: LoginOrSignupQueryBody,
-      detail: {
-        summary: "Login or Signup",
-        description: `Login or Signup with your wallet address. If the account does not exist, it will be created.`,
-        tags: [TAG.ACCOUNTS],
-      },
-      beforeHandle: async ({ body, set }) => {
-        // verify signature before handling the request
-        const siwe = new SiweMessage(JSON.parse(body.message || "{}"));
-        await siwe.verify({ signature: body.signature || "" });
-        if (siwe.address !== body.wallet) {
-          // return custom error code
-          set.status = 401;
-          throw new Error("Invalid Signature for wallet " + body.wallet);
-        }
-      },
-    }
-  )
   .get(
     "/byId",
     async ({ query, set }) => {
@@ -134,6 +132,146 @@ export const accountsRouter = new Elysia({ prefix: "/accounts" })
       detail: {
         summary: "Get Account by ID",
         description: `Get account by ID`,
+        tags: [TAG.ACCOUNTS],
+      },
+    }
+  )
+  .post(
+    "/login",
+    async ({ body, set }) => {
+      try {
+        const account = await FindFirstById(body.wallet);
+
+        if (!account) {
+          return (set.status = 404);
+        }
+        return account;
+      } catch (e) {
+        console.log("[accountsRouter] login", e);
+        throw new Error("Error Occured");
+      }
+    },
+    {
+      body: LoginQueryBody,
+      detail: {
+        summary: "Login",
+        description: `Login to an account. If the account does not exist, it will return a 404 error.`,
+        tags: [TAG.ACCOUNTS],
+      },
+      beforeHandle: async ({ body: { wallet, message, signature }, set }) => {
+        try {
+          const recoveredAddress = await siweHandler(message, signature);
+          if (recoveredAddress !== wallet) {
+            return (set.status = 401);
+          }
+        } catch (error) {
+          return (set.status = 401);
+        }
+      },
+    }
+  )
+  .post(
+    "/create-farm-owner",
+    async ({ body, set }) => {
+      try {
+        const wallet = body.siweParams.wallet;
+        const account = await FindFirstById(wallet);
+        if (!account) {
+          await createAccount(wallet, "FARM_OWNER");
+        }
+
+        if (account?.farmOwner) {
+          throw new Error("Farm Owner already exists");
+        }
+
+        await createFarmOwner({
+          id: wallet,
+          ...body.fields,
+          createdAt: new Date(),
+        });
+      } catch (e) {
+        console.log("[accountsRouter] create-farm-owner", e);
+        throw new Error("Error Occured");
+      }
+    },
+    {
+      body: CreateFarmOwnerQueryBody,
+      detail: {
+        summary: "Create Farm Owner Account",
+        description: `Create a Farm Owner account. If the account already exists, it will throw an error.`,
+        tags: [TAG.ACCOUNTS],
+      },
+      beforeHandle: async ({
+        body: {
+          siweParams: { message, signature, wallet },
+        },
+        set,
+      }) => {
+        try {
+          const recoveredAddress = await siweHandler(message, signature);
+          if (recoveredAddress !== wallet) {
+            return (set.status = 401);
+          }
+        } catch (error) {
+          return (set.status = 401);
+        }
+      },
+    }
+  )
+  .post(
+    "/create-gca",
+    async ({ body }) => {
+      try {
+        const wallet = body.siweParams.wallet;
+        const account = await FindFirstById(wallet);
+        if (!account) {
+          await createAccount(wallet, "GCA");
+        }
+
+        if (account?.gca) {
+          throw new Error("GCA already exists");
+        }
+
+        const signer = new Wallet(process.env.PRIVATE_KEY!!);
+        const minerPoolAndGCA = MinerPoolAndGCA__factory.connect(
+          addresses.gcaAndMinerPoolContract,
+          signer
+        );
+        const isGca = await minerPoolAndGCA["isGCA(address)"](wallet);
+        if (!isGca) {
+          throw new Error("This wallet is not a GCA");
+        }
+
+        await createGca({
+          id: wallet,
+          createdAt: new Date(),
+          ...body.fields,
+        });
+      } catch (e) {
+        console.log("[accountsRouter] create-gca", e);
+        throw new Error("Error Occured");
+      }
+    },
+    {
+      body: CreateGCAQueryBody,
+      beforeHandle: async ({
+        body: {
+          siweParams: { message, signature, wallet },
+        },
+        set,
+      }) => {
+        try {
+          const recoveredAddress = await siweHandler(message, signature);
+          if (recoveredAddress !== wallet) {
+            return (set.status = 401);
+          }
+        } catch (error) {
+          return (set.status = 401);
+        }
+      },
+      detail: {
+        summary: "Create GCA Account",
+        description: `Create a GCA account. If the account already exists, it will throw an error.`,
         tags: [TAG.ACCOUNTS],
       },
     }

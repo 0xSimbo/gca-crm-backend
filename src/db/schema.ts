@@ -9,8 +9,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { relations, type InferSelectModel, sql } from "drizzle-orm";
 
-// UNKNOWN is a special role that is used when the user didn't yet filled the solar farm owner form or the GCA form
-export const accountRoles = ["FARM_OWNER", "GCA", "ADMIN", "UNKNOWN"] as const;
+export const accountRoles = ["FARM_OWNER", "GCA", "ADMIN"] as const;
 
 export const accountRoleEnum = pgEnum("role", accountRoles);
 
@@ -146,7 +145,7 @@ export const gcas = pgTable("gcas", {
     .references(() => accounts.id, { onDelete: "cascade" }),
   createdAt: timestamp("createdAt").notNull().defaultNow(),
   publicEncriptionKey: varchar("public_encription_key", {
-    length: 255,
+    length: 449,
   }).notNull(),
   serverUrls: varchar("server_urls", { length: 255 }).array().notNull(),
 });
