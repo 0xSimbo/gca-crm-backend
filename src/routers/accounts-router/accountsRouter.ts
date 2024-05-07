@@ -130,7 +130,7 @@ export const accountsRouter = new Elysia({ prefix: "/accounts" })
       }
     },
     {
-      body: GetAccountByIdQueryParamSchema,
+      query: GetAccountByIdQueryParamSchema,
       detail: {
         summary: "Get Account by ID",
         description: `Get account by ID`,
