@@ -115,9 +115,10 @@ export const accountsRouter = new Elysia({ prefix: "/accounts" })
   )
   .get(
     "/byId",
-    async ({ body, set }) => {
+    async ({ query, set }) => {
+      if (!query.id) throw new Error("ID is required");
       try {
-        const account = await FindFirstById(body.id);
+        const account = await FindFirstById(query.id);
         if (!account) {
           set.status = 404;
           throw new Error("Account not found");
