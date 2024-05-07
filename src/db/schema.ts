@@ -126,7 +126,10 @@ export const accounts = pgTable("accounts", {
 export type AccountType = InferSelectModel<typeof accounts>;
 
 export const farmOwners = pgTable("farmOwners", {
-  id: varchar("wallet", { length: 42 }).primaryKey().notNull(),
+  id: varchar("wallet", { length: 42 })
+    .primaryKey()
+    .notNull()
+    .references(() => accounts.id, { onDelete: "cascade" }),
   createdAt: timestamp("createdAt").notNull().defaultNow(),
   firstName: varchar("first_name", { length: 255 }).notNull(),
   lastName: varchar("last_name", { length: 255 }).notNull(),
@@ -137,7 +140,10 @@ export const farmOwners = pgTable("farmOwners", {
 export type farmOwnerType = InferSelectModel<typeof farmOwners>;
 
 export const gcas = pgTable("gcas", {
-  id: varchar("wallet", { length: 42 }).primaryKey().notNull(),
+  id: varchar("wallet", { length: 42 })
+    .primaryKey()
+    .notNull()
+    .references(() => accounts.id, { onDelete: "cascade" }),
   createdAt: timestamp("createdAt").notNull().defaultNow(),
   publicEncriptionKey: varchar("public_encription_key", {
     length: 255,
