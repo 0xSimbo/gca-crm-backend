@@ -80,12 +80,14 @@ export const accountsRouter = new Elysia({ prefix: "/accounts" }).post(
       description: `Login or Signup with your wallet address. If the account does not exist, it will be created.`,
       tags: [TAG.ACCOUNTS],
     },
-    beforeHandle: async ({ body }) => {
+    beforeHandle: async ({ body, set }) => {
       // verify signature before handling the request
       const siwe = new SiweMessage(JSON.parse(body.message || "{}"));
       await siwe.verify({ signature: body.signature || "" });
       if (siwe.address !== body.wallet) {
-        throw new Error("Invalid Signature");
+        // return custom error code
+        set.status = 401;
+        throw new Error("Invalid Signature for wallet " + body.wallet);
       }
     },
   }

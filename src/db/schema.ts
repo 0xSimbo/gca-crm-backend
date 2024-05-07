@@ -9,7 +9,8 @@ import {
 } from "drizzle-orm/pg-core";
 import { relations, type InferSelectModel, sql } from "drizzle-orm";
 
-export const accountRoles = ["FARM_OWNER", "GCA", "ADMIN"] as const;
+// UNKNOWN is a special role that is used when the user didn't yet filled the solar farm owner form or the GCA form
+export const accountRoles = ["FARM_OWNER", "GCA", "ADMIN", "UNKNOWN"] as const;
 
 export const accountRoleEnum = pgEnum("role", accountRoles);
 
