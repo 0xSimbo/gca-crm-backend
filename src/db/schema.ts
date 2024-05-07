@@ -153,6 +153,12 @@ export const gcas = pgTable("gcas", {
 export type gcaType = InferSelectModel<typeof gcas>;
 
 export const accountsRelations = relations(accounts, ({ one }) => ({
-  farmOwner: one(farmOwners),
-  gca: one(gcas),
+  farmOwner: one(farmOwners, {
+    fields: [accounts.id],
+    references: [farmOwners.id],
+  }),
+  gca: one(gcas, {
+    fields: [accounts.id],
+    references: [gcas.id],
+  }),
 }));
