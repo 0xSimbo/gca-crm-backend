@@ -122,6 +122,7 @@ export const accounts = pgTable("accounts", {
   id: varchar("wallet", { length: 42 }).primaryKey().notNull(),
   role: accountRoleEnum("role"),
   createdAt: timestamp("createdAt").notNull().defaultNow(),
+  jti: varchar("jti", { length: 36 }).notNull(),
 });
 export type AccountType = InferSelectModel<typeof accounts>;
 
@@ -133,7 +134,7 @@ export const farmOwners = pgTable("farmOwners", {
   createdAt: timestamp("createdAt").notNull().defaultNow(),
   firstName: varchar("first_name", { length: 255 }).notNull(),
   lastName: varchar("last_name", { length: 255 }).notNull(),
-  email: varchar("email", { length: 255 }).notNull(),
+  email: varchar("email", { length: 255 }).unique().notNull(),
   companyName: varchar("company_name", { length: 255 }),
   companyAddress: varchar("company_address", { length: 255 }),
 });

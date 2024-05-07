@@ -17,10 +17,26 @@ import {
 } from "../../handlers/siweHandler";
 import { recoverAddressHandler } from "../../handlers/recoverAddressHandler";
 import { updateRole } from "../../db/mutations/accounts/updateRole";
+import { updateJti } from "../../db/mutations/accounts/updateJti";
 
-export const LoginOrSignupQueryBody = t.Object(siweParams, {
-  examples: [siweParamsExample],
-});
+export const LoginOrSignupQueryBody = t.Object(
+  {
+    jti: t.String({
+      example: "cea7e83e-4fea-4fc6-9353-604f631a3a50",
+      minLength: 36,
+      maxLength: 36,
+    }),
+    siweParams: t.Object(siweParams),
+  },
+  {
+    examples: [
+      {
+        jti: "cea7e83e-4fea-4fc6-9353-604f631a3a50",
+        siweParams: siweParamsExample,
+      },
+    ],
+  }
+);
 
 export const CreateFarmOwnerQueryBody = t.Object(
   {
@@ -142,13 +158,16 @@ export const accountsRouter = new Elysia({ prefix: "/accounts" })
     "/loginOrSignup",
     async ({ body }) => {
       try {
-        let account = await FindFirstById(body.wallet);
+        let account = await FindFirstById(body.siweParams.wallet);
 
         if (!account) {
-          await createAccount(body.wallet, "UNKNOWN");
-          account = await FindFirstById(body.wallet);
+          await createAccount(body.siweParams.wallet, "UNKNOWN", body.jti);
+          account = await FindFirstById(body.siweParams.wallet);
+        } else {
+          await updateJti(body.siweParams.wallet, body.jti);
         }
-
+        //refetch with updates
+        account = await FindFirstById(body.siweParams.wallet);
         return account;
       } catch (e) {
         console.log("[accountsRouter] loginOrSignup", e);
@@ -162,7 +181,12 @@ export const accountsRouter = new Elysia({ prefix: "/accounts" })
         description: `Login or Signup with wallet address. If the account does not exist, it will create a new account with the wallet address.`,
         tags: [TAG.ACCOUNTS],
       },
-      beforeHandle: async ({ body: { wallet, message, signature }, set }) => {
+      beforeHandle: async ({
+        body: {
+          siweParams: { wallet, message, signature },
+        },
+        set,
+      }) => {
         try {
           const recoveredAddress = await siweHandler(message, signature);
           if (recoveredAddress !== wallet) {
@@ -214,7 +238,8 @@ export const accountsRouter = new Elysia({ prefix: "/accounts" })
         try {
           const recoveredAddress = await recoverAddressHandler(
             message,
-            signature
+            signature,
+            wallet
           );
           if (recoveredAddress !== wallet) {
             return (set.status = 401);
@@ -271,7 +296,8 @@ export const accountsRouter = new Elysia({ prefix: "/accounts" })
         try {
           const recoveredAddress = await recoverAddressHandler(
             message,
-            signature
+            signature,
+            wallet
           );
           if (recoveredAddress !== wallet) {
             return (set.status = 401);
