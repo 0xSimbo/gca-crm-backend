@@ -20,11 +20,7 @@ import { updateRole } from "../../db/mutations/accounts/updateRole";
 import { updateSiweNonce } from "../../db/mutations/accounts/updateSiweNonce";
 
 export const LoginOrSignupQueryBody = t.Object(siweParams, {
-  examples: [
-    {
-      siweParamsExample,
-    },
-  ],
+  examples: [siweParamsExample],
 });
 
 export const CreateFarmOwnerQueryBody = t.Object(
