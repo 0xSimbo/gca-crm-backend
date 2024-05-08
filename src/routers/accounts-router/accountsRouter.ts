@@ -9,9 +9,9 @@ import {
 import { Wallet } from "ethers";
 import { createFarmOwner } from "../../db/mutations/farm-owners/createFarmOwner";
 import {
-  privateEncriptionKeyExample,
-  publicEncriptionKeyExample,
-} from "../../examples/publicEncriptionKey";
+  privateEncryptionKeyExample,
+  publicEncryptionKeyExample,
+} from "../../examples/encryptionKeys";
 import { createGca } from "../../db/mutations/gcas/createGca";
 import {
   siweHandler,
@@ -75,10 +75,10 @@ export const CreateGCAQueryBody = t.Object(
   {
     fields: t.Object({
       publicEncryptionKey: t.String({
-        example: publicEncriptionKeyExample,
+        example: publicEncryptionKeyExample,
       }),
       privateEncryptionKey: t.String({
-        example: privateEncriptionKeyExample,
+        example: privateEncryptionKeyExample,
       }),
       serverUrls: t.Array(
         t.String({
@@ -90,15 +90,14 @@ export const CreateGCAQueryBody = t.Object(
         minLength: 2,
       }),
     }),
-
     recoverAddressParams: t.Object(siweParams),
   },
   {
     examples: [
       {
         fields: {
-          publicEncriptionKey: publicEncriptionKeyExample,
-          privateEncriptionKey: privateEncriptionKeyExample,
+          publicEncryptionKey: publicEncryptionKeyExample,
+          privateEncryptionKey: privateEncryptionKeyExample,
           serverUrls: ["https://api.elysia.land"],
           email: "JohnDoe@gmail.com",
         },
