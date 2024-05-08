@@ -4,15 +4,16 @@ import { accounts, accountRoleEnum } from "../../schema";
 export const createAccount = async (
   wallet: string,
   role: (typeof accountRoleEnum.enumValues)[number],
-  jti: string
+  siweNonce: string
 ) => {
   await db.insert(accounts).values({
     id: wallet,
     role,
-    jti,
+    siweNonce,
   });
   return {
     id: wallet,
     role,
+    siweNonce,
   };
 };

@@ -16,12 +16,18 @@ export const siweParams = {
     minLength: 132,
     maxLength: 132,
   }),
+  nonce: t.String({
+    example: "a".repeat(64),
+    minLength: 64,
+    maxLength: 64,
+  }),
 };
 
 export const siweParamsExample = {
   wallet: "0x2e2771032d119fe590FD65061Ad3B366C8e9B7b9",
   message: "Sign this message to verify your wallet",
   signature: "0x" + "a".repeat(130) + "1b", // 132 characters
+  nonce: "a".repeat(64), // 64 characters
 };
 
 export const siweHandler = async (message: string, signature: string) => {

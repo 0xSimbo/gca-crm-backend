@@ -2,16 +2,16 @@ import { eq } from "drizzle-orm";
 import { db } from "../../db";
 import { accounts, accountRoleEnum } from "../../schema";
 
-export const updateJti = async (wallet: string, jti: string) => {
+export const updateSiweNonce = async (wallet: string, siweNonce: string) => {
   await db
     .update(accounts)
     .set({
-      jti,
+      siweNonce,
     })
     .where(eq(accounts.id, wallet));
 
   return {
     id: wallet,
-    jti,
+    siweNonce,
   };
 };

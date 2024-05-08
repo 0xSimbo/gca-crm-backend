@@ -122,7 +122,7 @@ export const accounts = pgTable("accounts", {
   id: varchar("wallet", { length: 42 }).primaryKey().notNull(),
   role: accountRoleEnum("role"),
   createdAt: timestamp("createdAt").notNull().defaultNow(),
-  jti: varchar("jti", { length: 36 }).notNull(),
+  siweNonce: varchar("nonce", { length: 64 }).notNull(),
 });
 export type AccountType = InferSelectModel<typeof accounts>;
 

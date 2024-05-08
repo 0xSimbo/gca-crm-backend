@@ -14,6 +14,9 @@ export const recoverAddressHandler = async (
   if (!account) {
     throw new Error("Account not found");
   }
-  const address = ethers.utils.verifyMessage(message + account.jti, signature);
+  const address = ethers.utils.verifyMessage(
+    message + account.siweNonce,
+    signature
+  );
   return address;
 };

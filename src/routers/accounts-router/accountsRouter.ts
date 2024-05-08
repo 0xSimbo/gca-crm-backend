@@ -17,26 +17,15 @@ import {
 } from "../../handlers/siweHandler";
 import { recoverAddressHandler } from "../../handlers/recoverAddressHandler";
 import { updateRole } from "../../db/mutations/accounts/updateRole";
-import { updateJti } from "../../db/mutations/accounts/updateJti";
+import { updateSiweNonce } from "../../db/mutations/accounts/updateSiweNonce";
 
-export const LoginOrSignupQueryBody = t.Object(
-  {
-    jti: t.String({
-      example: "cea7e83e-4fea-4fc6-9353-604f631a3a50",
-      minLength: 36,
-      maxLength: 36,
-    }),
-    siweParams: t.Object(siweParams),
-  },
-  {
-    examples: [
-      {
-        jti: "cea7e83e-4fea-4fc6-9353-604f631a3a50",
-        siweParams: siweParamsExample,
-      },
-    ],
-  }
-);
+export const LoginOrSignupQueryBody = t.Object(siweParams, {
+  examples: [
+    {
+      siweParamsExample,
+    },
+  ],
+});
 
 export const CreateFarmOwnerQueryBody = t.Object(
   {
@@ -158,16 +147,16 @@ export const accountsRouter = new Elysia({ prefix: "/accounts" })
     "/loginOrSignup",
     async ({ body }) => {
       try {
-        let account = await FindFirstById(body.siweParams.wallet);
+        let account = await FindFirstById(body.wallet);
 
         if (!account) {
-          await createAccount(body.siweParams.wallet, "UNKNOWN", body.jti);
-          account = await FindFirstById(body.siweParams.wallet);
+          await createAccount(body.wallet, "UNKNOWN", body.nonce);
+          account = await FindFirstById(body.wallet);
         } else {
-          await updateJti(body.siweParams.wallet, body.jti);
+          await updateSiweNonce(body.wallet, body.nonce);
         }
         //refetch with updates
-        account = await FindFirstById(body.siweParams.wallet);
+        account = await FindFirstById(body.wallet);
         return account;
       } catch (e) {
         console.log("[accountsRouter] loginOrSignup", e);
@@ -181,12 +170,7 @@ export const accountsRouter = new Elysia({ prefix: "/accounts" })
         description: `Login or Signup with wallet address. If the account does not exist, it will create a new account with the wallet address.`,
         tags: [TAG.ACCOUNTS],
       },
-      beforeHandle: async ({
-        body: {
-          siweParams: { wallet, message, signature },
-        },
-        set,
-      }) => {
+      beforeHandle: async ({ body: { wallet, message, signature }, set }) => {
         try {
           const recoveredAddress = await siweHandler(message, signature);
           if (recoveredAddress !== wallet) {
