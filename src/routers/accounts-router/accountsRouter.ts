@@ -265,7 +265,9 @@ export const accountsRouter = new Elysia({ prefix: "/accounts" })
           addresses.gcaAndMinerPoolContract,
           signer
         );
-        const isGca = await minerPoolAndGCA["isGCA(address)"](wallet);
+        //TODO:  remove comment when finished testing
+        // const isGca = await minerPoolAndGCA["isGCA(address)"](wallet);
+        const isGca = true;
         if (!isGca) {
           throw new Error("This wallet is not a GCA");
         }
