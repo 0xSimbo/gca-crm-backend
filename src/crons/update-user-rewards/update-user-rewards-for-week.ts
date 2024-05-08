@@ -40,7 +40,7 @@ export const updateUserRewardsForWeek = async (weekNumber: number) => {
     {
       glowWeight: BigInt(0),
       usdgWeight: BigInt(0),
-    },
+    }
   );
 
   const usersAndRewards = merkleTree.map((leaf) => {
@@ -68,7 +68,7 @@ export const updateUserRewardsForWeek = async (weekNumber: number) => {
       glowWeight: leaf.glowWeight,
       usdgWeight: leaf.usdcWeight,
       usdgRewards: Math.floor(
-        parseInt(formatUnits(usdgRewardsForLeaf, 6 - DB_DECIMALS)),
+        parseInt(formatUnits(usdgRewardsForLeaf, 6 - DB_DECIMALS))
       ), //Even though USDC is 6 decimals,
       //In the database, we keep everything at 2 decimals, so instead of / 1e6 , we / by 1e4 to avoid extra calculations
       glowRewards: glowRewardsForLeaf * BigInt(10 ** DB_DECIMALS), //This is already in human readable format

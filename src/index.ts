@@ -6,7 +6,7 @@ import { rewardsRouter } from "./routers/rewards-router/rewardsRouter";
 import { userWeeklyReward, users } from "./db/schema";
 import { db } from "./db/db";
 import { updateUserRewardsForWeek } from "./crons/update-user-rewards/update-user-rewards-for-week";
-
+import { updateFarmRewardsForWeek } from "./crons/update-farm-rewards/update-farm-rewards-for-week";
 import { accountsRouter } from "./routers/accounts-router/accountsRouter";
 
 const PORT = process.env.PORT || 3005;
@@ -17,6 +17,17 @@ const app = new Elysia()
   .use(rewardsRouter)
   .use(accountsRouter)
   .get("/", () => "Hello Elysia")
+  .get("/farm-rewards", async () => {
+    try {
+      for (let i = 11; i < 23; ++i) {
+        await updateFarmRewardsForWeek({ weekNumber: i });
+      }
+      return { message: "success" };
+    } catch (e) {
+      console.log(e);
+      return { error: true };
+    }
+  })
   .get("/test-cron", async () => {
     try {
       for (let i = 10; i < 23; ++i) {

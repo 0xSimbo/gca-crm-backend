@@ -7,6 +7,7 @@ import {
   pgEnum,
   timestamp,
   text,
+  index,
 } from "drizzle-orm/pg-core";
 import { relations, type InferSelectModel, sql } from "drizzle-orm";
 
@@ -76,7 +77,9 @@ export const userRelations = relations(users, ({ many }) => ({
 export const userWeeklyReward = pgTable(
   "user_weekly_rewards",
   {
-    userId: varchar("wallet", { length: 42 }).notNull(),
+    userId: varchar("wallet", { length: 42 })
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
     weekNumber: integer("week_number").notNull(),
     usdgWeight: bigint("usdg_weight", { mode: "bigint" })
       .default(sql`'0'::bigint`)
@@ -116,8 +119,68 @@ export const UserWeeklyRewardRelations = relations(
   })
 );
 
+export const Farms = pgTable(
+  "farms",
+  {
+    id: varchar("farm_id", { length: 66 }).primaryKey().notNull(),
+    shortId: integer("short_id").notNull(),
+    totalGlowRewards: bigint("total_glow_rewards", { mode: "bigint" })
+      .default(sql`'0'::bigint`)
+      .notNull(),
+    totalUSDGRewards: bigint("total_usdg_rewards", { mode: "bigint" })
+      .default(sql`'0'::bigint`)
+      .notNull(),
+    //TODO: Add all the other stuff about audit complete date,
+    /*
+     * need to add farm owner
+     * need to add splits between owners
+     * need to add the GCA that is assigned to that farm.
+     *  @JulienWebDeveloppeur , let's connect on this when we get a chance
+     */
+  },
+  (t) => {
+    return {
+      shortIdIndex: index("short_id_ix").on(t.shortId),
+    };
+  }
+);
+
+export const FarmRelations = relations(Farms, ({ many }) => ({
+  farmRewards: many(FarmRewards),
+}));
+
+export const FarmRewards = pgTable(
+  "farm_rewards",
+  {
+    hexlifiedFarmPubKey: varchar("farm_id", { length: 66 }).notNull(),
+    weekNumber: integer("week_number").notNull(),
+    usdgRewards: bigint("usdg_rewards", { mode: "bigint" })
+      .default(sql`'0'::bigint`)
+      .notNull(),
+    glowRewards: bigint("glow_rewards", { mode: "bigint" })
+      .default(sql`'0'::bigint`)
+      .notNull(),
+  },
+  (t) => {
+    return {
+      pk: primaryKey({ columns: [t.hexlifiedFarmPubKey, t.weekNumber] }),
+    };
+  }
+);
+
+export const FarmRewardsRelations = relations(FarmRewards, ({ one }) => ({
+  farm: one(Farms, {
+    fields: [FarmRewards.hexlifiedFarmPubKey],
+    references: [Farms.id],
+  }),
+}));
+
 export type UserType = InferSelectModel<typeof users>;
 export type UserWeeklyRewardType = InferSelectModel<typeof userWeeklyReward>;
+export type FarmDatabaseType = InferSelectModel<typeof Farms>;
+export type FarmDatabaseInsertType = typeof Farms.$inferInsert;
+
+export type FarmRewardsDatabaseType = InferSelectModel<typeof FarmRewards>;
 
 export const accounts = pgTable("accounts", {
   id: varchar("wallet", { length: 42 }).primaryKey().notNull(),

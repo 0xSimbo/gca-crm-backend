@@ -1,7 +1,7 @@
 import { Elysia, t } from "elysia";
 import { db } from "../../db/db";
 import { eq, inArray } from "drizzle-orm";
-import { userWeeklyReward, users } from "../../db/schema";
+import { userWeeklyReward, users, Farms } from "../../db/schema";
 import { formatUnits } from "viem";
 import { TAG } from "../../constants";
 
@@ -22,6 +22,7 @@ export const GetUserRewardsQueryBody = t.Object(
     ],
   }
 );
+
 export const rewardsRouter = new Elysia({ prefix: "/rewards" }).post(
   "/user-rewards",
   async ({ body }) => {
