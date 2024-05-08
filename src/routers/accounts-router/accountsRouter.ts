@@ -8,7 +8,10 @@ import {
 } from "@glowlabs-org/guarded-launch-ethers-sdk";
 import { Wallet } from "ethers";
 import { createFarmOwner } from "../../db/mutations/farm-owners/createFarmOwner";
-import { publicEncriptionKeyExample } from "../../examples/publicEncriptionKey";
+import {
+  privateEncriptionKeyExample,
+  publicEncriptionKeyExample,
+} from "../../examples/publicEncriptionKey";
 import { createGca } from "../../db/mutations/gcas/createGca";
 import {
   siweHandler,
@@ -71,10 +74,11 @@ export const CreateFarmOwnerQueryBody = t.Object(
 export const CreateGCAQueryBody = t.Object(
   {
     fields: t.Object({
-      publicEncriptionKey: t.String({
+      publicEncryptionKey: t.String({
         example: publicEncriptionKeyExample,
-        minLength: 716,
-        maxLength: 716,
+      }),
+      privateEncryptionKey: t.String({
+        example: privateEncriptionKeyExample,
       }),
       serverUrls: t.Array(
         t.String({
@@ -94,6 +98,7 @@ export const CreateGCAQueryBody = t.Object(
       {
         fields: {
           publicEncriptionKey: publicEncriptionKeyExample,
+          privateEncriptionKey: privateEncriptionKeyExample,
           serverUrls: ["https://api.elysia.land"],
           email: "JohnDoe@gmail.com",
         },

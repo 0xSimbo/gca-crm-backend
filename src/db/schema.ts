@@ -6,6 +6,7 @@ import {
   bigint,
   pgEnum,
   timestamp,
+  text,
 } from "drizzle-orm/pg-core";
 import { relations, type InferSelectModel, sql } from "drizzle-orm";
 
@@ -147,9 +148,8 @@ export const gcas = pgTable("gcas", {
     .references(() => accounts.id, { onDelete: "cascade" }),
   email: varchar("email", { length: 255 }).unique().notNull(),
   createdAt: timestamp("createdAt").notNull().defaultNow(),
-  publicEncriptionKey: varchar("public_encription_key", {
-    length: 449,
-  }).notNull(),
+  publicEncryptionKey: text("public_encryption_key").notNull(),
+  privateEncryptionKey: text("private_encription_key").notNull(),
   serverUrls: varchar("server_urls", { length: 255 }).array().notNull(),
 });
 export type gcaType = InferSelectModel<typeof gcas>;
