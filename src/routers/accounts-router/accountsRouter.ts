@@ -81,7 +81,12 @@ export const CreateGCAQueryBody = t.Object(
           example: "https://api.elysia.land",
         })
       ),
+      email: t.String({
+        example: "JohnDoe@gmail.com",
+        minLength: 2,
+      }),
     }),
+
     recoverAddressParams: t.Object(siweParams),
   },
   {
@@ -90,6 +95,7 @@ export const CreateGCAQueryBody = t.Object(
         fields: {
           publicEncriptionKey: publicEncriptionKeyExample,
           serverUrls: ["https://api.elysia.land"],
+          email: "JohnDoe@gmail.com",
         },
         recoverAddressParams: siweParamsExample,
       },

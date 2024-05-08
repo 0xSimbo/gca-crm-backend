@@ -145,6 +145,7 @@ export const gcas = pgTable("gcas", {
     .primaryKey()
     .notNull()
     .references(() => accounts.id, { onDelete: "cascade" }),
+  email: varchar("email", { length: 255 }).unique().notNull(),
   createdAt: timestamp("createdAt").notNull().defaultNow(),
   publicEncriptionKey: varchar("public_encription_key", {
     length: 449,
