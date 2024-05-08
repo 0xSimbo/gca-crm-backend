@@ -124,7 +124,8 @@ export const accountsRouter = new Elysia({ prefix: "/accounts" })
           set.status = 404;
           throw new Error("Account not found");
         }
-        return account;
+        // remove nonce from response
+        return { ...account, siweNonce: undefined };
       } catch (e) {
         console.log("[accountsRouter] byId", e);
         throw new Error("Error Occured");
