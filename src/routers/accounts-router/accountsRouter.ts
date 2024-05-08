@@ -198,6 +198,11 @@ export const accountsRouter = new Elysia({ prefix: "/accounts" })
         if (account.farmOwner) {
           throw new Error("Farm Owner already exists");
         }
+
+        if (account.gca) {
+          throw new Error("this account is already a gca");
+        }
+
         await updateRole(wallet, "FARM_OWNER");
         await createFarmOwner({
           id: wallet,
@@ -249,6 +254,10 @@ export const accountsRouter = new Elysia({ prefix: "/accounts" })
 
         if (account.gca) {
           throw new Error("GCA already exists");
+        }
+
+        if (account.farmOwner) {
+          throw new Error("this account is already a farm owner");
         }
 
         const signer = new Wallet(process.env.PRIVATE_KEY!!);
