@@ -1,12 +1,12 @@
 import { db } from "../../db";
-import { accounts, accountRoleEnum } from "../../schema";
+import { Accounts, accountRoleEnum } from "../../schema";
 
 export const createAccount = async (
   wallet: string,
   role: (typeof accountRoleEnum.enumValues)[number],
   siweNonce: string
 ) => {
-  await db.insert(accounts).values({
+  await db.insert(Accounts).values({
     id: wallet,
     role,
     siweNonce,

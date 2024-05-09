@@ -1,7 +1,7 @@
 import { db } from "../../db";
-import { gcaType, gcas } from "../../schema";
+import { GcaType, Gcas } from "../../schema";
 
-export const createGca = async (gca: gcaType) => {
-  await db.insert(gcas).values(gca);
+export const createGca = async (gca: GcaType) => {
+  await db.insert(Gcas).values(gca);
   return gca;
 };

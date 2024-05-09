@@ -1,17 +1,17 @@
 import { eq } from "drizzle-orm";
 import { db } from "../../db";
-import { accounts, accountRoleEnum } from "../../schema";
+import { Accounts, accountRoleEnum } from "../../schema";
 
 export const updateRole = async (
   wallet: string,
   role: (typeof accountRoleEnum.enumValues)[number]
 ) => {
   await db
-    .update(accounts)
+    .update(Accounts)
     .set({
       role,
     })
-    .where(eq(accounts.id, wallet));
+    .where(eq(Accounts.id, wallet));
 
   return {
     id: wallet,

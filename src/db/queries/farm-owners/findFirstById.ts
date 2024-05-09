@@ -1,10 +1,10 @@
 import { eq } from "drizzle-orm";
 import { db } from "../../db";
-import { farmOwners } from "../../schema";
+import { FarmOwners } from "../../schema";
 
 export const FindFirstById = async (id: string) => {
-  const farmOwner = await db.query.farmOwners.findFirst({
-    where: eq(farmOwners.id, id),
+  const farmOwner = await db.query.FarmOwners.findFirst({
+    where: eq(FarmOwners.id, id),
   });
   return farmOwner;
 };

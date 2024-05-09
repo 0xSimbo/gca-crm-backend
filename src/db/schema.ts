@@ -10,11 +10,30 @@ import {
   index,
 } from "drizzle-orm/pg-core";
 import { relations, type InferSelectModel, sql } from "drizzle-orm";
+import {
+  contactTypes,
+  optionalDocuments,
+  stepStatus,
+} from "../types/api-types/Application";
 
 // UNKNOWN is a special role that is used when the user didn't yet filled the solar farm owner form or the GCA form
 export const accountRoles = ["FARM_OWNER", "GCA", "ADMIN", "UNKNOWN"] as const;
 
 export const accountRoleEnum = pgEnum("role", accountRoles);
+
+export const contacTypesEnum = pgEnum("contact_types", contactTypes);
+
+export const applicationStatusEnum = pgEnum("step_status", stepStatus);
+
+export const optionalDocumentsEnum = pgEnum(
+  "optional_documents",
+  optionalDocuments
+);
+
+export const splitTokensEnum = pgEnum("split_tokens", [
+  "USDG",
+  "GLOW",
+] as const);
 
 /**
     * @dev
@@ -182,19 +201,19 @@ export type FarmDatabaseInsertType = typeof Farms.$inferInsert;
 
 export type FarmRewardsDatabaseType = InferSelectModel<typeof FarmRewards>;
 
-export const accounts = pgTable("accounts", {
+export const Accounts = pgTable("accounts", {
   id: varchar("wallet", { length: 42 }).primaryKey().notNull(),
   role: accountRoleEnum("role"),
   createdAt: timestamp("createdAt").notNull().defaultNow(),
   siweNonce: varchar("nonce", { length: 64 }).notNull(),
 });
-export type AccountType = InferSelectModel<typeof accounts>;
+export type AccountType = InferSelectModel<typeof Accounts>;
 
-export const farmOwners = pgTable("farmOwners", {
+export const FarmOwners = pgTable("farmOwners", {
   id: varchar("wallet", { length: 42 })
     .primaryKey()
     .notNull()
-    .references(() => accounts.id, { onDelete: "cascade" }),
+    .references(() => Accounts.id, { onDelete: "cascade" }),
   createdAt: timestamp("createdAt").notNull().defaultNow(),
   firstName: varchar("first_name", { length: 255 }).notNull(),
   lastName: varchar("last_name", { length: 255 }).notNull(),
@@ -202,28 +221,166 @@ export const farmOwners = pgTable("farmOwners", {
   companyName: varchar("company_name", { length: 255 }),
   companyAddress: varchar("company_address", { length: 255 }),
 });
-export type farmOwnerType = InferSelectModel<typeof farmOwners>;
+export type FarmOwnerType = InferSelectModel<typeof FarmOwners>;
 
-export const gcas = pgTable("gcas", {
+export const Gcas = pgTable("gcas", {
   id: varchar("wallet", { length: 42 })
     .primaryKey()
     .notNull()
-    .references(() => accounts.id, { onDelete: "cascade" }),
+    .references(() => Accounts.id, { onDelete: "cascade" }),
   email: varchar("email", { length: 255 }).unique().notNull(),
   createdAt: timestamp("createdAt").notNull().defaultNow(),
   publicEncryptionKey: text("public_encryption_key").notNull(),
   privateEncryptionKey: text("private_encription_key").notNull(),
   serverUrls: varchar("server_urls", { length: 255 }).array().notNull(),
 });
-export type gcaType = InferSelectModel<typeof gcas>;
+export type GcaType = InferSelectModel<typeof Gcas>;
 
-export const accountsRelations = relations(accounts, ({ one }) => ({
-  farmOwner: one(farmOwners, {
-    fields: [accounts.id],
-    references: [farmOwners.id],
+export const accountsRelations = relations(Accounts, ({ one }) => ({
+  farmOwner: one(FarmOwners, {
+    fields: [Accounts.id],
+    references: [FarmOwners.id],
   }),
-  gca: one(gcas, {
-    fields: [accounts.id],
-    references: [gcas.id],
+  gca: one(Gcas, {
+    fields: [Accounts.id],
+    references: [Gcas.id],
   }),
 }));
+
+// Applications
+export const Applications = pgTable("applications", {
+  id: varchar("application_id", { length: 66 }).primaryKey().notNull(),
+  // always linked to a farm owner account
+  farmOwnerId: varchar("farm_owner_id", { length: 42 }).notNull(),
+  // always linked to an installer ? //TODO @0xSimbo waiting for david on this
+  installerId: varchar("installer_id", { length: 66 }).notNull(),
+  // after application is "completed", a farm is created using the hexlified farm pub key
+  farmId: varchar("farm_id", { length: 66 }).unique(),
+  createdAt: timestamp("createdAt").notNull().defaultNow(),
+  updatedAt: timestamp("updatedAt").notNull().defaultNow(),
+  currentStep: integer("current_step").notNull(),
+  currentStepStatus: applicationStatusEnum("step_status").notNull(),
+  contactType: contacTypesEnum("contact_type").notNull(),
+  contactValue: varchar("contact_value", { length: 255 }).notNull(),
+  // enquiry step fields
+  address: varchar("address", { length: 255 }).notNull(),
+  lat: varchar("lat", { length: 255 }).notNull(),
+  lng: varchar("lng", { length: 255 }).notNull(),
+  establishedCostOfPowerPerKWh: varchar("established_cost_of_power_per_kwh", {
+    length: 255,
+  }).notNull(),
+  estimatedKWhGeneratedPerYear: varchar("estimated_kwh_generated_per_year", {
+    length: 255,
+  }).notNull(),
+  // pre-install documents step fields
+  finalQuotePerWatt: varchar("final_quote_per_watt", { length: 255 }),
+  // permit-documentation step fields
+  preInstallVisitDateFrom: timestamp("pre_install_visit_date_from"),
+  preInstallVisitDateTo: timestamp("pre_install_visit_date_to"),
+  // approximative installation date provided by the installer / farm owner
+  installDate: timestamp("install_date"),
+  // inspection-pto step fields
+  afterInstallVisitDateFrom: timestamp("after_install_visit_date_from"),
+  afterInstallVisitDateTo: timestamp("after_install_visit_date_to"),
+  finalProtocolFee: varchar("final_protocol_fee", { length: 255 }),
+  // payment step fields
+  paymentDate: timestamp("payment_date"),
+  paymentTxHash: varchar("payment_tx_hash", { length: 66 }),
+});
+
+export type ApplicationType = InferSelectModel<typeof Applications>;
+
+export const Installers = pgTable("installers", {
+  id: varchar("installer_id", { length: 66 }).primaryKey().notNull(),
+  name: varchar("name", { length: 255 }).unique().notNull(),
+  email: varchar("email", { length: 255 }).unique().notNull(),
+  companyName: varchar("company_name", { length: 255 }).notNull(),
+  phone: varchar("phone", { length: 255 }).notNull(),
+});
+
+export type InstallerType = InferSelectModel<typeof Installers>;
+
+// if one of the optional documents is missing, we need to know why
+export const DocumentsMissingWithReason = pgTable(
+  "documentsMissingWithReason",
+  {
+    id: varchar("document_missing_with_reason_id", { length: 66 })
+      .primaryKey()
+      .notNull(),
+    applicationId: varchar("application_id", { length: 66 })
+      .notNull()
+      .references(() => Applications.id, { onDelete: "cascade" }),
+    reason: varchar("reason", { length: 255 }).notNull(),
+    step: integer("step").notNull(),
+    documentName: optionalDocumentsEnum("document_name").notNull(),
+  }
+);
+
+export type DocumentsMissingWithReasonType = InferSelectModel<
+  typeof DocumentsMissingWithReason
+>;
+
+export const ApplicationStepAnnotations = pgTable(
+  "applicationStepAnnotations",
+  {
+    id: varchar("application_step_annotation_id", { length: 66 })
+      .primaryKey()
+      .notNull(),
+    applicationId: varchar("application_id", { length: 66 })
+      .notNull()
+      .references(() => Applications.id, { onDelete: "cascade" }),
+    annotation: varchar("annotation", { length: 255 }).notNull(),
+    step: integer("step").notNull(),
+  }
+);
+
+export type ApplicationStepAnnotationsType = InferSelectModel<
+  typeof ApplicationStepAnnotations
+>;
+
+// Reward Splits for USDG and GLOW add up to 100% for each token
+export const RewardSplits = pgTable("rewardsSplits", {
+  id: varchar("rewards_split_id", { length: 66 }).primaryKey().notNull(),
+  applicationId: varchar("application_id", { length: 66 })
+    .notNull()
+    .references(() => Applications.id, { onDelete: "cascade" }),
+  walletAddress: varchar("wallet_address", { length: 42 }).notNull(),
+  splitPercentage: varchar("split_percentage", { length: 255 }).notNull(),
+  token: splitTokensEnum("token").notNull(),
+});
+
+export type RewardSplitsType = InferSelectModel<typeof RewardSplits>;
+
+// 0xSimbo: I added this table to store the devices that are connected to the farm but I'm not sure about the content, do we also want to have a shortId for the devices?
+export const Devices = pgTable("devices", {
+  id: varchar("device_id", { length: 66 }).primaryKey().notNull(),
+  farmId: varchar("farm_id", { length: 66 })
+    .notNull()
+    .references(() => Farms.id, { onDelete: "cascade" }),
+  publicKeys: varchar("public_keys", { length: 255 }).array().notNull(),
+  shortIds: integer("short_ids").array().notNull(),
+  powerOutputs: varchar("power_outputs", { length: 255 }).array().notNull(),
+  impactRates: varchar("impact_rates", { length: 255 }).array().notNull(),
+  status: varchar("status", { length: 255 }).notNull(),
+});
+
+export const applicationsRelations = relations(
+  Applications,
+  ({ one, many }) => ({
+    farmOwner: one(FarmOwners, {
+      fields: [Applications.farmOwnerId],
+      references: [FarmOwners.id],
+    }),
+    farm: one(Farms, {
+      fields: [Applications.farmId],
+      references: [Farms.id],
+    }),
+    installer: one(Installers, {
+      fields: [Applications.installerId],
+      references: [Installers.id],
+    }),
+    documentsMissingWithReason: many(DocumentsMissingWithReason),
+    applicationStepAnnotations: many(ApplicationStepAnnotations),
+    rewardSplits: many(RewardSplits),
+  })
+);

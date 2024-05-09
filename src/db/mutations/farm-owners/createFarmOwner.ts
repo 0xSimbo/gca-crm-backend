@@ -1,7 +1,7 @@
 import { db } from "../../db";
-import { farmOwners, farmOwnerType } from "../../schema";
+import { FarmOwners, FarmOwnerType } from "../../schema";
 
-export const createFarmOwner = async (farmOwner: farmOwnerType) => {
-  await db.insert(farmOwners).values(farmOwner);
+export const createFarmOwner = async (farmOwner: FarmOwnerType) => {
+  await db.insert(FarmOwners).values(farmOwner);
   return farmOwner;
 };
