@@ -13,6 +13,7 @@ import { relations, type InferSelectModel, sql } from "drizzle-orm";
 import {
   contactTypes,
   optionalDocuments,
+  splitTokens,
   stepStatus,
 } from "../types/api-types/Application";
 
@@ -30,10 +31,7 @@ export const optionalDocumentsEnum = pgEnum(
   optionalDocuments
 );
 
-export const splitTokensEnum = pgEnum("split_tokens", [
-  "USDG",
-  "GLOW",
-] as const);
+export const splitTokensEnum = pgEnum("split_tokens", splitTokens);
 
 /**
     * @dev
@@ -286,6 +284,10 @@ export const Applications = pgTable("applications", {
   // payment step fields
   paymentDate: timestamp("payment_date"),
   paymentTxHash: varchar("payment_tx_hash", { length: 66 }),
+  // gca assignement fields
+  gcaAssignedTimestamp: timestamp("gca_assigned_timestamp"),
+  gcaAcceptanceTimestamp: timestamp("gca_acceptance_timestamp"),
+  gcaAdress: varchar("gca_adress", { length: 42 }),
 });
 
 export type ApplicationType = InferSelectModel<typeof Applications>;
@@ -299,6 +301,35 @@ export const Installers = pgTable("installers", {
 });
 
 export type InstallerType = InferSelectModel<typeof Installers>;
+
+export const Deferments = pgTable("deferments", {
+  id: varchar("deferment_id", { length: 66 }).primaryKey().notNull(),
+  applicationId: varchar("application_id", { length: 66 })
+    .notNull()
+    .references(() => Applications.id, { onDelete: "cascade" }),
+  reason: varchar("reason", { length: 255 }),
+  fromGca: varchar("from_gca", { length: 42 }).notNull(),
+  toGca: varchar("to_gca", { length: 42 }).notNull(),
+  timestamp: timestamp("timestamp").notNull().defaultNow(),
+});
+
+export const Documents = pgTable("documents", {
+  id: varchar("document_id", { length: 66 }).primaryKey().notNull(),
+  applicationId: varchar("application_id", { length: 66 })
+    .notNull()
+    .references(() => Applications.id, { onDelete: "cascade" }),
+  annotation: varchar("annotation", { length: 255 }),
+  step: integer("step").notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  url: varchar("url", { length: 255 }).notNull(), // bytes of the encrypted document are stored on r2
+  type: varchar("type", { length: 255 }).notNull(),
+  // array of each gca encrypted master key
+});
+
+// store the salt in db, public key and encrypted rsa private key.
+// they gonna decrypt in the front end by signing the salt and using that signature to decrypt rsa private key.
+
+export type DocumentsType = InferSelectModel<typeof Documents>;
 
 // if one of the optional documents is missing, we need to know why
 export const DocumentsMissingWithReason = pgTable(
@@ -357,11 +388,8 @@ export const Devices = pgTable("devices", {
   farmId: varchar("farm_id", { length: 66 })
     .notNull()
     .references(() => Farms.id, { onDelete: "cascade" }),
-  publicKeys: varchar("public_keys", { length: 255 }).array().notNull(),
-  shortIds: integer("short_ids").array().notNull(),
-  powerOutputs: varchar("power_outputs", { length: 255 }).array().notNull(),
-  impactRates: varchar("impact_rates", { length: 255 }).array().notNull(),
-  status: varchar("status", { length: 255 }).notNull(),
+  publicKey: varchar("public_key", { length: 255 }).unique().notNull(),
+  shortId: integer("short_id").notNull(),
 });
 
 export const applicationsRelations = relations(
@@ -382,5 +410,7 @@ export const applicationsRelations = relations(
     documentsMissingWithReason: many(DocumentsMissingWithReason),
     applicationStepAnnotations: many(ApplicationStepAnnotations),
     rewardSplits: many(RewardSplits),
+    documents: many(Documents),
+    deferments: many(Deferments),
   })
 );

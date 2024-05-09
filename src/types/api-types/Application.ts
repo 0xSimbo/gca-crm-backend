@@ -40,6 +40,7 @@ export type ApplicationDocument = {
   step: ApplicationSteps;
   applicationId: string;
   annotation: string | null;
+  // encryption fields
 };
 
 export const optionalDocuments = [
@@ -63,22 +64,28 @@ export type GCAStepAnnotation = {
 };
 
 export type SolarInstallerDetails = {
+  id: string;
   name: string;
   email: string;
   phone: string;
   companyName: string;
 };
 
+export const splitTokens = ["USDG", "GLOW"] as const;
+
 export type RewardSplit = {
+  id: string;
+  applicationId: string;
   walletAddress: string;
   splitPercentage: string;
+  token: (typeof splitTokens)[number];
 };
 
 export type Application = {
   id: string;
   currentStep: ApplicationSteps;
   currentStepStatus: StepStatus;
-  solarInstallerDetails: SolarInstallerDetails;
+  installer: SolarInstallerDetails;
   address: string;
   lat: string;
   lng: string;
@@ -86,6 +93,7 @@ export type Application = {
   estimatedKWhGeneratedPerYear: string;
   contactType: ContactType;
   contactValue: string;
+  farm?: any; // Farm still wip
   documentsMissingWithReason?: DocumentMissingWithReason[];
   annotations?: GCAStepAnnotation[];
   finalQuotePerWatt?: string;
@@ -98,7 +106,6 @@ export type Application = {
   afterInstallVisitDateTo?: string;
   rewardSplits?: RewardSplit[];
   paymentTxHash?: string;
-
   createdAt: string;
   updatedAt: string;
 };
