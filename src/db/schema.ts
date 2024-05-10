@@ -9,9 +9,12 @@ import {
   text,
   index,
   json,
+  serial,
+  decimal,
 } from "drizzle-orm/pg-core";
 import { relations, type InferSelectModel, sql } from "drizzle-orm";
 import {
+  applicationStatus,
   contactTypes,
   optionalDocuments,
   splitTokens,
@@ -25,7 +28,12 @@ export const accountRoleEnum = pgEnum("role", accountRoles);
 
 export const contacTypesEnum = pgEnum("contact_types", contactTypes);
 
-export const applicationStatusEnum = pgEnum("step_status", stepStatus);
+export const applicationStepStatusEnum = pgEnum("step_status", stepStatus);
+
+export const applicationStatusEnum = pgEnum(
+  "application_status",
+  applicationStatus
+);
 
 export const optionalDocumentsEnum = pgEnum(
   "optional_documents",
@@ -325,7 +333,7 @@ export const accountsRelations = relations(Accounts, ({ one }) => ({
 
 // Applications
 export const Applications = pgTable("applications", {
-  id: varchar("application_id", { length: 66 }).primaryKey().notNull(),
+  id: serial("id").primaryKey().notNull(),
   // always linked to a farm owner account
   farmOwnerId: varchar("farm_owner_id", { length: 42 }).notNull(),
   // always linked to an installer ? //TODO @0xSimbo waiting for david on this
@@ -333,21 +341,24 @@ export const Applications = pgTable("applications", {
   // after application is "completed", a farm is created using the hexlified farm pub key
   farmId: varchar("farm_id", { length: 66 }).unique(),
   createdAt: timestamp("createdAt").notNull().defaultNow(),
-  updatedAt: timestamp("updatedAt").notNull().defaultNow(),
   currentStep: integer("current_step").notNull(),
-  currentStepStatus: applicationStatusEnum("step_status").notNull(),
-  contactType: contacTypesEnum("contact_type").notNull(),
-  contactValue: varchar("contact_value", { length: 255 }).notNull(),
+  currentStepStatus: applicationStepStatusEnum("step_status").notNull(),
+  status: applicationStatusEnum("application_status").notNull(),
+  contactType: contacTypesEnum("contact_type"),
+  contactValue: varchar("contact_value", { length: 255 }),
   // enquiry step fields
   address: varchar("address", { length: 255 }).notNull(),
-  lat: varchar("lat", { length: 255 }).notNull(),
-  lng: varchar("lng", { length: 255 }).notNull(),
-  establishedCostOfPowerPerKWh: varchar("established_cost_of_power_per_kwh", {
-    length: 255,
+  lat: integer("lat").notNull(),
+  lng: integer("lng").notNull(),
+  establishedCostOfPowerPerKWh: decimal("established_cost_of_power_per_kwh", {
+    precision: 10,
+    scale: 2,
   }).notNull(),
-  estimatedKWhGeneratedPerYear: varchar("estimated_kwh_generated_per_year", {
-    length: 255,
-  }).notNull(),
+  estimatedKWhGeneratedPerYear: integer(
+    "estimated_kwh_generated_per_year"
+  ).notNull(),
+  // null if application just got created
+  updatedAt: timestamp("updatedAt"),
   // pre-install documents step fields
   finalQuotePerWatt: varchar("final_quote_per_watt", { length: 255 }),
   // permit-documentation step fields

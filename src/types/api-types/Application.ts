@@ -14,9 +14,11 @@ export const applicationStatus = [
   "waiting-to-be-assigned",
   "assigned",
   "completed",
-];
+] as const;
 
 export type StepStatus = (typeof stepStatus)[number];
+
+export type ApplicationStatus = (typeof applicationStatus)[number];
 
 export const contactTypes = ["telegram", "email", "discord"] as const;
 
@@ -85,6 +87,7 @@ export type Application = {
   id: string;
   currentStep: ApplicationSteps;
   currentStepStatus: StepStatus;
+  status: ApplicationStatus;
   installer: SolarInstallerDetails;
   address: string;
   lat: string;

@@ -3,134 +3,17 @@ import { TAG } from "../../constants";
 import { FindFirstById } from "../../db/queries/accounts/findFirstById";
 import { createAccount } from "../../db/mutations/accounts/createAccount";
 import {
-  MinerPoolAndGCA__factory,
-  addresses,
-} from "@glowlabs-org/guarded-launch-ethers-sdk";
-import { Wallet } from "ethers";
-import { createFarmOwner } from "../../db/mutations/farm-owners/createFarmOwner";
-import {
-  privateEncryptionKeyExample,
-  publicEncryptionKeyExample,
-} from "../../examples/encryptionKeys";
-import { createGca } from "../../db/mutations/gcas/createGca";
-import {
   siweHandler,
   siweParams,
   siweParamsExample,
 } from "../../handlers/siweHandler";
-import { recoverAddressHandler } from "../../handlers/recoverAddressHandler";
-import { updateRole } from "../../db/mutations/accounts/updateRole";
 import { updateSiweNonce } from "../../db/mutations/accounts/updateSiweNonce";
-import { generateSaltFromAddress } from "../../utils/encryption/generateSaltFromAddress";
+
+import { GetEntityByIdQueryParamSchema } from "../../schemas/shared/getEntityByIdParamSchema";
 
 export const LoginOrSignupQueryBody = t.Object(siweParams, {
   examples: [siweParamsExample],
 });
-
-export const CreateFarmOwnerQueryBody = t.Object(
-  {
-    fields: t.Object({
-      encryptedPrivateEncryptionKey: t.String({
-        example: privateEncryptionKeyExample,
-      }),
-      publicEncryptionKey: t.String({
-        example: publicEncryptionKeyExample,
-      }),
-      firstName: t.String({
-        example: "John",
-        minLength: 2,
-      }),
-      lastName: t.String({
-        example: "Doe",
-        minLength: 2,
-      }),
-      email: t.String({
-        example: "JohnDoe@gmail.com",
-        minLength: 2,
-      }),
-      companyName: t.Nullable(
-        t.String({
-          example: "John Doe Farms",
-        })
-      ),
-      companyAddress: t.Nullable(
-        t.String({
-          example: "123 John Doe Street",
-        })
-      ),
-    }),
-    recoverAddressParams: t.Object(siweParams),
-  },
-  {
-    examples: [
-      {
-        fields: {
-          encryptedPrivateEncryptionKey: privateEncryptionKeyExample,
-          publicEncryptionKey: publicEncryptionKeyExample,
-          firstName: "John",
-          lastName: "Doe",
-          email: "JohnDoe@gmail.com",
-          companyName: "Solar Energy",
-          companyAddress: "123 John Doe Street",
-        },
-        recoverAddressParams: siweParamsExample,
-      },
-    ],
-  }
-);
-
-// key generated with ssh-keygen -t rsa -b 4096
-export const CreateGCAQueryBody = t.Object(
-  {
-    fields: t.Object({
-      publicEncryptionKey: t.String({
-        example: publicEncryptionKeyExample,
-      }),
-      encryptedPrivateEncryptionKey: t.String({
-        example: privateEncryptionKeyExample,
-      }),
-      serverUrls: t.Array(
-        t.String({
-          example: "https://api.elysia.land",
-        })
-      ),
-      email: t.String({
-        example: "JohnDoe@gmail.com",
-        minLength: 2,
-      }),
-    }),
-    recoverAddressParams: t.Object(siweParams),
-  },
-  {
-    examples: [
-      {
-        fields: {
-          publicEncryptionKey: publicEncryptionKeyExample,
-          encryptedPrivateEncryptionKey: privateEncryptionKeyExample,
-          serverUrls: ["https://api.elysia.land"],
-          email: "JohnDoe@gmail.com",
-        },
-        recoverAddressParams: siweParamsExample,
-      },
-    ],
-  }
-);
-
-export const GetAccountByIdQueryParamSchema = t.Object(
-  {
-    id: t.String({
-      minLength: 42,
-      maxLength: 42,
-    }),
-  },
-  {
-    examples: [
-      {
-        id: "0x2e2771032d119fe590FD65061Ad3B366C8e9B7b9",
-      },
-    ],
-  }
-);
 
 export const accountsRouter = new Elysia({ prefix: "/accounts" })
   .get(
@@ -151,7 +34,7 @@ export const accountsRouter = new Elysia({ prefix: "/accounts" })
       }
     },
     {
-      query: GetAccountByIdQueryParamSchema,
+      query: GetEntityByIdQueryParamSchema,
       detail: {
         summary: "Get Account by ID",
         description: `Get account by ID`,
@@ -195,136 +78,6 @@ export const accountsRouter = new Elysia({ prefix: "/accounts" })
         } catch (error) {
           return (set.status = 401);
         }
-      },
-    }
-  )
-  .post(
-    "/create-farm-owner",
-    async ({ body, set }) => {
-      try {
-        const wallet = body.recoverAddressParams.wallet;
-        const account = await FindFirstById(wallet);
-        if (!account) {
-          throw new Error("Account not found");
-        }
-
-        if (account.farmOwner) {
-          throw new Error("Farm Owner already exists");
-        }
-
-        if (account.gca) {
-          throw new Error("this account is already a gca");
-        }
-
-        await updateRole(wallet, "FARM_OWNER");
-        const salt = generateSaltFromAddress(wallet);
-
-        await createFarmOwner({
-          id: wallet,
-          ...body.fields,
-          createdAt: new Date(),
-          salt,
-        });
-      } catch (e) {
-        console.log("[accountsRouter] create-farm-owner", e);
-        throw new Error("Error Occured");
-      }
-    },
-    {
-      body: CreateFarmOwnerQueryBody,
-      detail: {
-        summary: "Create Farm Owner Account",
-        description: `Create a Farm Owner account. If the account already exists, it will throw an error.`,
-        tags: [TAG.ACCOUNTS],
-      },
-      beforeHandle: async ({
-        body: {
-          recoverAddressParams: { message, signature, wallet },
-        },
-        set,
-      }) => {
-        try {
-          const recoveredAddress = await recoverAddressHandler(
-            message,
-            signature,
-            wallet
-          );
-          if (recoveredAddress !== wallet) {
-            return (set.status = 401);
-          }
-        } catch (error) {
-          return (set.status = 401);
-        }
-      },
-    }
-  )
-  .post(
-    "/create-gca",
-    async ({ body }) => {
-      try {
-        const wallet = body.recoverAddressParams.wallet;
-        const account = await FindFirstById(wallet);
-        if (!account) {
-          throw new Error("Account not found");
-        }
-
-        if (account.gca) {
-          throw new Error("GCA already exists");
-        }
-
-        if (account.farmOwner) {
-          throw new Error("this account is already a farm owner");
-        }
-
-        const signer = new Wallet(process.env.PRIVATE_KEY!!);
-        const minerPoolAndGCA = MinerPoolAndGCA__factory.connect(
-          addresses.gcaAndMinerPoolContract,
-          signer
-        );
-        //TODO:  remove comment when finished testing
-        // const isGca = await minerPoolAndGCA["isGCA(address)"](wallet);
-        const isGca = true;
-        if (!isGca) {
-          throw new Error("This wallet is not a GCA");
-        }
-        const salt = generateSaltFromAddress(wallet);
-        await updateRole(wallet, "GCA");
-        await createGca({
-          id: wallet,
-          createdAt: new Date(),
-          ...body.fields,
-          salt,
-        });
-      } catch (e) {
-        console.log("[accountsRouter] create-gca", e);
-        throw new Error("Error Occured");
-      }
-    },
-    {
-      body: CreateGCAQueryBody,
-      beforeHandle: async ({
-        body: {
-          recoverAddressParams: { message, signature, wallet },
-        },
-        set,
-      }) => {
-        try {
-          const recoveredAddress = await recoverAddressHandler(
-            message,
-            signature,
-            wallet
-          );
-          if (recoveredAddress !== wallet) {
-            return (set.status = 401);
-          }
-        } catch (error) {
-          return (set.status = 401);
-        }
-      },
-      detail: {
-        summary: "Create GCA Account",
-        description: `Create a GCA account. If the account already exists, it will throw an error.`,
-        tags: [TAG.ACCOUNTS],
       },
     }
   );

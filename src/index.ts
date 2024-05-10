@@ -8,6 +8,9 @@ import { db } from "./db/db";
 import { updateUserRewardsForWeek } from "./crons/update-user-rewards/update-user-rewards-for-week";
 import { updateFarmRewardsForWeek } from "./crons/update-farm-rewards/update-farm-rewards-for-week";
 import { accountsRouter } from "./routers/accounts-router/accountsRouter";
+import { gcasRouter } from "./routers/gcas/gcasRouter";
+import { farmOwnersRouter } from "./routers/farm-owners/farmOwnersRouter";
+import { applicationsRouter } from "./routers/applications-router/applicationsRouter";
 
 const PORT = process.env.PORT || 3005;
 const app = new Elysia()
@@ -16,6 +19,9 @@ const app = new Elysia()
   .use(protocolFeeRouter)
   .use(rewardsRouter)
   .use(accountsRouter)
+  .use(gcasRouter)
+  .use(applicationsRouter)
+  .use(farmOwnersRouter)
   .get("/", () => "Hello Elysia")
   .get("/farm-rewards", async () => {
     try {
