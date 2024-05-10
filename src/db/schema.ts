@@ -299,10 +299,6 @@ export type FarmOwnerType = InferSelectModel<typeof FarmOwners>;
 export const FarmOwnersRelations = relations(FarmOwners, ({ many, one }) => ({
   farms: many(Farms),
   applications: many(Applications),
-  installer: one(Installers, {
-    fields: [FarmOwners.installerId],
-    references: [Installers.id],
-  }),
 }));
 
 export const Gcas = pgTable("gcas", {
