@@ -96,6 +96,7 @@ export async function getScrapedFarmsAndRewards({
       hexPubKey: farm.hexlifiedPublicKey,
       rewards: farm.rewards,
       shortId: farm.shortId.toString(),
+      auditCompleteDate: farm.timestampAuditedComplete,
     };
   });
 

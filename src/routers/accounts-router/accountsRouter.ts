@@ -21,6 +21,7 @@ import {
 import { recoverAddressHandler } from "../../handlers/recoverAddressHandler";
 import { updateRole } from "../../db/mutations/accounts/updateRole";
 import { updateSiweNonce } from "../../db/mutations/accounts/updateSiweNonce";
+import { generateSaltFromAddress } from "../../utils/encryption/generateSaltFromAddress";
 
 export const LoginOrSignupQueryBody = t.Object(siweParams, {
   examples: [siweParamsExample],
@@ -29,6 +30,12 @@ export const LoginOrSignupQueryBody = t.Object(siweParams, {
 export const CreateFarmOwnerQueryBody = t.Object(
   {
     fields: t.Object({
+      encryptedPrivateEncryptionKey: t.String({
+        example: privateEncryptionKeyExample,
+      }),
+      publicEncryptionKey: t.String({
+        example: publicEncryptionKeyExample,
+      }),
       firstName: t.String({
         example: "John",
         minLength: 2,
@@ -58,6 +65,8 @@ export const CreateFarmOwnerQueryBody = t.Object(
     examples: [
       {
         fields: {
+          encryptedPrivateEncryptionKey: privateEncryptionKeyExample,
+          publicEncryptionKey: publicEncryptionKeyExample,
           firstName: "John",
           lastName: "Doe",
           email: "JohnDoe@gmail.com",
@@ -77,7 +86,7 @@ export const CreateGCAQueryBody = t.Object(
       publicEncryptionKey: t.String({
         example: publicEncryptionKeyExample,
       }),
-      privateEncryptionKey: t.String({
+      encryptedPrivateEncryptionKey: t.String({
         example: privateEncryptionKeyExample,
       }),
       serverUrls: t.Array(
@@ -97,7 +106,7 @@ export const CreateGCAQueryBody = t.Object(
       {
         fields: {
           publicEncryptionKey: publicEncryptionKeyExample,
-          privateEncryptionKey: privateEncryptionKeyExample,
+          encryptedPrivateEncryptionKey: privateEncryptionKeyExample,
           serverUrls: ["https://api.elysia.land"],
           email: "JohnDoe@gmail.com",
         },
@@ -208,10 +217,13 @@ export const accountsRouter = new Elysia({ prefix: "/accounts" })
         }
 
         await updateRole(wallet, "FARM_OWNER");
+        const salt = generateSaltFromAddress(wallet);
+
         await createFarmOwner({
           id: wallet,
           ...body.fields,
           createdAt: new Date(),
+          salt,
         });
       } catch (e) {
         console.log("[accountsRouter] create-farm-owner", e);
@@ -275,12 +287,13 @@ export const accountsRouter = new Elysia({ prefix: "/accounts" })
         if (!isGca) {
           throw new Error("This wallet is not a GCA");
         }
-
+        const salt = generateSaltFromAddress(wallet);
         await updateRole(wallet, "GCA");
         await createGca({
           id: wallet,
           createdAt: new Date(),
           ...body.fields,
+          salt,
         });
       } catch (e) {
         console.log("[accountsRouter] create-gca", e);

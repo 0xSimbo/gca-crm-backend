@@ -8,6 +8,7 @@ import {
   timestamp,
   text,
   index,
+  json,
 } from "drizzle-orm/pg-core";
 import { relations, type InferSelectModel, sql } from "drizzle-orm";
 import {
@@ -32,6 +33,16 @@ export const optionalDocumentsEnum = pgEnum(
 );
 
 export const splitTokensEnum = pgEnum("split_tokens", splitTokens);
+
+export type EncryptedMasterKeySet = {
+  publicKey: string;
+  encryptedMasterKey: string;
+};
+
+export type FarmUpdate = {
+  previousValue: any;
+  updatedValue: any;
+};
 
 /**
     * @dev
@@ -116,6 +127,11 @@ export const userWeeklyReward = pgTable(
   (t) => {
     return {
       pk: primaryKey({ columns: [t.userId, t.weekNumber] }),
+      // @0xSimbo add a composite index in order to improove the performance of the queries here ?
+      // userIdToWeekNumberIndex: index("user_id_week_number_ix").on(
+      //   t.userId,
+      //   t.weekNumber
+      // ),
     };
   }
 );
@@ -147,24 +163,67 @@ export const Farms = pgTable(
     totalUSDGRewards: bigint("total_usdg_rewards", { mode: "bigint" })
       .default(sql`'0'::bigint`)
       .notNull(),
-    //TODO: Add all the other stuff about audit complete date,
-    /*
-     * need to add farm owner
-     * need to add splits between owners
-     * need to add the GCA that is assigned to that farm.
-     *  @JulienWebDeveloppeur , let's connect on this when we get a chance
-     */
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    auditCompleteDate: timestamp("audit_complete_date"),
+    // @0xSimbo can you patch th existing farms with those from the scrapper ?
+    gcaId: varchar("gca_id", { length: 42 }), // @0xSimbo this would be payoutWallet ?
+    farmOwnerId: varchar("farm_owner_id", { length: 42 }), // @0xSimbo this would be installerWallet ?
   },
   (t) => {
     return {
       shortIdIndex: index("short_id_ix").on(t.shortId),
+      // @0xSimbo add an index on frm_id in order to improove the performance of the queries here or we gonna query by short_id in most of the cases ?
+      // farmIdIndex: index("farm_id_ix").on(t.id),
     };
   }
 );
 
-export const FarmRelations = relations(Farms, ({ many }) => ({
+export const FarmRelations = relations(Farms, ({ many, one }) => ({
   farmRewards: many(FarmRewards),
+  rewardSplits: many(RewardSplits),
+  farmOwner: one(FarmOwners, {
+    fields: [Farms.farmOwnerId],
+    references: [FarmOwners.id],
+  }),
+  gca: one(Gcas, {
+    fields: [Farms.gcaId],
+    references: [Gcas.id],
+  }),
+  farmUpdatesHistory: many(FarmUpdatesHistory),
 }));
+
+// @0xSimbo table to store the history of the updates made on the farm check FarmUpdate type and let me know if any encryption is needed.
+export const FarmUpdatesHistory = pgTable(
+  "farm_updates_history",
+  {
+    id: varchar("update_id", { length: 66 }).primaryKey().notNull(),
+    farmId: varchar("farm_id", { length: 66 })
+      .notNull()
+      .references(() => Farms.id, { onDelete: "cascade" }),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+    updatedBy: varchar("updated_by", { length: 42 }).notNull(), // the wallet address of the user that made the update
+    update: json("update").$type<FarmUpdate>().notNull(),
+  },
+  (t) => {
+    return {
+      farmIdIndex: index("farm_id_ix").on(t.farmId),
+      farmIdUpdatedByIndex: index("farm_id_updated_by_ix").on(
+        t.farmId,
+        t.updatedBy
+      ),
+    };
+  }
+);
+
+export const FarmUpdatesHistoryRelations = relations(
+  FarmUpdatesHistory,
+  ({ one }) => ({
+    farm: one(Farms, {
+      fields: [FarmUpdatesHistory.farmId],
+      references: [Farms.id],
+    }),
+  })
+);
 
 export const FarmRewards = pgTable(
   "farm_rewards",
@@ -217,9 +276,19 @@ export const FarmOwners = pgTable("farmOwners", {
   lastName: varchar("last_name", { length: 255 }).notNull(),
   email: varchar("email", { length: 255 }).unique().notNull(),
   companyName: varchar("company_name", { length: 255 }),
+  salt: varchar("salt", { length: 255 }).notNull(),
+  publicEncryptionKey: text("public_encryption_key").notNull(),
+  // stored encrypted in db and decrypted in the front end using the salt + user signature
+  encryptedPrivateEncryptionKey: text(
+    "encrypted_private_encription_key"
+  ).notNull(),
   companyAddress: varchar("company_address", { length: 255 }),
 });
 export type FarmOwnerType = InferSelectModel<typeof FarmOwners>;
+
+export const FarmOwnersRelations = relations(FarmOwners, ({ many }) => ({
+  farms: many(Farms),
+}));
 
 export const Gcas = pgTable("gcas", {
   id: varchar("wallet", { length: 42 })
@@ -229,10 +298,19 @@ export const Gcas = pgTable("gcas", {
   email: varchar("email", { length: 255 }).unique().notNull(),
   createdAt: timestamp("createdAt").notNull().defaultNow(),
   publicEncryptionKey: text("public_encryption_key").notNull(),
-  privateEncryptionKey: text("private_encription_key").notNull(),
+  // stored encrypted in db and decrypted in the front end using the salt + user signature
+  encryptedPrivateEncryptionKey: text(
+    "encrypted_private_encription_key"
+  ).notNull(),
+  salt: varchar("salt", { length: 255 }).notNull(),
   serverUrls: varchar("server_urls", { length: 255 }).array().notNull(),
 });
 export type GcaType = InferSelectModel<typeof Gcas>;
+
+export const GcasRelations = relations(Gcas, ({ many }) => ({
+  farms: many(Farms),
+  applications: many(Applications),
+}));
 
 export const accountsRelations = relations(Accounts, ({ one }) => ({
   farmOwner: one(FarmOwners, {
@@ -292,6 +370,33 @@ export const Applications = pgTable("applications", {
 
 export type ApplicationType = InferSelectModel<typeof Applications>;
 
+export const applicationsRelations = relations(
+  Applications,
+  ({ one, many }) => ({
+    farmOwner: one(FarmOwners, {
+      fields: [Applications.farmOwnerId],
+      references: [FarmOwners.id],
+    }),
+    farm: one(Farms, {
+      fields: [Applications.farmId],
+      references: [Farms.id],
+    }),
+    installer: one(Installers, {
+      fields: [Applications.installerId],
+      references: [Installers.id],
+    }),
+    documentsMissingWithReason: many(DocumentsMissingWithReason),
+    applicationStepAnnotations: many(ApplicationStepAnnotations),
+    rewardSplits: many(RewardSplits),
+    documents: many(Documents),
+    deferments: many(Deferments),
+    gca: one(Gcas, {
+      fields: [Applications.gcaAdress],
+      references: [Gcas.id],
+    }),
+  })
+);
+
 export const Installers = pgTable("installers", {
   id: varchar("installer_id", { length: 66 }).primaryKey().notNull(),
   name: varchar("name", { length: 255 }).unique().notNull(),
@@ -315,19 +420,18 @@ export const Deferments = pgTable("deferments", {
 
 export const Documents = pgTable("documents", {
   id: varchar("document_id", { length: 66 }).primaryKey().notNull(),
-  applicationId: varchar("application_id", { length: 66 })
-    .notNull()
-    .references(() => Applications.id, { onDelete: "cascade" }),
+  applicationId: varchar("application_id", { length: 66 }).notNull(),
   annotation: varchar("annotation", { length: 255 }),
   step: integer("step").notNull(),
   name: varchar("name", { length: 255 }).notNull(),
   url: varchar("url", { length: 255 }).notNull(), // bytes of the encrypted document are stored on r2
   type: varchar("type", { length: 255 }).notNull(),
-  // array of each gca encrypted master key
+  encryptedMasterKeys: json("encrypted_master_keys")
+    .$type<EncryptedMasterKeySet>()
+    .notNull()
+    .array()
+    .notNull(),
 });
-
-// store the salt in db, public key and encrypted rsa private key.
-// they gonna decrypt in the front end by signing the salt and using that signature to decrypt rsa private key.
 
 export type DocumentsType = InferSelectModel<typeof Documents>;
 
@@ -372,9 +476,9 @@ export type ApplicationStepAnnotationsType = InferSelectModel<
 // Reward Splits for USDG and GLOW add up to 100% for each token
 export const RewardSplits = pgTable("rewardsSplits", {
   id: varchar("rewards_split_id", { length: 66 }).primaryKey().notNull(),
-  applicationId: varchar("application_id", { length: 66 })
-    .notNull()
-    .references(() => Applications.id, { onDelete: "cascade" }),
+  applicationId: varchar("application_id", { length: 66 }).notNull(),
+  // farmId can be null if the application is not yet completed, it's being patched after the farm is created.
+  farmId: varchar("farm_id", { length: 66 }),
   walletAddress: varchar("wallet_address", { length: 42 }).notNull(),
   splitPercentage: varchar("split_percentage", { length: 255 }).notNull(),
   token: splitTokensEnum("token").notNull(),
@@ -382,35 +486,12 @@ export const RewardSplits = pgTable("rewardsSplits", {
 
 export type RewardSplitsType = InferSelectModel<typeof RewardSplits>;
 
-// 0xSimbo: I added this table to store the devices that are connected to the farm but I'm not sure about the content, do we also want to have a shortId for the devices?
 export const Devices = pgTable("devices", {
   id: varchar("device_id", { length: 66 }).primaryKey().notNull(),
   farmId: varchar("farm_id", { length: 66 })
     .notNull()
+    // @0xSimbo add a cascade on delete ? do we want to delete the device if the farm is deleted ?
     .references(() => Farms.id, { onDelete: "cascade" }),
   publicKey: varchar("public_key", { length: 255 }).unique().notNull(),
   shortId: integer("short_id").notNull(),
 });
-
-export const applicationsRelations = relations(
-  Applications,
-  ({ one, many }) => ({
-    farmOwner: one(FarmOwners, {
-      fields: [Applications.farmOwnerId],
-      references: [FarmOwners.id],
-    }),
-    farm: one(Farms, {
-      fields: [Applications.farmId],
-      references: [Farms.id],
-    }),
-    installer: one(Installers, {
-      fields: [Applications.installerId],
-      references: [Installers.id],
-    }),
-    documentsMissingWithReason: many(DocumentsMissingWithReason),
-    applicationStepAnnotations: many(ApplicationStepAnnotations),
-    rewardSplits: many(RewardSplits),
-    documents: many(Documents),
-    deferments: many(Deferments),
-  })
-);

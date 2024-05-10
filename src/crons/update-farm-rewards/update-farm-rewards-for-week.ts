@@ -26,6 +26,13 @@ export async function updateFarmRewardsForWeek({
       totalUSDGRewards:
         BigInt(Math.floor(farm.rewards.usdg)) * BigInt(10 ** DB_DECIMALS),
       shortId: Number(farm.shortId),
+      // @0xSimbo double check here if i didn't break anything
+      auditCompleteDate: farm.auditCompleteDate
+        ? new Date(farm.auditCompleteDate.toString())
+        : null,
+      createdAt: new Date(),
+      gcaId: null, // @0xSimbo and here if we can just do farm.payoutWallet
+      farmOwnerId: null, // @0xSimbo and here if we can just do farm.installerWallet
     };
   });
 
