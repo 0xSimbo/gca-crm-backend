@@ -11,6 +11,7 @@ import {
   json,
   serial,
   decimal,
+  boolean,
 } from "drizzle-orm/pg-core";
 import { relations, type InferSelectModel, sql } from "drizzle-orm";
 import {
@@ -291,11 +292,17 @@ export const FarmOwners = pgTable("farmOwners", {
     "encrypted_private_encription_key"
   ).notNull(),
   companyAddress: varchar("company_address", { length: 255 }),
+  isInstaller: boolean("is_installer").notNull().default(false), // @0xSimbo added this field after call with Fatima. see https://linear.app/glow-int/issue/GLO-71/add-step-for-solar-farm-onboarding-to-flag-as-an-installer-or-a-farm
 });
 export type FarmOwnerType = InferSelectModel<typeof FarmOwners>;
 
-export const FarmOwnersRelations = relations(FarmOwners, ({ many }) => ({
+export const FarmOwnersRelations = relations(FarmOwners, ({ many, one }) => ({
   farms: many(Farms),
+  applications: many(Applications),
+  installer: one(Installers, {
+    fields: [FarmOwners.installerId],
+    references: [Installers.id],
+  }),
 }));
 
 export const Gcas = pgTable("gcas", {
@@ -313,6 +320,7 @@ export const Gcas = pgTable("gcas", {
   salt: varchar("salt", { length: 255 }).notNull(),
   serverUrls: varchar("server_urls", { length: 255 }).array().notNull(),
 });
+
 export type GcaType = InferSelectModel<typeof Gcas>;
 
 export const GcasRelations = relations(Gcas, ({ many }) => ({
