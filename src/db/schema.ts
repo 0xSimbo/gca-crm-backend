@@ -14,6 +14,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { relations, type InferSelectModel, sql } from "drizzle-orm";
 import {
+  EncryptedMasterKeySet,
   applicationStatus,
   contactTypes,
   optionalDocuments,
@@ -41,11 +42,6 @@ export const optionalDocumentsEnum = pgEnum(
 );
 
 export const splitTokensEnum = pgEnum("split_tokens", splitTokens);
-
-export type EncryptedMasterKeySet = {
-  publicKey: string;
-  encryptedMasterKey: string;
-};
 
 export type FarmUpdate = {
   previousValue: any;
@@ -400,7 +396,7 @@ export const applicationsRelations = relations(
       references: [Installers.id],
     }),
     documentsMissingWithReason: many(DocumentsMissingWithReason),
-    applicationStepAnnotations: many(ApplicationStepAnnotations),
+    annotations: many(ApplicationStepAnnotations),
     rewardSplits: many(RewardSplits),
     documents: many(Documents),
     deferments: many(Deferments),
