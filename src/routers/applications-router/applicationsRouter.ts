@@ -6,55 +6,34 @@ import { GetEntityByIdQueryParamSchema } from "../../schemas/shared/getEntityByI
 import { recoverAddressHandler } from "../../handlers/recoverAddressHandler";
 import { createApplication } from "../../db/mutations/applications/createApplication";
 
-export const CreateApplicationQueryBody = t.Object(
-  {
-    fields: t.Object({
-      establishedCostOfPowerPerKWh: t.Number({
-        example: 0.12,
-        minimum: 0,
-      }),
-      estimatedKWhGeneratedPerYear: t.Number({
-        example: 32,
-        minimum: 0,
-      }),
-      address: t.String({
-        example: "123 John Doe Street, Phoenix, AZ 85001",
-        minLength: 10, // TODO: match in frontend
-      }),
-      installerId: t.String({
-        example: "0x2e2771032d119fe590FD65061Ad3B366C8e9B7b9",
-        minLength: 42,
-        maxLength: 42,
-      }),
-      lat: t.Number({
-        example: 38.234242,
-        minimum: -90,
-        maximum: 90,
-      }),
-      lng: t.Number({
-        example: -111.123412,
-        minimum: -180,
-        maximum: 180,
-      }),
+export const CreateApplicationQueryBody = t.Object({
+  fields: t.Object({
+    establishedCostOfPowerPerKWh: t.Number({
+      example: 0.12,
+      minimum: 0,
     }),
-    recoverAddressParams: t.Object(siweParams),
-  },
-  {
-    examples: [
-      {
-        fields: {
-          establishedCostOfPowerPerKWh: 0.12,
-          estimatedKWhGeneratedPerYear: 32,
-          address: "123 John Doe Street, Phoenix, AZ 85001",
-          installerId: "0x2e2771032d119fe590FD65061Ad3B366C8e9B7b9",
-          lat: 38.234242,
-          lng: -111.123412,
-        },
-        recoverAddressParams: siweParamsExample,
-      },
-    ],
-  }
-);
+    estimatedKWhGeneratedPerYear: t.Number({
+      example: 32,
+      minimum: 0,
+    }),
+    installerId: t.String(),
+    address: t.String({
+      example: "123 John Doe Street, Phoenix, AZ 85001",
+      minLength: 10, // TODO: match in frontend
+    }),
+    lat: t.Number({
+      example: 38.234242,
+      minimum: -90,
+      maximum: 90,
+    }),
+    lng: t.Number({
+      example: -111.123412,
+      minimum: -180,
+      maximum: 180,
+    }),
+  }),
+  recoverAddressParams: t.Object(siweParams),
+});
 
 export const applicationsRouter = new Elysia({ prefix: "/applications" })
   .get(

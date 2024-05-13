@@ -19,41 +19,26 @@ import {
 import { createGca } from "../../db/mutations/gcas/createGca";
 import { FindFirstGcaById } from "../../db/queries/gcas/findFirsGcaById";
 
-export const CreateGCAQueryBody = t.Object(
-  {
-    fields: t.Object({
-      publicEncryptionKey: t.String({
-        example: publicEncryptionKeyExample,
-      }),
-      encryptedPrivateEncryptionKey: t.String({
-        example: privateEncryptionKeyExample,
-      }),
-      serverUrls: t.Array(
-        t.String({
-          example: "https://api.elysia.land",
-        })
-      ),
-      email: t.String({
-        example: "JohnDoe@gmail.com",
-        minLength: 2,
-      }),
+export const CreateGCAQueryBody = t.Object({
+  fields: t.Object({
+    publicEncryptionKey: t.String({
+      example: publicEncryptionKeyExample,
     }),
-    recoverAddressParams: t.Object(siweParams),
-  },
-  {
-    examples: [
-      {
-        fields: {
-          publicEncryptionKey: publicEncryptionKeyExample,
-          encryptedPrivateEncryptionKey: privateEncryptionKeyExample,
-          serverUrls: ["https://api.elysia.land"],
-          email: "JohnDoe@gmail.com",
-        },
-        recoverAddressParams: siweParamsExample,
-      },
-    ],
-  }
-);
+    encryptedPrivateEncryptionKey: t.String({
+      example: privateEncryptionKeyExample,
+    }),
+    serverUrls: t.Array(
+      t.String({
+        example: "https://api.elysia.land",
+      })
+    ),
+    email: t.String({
+      example: "JohnDoe@gmail.com",
+      minLength: 2,
+    }),
+  }),
+  recoverAddressParams: t.Object(siweParams),
+});
 
 export const gcasRouter = new Elysia({ prefix: "/gcas" })
   .get(

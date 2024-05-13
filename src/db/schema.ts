@@ -9,7 +9,6 @@ import {
   text,
   index,
   json,
-  serial,
   decimal,
   boolean,
 } from "drizzle-orm/pg-core";
@@ -136,11 +135,10 @@ export const userWeeklyReward = pgTable(
   (t) => {
     return {
       pk: primaryKey({ columns: [t.userId, t.weekNumber] }),
-      // @0xSimbo add a composite index in order to improove the performance of the queries here ?
-      // userIdToWeekNumberIndex: index("user_id_week_number_ix").on(
-      //   t.userId,
-      //   t.weekNumber
-      // ),
+      userIdToWeekNumberIndex: index("user_id_week_number_ix").on(
+        t.userId,
+        t.weekNumber
+      ),
     };
   }
 );
@@ -164,7 +162,7 @@ export const UserWeeklyRewardRelations = relations(
 export const Farms = pgTable(
   "farms",
   {
-    id: varchar("farm_id", { length: 66 }).primaryKey().notNull(),
+    id: varchar("farm_id", { length: 66 }).primaryKey(),
     shortId: integer("short_id").notNull(),
     totalGlowRewards: bigint("total_glow_rewards", { mode: "bigint" })
       .default(sql`'0'::bigint`)
@@ -174,15 +172,14 @@ export const Farms = pgTable(
       .notNull(),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     auditCompleteDate: timestamp("audit_complete_date"),
-    // @0xSimbo can you patch th existing farms with those from the scrapper ?
+    // @0xSimbo can you patch the existing farms with those from the scrapper ?
     gcaId: varchar("gca_id", { length: 42 }), // @0xSimbo this would be payoutWallet ?
     farmOwnerId: varchar("farm_owner_id", { length: 42 }), // @0xSimbo this would be installerWallet ?
   },
   (t) => {
     return {
       shortIdIndex: index("short_id_ix").on(t.shortId),
-      // @0xSimbo add an index on frm_id in order to improove the performance of the queries here or we gonna query by short_id in most of the cases ?
-      // farmIdIndex: index("farm_id_ix").on(t.id),
+      farmIdIndex: index("farm_id_ix").on(t.id),
     };
   }
 );
@@ -201,11 +198,12 @@ export const FarmRelations = relations(Farms, ({ many, one }) => ({
   farmUpdatesHistory: many(FarmUpdatesHistory),
 }));
 
-// @0xSimbo table to store the history of the updates made on the farm check FarmUpdate type and let me know if any encryption is needed.
 export const FarmUpdatesHistory = pgTable(
   "farm_updates_history",
   {
-    id: varchar("update_id", { length: 66 }).primaryKey().notNull(),
+    id: text("update_id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
     farmId: varchar("farm_id", { length: 66 })
       .notNull()
       .references(() => Farms.id, { onDelete: "cascade" }),
@@ -215,7 +213,6 @@ export const FarmUpdatesHistory = pgTable(
   },
   (t) => {
     return {
-      farmIdIndex: index("farm_id_ix").on(t.farmId),
       farmIdUpdatedByIndex: index("farm_id_updated_by_ix").on(
         t.farmId,
         t.updatedBy
@@ -337,11 +334,12 @@ export const accountsRelations = relations(Accounts, ({ one }) => ({
 
 // Applications
 export const Applications = pgTable("applications", {
-  id: serial("id").primaryKey().notNull(),
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
   // always linked to a farm owner account
   farmOwnerId: varchar("farm_owner_id", { length: 42 }).notNull(),
-  // always linked to an installer ? //TODO @0xSimbo waiting for david on this
-  installerId: varchar("installer_id", { length: 66 }).notNull(),
+  installerId: text("installer_id").notNull(),
   // after application is "completed", a farm is created using the hexlified farm pub key
   farmId: varchar("farm_id", { length: 66 }).unique(),
   createdAt: timestamp("createdAt").notNull().defaultNow(),
@@ -384,6 +382,7 @@ export const Applications = pgTable("applications", {
 });
 
 export type ApplicationType = InferSelectModel<typeof Applications>;
+export type ApplicationInsertType = typeof Applications.$inferInsert;
 
 export const applicationsRelations = relations(
   Applications,
@@ -413,7 +412,9 @@ export const applicationsRelations = relations(
 );
 
 export const Installers = pgTable("installers", {
-  id: varchar("installer_id", { length: 66 }).primaryKey().notNull(),
+  id: text("installer_id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
   name: varchar("name", { length: 255 }).unique().notNull(),
   email: varchar("email", { length: 255 }).unique().notNull(),
   companyName: varchar("company_name", { length: 255 }).notNull(),
@@ -421,10 +422,11 @@ export const Installers = pgTable("installers", {
 });
 
 export type InstallerType = InferSelectModel<typeof Installers>;
+export type InstallerInsertType = typeof Installers.$inferInsert;
 
 export const Deferments = pgTable("deferments", {
-  id: varchar("deferment_id", { length: 66 }).primaryKey().notNull(),
-  applicationId: varchar("application_id", { length: 66 })
+  id: text("deferment_id").primaryKey(),
+  applicationId: text("application_id")
     .notNull()
     .references(() => Applications.id, { onDelete: "cascade" }),
   reason: varchar("reason", { length: 255 }),
@@ -434,8 +436,10 @@ export const Deferments = pgTable("deferments", {
 });
 
 export const Documents = pgTable("documents", {
-  id: varchar("document_id", { length: 66 }).primaryKey().notNull(),
-  applicationId: varchar("application_id", { length: 66 }).notNull(),
+  id: text("document_id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  applicationId: text("application_id").notNull(),
   annotation: varchar("annotation", { length: 255 }),
   step: integer("step").notNull(),
   name: varchar("name", { length: 255 }).notNull(),
@@ -454,10 +458,10 @@ export type DocumentsType = InferSelectModel<typeof Documents>;
 export const DocumentsMissingWithReason = pgTable(
   "documentsMissingWithReason",
   {
-    id: varchar("document_missing_with_reason_id", { length: 66 })
+    id: text("document_missing_with_reason_id")
       .primaryKey()
-      .notNull(),
-    applicationId: varchar("application_id", { length: 66 })
+      .$defaultFn(() => crypto.randomUUID()),
+    applicationId: text("application_id")
       .notNull()
       .references(() => Applications.id, { onDelete: "cascade" }),
     reason: varchar("reason", { length: 255 }).notNull(),
@@ -473,10 +477,10 @@ export type DocumentsMissingWithReasonType = InferSelectModel<
 export const ApplicationStepAnnotations = pgTable(
   "applicationStepAnnotations",
   {
-    id: varchar("application_step_annotation_id", { length: 66 })
+    id: text("application_step_annotation_id")
       .primaryKey()
-      .notNull(),
-    applicationId: varchar("application_id", { length: 66 })
+      .$defaultFn(() => crypto.randomUUID()),
+    applicationId: text("application_id")
       .notNull()
       .references(() => Applications.id, { onDelete: "cascade" }),
     annotation: varchar("annotation", { length: 255 }).notNull(),
@@ -490,8 +494,10 @@ export type ApplicationStepAnnotationsType = InferSelectModel<
 
 // Reward Splits for USDG and GLOW add up to 100% for each token
 export const RewardSplits = pgTable("rewardsSplits", {
-  id: varchar("rewards_split_id", { length: 66 }).primaryKey().notNull(),
-  applicationId: varchar("application_id", { length: 66 }).notNull(),
+  id: text("rewards_split_id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  applicationId: text("application_id").notNull(),
   // farmId can be null if the application is not yet completed, it's being patched after the farm is created.
   farmId: varchar("farm_id", { length: 66 }),
   walletAddress: varchar("wallet_address", { length: 42 }).notNull(),
@@ -502,10 +508,11 @@ export const RewardSplits = pgTable("rewardsSplits", {
 export type RewardSplitsType = InferSelectModel<typeof RewardSplits>;
 
 export const Devices = pgTable("devices", {
-  id: varchar("device_id", { length: 66 }).primaryKey().notNull(),
+  id: text("device_id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
   farmId: varchar("farm_id", { length: 66 })
     .notNull()
-    // @0xSimbo add a cascade on delete ? do we want to delete the device if the farm is deleted ?
     .references(() => Farms.id, { onDelete: "cascade" }),
   publicKey: varchar("public_key", { length: 255 }).unique().notNull(),
   shortId: integer("short_id").notNull(),

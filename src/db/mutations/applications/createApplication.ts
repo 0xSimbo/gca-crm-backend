@@ -1,9 +1,7 @@
 import { db } from "../../db";
-import { Applications, ApplicationType } from "../../schema";
+import { ApplicationInsertType, Applications } from "../../schema";
 
-export const createApplication = async (
-  application: Omit<ApplicationType, "id">
-) => {
+export const createApplication = async (application: ApplicationInsertType) => {
   await db.insert(Applications).values(application);
   return application;
 };

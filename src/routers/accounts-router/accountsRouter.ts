@@ -11,9 +11,7 @@ import { updateSiweNonce } from "../../db/mutations/accounts/updateSiweNonce";
 
 import { GetEntityByIdQueryParamSchema } from "../../schemas/shared/getEntityByIdParamSchema";
 
-export const LoginOrSignupQueryBody = t.Object(siweParams, {
-  examples: [siweParamsExample],
-});
+export const LoginOrSignupQueryBody = t.Object(siweParams);
 
 export const accountsRouter = new Elysia({ prefix: "/accounts" })
   .get(

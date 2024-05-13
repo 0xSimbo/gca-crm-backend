@@ -14,57 +14,42 @@ import { generateSaltFromAddress } from "../../utils/encryption/generateSaltFrom
 import { GetEntityByIdQueryParamSchema } from "../../schemas/shared/getEntityByIdParamSchema";
 import { FindFirstById } from "../../db/queries/accounts/findFirstById";
 
-export const CreateFarmOwnerQueryBody = t.Object(
-  {
-    fields: t.Object({
-      encryptedPrivateEncryptionKey: t.String({
-        example: privateEncryptionKeyExample,
-      }),
-      publicEncryptionKey: t.String({
-        example: publicEncryptionKeyExample,
-      }),
-      firstName: t.String({
-        example: "John",
-        minLength: 2,
-      }),
-      lastName: t.String({
-        example: "Doe",
-        minLength: 2,
-      }),
-      email: t.String({
-        example: "JohnDoe@gmail.com",
-        minLength: 2,
-      }),
-      companyName: t.Nullable(
-        t.String({
-          example: "John Doe Farms",
-        })
-      ),
-      companyAddress: t.Nullable(
-        t.String({
-          example: "123 John Doe Street",
-        })
-      ),
+export const CreateFarmOwnerQueryBody = t.Object({
+  fields: t.Object({
+    encryptedPrivateEncryptionKey: t.String({
+      example: privateEncryptionKeyExample,
     }),
-    recoverAddressParams: t.Object(siweParams),
-  },
-  {
-    examples: [
-      {
-        fields: {
-          encryptedPrivateEncryptionKey: privateEncryptionKeyExample,
-          publicEncryptionKey: publicEncryptionKeyExample,
-          firstName: "John",
-          lastName: "Doe",
-          email: "JohnDoe@gmail.com",
-          companyName: "Solar Energy",
-          companyAddress: "123 John Doe Street",
-        },
-        recoverAddressParams: siweParamsExample,
-      },
-    ],
-  }
-);
+    isInstaller: t.Boolean({
+      example: false,
+    }),
+    publicEncryptionKey: t.String({
+      example: publicEncryptionKeyExample,
+    }),
+    firstName: t.String({
+      example: "John",
+      minLength: 2,
+    }),
+    lastName: t.String({
+      example: "Doe",
+      minLength: 2,
+    }),
+    email: t.String({
+      example: "JohnDoe@gmail.com",
+      minLength: 2,
+    }),
+    companyName: t.Nullable(
+      t.String({
+        example: "John Doe Farms",
+      })
+    ),
+    companyAddress: t.Nullable(
+      t.String({
+        example: "123 John Doe Street",
+      })
+    ),
+  }),
+  recoverAddressParams: t.Object(siweParams),
+});
 
 export const farmOwnersRouter = new Elysia({ prefix: "/farmOwners" })
   .get(

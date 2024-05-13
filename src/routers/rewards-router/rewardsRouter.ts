@@ -5,23 +5,13 @@ import { userWeeklyReward, users, Farms } from "../../db/schema";
 import { formatUnits } from "viem";
 import { TAG } from "../../constants";
 
-export const GetUserRewardsQueryBody = t.Object(
-  {
-    wallet: t.String({
-      minLength: 42,
-      maxLength: 42,
-    }),
-    weekNumbers: t.Array(t.Number()),
-  },
-  {
-    examples: [
-      {
-        wallet: "0x2e2771032d119fe590FD65061Ad3B366C8e9B7b9",
-        weekNumbers: [19, 20],
-      },
-    ],
-  }
-);
+export const GetUserRewardsQueryBody = t.Object({
+  wallet: t.String({
+    minLength: 42,
+    maxLength: 42,
+  }),
+  weekNumbers: t.Array(t.Number()),
+});
 
 export const rewardsRouter = new Elysia({ prefix: "/rewards" }).post(
   "/user-rewards",
