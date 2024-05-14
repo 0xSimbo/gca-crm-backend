@@ -550,6 +550,23 @@ export const deferments = pgTable("deferments", {
   timestamp: timestamp("timestamp").notNull().defaultNow(),
 });
 
+export type DefermentType = InferSelectModel<typeof deferments>;
+
+export const DefermentsRelations = relations(deferments, ({ one }) => ({
+  application: one(applications, {
+    fields: [deferments.applicationId],
+    references: [applications.id],
+  }),
+  fromGca: one(Gcas, {
+    fields: [deferments.fromGca],
+    references: [Gcas.id],
+  }),
+  toGca: one(Gcas, {
+    fields: [deferments.toGca],
+    references: [Gcas.id],
+  }),
+}));
+
 /**
  * @dev Represents a document in the system.
  * @param {string} id - The unique ID of the document.
@@ -580,6 +597,13 @@ export const Documents = pgTable("documents", {
 
 export type DocumentsType = InferSelectModel<typeof Documents>;
 
+export const DocumentsRelations = relations(Documents, ({ one }) => ({
+  application: one(applications, {
+    fields: [Documents.applicationId],
+    references: [applications.id],
+  }),
+}));
+
 /**
  * @dev Represents a missing document with a reason in the system.
  * @param {string} id - The unique ID of the missing document with reason.
@@ -608,6 +632,16 @@ export type DocumentsMissingWithReasonType = InferSelectModel<
   typeof DocumentsMissingWithReason
 >;
 
+export const DocumentsMissingWithReasonRelations = relations(
+  DocumentsMissingWithReason,
+  ({ one }) => ({
+    application: one(applications, {
+      fields: [DocumentsMissingWithReason.applicationId],
+      references: [applications.id],
+    }),
+  })
+);
+
 /**
  * @dev Represents an annotation for a step in the application process.
  * @param {string} id - The unique ID of the annotation.
@@ -632,6 +666,16 @@ export const ApplicationStepAnnotations = pgTable(
 export type ApplicationStepAnnotationsType = InferSelectModel<
   typeof ApplicationStepAnnotations
 >;
+
+export const ApplicationStepAnnotationsRelations = relations(
+  ApplicationStepAnnotations,
+  ({ one }) => ({
+    application: one(applications, {
+      fields: [ApplicationStepAnnotations.applicationId],
+      references: [applications.id],
+    }),
+  })
+);
 
 /**
  * @dev Represents the reward splits for USDG and GLOW.
@@ -663,6 +707,17 @@ export const RewardSplits = pgTable("rewardsSplits", {
 
 export type RewardSplitsType = InferSelectModel<typeof RewardSplits>;
 
+export const RewardSplitsRelations = relations(RewardSplits, ({ one }) => ({
+  application: one(applications, {
+    fields: [RewardSplits.applicationId],
+    references: [applications.id],
+  }),
+  farm: one(farms, {
+    fields: [RewardSplits.farmId],
+    references: [farms.id],
+  }),
+}));
+
 /**
  * @dev Represents a device associated with a farm.
  * @param {string} id - The unique ID of the device.
@@ -680,3 +735,12 @@ export const Devices = pgTable("devices", {
   publicKey: varchar("public_key", { length: 255 }).unique().notNull(),
   shortId: integer("short_id").notNull(),
 });
+
+export type DeviceType = InferSelectModel<typeof Devices>;
+
+export const DevicesRelations = relations(Devices, ({ one }) => ({
+  farm: one(farms, {
+    fields: [Devices.farmId],
+    references: [farms.id],
+  }),
+}));

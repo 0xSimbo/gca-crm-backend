@@ -15,7 +15,7 @@ export const applicationStatus = [
   "payment-confirmed",
 ] as const;
 
-export enum ApplicatonStatusEnum {
+export enum ApplicationStatusEnum {
   draft = "draft",
   approved = "approved",
   changesRequired = "changes-required",
@@ -131,8 +131,8 @@ export type Application = {
   status: ApplicationStatus;
   installer: SolarInstallerDetails;
   address: string;
-  lat: string;
-  lng: string;
+  lat: number;
+  lng: number;
   establishedCostOfPowerPerKWh: number;
   estimatedKWhGeneratedPerYear: number;
   contactType?: ContactType;
