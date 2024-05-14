@@ -1,5 +1,6 @@
 import { db } from "../../db";
-import { Accounts, accountRoleEnum } from "../../schema";
+import { accountRoleEnum } from "../../enums";
+import { Accounts } from "../../schema";
 
 export const createAccount = async (
   wallet: string,

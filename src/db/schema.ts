@@ -13,37 +13,16 @@ import {
   numeric,
 } from "drizzle-orm/pg-core";
 import { relations, type InferSelectModel, sql } from "drizzle-orm";
+import { EncryptedMasterKeySet } from "../types/api-types/Application";
 import {
-  EncryptedMasterKeySet,
-  applicationStatus,
-  contactTypes,
-  optionalDocuments,
-  roundRobinStatus,
-} from "../types/api-types/Application";
+  accountRoleEnum,
+  applicationStatusEnum,
+  contactTypesEnum,
+  optionalDocumentsEnum,
+  roundRobinStatusEnum,
+} from "./enums";
 
 // db diagram here : https://app.eraser.io/workspace/Ro75vSbOwABbdvKvyTFJ?origin=share @0xSimbo
-
-// UNKNOWN is a special role that is used when the user didn't yet filled the onboarding form
-export const accountRoles = ["USER", "GCA", "ADMIN", "UNKNOWN"] as const;
-
-export const accountRoleEnum = pgEnum("role", accountRoles);
-
-export const contactTypesEnum = pgEnum("contact_types", contactTypes);
-
-export const roundRobinStatusEnum = pgEnum(
-  "round_robin_status",
-  roundRobinStatus
-);
-
-export const applicationStatusEnum = pgEnum(
-  "application_status",
-  applicationStatus
-);
-
-export const optionalDocumentsEnum = pgEnum(
-  "optional_documents",
-  optionalDocuments
-);
 
 export type FarmUpdate = {
   previousValue: any;
@@ -442,7 +421,7 @@ export const GcasRelations = relations(Gcas, ({ many, one }) => ({
  * @param {string} gcaAddress - The address of the GCA.
  */
 export const applications = pgTable("applications", {
-  id: text("id")
+  id: text("application_id")
     .primaryKey()
     .$defaultFn(() => crypto.randomUUID()),
   // always linked to a farm owner account
