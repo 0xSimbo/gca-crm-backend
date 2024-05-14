@@ -7,7 +7,7 @@ export const FindFirstById = async (id: string) => {
     where: eq(Accounts.id, id),
     with: {
       gca: true,
-      farmOwner: true,
+      user: true,
     },
   });
   return account;

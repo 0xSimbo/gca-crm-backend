@@ -46,13 +46,13 @@ export const gcasRouter = new Elysia({ prefix: "/gcas" })
     async ({ query, set }) => {
       if (!query.id) throw new Error("ID is required");
       try {
-        const farmOwner = await FindFirstGcaById(query.id);
-        if (!farmOwner) {
+        const gca = await FindFirstGcaById(query.id);
+        if (!gca) {
           set.status = 404;
-          throw new Error("farmOwner not found");
+          throw new Error("gca not found");
         }
 
-        return farmOwner;
+        return gca;
       } catch (e) {
         console.log("[gcasRouter] byId", e);
         throw new Error("Error Occured");
@@ -81,8 +81,8 @@ export const gcasRouter = new Elysia({ prefix: "/gcas" })
           throw new Error("GCA already exists");
         }
 
-        if (account.farmOwner) {
-          throw new Error("this account is already a farm owner");
+        if (account.user) {
+          throw new Error("this account is already a user");
         }
 
         const signer = new Wallet(process.env.PRIVATE_KEY!!);

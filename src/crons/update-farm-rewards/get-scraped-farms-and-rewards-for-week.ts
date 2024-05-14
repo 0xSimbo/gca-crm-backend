@@ -97,6 +97,8 @@ export async function getScrapedFarmsAndRewards({
       rewards: farm.rewards,
       shortId: farm.shortId.toString(),
       auditCompleteDate: farm.timestampAuditedComplete,
+      installerWallet: farm.installerWallet,
+      payoutWallet: farm.payoutWallet,
     };
   });
 

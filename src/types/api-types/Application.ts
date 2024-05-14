@@ -3,7 +3,7 @@ export type EncryptedMasterKeySet = {
   encryptedMasterKey: string;
 };
 
-export const stepStatus = [
+export const applicationStatus = [
   "draft",
   "approved",
   "changes-required",
@@ -15,13 +15,31 @@ export const stepStatus = [
   "payment-confirmed",
 ] as const;
 
-export const applicationStatus = [
+export enum ApplicatonStatusEnum {
+  draft = "draft",
+  approved = "approved",
+  changesRequired = "changes-required",
+  waitingForApproval = "waiting-for-approval",
+  completed = "completed",
+  quoteRejected = "quote-rejected",
+  waitingForInformation = "waiting-for-information",
+  waitingForVisit = "waiting-for-visit",
+  paymentConfirmed = "payment-confirmed",
+}
+
+export const roundRobinStatus = [
   "waiting-to-be-assigned",
+  "waiting-to-be-accepted",
   "assigned",
-  "completed",
 ] as const;
 
-export type StepStatus = (typeof stepStatus)[number];
+export enum RoundRobinStatusEnum {
+  waitingToBeAssigned = "waiting-to-be-assigned",
+  waitingToBeAccepted = "waiting-to-be-accepted",
+  assigned = "assigned",
+}
+
+export type RoundRobinStatus = (typeof roundRobinStatus)[number];
 
 export type ApplicationStatus = (typeof applicationStatus)[number];
 
@@ -38,6 +56,15 @@ export enum ApplicationSteps {
 }
 
 export const ApplicationStepsLength = Object.keys(ApplicationSteps).length / 2;
+
+export type Deferment = {
+  id: string;
+  applicationId: string;
+  reason: string;
+  fromGca: string;
+  toGca: string;
+  timestamp: string;
+};
 
 export type ApplicationDocument = {
   id: string;
@@ -96,24 +123,25 @@ export type RewardSplit = {
 
 export type Application = {
   id: string;
-  farmOwnerId: string;
+  userId: string;
   installerId: string;
   farmId?: string;
   currentStep: ApplicationSteps;
-  currentStepStatus: StepStatus;
+  roundRobinStatus: RoundRobinStatus;
   status: ApplicationStatus;
   installer: SolarInstallerDetails;
   address: string;
   lat: string;
   lng: string;
-  establishedCostOfPowerPerKWh: string;
-  estimatedKWhGeneratedPerYear: string;
+  establishedCostOfPowerPerKWh: number;
+  estimatedKWhGeneratedPerYear: number;
   contactType?: ContactType;
   contactValue?: string;
   farm?: any; // Farm still wip
   documentsMissingWithReason?: DocumentMissingWithReason[];
   annotations?: GCAStepAnnotation[];
   documents?: ApplicationDocument[];
+  deferments?: Deferment[];
   finalQuotePerWatt?: string;
   finalProtocolFee?: string;
   installDate?: string;

@@ -5,6 +5,10 @@ import { siweParams, siweParamsExample } from "../../handlers/siweHandler";
 import { GetEntityByIdQueryParamSchema } from "../../schemas/shared/getEntityByIdParamSchema";
 import { recoverAddressHandler } from "../../handlers/recoverAddressHandler";
 import { createApplication } from "../../db/mutations/applications/createApplication";
+import {
+  ApplicatonStatusEnum,
+  RoundRobinStatusEnum,
+} from "../../types/api-types/Application";
 
 export const CreateApplicationQueryBody = t.Object({
   fields: t.Object({
@@ -68,15 +72,17 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
       try {
         const wallet = body.recoverAddressParams.wallet;
         await createApplication({
-          farmOwnerId: wallet,
+          userId: wallet,
           ...body.fields,
           establishedCostOfPowerPerKWh:
             body.fields.establishedCostOfPowerPerKWh.toString(),
+          estimatedKWhGeneratedPerYear:
+            body.fields.estimatedKWhGeneratedPerYear.toString(),
           createdAt: new Date(),
           farmId: null,
           currentStep: 1,
-          currentStepStatus: "waiting-for-approval",
-          status: "waiting-to-be-assigned",
+          roundRobinStatus: RoundRobinStatusEnum.waitingToBeAssigned,
+          status: ApplicatonStatusEnum.waitingForApproval,
           updatedAt: null,
           contactType: null,
           contactValue: null,
@@ -91,7 +97,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
           paymentDate: null,
           gcaAssignedTimestamp: null,
           gcaAcceptanceTimestamp: null,
-          gcaAdress: null,
+          gcaAddress: null,
         });
       } catch (e) {
         console.log("[applicationsRouter] create-application", e);

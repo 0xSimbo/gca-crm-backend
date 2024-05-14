@@ -5,7 +5,7 @@ export enum TAG {
   PROTOCOL_FEES = "Protocol Fees",
   REWARDS = "Rewards",
   ACCOUNTS = "Accounts",
-  FARM_OWNERS = "Farm Owners",
+  USERS = "Users",
   GCAS = "GCAs",
   FARMS = "Farms",
   APPLICATIONS = "Applications",

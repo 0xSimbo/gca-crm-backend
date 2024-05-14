@@ -10,7 +10,7 @@ import { ethers } from "ethers";
 /**
     Each
 */
-export const updateUserRewardsForWeek = async (weekNumber: number) => {
+export const updateWalletRewardsForWeek = async (weekNumber: number) => {
   //We need to get the tree for the (week - 1) since the data in report 21 is of week 20
   const { merkleTree } = await getMerkleTreeForWeek(weekNumber - 1);
   const leafType = ["address", "uint256", "uint256"];
@@ -43,7 +43,7 @@ export const updateUserRewardsForWeek = async (weekNumber: number) => {
     }
   );
 
-  const usersAndRewards = merkleTree.map((leaf) => {
+  const walletsAndRewards = merkleTree.map((leaf) => {
     const glowRewardsForLeaf =
       sumOfWeights.glowWeight == BigInt(0)
         ? BigInt(0)
@@ -76,28 +76,34 @@ export const updateUserRewardsForWeek = async (weekNumber: number) => {
     };
   });
 
-  const INDEX = 0; //TODO: fix when u get a chance
-  const globalValues = usersAndRewards
-    .map((user) => {
-      return `('${user.address}', ${user.usdgRewards.toString()}, ${user.glowRewards.toString()})`;
+  const INDEX = 0; //TODO: fix when u get a chance @0xSimbo don't forget to fix this
+  const globalValues = walletsAndRewards
+    .map((wallet) => {
+      return `('${
+        wallet.address
+      }', ${wallet.usdgRewards.toString()}, ${wallet.glowRewards.toString()})`;
     })
     .join(", ");
 
-  const weeklyScopedValues = usersAndRewards
-    .map((user) => {
-      const proof = `{${user.claimProof.map((p) => `"${p}"`).join(",")}}`; // Create a PostgreSQL array string
-      return `('${user.address}', ${weekNumber}, ${user.usdgWeight}, ${user.glowWeight}, ${user.usdgRewards}, ${user.glowRewards.toString()}, ${INDEX}, '${proof}')`;
+  const weeklyScopedValues = walletsAndRewards
+    .map((wallet) => {
+      const proof = `{${wallet.claimProof.map((p) => `"${p}"`).join(",")}}`; // Create a PostgreSQL array string
+      return `('${wallet.address}', ${weekNumber}, ${wallet.usdgWeight}, ${
+        wallet.glowWeight
+      }, ${
+        wallet.usdgRewards
+      }, ${wallet.glowRewards.toString()}, ${INDEX}, '${proof}')`;
     })
     .join(", ");
 
   const sqlQuery =
-    sql.raw(`INSERT into users (wallet, total_usdg_rewards, total_glow_rewards)
+    sql.raw(`INSERT into wallets (wallet_id, total_usdg_rewards, total_glow_rewards)
   VALUES ${globalValues}
-  ON CONFLICT (wallet) DO UPDATE SET
-  total_usdg_rewards = users.total_usdg_rewards + EXCLUDED.total_usdg_rewards,
-  total_glow_rewards = users.total_glow_rewards + EXCLUDED.total_glow_rewards;
+  ON CONFLICT (wallet_id) DO UPDATE SET
+  total_usdg_rewards = wallets.total_usdg_rewards + EXCLUDED.total_usdg_rewards,
+  total_glow_rewards = wallets.total_glow_rewards + EXCLUDED.total_glow_rewards;
 
-  INSERT into user_weekly_rewards (wallet, week_number, usdg_weight, glow_weight, usdg_rewards, glow_rewards, index_in_reports, claim_proof)
+  INSERT into wallet_weekly_rewards (wallet_id, week_number, usdg_weight, glow_weight, usdg_rewards, glow_rewards, index_in_reports, claim_proof)
   VALUES ${weeklyScopedValues};
   `);
 

@@ -9,8 +9,8 @@ import {
   text,
   index,
   json,
-  decimal,
   boolean,
+  numeric,
 } from "drizzle-orm/pg-core";
 import { relations, type InferSelectModel, sql } from "drizzle-orm";
 import {
@@ -18,18 +18,22 @@ import {
   applicationStatus,
   contactTypes,
   optionalDocuments,
-  splitTokens,
-  stepStatus,
+  roundRobinStatus,
 } from "../types/api-types/Application";
 
-// UNKNOWN is a special role that is used when the user didn't yet filled the solar farm owner form or the GCA form
-export const accountRoles = ["FARM_OWNER", "GCA", "ADMIN", "UNKNOWN"] as const;
+// db diagram here : https://app.eraser.io/workspace/Ro75vSbOwABbdvKvyTFJ?origin=share @0xSimbo
+
+// UNKNOWN is a special role that is used when the user didn't yet filled the onboarding form
+export const accountRoles = ["USER", "GCA", "ADMIN", "UNKNOWN"] as const;
 
 export const accountRoleEnum = pgEnum("role", accountRoles);
 
-export const contacTypesEnum = pgEnum("contact_types", contactTypes);
+export const contactTypesEnum = pgEnum("contact_types", contactTypes);
 
-export const applicationStepStatusEnum = pgEnum("step_status", stepStatus);
+export const roundRobinStatusEnum = pgEnum(
+  "round_robin_status",
+  roundRobinStatus
+);
 
 export const applicationStatusEnum = pgEnum(
   "application_status",
@@ -40,8 +44,6 @@ export const optionalDocumentsEnum = pgEnum(
   "optional_documents",
   optionalDocuments
 );
-
-export const splitTokensEnum = pgEnum("split_tokens", splitTokens);
 
 export type FarmUpdate = {
   previousValue: any;
@@ -68,9 +70,8 @@ export type FarmUpdate = {
 */
 
 /**
- * @dev This is still a work in progress.
  * @dev We keep aggregate counters to avoid needing to calculate them on the fly.
- * @param {string} id - The ethereum wallet address of the user.
+ * @param {string} id - The ethereum wallet address.
  * @param {BigInt} totalUSDGRewards - The total USDG rewards of the user in 2 Decimals
             - USDG/USDC is in 6 decimals, but for the database, we use 2 decimals
             - because of SQL's integer limit.
@@ -80,8 +81,8 @@ export type FarmUpdate = {
             - Follows same logic as above. 2 Decimals
             - Even though Glow is 18 Decimals On-Chain
  */
-export const users = pgTable("users", {
-  id: varchar("wallet", { length: 42 }).primaryKey().notNull(),
+export const wallets = pgTable("wallets", {
+  id: varchar("wallet_id", { length: 42 }).primaryKey().notNull(),
   totalUSDGRewards: bigint("total_usdg_rewards", { mode: "bigint" })
     .default(sql`'0'::bigint`)
     .notNull(),
@@ -91,27 +92,33 @@ export const users = pgTable("users", {
 });
 
 /**
- * @dev Each user has an array of weekly rewards.s
+ * @dev Each wallets has an array of weekly rewards.
  */
-export const userRelations = relations(users, ({ many }) => ({
-  weeklyRewards: many(userWeeklyReward),
+export const WalletsRelations = relations(wallets, ({ many }) => ({
+  weeklyRewards: many(walletWeeklyRewards),
 }));
 
+export type WalletType = InferSelectModel<typeof wallets>;
+export type WalletWeeklyRewardType = InferSelectModel<
+  typeof walletWeeklyRewards
+>;
+
 /**
- * @dev This is still a work in progress.
- * @param {string} userId - The ethereum wallet address of the user.
+ * @param {string} id - The ethereum wallet address.
  * @param {number} weekNumber - The week number of the rewards
  * @param {BigInt} usdgWeight - The total USDG Rewards weight for the user that is published in the merkle root
  * @param {BigInt} glowWeight - The total Glow Rewards weight for the user that is published in the merkle root
  * @param {BigInt} usdgRewards - The total USDG rewards of the user in 2 Decimals
  * @param {BigInt} glowRewards  - The total Glow rewards of the user in 2 Decimals
+ * @param {number} indexInReports - Index in the report for tracking purposes.
+ * @param {string[]} claimProof - Array of proofs required for claiming rewards.
  */
-export const userWeeklyReward = pgTable(
-  "user_weekly_rewards",
+export const walletWeeklyRewards = pgTable(
+  "wallet_weekly_rewards",
   {
-    userId: varchar("wallet", { length: 42 })
+    id: varchar("wallet_id", { length: 42 })
       .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
+      .references(() => wallets.id, { onDelete: "cascade" }),
     weekNumber: integer("week_number").notNull(),
     usdgWeight: bigint("usdg_weight", { mode: "bigint" })
       .default(sql`'0'::bigint`)
@@ -130,9 +137,9 @@ export const userWeeklyReward = pgTable(
   },
   (t) => {
     return {
-      pk: primaryKey({ columns: [t.userId, t.weekNumber] }),
-      userIdToWeekNumberIndex: index("user_id_week_number_ix").on(
-        t.userId,
+      pk: primaryKey({ columns: [t.id, t.weekNumber] }),
+      walletIdToWeekNumberIndex: index("wallet_id_to_week_number_ix").on(
+        t.id,
         t.weekNumber
       ),
     };
@@ -140,26 +147,37 @@ export const userWeeklyReward = pgTable(
 );
 
 /**
- * @dev Each user weekly reward has a user.
+ * @dev Each wallet weekly reward has a wallet.
  * @dev This is a one-to-many relationship.
- * @dev Each user can have multiple weekly rewards.
- * @dev Each weekly reward belongs to a single user.
+ * @dev Each wallet can have multiple weekly rewards.
+ * @dev Each weekly reward belongs to a single wallet.
  */
-export const UserWeeklyRewardRelations = relations(
-  userWeeklyReward,
+export const WalletWeeklyRewardRelations = relations(
+  walletWeeklyRewards,
   ({ one }) => ({
-    user: one(users, {
-      fields: [userWeeklyReward.userId],
-      references: [users.id],
+    user: one(wallets, {
+      fields: [walletWeeklyRewards.id],
+      references: [wallets.id],
     }),
   })
 );
 
-export const Farms = pgTable(
+/**
+ * @dev Represents a farm in the system.
+ * @param {string} id - The hexlified farm public key.
+ * @param {number} shortId - A short ID for simplicity and readability.
+ * @param {BigInt} totalGlowRewards - The total Glow rewards of the farm in 2 Decimals.
+ * @param {BigInt} totalUSDGRewards - The total USDG rewards of the farm in 2 Decimals.
+ * @param {timestamp} createdAt - The creation date of the farm.
+ * @param {timestamp} auditCompleteDate - The date when the farm audit was completed.
+ * @param {string} gcaId - The GCA (Green Certificate Authority) ID.
+ * @param {string} userId - The user ID who owns the farm.
+ */
+export const farms = pgTable(
   "farms",
   {
-    id: varchar("farm_id", { length: 66 }).primaryKey(),
-    shortId: integer("short_id").notNull(),
+    id: varchar("farm_id", { length: 66 }).primaryKey(), // hexlified farm pub key
+    shortId: integer("short_id").notNull(), // short id for simplicity and readability
     totalGlowRewards: bigint("total_glow_rewards", { mode: "bigint" })
       .default(sql`'0'::bigint`)
       .notNull(),
@@ -168,9 +186,8 @@ export const Farms = pgTable(
       .notNull(),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     auditCompleteDate: timestamp("audit_complete_date"),
-    // @0xSimbo can you patch the existing farms with those from the scrapper ?
-    gcaId: varchar("gca_id", { length: 42 }), // @0xSimbo this would be payoutWallet ?
-    farmOwnerId: varchar("farm_owner_id", { length: 42 }), // @0xSimbo this would be installerWallet ?
+    gcaId: varchar("gca_id", { length: 42 }).notNull(),
+    userId: varchar("user_id", { length: 42 }).notNull(),
   },
   (t) => {
     return {
@@ -179,22 +196,32 @@ export const Farms = pgTable(
     };
   }
 );
+export type FarmDatabaseType = InferSelectModel<typeof farms>;
+export type FarmDatabaseInsertType = typeof farms.$inferInsert;
 
-export const FarmRelations = relations(Farms, ({ many, one }) => ({
-  farmRewards: many(FarmRewards),
+export const FarmRelations = relations(farms, ({ many, one }) => ({
+  farmRewards: many(farmRewards),
   rewardSplits: many(RewardSplits),
-  farmOwner: one(FarmOwners, {
-    fields: [Farms.farmOwnerId],
-    references: [FarmOwners.id],
+  user: one(users, {
+    fields: [farms.userId],
+    references: [users.id],
   }),
   gca: one(Gcas, {
-    fields: [Farms.gcaId],
+    fields: [farms.gcaId],
     references: [Gcas.id],
   }),
-  farmUpdatesHistory: many(FarmUpdatesHistory),
+  farmUpdatesHistory: many(farmUpdatesHistory),
 }));
 
-export const FarmUpdatesHistory = pgTable(
+/**
+ * @dev Represents the history of updates made to a farm.
+ * @param {string} id - The unique ID of the update.
+ * @param {string} farmId - The ID of the farm that was updated.
+ * @param {timestamp} updatedAt - The date and time when the update was made.
+ * @param {string} updatedBy - The wallet address of the user who made the update.
+ * @param {json} update - The details of the update.
+ */
+export const farmUpdatesHistory = pgTable(
   "farm_updates_history",
   {
     id: text("update_id")
@@ -202,7 +229,7 @@ export const FarmUpdatesHistory = pgTable(
       .$defaultFn(() => crypto.randomUUID()),
     farmId: varchar("farm_id", { length: 66 })
       .notNull()
-      .references(() => Farms.id, { onDelete: "cascade" }),
+      .references(() => farms.id, { onDelete: "cascade" }),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
     updatedBy: varchar("updated_by", { length: 42 }).notNull(), // the wallet address of the user that made the update
     update: json("update").$type<FarmUpdate>().notNull(),
@@ -217,17 +244,30 @@ export const FarmUpdatesHistory = pgTable(
   }
 );
 
+export type FarmUpdatesHistoryDatabaseType = InferSelectModel<
+  typeof farmUpdatesHistory
+>;
+export type FarmUpdatesHistoryInsertType =
+  typeof farmUpdatesHistory.$inferInsert;
+
 export const FarmUpdatesHistoryRelations = relations(
-  FarmUpdatesHistory,
+  farmUpdatesHistory,
   ({ one }) => ({
-    farm: one(Farms, {
-      fields: [FarmUpdatesHistory.farmId],
-      references: [Farms.id],
+    farm: one(farms, {
+      fields: [farmUpdatesHistory.farmId],
+      references: [farms.id],
     }),
   })
 );
 
-export const FarmRewards = pgTable(
+/**
+ * @dev Represents the rewards of a farm for a specific week.
+ * @param {string} hexlifiedFarmPubKey - The hexlified farm public key.
+ * @param {number} weekNumber - The week number of the rewards.
+ * @param {BigInt} usdgRewards - The total USDG rewards of the farm in 2 Decimals.
+ * @param {BigInt} glowRewards - The total Glow rewards of the farm in 2 Decimals.
+ */
+export const farmRewards = pgTable(
   "farm_rewards",
   {
     hexlifiedFarmPubKey: varchar("farm_id", { length: 66 }).notNull(),
@@ -246,29 +286,59 @@ export const FarmRewards = pgTable(
   }
 );
 
-export const FarmRewardsRelations = relations(FarmRewards, ({ one }) => ({
-  farm: one(Farms, {
-    fields: [FarmRewards.hexlifiedFarmPubKey],
-    references: [Farms.id],
+export type FarmRewardsDatabaseType = InferSelectModel<typeof farmRewards>;
+export type FarmRewardsInsertType = typeof farmRewards.$inferInsert;
+
+export const FarmRewardsRelations = relations(farmRewards, ({ one }) => ({
+  farm: one(farms, {
+    fields: [farmRewards.hexlifiedFarmPubKey],
+    references: [farms.id],
   }),
 }));
 
-export type UserType = InferSelectModel<typeof users>;
-export type UserWeeklyRewardType = InferSelectModel<typeof userWeeklyReward>;
-export type FarmDatabaseType = InferSelectModel<typeof Farms>;
-export type FarmDatabaseInsertType = typeof Farms.$inferInsert;
-
-export type FarmRewardsDatabaseType = InferSelectModel<typeof FarmRewards>;
-
+/**
+ * @dev Represents an account in the system.
+ * @param {string} id - The ethereum wallet address.
+ * @param {string} role - The role of the account.
+ * @param {timestamp} created_at - The creation date of the account.
+ * @param {string} siweNonce - The nonce for SIWE (Sign-In with Ethereum).
+ */
 export const Accounts = pgTable("accounts", {
-  id: varchar("wallet", { length: 42 }).primaryKey().notNull(),
+  id: varchar("wallet_id", { length: 42 }).primaryKey().notNull(),
   role: accountRoleEnum("role"),
   createdAt: timestamp("createdAt").notNull().defaultNow(),
   siweNonce: varchar("nonce", { length: 64 }).notNull(),
 });
+
+export type AccountInsertType = typeof Accounts.$inferInsert;
 export type AccountType = InferSelectModel<typeof Accounts>;
 
-export const FarmOwners = pgTable("farmOwners", {
+export const accountsRelations = relations(Accounts, ({ one }) => ({
+  user: one(users, {
+    fields: [Accounts.id],
+    references: [users.id],
+  }),
+  gca: one(Gcas, {
+    fields: [Accounts.id],
+    references: [Gcas.id],
+  }),
+}));
+
+/**
+ * @dev Represents a user in the system.
+ * @param {string} id - The ethereum wallet address.
+ * @param {timestamp} created_at - The creation date of the user.
+ * @param {string} firstName - The first name of the user.
+ * @param {string} lastName - The last name of the user.
+ * @param {string} email - The email of the user.
+ * @param {string} companyName - The company name of the user.
+ * @param {string} salt - The salt used for encryption.
+ * @param {string} publicEncryptionKey - The public encryption key of the user.
+ * @param {string} encryptedPrivateEncryptionKey - The encrypted private encryption key of the user.
+ * @param {string} companyAddress - The company address of the user.
+ * @param {boolean} isInstaller - Indicates if the user is an installer.
+ */
+export const users = pgTable("users", {
   id: varchar("wallet", { length: 42 })
     .primaryKey()
     .notNull()
@@ -282,18 +352,37 @@ export const FarmOwners = pgTable("farmOwners", {
   publicEncryptionKey: text("public_encryption_key").notNull(),
   // stored encrypted in db and decrypted in the front end using the salt + user signature
   encryptedPrivateEncryptionKey: text(
-    "encrypted_private_encription_key"
+    "encrypted_private_encryption_key"
   ).notNull(),
   companyAddress: varchar("company_address", { length: 255 }),
-  isInstaller: boolean("is_installer").notNull().default(false), // @0xSimbo added this field after call with Fatima. see https://linear.app/glow-int/issue/GLO-71/add-step-for-solar-farm-onboarding-to-flag-as-an-installer-or-a-farm
+  isInstaller: boolean("is_installer").notNull().default(false), // for easier access
 });
-export type FarmOwnerType = InferSelectModel<typeof FarmOwners>;
+export type UserType = InferSelectModel<typeof users>;
+export type UserInsertType = typeof users.$inferInsert;
 
-export const FarmOwnersRelations = relations(FarmOwners, ({ many, one }) => ({
-  farms: many(Farms),
-  applications: many(Applications),
+export const usersRelations = relations(users, ({ many, one }) => ({
+  farms: many(farms),
+  wallet: one(wallets, {
+    fields: [users.id],
+    references: [wallets.id],
+  }),
+  installer: one(installers, {
+    fields: [users.id],
+    references: [installers.userId],
+  }),
+  applications: many(applications),
 }));
 
+/**
+ * @dev Represents a Green Certificate Authority (GCA) in the system.
+ * @param {string} id - The ethereum wallet address.
+ * @param {string} email - The email of the GCA.
+ * @param {timestamp} created_at - The creation date of the GCA.
+ * @param {string} publicEncryptionKey - The public encryption key of the GCA.
+ * @param {string} encryptedPrivateEncryptionKey - The encrypted private encryption key of the GCA.
+ * @param {string} salt - The salt used for encryption.
+ * @param {string[]} serverUrls - The server URLs associated with the GCA.
+ */
 export const Gcas = pgTable("gcas", {
   id: varchar("wallet", { length: 42 })
     .primaryKey()
@@ -304,7 +393,7 @@ export const Gcas = pgTable("gcas", {
   publicEncryptionKey: text("public_encryption_key").notNull(),
   // stored encrypted in db and decrypted in the front end using the salt + user signature
   encryptedPrivateEncryptionKey: text(
-    "encrypted_private_encription_key"
+    "encrypted_private_encryption_key"
   ).notNull(),
   salt: varchar("salt", { length: 255 }).notNull(),
   serverUrls: varchar("server_urls", { length: 255 }).array().notNull(),
@@ -312,49 +401,73 @@ export const Gcas = pgTable("gcas", {
 
 export type GcaType = InferSelectModel<typeof Gcas>;
 
-export const GcasRelations = relations(Gcas, ({ many }) => ({
-  farms: many(Farms),
-  applications: many(Applications),
+export const GcasRelations = relations(Gcas, ({ many, one }) => ({
+  farms: many(farms),
+  wallet: one(wallets, {
+    fields: [Gcas.id],
+    references: [wallets.id],
+  }),
+  applications: many(applications),
 }));
 
-export const accountsRelations = relations(Accounts, ({ one }) => ({
-  farmOwner: one(FarmOwners, {
-    fields: [Accounts.id],
-    references: [FarmOwners.id],
-  }),
-  gca: one(Gcas, {
-    fields: [Accounts.id],
-    references: [Gcas.id],
-  }),
-}));
-
-// Applications
-export const Applications = pgTable("applications", {
+/**
+ * @dev Represents an application in the system.
+ * @param {string} id - The unique ID of the application.
+ * @param {string} userId - The ID of the user who submitted the application.
+ * @param {string} installerId - The ID of the installer associated with the application.
+ * @param {string} farmId - The ID of the farm created after the application is completed.
+ * @param {timestamp} created_at - The creation date of the application.
+ * @param {number} currentStep - The current step of the application process.
+ * @param {string} roundRobinStatus - The round robin status of the application.
+ * @param {string} status - The status of the application.
+ * @param {string} contactType - The type of contact information provided.
+ * @param {string} contactValue - The contact value provided.
+ * @param {string} address - The address related to the application.
+ * @param {number} lat - The latitude of the location.
+ * @param {number} lng - The longitude of the location.
+ * @param {number} establishedCostOfPowerPerKWh - The established cost of power per kWh.
+ * @param {number} estimatedKWhGeneratedPerYear - The estimated kWh generated per year.
+ * @param {timestamp} updatedAt - The last updated date of the application.
+ * @param {string} finalQuotePerWatt - The final quote per watt for installation.
+ * @param {timestamp} preInstallVisitDateFrom - The start date of the pre-install visit.
+ * @param {timestamp} preInstallVisitDateTo - The end date of the pre-install visit.
+ * @param {timestamp} installDate - The approximative installation date.
+ * @param {timestamp} afterInstallVisitDateFrom - The start date of the post-install visit.
+ * @param {timestamp} afterInstallVisitDateTo - The end date of the post-install visit.
+ * @param {string} finalProtocolFee - The final protocol fee.
+ * @param {timestamp} paymentDate - The payment date.
+ * @param {string} paymentTxHash - The transaction hash of the payment.
+ * @param {timestamp} gcaAssignedTimestamp - The timestamp when the GCA was assigned.
+ * @param {timestamp} gcaAcceptanceTimestamp - The timestamp when the GCA accepted the assignment.
+ * @param {string} gcaAddress - The address of the GCA.
+ */
+export const applications = pgTable("applications", {
   id: text("id")
     .primaryKey()
     .$defaultFn(() => crypto.randomUUID()),
   // always linked to a farm owner account
-  farmOwnerId: varchar("farm_owner_id", { length: 42 }).notNull(),
+  userId: varchar("user_id", { length: 42 }).notNull(),
   installerId: text("installer_id").notNull(),
   // after application is "completed", a farm is created using the hexlified farm pub key
   farmId: varchar("farm_id", { length: 66 }).unique(),
   createdAt: timestamp("createdAt").notNull().defaultNow(),
   currentStep: integer("current_step").notNull(),
-  currentStepStatus: applicationStepStatusEnum("step_status").notNull(),
+  roundRobinStatus: roundRobinStatusEnum("round_robin_status").notNull(),
   status: applicationStatusEnum("application_status").notNull(),
-  contactType: contacTypesEnum("contact_type"),
+  contactType: contactTypesEnum("contact_type"),
   contactValue: varchar("contact_value", { length: 255 }),
   // enquiry step fields
   address: varchar("address", { length: 255 }).notNull(),
   lat: integer("lat").notNull(),
   lng: integer("lng").notNull(),
-  establishedCostOfPowerPerKWh: decimal("established_cost_of_power_per_kwh", {
+  establishedCostOfPowerPerKWh: numeric("established_cost_of_power_per_kwh", {
     precision: 10,
     scale: 2,
   }).notNull(),
-  estimatedKWhGeneratedPerYear: integer(
-    "estimated_kwh_generated_per_year"
-  ).notNull(),
+  estimatedKWhGeneratedPerYear: numeric("estimated_kwh_generated_per_year", {
+    precision: 10,
+    scale: 2,
+  }).notNull(),
   // null if application just got created
   updatedAt: timestamp("updatedAt"),
   // pre-install documents step fields
@@ -374,63 +487,101 @@ export const Applications = pgTable("applications", {
   // gca assignement fields
   gcaAssignedTimestamp: timestamp("gca_assigned_timestamp"),
   gcaAcceptanceTimestamp: timestamp("gca_acceptance_timestamp"),
-  gcaAdress: varchar("gca_adress", { length: 42 }),
+  gcaAddress: varchar("gca_address", { length: 42 }),
 });
 
-export type ApplicationType = InferSelectModel<typeof Applications>;
-export type ApplicationInsertType = typeof Applications.$inferInsert;
+export type ApplicationType = InferSelectModel<typeof applications>;
+export type ApplicationInsertType = typeof applications.$inferInsert;
 
 export const applicationsRelations = relations(
-  Applications,
+  applications,
   ({ one, many }) => ({
-    farmOwner: one(FarmOwners, {
-      fields: [Applications.farmOwnerId],
-      references: [FarmOwners.id],
+    user: one(users, {
+      fields: [applications.userId],
+      references: [users.id],
     }),
-    farm: one(Farms, {
-      fields: [Applications.farmId],
-      references: [Farms.id],
+    farm: one(farms, {
+      fields: [applications.farmId],
+      references: [farms.id],
     }),
-    installer: one(Installers, {
-      fields: [Applications.installerId],
-      references: [Installers.id],
+    installer: one(installers, {
+      fields: [applications.installerId],
+      references: [installers.id],
     }),
     documentsMissingWithReason: many(DocumentsMissingWithReason),
     annotations: many(ApplicationStepAnnotations),
     rewardSplits: many(RewardSplits),
     documents: many(Documents),
-    deferments: many(Deferments),
+    deferments: many(deferments),
     gca: one(Gcas, {
-      fields: [Applications.gcaAdress],
+      fields: [applications.gcaAddress],
       references: [Gcas.id],
     }),
   })
 );
 
-export const Installers = pgTable("installers", {
+/**
+ * @dev Represents an installer in the system.
+ * @param {string} id - The unique ID of the installer.
+ * @param {string} userId - The ID of the user associated with the installer.
+ * @param {string} name - The name of the installer.
+ * @param {string} email - The email of the installer.
+ * @param {string} companyName - The company name of the installer.
+ * @param {string} phone - The phone number of the installer.
+ */
+export const installers = pgTable("installers", {
   id: text("installer_id")
     .primaryKey()
     .$defaultFn(() => crypto.randomUUID()),
+  userId: varchar("user_id", { length: 42 }).unique(), // the wallet address of the user if the user is an installer in order to link the user to the installer informations
   name: varchar("name", { length: 255 }).unique().notNull(),
   email: varchar("email", { length: 255 }).unique().notNull(),
   companyName: varchar("company_name", { length: 255 }).notNull(),
   phone: varchar("phone", { length: 255 }).notNull(),
 });
 
-export type InstallerType = InferSelectModel<typeof Installers>;
-export type InstallerInsertType = typeof Installers.$inferInsert;
+export type InstallerType = InferSelectModel<typeof installers>;
+export type InstallerInsertType = typeof installers.$inferInsert;
 
-export const Deferments = pgTable("deferments", {
+export const InstallersRelations = relations(installers, ({ one, many }) => ({
+  user: one(users, {
+    fields: [installers.userId],
+    references: [users.id],
+  }),
+  applications: many(applications),
+}));
+
+/**
+ * @dev Represents a deferment in the system.
+ * @param {string} id - The unique ID of the deferment.
+ * @param {string} applicationId - The ID of the application associated with the deferment.
+ * @param {string} reason - The reason for the deferment.
+ * @param {string} fromGca - The ID of the GCA initiating the deferment.
+ * @param {string} toGca - The ID of the GCA receiving the deferment.
+ * @param {timestamp} timestamp - The timestamp when the deferment was created.
+ */
+export const deferments = pgTable("deferments", {
   id: text("deferment_id").primaryKey(),
   applicationId: text("application_id")
     .notNull()
-    .references(() => Applications.id, { onDelete: "cascade" }),
+    .references(() => applications.id, { onDelete: "cascade" }),
   reason: varchar("reason", { length: 255 }),
   fromGca: varchar("from_gca", { length: 42 }).notNull(),
   toGca: varchar("to_gca", { length: 42 }).notNull(),
   timestamp: timestamp("timestamp").notNull().defaultNow(),
 });
 
+/**
+ * @dev Represents a document in the system.
+ * @param {string} id - The unique ID of the document.
+ * @param {string} applicationId - The ID of the application associated with the document.
+ * @param {string} annotation - An annotation for the document.
+ * @param {number} step - The step of the application process the document belongs to.
+ * @param {string} name - The name of the document.
+ * @param {string} url - The URL of the document.
+ * @param {string} type - The type of the document.
+ * @param {EncryptedMasterKeySet[]} encryptedMasterKeys - The encrypted master keys for the document.
+ */
 export const Documents = pgTable("documents", {
   id: text("document_id")
     .primaryKey()
@@ -450,6 +601,14 @@ export const Documents = pgTable("documents", {
 
 export type DocumentsType = InferSelectModel<typeof Documents>;
 
+/**
+ * @dev Represents a missing document with a reason in the system.
+ * @param {string} id - The unique ID of the missing document with reason.
+ * @param {string} applicationId - The ID of the application associated with the missing document.
+ * @param {string} reason - The reason for the missing document.
+ * @param {number} step - The step of the application process the missing document belongs to.
+ * @param {string} documentName - The name of the missing document.
+ */
 // if one of the optional documents is missing, we need to know why
 export const DocumentsMissingWithReason = pgTable(
   "documentsMissingWithReason",
@@ -459,7 +618,7 @@ export const DocumentsMissingWithReason = pgTable(
       .$defaultFn(() => crypto.randomUUID()),
     applicationId: text("application_id")
       .notNull()
-      .references(() => Applications.id, { onDelete: "cascade" }),
+      .references(() => applications.id, { onDelete: "cascade" }),
     reason: varchar("reason", { length: 255 }).notNull(),
     step: integer("step").notNull(),
     documentName: optionalDocumentsEnum("document_name").notNull(),
@@ -470,6 +629,13 @@ export type DocumentsMissingWithReasonType = InferSelectModel<
   typeof DocumentsMissingWithReason
 >;
 
+/**
+ * @dev Represents an annotation for a step in the application process.
+ * @param {string} id - The unique ID of the annotation.
+ * @param {string} applicationId - The ID of the application associated with the annotation.
+ * @param {string} annotation - The content of the annotation.
+ * @param {number} step - The step of the application process the annotation belongs to.
+ */
 export const ApplicationStepAnnotations = pgTable(
   "applicationStepAnnotations",
   {
@@ -478,7 +644,7 @@ export const ApplicationStepAnnotations = pgTable(
       .$defaultFn(() => crypto.randomUUID()),
     applicationId: text("application_id")
       .notNull()
-      .references(() => Applications.id, { onDelete: "cascade" }),
+      .references(() => applications.id, { onDelete: "cascade" }),
     annotation: varchar("annotation", { length: 255 }).notNull(),
     step: integer("step").notNull(),
   }
@@ -488,6 +654,15 @@ export type ApplicationStepAnnotationsType = InferSelectModel<
   typeof ApplicationStepAnnotations
 >;
 
+/**
+ * @dev Represents the reward splits for USDG and GLOW.
+ * @param {string} id - The unique ID of the reward split.
+ * @param {string} applicationId - The ID of the application associated with the reward split.
+ * @param {string} farmId - The ID of the farm, can be null if the application is not yet completed.
+ * @param {string} walletAddress - The wallet address to receive the rewards.
+ * @param {number} glowSplitPercent - The percentage split of Glow rewards.
+ * @param {number} usdgSplitPercent - The percentage split of USDG rewards.
+ */
 // Reward Splits for USDG and GLOW add up to 100% for each token
 export const RewardSplits = pgTable("rewardsSplits", {
   id: text("rewards_split_id")
@@ -497,19 +672,32 @@ export const RewardSplits = pgTable("rewardsSplits", {
   // farmId can be null if the application is not yet completed, it's being patched after the farm is created.
   farmId: varchar("farm_id", { length: 66 }),
   walletAddress: varchar("wallet_address", { length: 42 }).notNull(),
-  splitPercentage: varchar("split_percentage", { length: 255 }).notNull(),
-  token: splitTokensEnum("token").notNull(),
+  glowSplitPercent: numeric("glow_split_percent", {
+    precision: 5,
+    scale: 2,
+  }).notNull(),
+  usdgSplitPercent: numeric("usdg_split_percent", {
+    precision: 5,
+    scale: 2,
+  }).notNull(),
 });
 
 export type RewardSplitsType = InferSelectModel<typeof RewardSplits>;
 
+/**
+ * @dev Represents a device associated with a farm.
+ * @param {string} id - The unique ID of the device.
+ * @param {string} farmId - The ID of the farm associated with the device.
+ * @param {string} publicKey - The public key of the device.
+ * @param {number} shortId - A short ID for simplicity and readability.
+ */
 export const Devices = pgTable("devices", {
   id: text("device_id")
     .primaryKey()
     .$defaultFn(() => crypto.randomUUID()),
   farmId: varchar("farm_id", { length: 66 })
     .notNull()
-    .references(() => Farms.id, { onDelete: "cascade" }),
+    .references(() => farms.id, { onDelete: "cascade" }),
   publicKey: varchar("public_key", { length: 255 }).unique().notNull(),
   shortId: integer("short_id").notNull(),
 });

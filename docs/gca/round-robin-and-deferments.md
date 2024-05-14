@@ -6,7 +6,7 @@ GCAs are assigned to solar farms based on a round-robin algorithm. The round-rob
 
 We propose the algorithm work like the following.
 
-1. We grab the list of valid GCAs from on-chain.
+1. We grab the list of valid GCAs from on-chain. @0xSimbo would change this by getting the gca's who have registered on the crm in the Gcas table instead since assigning a gca which is not on the crm would not make sense i believe since he can't pick it up.
 2. Each application has a `gca_assigned_timestamp` field that is set to the timestamp when the GCA was assigned.
 3. We get the latest application that has a `gca_assigned_timestamp`.
 4. We get the next GCA in the list of valid GCAs.
@@ -43,7 +43,7 @@ the solar farm will be held on standby. A farm cannot be deferred to the same GC
   - `from_gca` - the address of the GCA that deferred the solar farm.
   - `to_gca` - the address of the GCA that the solar farm was deferred to.
   - `timestamp` - the timestamp when the solar farm was deferred.
-  - `notes` - an array of notes that the GCA can add when deferring the solar farm.
+  - `notes` - an array of notes that the GCA can add when deferring the solar farm. // @0xSimbo any particular reason for it to be an array of notes ? or it can be just one note for simplicity reason ?
 
 ### Fields that are needed in the model
 
@@ -69,3 +69,22 @@ NOTE: a `null` value for `gca_assigned_timestamp` means that no GCA has assigned
 @JulienWebDeveloppeur
 
 - What to do when a GCA defers a farm and there are no other GCAs? Do we need a special status?
+
+@0xSimbo you can use roundRobinStatus inside the application.
+
+export const roundRobinStatus = [
+"waiting-to-be-assigned",
+"waiting-to-be-accepted",
+"assigned",
+] as const;
+
+@0xSimbo regarding deferments, we have a one to many relation in Application. the relationName is "deferments", the entity look like this :
+
+export type Deferment = {
+id: string;
+applicationId: string;
+reason: string;
+fromGca: string; // walletAddress ( aka gcaId )
+toGca: string; // walletAddress ( aka gcaId )
+timestamp: string;
+};

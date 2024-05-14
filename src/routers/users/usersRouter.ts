@@ -1,7 +1,6 @@
 import { Elysia, t } from "elysia";
 import { TAG } from "../../constants";
-import { FindFirstOwnerById } from "../../db/queries/farm-owners/findFirsOwnertById";
-import { createFarmOwner } from "../../db/mutations/farm-owners/createFarmOwner";
+import { FindFirstUserById } from "../../db/queries/users/findFirstUserById";
 import {
   privateEncryptionKeyExample,
   publicEncryptionKeyExample,
@@ -13,8 +12,9 @@ import { updateRole } from "../../db/mutations/accounts/updateRole";
 import { generateSaltFromAddress } from "../../utils/encryption/generateSaltFromAddress";
 import { GetEntityByIdQueryParamSchema } from "../../schemas/shared/getEntityByIdParamSchema";
 import { FindFirstById } from "../../db/queries/accounts/findFirstById";
+import { createUser } from "../../db/mutations/users/createUser";
 
-export const CreateFarmOwnerQueryBody = t.Object({
+export const CreateUserQueryBody = t.Object({
   fields: t.Object({
     encryptedPrivateEncryptionKey: t.String({
       example: privateEncryptionKeyExample,
@@ -51,35 +51,35 @@ export const CreateFarmOwnerQueryBody = t.Object({
   recoverAddressParams: t.Object(siweParams),
 });
 
-export const farmOwnersRouter = new Elysia({ prefix: "/farmOwners" })
+export const usersRouter = new Elysia({ prefix: "/users" })
   .get(
     "/byId",
     async ({ query, set }) => {
       if (!query.id) throw new Error("ID is required");
       try {
-        const farmOwner = await FindFirstOwnerById(query.id);
-        if (!farmOwner) {
+        const user = await FindFirstUserById(query.id);
+        if (!user) {
           set.status = 404;
-          throw new Error("farmOwner not found");
+          throw new Error("user not found");
         }
 
-        return farmOwner;
+        return user;
       } catch (e) {
-        console.log("[farmOwnersRouter] byId", e);
+        console.log("[UsersRouter] byId", e);
         throw new Error("Error Occured");
       }
     },
     {
       query: GetEntityByIdQueryParamSchema,
       detail: {
-        summary: "Get Farm Owner by ID",
-        description: `Get a Farm Owner by ID. If the farmOwner does not exist, it will throw an error.`,
-        tags: [TAG.FARM_OWNERS],
+        summary: "Get User by ID",
+        description: `Get a User by ID. If the user does not exist, it will throw an error.`,
+        tags: [TAG.USERS],
       },
     }
   )
   .post(
-    "/create-farm-owner",
+    "/create-user",
     async ({ body, set }) => {
       try {
         const wallet = body.recoverAddressParams.wallet;
@@ -88,34 +88,34 @@ export const farmOwnersRouter = new Elysia({ prefix: "/farmOwners" })
           throw new Error("Account not found");
         }
 
-        if (account.farmOwner) {
-          throw new Error("Farm Owner already exists");
+        if (account.user) {
+          throw new Error("User already exists");
         }
 
         if (account.gca) {
           throw new Error("this account is already a gca");
         }
 
-        await updateRole(wallet, "FARM_OWNER");
+        await updateRole(wallet, "USER");
         const salt = generateSaltFromAddress(wallet);
 
-        await createFarmOwner({
+        await createUser({
           id: wallet,
           ...body.fields,
           createdAt: new Date(),
           salt,
         });
       } catch (e) {
-        console.log("[accountsRouter] create-farm-owner", e);
+        console.log("[UsersRouter] create-user", e);
         throw new Error("Error Occured");
       }
     },
     {
-      body: CreateFarmOwnerQueryBody,
+      body: CreateUserQueryBody,
       detail: {
-        summary: "Create Farm Owner Account",
-        description: `Create a Farm Owner account. If the account already exists, it will throw an error.`,
-        tags: [TAG.FARM_OWNERS],
+        summary: "Create User Account",
+        description: `Create a User account. If the account already exists, it will throw an error.`,
+        tags: [TAG.USERS],
       },
       beforeHandle: async ({
         body: {

@@ -1,13 +1,13 @@
 import { eq } from "drizzle-orm";
 import { db } from "../../db";
-import { Applications } from "../../schema";
+import { applications } from "../../schema";
 
 export const FindFirstApplicationById = async (id: string) => {
-  const application = await db.query.Applications.findFirst({
-    where: eq(Applications.id, id),
+  const application = await db.query.applications.findFirst({
+    where: eq(applications.id, id),
     with: {
       gca: true,
-      farmOwner: true,
+      user: true,
       documentsMissingWithReason: true,
     },
   });
