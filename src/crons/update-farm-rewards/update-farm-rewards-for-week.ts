@@ -18,6 +18,7 @@ export async function updateFarmRewardsForWeek({
   const farmColumns = getTableColumns(farms);
   const farmTableConfig = getTableConfig(farms);
   const farmsWithRewards = await getScrapedFarmsAndRewards({ weekNumber });
+
   const drizzleFarmType: FarmDatabaseType[] = farmsWithRewards.map((farm) => {
     return {
       id: farm.hexPubKey,
@@ -27,7 +28,7 @@ export async function updateFarmRewardsForWeek({
         BigInt(Math.floor(farm.rewards.usdg)) * BigInt(10 ** DB_DECIMALS),
       shortId: Number(farm.shortId),
       auditCompleteDate: farm.auditCompleteDate
-        ? new Date(farm.auditCompleteDate.toString())
+        ? new Date(Number(farm.auditCompleteDate))
         : new Date(),
       createdAt: new Date(),
       gcaId: farm.installerWallet,

@@ -6,7 +6,7 @@ import { GetEntityByIdQueryParamSchema } from "../../schemas/shared/getEntityByI
 import { recoverAddressHandler } from "../../handlers/recoverAddressHandler";
 import { createApplication } from "../../db/mutations/applications/createApplication";
 import {
-  ApplicatonStatusEnum,
+  ApplicationStatusEnum,
   RoundRobinStatusEnum,
 } from "../../types/api-types/Application";
 
@@ -82,7 +82,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
           farmId: null,
           currentStep: 1,
           roundRobinStatus: RoundRobinStatusEnum.waitingToBeAssigned,
-          status: ApplicatonStatusEnum.waitingForApproval,
+          status: ApplicationStatusEnum.waitingForApproval,
           updatedAt: null,
           contactType: null,
           contactValue: null,
