@@ -7,8 +7,8 @@ import { walletWeeklyRewards, wallets } from "./db/schema";
 import { db } from "./db/db";
 import { updateFarmRewardsForWeek } from "./crons/update-farm-rewards/update-farm-rewards-for-week";
 import { accountsRouter } from "./routers/accounts-router/accountsRouter";
-import { gcasRouter } from "./routers/gcas/gcasRouter";
-import { usersRouter } from "./routers/users/usersRouter";
+import { gcasRouter } from "./routers/gcas-router/gcasRouter";
+import { usersRouter } from "./routers/users-router/usersRouter";
 import { applicationsRouter } from "./routers/applications-router/applicationsRouter";
 import { updateWalletRewardsForWeek } from "./crons/update-wallet-rewards";
 

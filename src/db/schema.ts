@@ -293,6 +293,7 @@ export const Accounts = pgTable("accounts", {
   role: accountRoleEnum("role"),
   createdAt: timestamp("createdAt").notNull().defaultNow(),
   siweNonce: varchar("nonce", { length: 64 }).notNull(),
+  salt: varchar("salt", { length: 255 }).notNull(),
 });
 
 export type AccountInsertType = typeof Accounts.$inferInsert;
@@ -333,9 +334,8 @@ export const users = pgTable("users", {
   lastName: varchar("last_name", { length: 255 }).notNull(),
   email: varchar("email", { length: 255 }).unique().notNull(),
   companyName: varchar("company_name", { length: 255 }),
-  salt: varchar("salt", { length: 255 }).notNull(),
   publicEncryptionKey: text("public_encryption_key").notNull(),
-  // stored encrypted in db and decrypted in the front end using the salt + user signature
+  // stored encrypted in db and decrypted in the front end using the account salt + user signature
   encryptedPrivateEncryptionKey: text(
     "encrypted_private_encryption_key"
   ).notNull(),
@@ -380,13 +380,16 @@ export const Gcas = pgTable("gcas", {
   encryptedPrivateEncryptionKey: text(
     "encrypted_private_encryption_key"
   ).notNull(),
-  salt: varchar("salt", { length: 255 }).notNull(),
   serverUrls: varchar("server_urls", { length: 255 }).array().notNull(),
 });
 
 export type GcaType = InferSelectModel<typeof Gcas>;
 
 export const GcasRelations = relations(Gcas, ({ many, one }) => ({
+  account: one(Accounts, {
+    fields: [Gcas.id],
+    references: [Accounts.id],
+  }),
   farms: many(farms),
   wallet: one(wallets, {
     fields: [Gcas.id],

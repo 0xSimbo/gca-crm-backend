@@ -97,13 +97,11 @@ export const usersRouter = new Elysia({ prefix: "/users" })
         }
 
         await updateRole(wallet, "USER");
-        const salt = generateSaltFromAddress(wallet);
 
         await createUser({
           id: wallet,
           ...body.fields,
           createdAt: new Date(),
-          salt,
         });
       } catch (e) {
         console.log("[UsersRouter] create-user", e);

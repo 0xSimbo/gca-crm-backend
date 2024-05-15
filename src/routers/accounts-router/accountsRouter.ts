@@ -10,6 +10,7 @@ import {
 import { updateSiweNonce } from "../../db/mutations/accounts/updateSiweNonce";
 
 import { GetEntityByIdQueryParamsSchema } from "../../schemas/shared/getEntityByIdParamSchema";
+import { generateSaltFromAddress } from "../../utils/encryption/generateSaltFromAddress";
 
 export const LoginOrSignupQueryBody = t.Object(siweParams);
 
@@ -47,7 +48,14 @@ export const accountsRouter = new Elysia({ prefix: "/accounts" })
         let account = await FindFirstById(body.wallet);
 
         if (!account) {
-          await createAccount(body.wallet, "UNKNOWN", body.nonce);
+          const salt = generateSaltFromAddress(body.wallet);
+
+          await createAccount({
+            id: body.wallet,
+            siweNonce: body.nonce,
+            salt,
+            createdAt: new Date(),
+          });
           account = await FindFirstById(body.wallet);
         } else {
           await updateSiweNonce(body.wallet, body.nonce);
