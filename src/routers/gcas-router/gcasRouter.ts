@@ -4,13 +4,10 @@ import {
   privateEncryptionKeyExample,
   publicEncryptionKeyExample,
 } from "../../examples/encryptionKeys";
-
-import { siweParams, siweParamsExample } from "../../handlers/siweHandler";
-import { recoverAddressHandler } from "../../handlers/recoverAddressHandler";
 import { updateRole } from "../../db/mutations/accounts/updateRole";
-import { generateSaltFromAddress } from "../../utils/encryption/generateSaltFromAddress";
+
 import { GetEntityByIdQueryParamsSchema } from "../../schemas/shared/getEntityByIdParamSchema";
-import { FindFirstById } from "../../db/queries/accounts/findFirstById";
+import { findFirstAccountById } from "../../db/queries/accounts/findFirstAccountById";
 import { Wallet } from "ethers";
 import {
   MinerPoolAndGCA__factory,
@@ -18,26 +15,26 @@ import {
 } from "@glowlabs-org/guarded-launch-ethers-sdk";
 import { createGca } from "../../db/mutations/gcas/createGca";
 import { FindFirstGcaById } from "../../db/queries/gcas/findFirsGcaById";
+import { bearer as bearerplugin } from "@elysiajs/bearer";
+import { bearerGuard } from "../../guards/bearerGuard";
+import { jwtHandler } from "../../handlers/jwtHandler";
 
 export const CreateGCAQueryBody = t.Object({
-  fields: t.Object({
-    publicEncryptionKey: t.String({
-      example: publicEncryptionKeyExample,
-    }),
-    encryptedPrivateEncryptionKey: t.String({
-      example: privateEncryptionKeyExample,
-    }),
-    serverUrls: t.Array(
-      t.String({
-        example: "https://api.elysia.land",
-      })
-    ),
-    email: t.String({
-      example: "JohnDoe@gmail.com",
-      minLength: 2,
-    }),
+  publicEncryptionKey: t.String({
+    example: publicEncryptionKeyExample,
   }),
-  recoverAddressParams: t.Object(siweParams),
+  encryptedPrivateEncryptionKey: t.String({
+    example: privateEncryptionKeyExample,
+  }),
+  serverUrls: t.Array(
+    t.String({
+      example: "https://api.elysia.land",
+    })
+  ),
+  email: t.String({
+    example: "JohnDoe@gmail.com",
+    minLength: 2,
+  }),
 });
 
 export const gcasRouter = new Elysia({ prefix: "/gcas" })
@@ -67,72 +64,63 @@ export const gcasRouter = new Elysia({ prefix: "/gcas" })
       },
     }
   )
-  .post(
-    "/create-gca",
-    async ({ body }) => {
-      try {
-        const wallet = body.recoverAddressParams.wallet;
-        const account = await FindFirstById(wallet);
-        if (!account) {
-          throw new Error("Account not found");
-        }
+  .use(bearerplugin())
+  .guard(bearerGuard, (app) =>
+    app
+      .resolve(({ headers: { authorization } }) => {
+        const { userId } = jwtHandler(authorization.split(" ")[1]);
+        return {
+          userId,
+        };
+      })
+      .post(
+        "/create-gca",
+        async ({ body, userId }) => {
+          try {
+            const wallet = userId;
+            const account = await findFirstAccountById(wallet);
+            if (!account) {
+              throw new Error("Account not found");
+            }
 
-        if (account.gca) {
-          throw new Error("GCA already exists");
-        }
+            if (account.gca) {
+              throw new Error("GCA already exists");
+            }
 
-        if (account.user) {
-          throw new Error("this account is already a user");
-        }
+            if (account.user) {
+              throw new Error("this account is already a user");
+            }
 
-        const signer = new Wallet(process.env.PRIVATE_KEY!!);
-        const minerPoolAndGCA = MinerPoolAndGCA__factory.connect(
-          addresses.gcaAndMinerPoolContract,
-          signer
-        );
-        //TODO:  remove comment when finished testing
-        // const isGca = await minerPoolAndGCA["isGCA(address)"](wallet);
-        const isGca = true;
-        if (!isGca) {
-          throw new Error("This wallet is not a GCA");
-        }
+            const signer = new Wallet(process.env.PRIVATE_KEY!!);
+            const minerPoolAndGCA = MinerPoolAndGCA__factory.connect(
+              addresses.gcaAndMinerPoolContract,
+              signer
+            );
+            //TODO:  remove comment when finished testing
+            // const isGca = await minerPoolAndGCA["isGCA(address)"](wallet);
+            const isGca = true;
+            if (!isGca) {
+              throw new Error("This wallet is not a GCA");
+            }
 
-        await updateRole(wallet, "GCA");
-        await createGca({
-          id: wallet,
-          createdAt: new Date(),
-          ...body.fields,
-        });
-      } catch (e) {
-        console.log("[accountsRouter] create-gca", e);
-        throw new Error("Error Occured");
-      }
-    },
-    {
-      body: CreateGCAQueryBody,
-      beforeHandle: async ({
-        body: {
-          recoverAddressParams: { message, signature, wallet },
-        },
-        set,
-      }) => {
-        try {
-          const recoveredAddress = await recoverAddressHandler(
-            message,
-            signature,
-            wallet
-          );
-          if (recoveredAddress !== wallet) {
-            return (set.status = 401);
+            await updateRole(wallet, "GCA");
+            await createGca({
+              id: wallet,
+              createdAt: new Date(),
+              ...body,
+            });
+          } catch (e) {
+            console.log("[accountsRouter] create-gca", e);
+            throw new Error("Error Occured");
           }
-        } catch (error) {
-          return (set.status = 401);
+        },
+        {
+          body: CreateGCAQueryBody,
+          detail: {
+            summary: "Create GCA Account",
+            description: `Create a GCA account. If the account already exists, it will throw an error.`,
+            tags: [TAG.GCAS],
+          },
         }
-      },
-      detail: {
-        summary: "Create GCA Account",
-        description: `Create a GCA account. If the account already exists, it will throw an error.`,
-        tags: [TAG.GCAS],
-      },
-    }
+      )
   );

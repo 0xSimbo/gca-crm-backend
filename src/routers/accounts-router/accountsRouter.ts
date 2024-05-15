@@ -1,6 +1,6 @@
 import { Elysia, t } from "elysia";
 import { TAG } from "../../constants";
-import { FindFirstById } from "../../db/queries/accounts/findFirstById";
+import { findFirstAccountById } from "../../db/queries/accounts/findFirstAccountById";
 import { createAccount } from "../../db/mutations/accounts/createAccount";
 import {
   siweHandler,
@@ -20,7 +20,7 @@ export const accountsRouter = new Elysia({ prefix: "/accounts" })
     async ({ query, set }) => {
       if (!query.id) throw new Error("ID is required");
       try {
-        const account = await FindFirstById(query.id);
+        const account = await findFirstAccountById(query.id);
         if (!account) {
           set.status = 404;
           throw new Error("Account not found");
@@ -45,7 +45,7 @@ export const accountsRouter = new Elysia({ prefix: "/accounts" })
     "/loginOrSignup",
     async ({ body }) => {
       try {
-        let account = await FindFirstById(body.wallet);
+        let account = await findFirstAccountById(body.wallet);
 
         if (!account) {
           const salt = generateSaltFromAddress(body.wallet);
@@ -56,12 +56,12 @@ export const accountsRouter = new Elysia({ prefix: "/accounts" })
             salt,
             createdAt: new Date(),
           });
-          account = await FindFirstById(body.wallet);
+          account = await findFirstAccountById(body.wallet);
         } else {
           await updateSiweNonce(body.wallet, body.nonce);
         }
         //refetch with updates
-        account = await FindFirstById(body.wallet);
+        account = await findFirstAccountById(body.wallet);
         return account;
       } catch (e) {
         console.log("[accountsRouter] loginOrSignup", e);
