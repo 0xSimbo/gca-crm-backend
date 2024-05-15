@@ -1,14 +1,18 @@
 import { Elysia, t } from "elysia";
 import { TAG } from "../../constants";
-import { FindFirstById } from "../../db/queries/accounts/findFirstById";
-import { siweParams, siweParamsExample } from "../../handlers/siweHandler";
-import { GetEntityByIdQueryParamSchema } from "../../schemas/shared/getEntityByIdParamSchema";
+import { siweParams } from "../../handlers/siweHandler";
+import {
+  GetEntityByIdPathParamsSchema,
+  GetEntityByIdQueryParamsSchema,
+} from "../../schemas/shared/getEntityByIdParamSchema";
 import { recoverAddressHandler } from "../../handlers/recoverAddressHandler";
 import { createApplication } from "../../db/mutations/applications/createApplication";
 import {
   ApplicationStatusEnum,
   RoundRobinStatusEnum,
 } from "../../types/api-types/Application";
+import { FindFirstApplicationById } from "../../db/queries/applications/findFirstApplicationById";
+import { findAllApplicationsByUserId } from "../../db/queries/applications/findAllApplicationsByUserId";
 
 export const CreateApplicationQueryBody = t.Object({
   fields: t.Object({
@@ -45,7 +49,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
     async ({ query, set }) => {
       if (!query.id) throw new Error("ID is required");
       try {
-        const application = await FindFirstById(query.id);
+        const application = await FindFirstApplicationById(query.id);
         if (!application) {
           set.status = 404;
           throw new Error("Application not found");
@@ -58,11 +62,39 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
       }
     },
     {
-      query: GetEntityByIdQueryParamSchema,
+      query: GetEntityByIdQueryParamsSchema,
       detail: {
         summary: "Get Application by ID",
         description: `Get Application by ID`,
         tags: [TAG.APPLICATIONS],
+      },
+      beforeHandle: async ({ params, set }) => {
+        //TODO: guard route to only allow user to see their own applications or to be a GCA
+      },
+    }
+  )
+  .get(
+    "/all-by-user-id/:id",
+    async ({ params: { id }, set }) => {
+      if (!id) throw new Error("userId is required");
+      try {
+        const applications = await findAllApplicationsByUserId(id);
+
+        return applications;
+      } catch (e) {
+        console.log("[applicationsRouter] byId", e);
+        throw new Error("Error Occured");
+      }
+    },
+    {
+      query: GetEntityByIdPathParamsSchema,
+      detail: {
+        summary: "Get Applications by userId",
+        description: `Get Applications by userId`,
+        tags: [TAG.APPLICATIONS],
+      },
+      beforeHandle: async ({ params, set }) => {
+        //TODO: guard route to only allow user to see their own applications or to be a GCA
       },
     }
   )

@@ -9,7 +9,7 @@ import {
 } from "../../handlers/siweHandler";
 import { updateSiweNonce } from "../../db/mutations/accounts/updateSiweNonce";
 
-import { GetEntityByIdQueryParamSchema } from "../../schemas/shared/getEntityByIdParamSchema";
+import { GetEntityByIdQueryParamsSchema } from "../../schemas/shared/getEntityByIdParamSchema";
 
 export const LoginOrSignupQueryBody = t.Object(siweParams);
 
@@ -32,7 +32,7 @@ export const accountsRouter = new Elysia({ prefix: "/accounts" })
       }
     },
     {
-      query: GetEntityByIdQueryParamSchema,
+      query: GetEntityByIdQueryParamsSchema,
       detail: {
         summary: "Get Account by ID",
         description: `Get account by ID`,

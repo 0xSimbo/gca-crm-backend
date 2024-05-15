@@ -29,6 +29,12 @@ export type FarmUpdate = {
   updatedValue: any;
 };
 
+//TODO: finish
+// export type QuoteEstimate = {
+//   previousValue: any;
+//   updatedValue: any;
+// };
+
 /**
     * @dev
     Rewards in the database are stored in 2 decimals.

@@ -9,7 +9,7 @@ import { siweParams, siweParamsExample } from "../../handlers/siweHandler";
 import { recoverAddressHandler } from "../../handlers/recoverAddressHandler";
 import { updateRole } from "../../db/mutations/accounts/updateRole";
 import { generateSaltFromAddress } from "../../utils/encryption/generateSaltFromAddress";
-import { GetEntityByIdQueryParamSchema } from "../../schemas/shared/getEntityByIdParamSchema";
+import { GetEntityByIdQueryParamsSchema } from "../../schemas/shared/getEntityByIdParamSchema";
 import { FindFirstById } from "../../db/queries/accounts/findFirstById";
 import { Wallet } from "ethers";
 import {
@@ -59,7 +59,7 @@ export const gcasRouter = new Elysia({ prefix: "/gcas" })
       }
     },
     {
-      query: GetEntityByIdQueryParamSchema,
+      query: GetEntityByIdQueryParamsSchema,
       detail: {
         summary: "Get GCA by ID",
         description: `Get GCA by ID and return the GCA object. If the GCA is not found, it will throw an error.`,

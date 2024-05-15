@@ -10,7 +10,7 @@ import { siweParams, siweParamsExample } from "../../handlers/siweHandler";
 import { recoverAddressHandler } from "../../handlers/recoverAddressHandler";
 import { updateRole } from "../../db/mutations/accounts/updateRole";
 import { generateSaltFromAddress } from "../../utils/encryption/generateSaltFromAddress";
-import { GetEntityByIdQueryParamSchema } from "../../schemas/shared/getEntityByIdParamSchema";
+import { GetEntityByIdQueryParamsSchema } from "../../schemas/shared/getEntityByIdParamSchema";
 import { FindFirstById } from "../../db/queries/accounts/findFirstById";
 import { createUser } from "../../db/mutations/users/createUser";
 
@@ -70,7 +70,7 @@ export const usersRouter = new Elysia({ prefix: "/users" })
       }
     },
     {
-      query: GetEntityByIdQueryParamSchema,
+      query: GetEntityByIdQueryParamsSchema,
       detail: {
         summary: "Get User by ID",
         description: `Get a User by ID. If the user does not exist, it will throw an error.`,
