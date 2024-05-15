@@ -466,6 +466,7 @@ export const applications = pgTable("applications", {
   afterInstallVisitDateFrom: timestamp("after_install_visit_date_from"),
   afterInstallVisitDateTo: timestamp("after_install_visit_date_to"),
   finalProtocolFee: varchar("final_protocol_fee", { length: 255 }),
+  intallFinishedDate: timestamp("install_finished_date"),
   // payment step fields
   paymentDate: timestamp("payment_date"),
   paymentTxHash: varchar("payment_tx_hash", { length: 66 }),

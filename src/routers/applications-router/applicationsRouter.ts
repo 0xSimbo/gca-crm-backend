@@ -15,32 +15,29 @@ import { FindFirstApplicationById } from "../../db/queries/applications/findFirs
 import { findAllApplicationsByUserId } from "../../db/queries/applications/findAllApplicationsByUserId";
 
 export const CreateApplicationQueryBody = t.Object({
-  fields: t.Object({
-    establishedCostOfPowerPerKWh: t.Number({
-      example: 0.12,
-      minimum: 0,
-    }),
-    estimatedKWhGeneratedPerYear: t.Number({
-      example: 32,
-      minimum: 0,
-    }),
-    installerId: t.String(),
-    address: t.String({
-      example: "123 John Doe Street, Phoenix, AZ 85001",
-      minLength: 10, // TODO: match in frontend
-    }),
-    lat: t.Number({
-      example: 38.234242,
-      minimum: -90,
-      maximum: 90,
-    }),
-    lng: t.Number({
-      example: -111.123412,
-      minimum: -180,
-      maximum: 180,
-    }),
+  establishedCostOfPowerPerKWh: t.Number({
+    example: 0.12,
+    minimum: 0,
   }),
-  recoverAddressParams: t.Object(siweParams),
+  estimatedKWhGeneratedPerYear: t.Number({
+    example: 32,
+    minimum: 0,
+  }),
+  installerId: t.String(),
+  address: t.String({
+    example: "123 John Doe Street, Phoenix, AZ 85001",
+    minLength: 10, // TODO: match in frontend
+  }),
+  lat: t.Number({
+    example: 38.234242,
+    minimum: -90,
+    maximum: 90,
+  }),
+  lng: t.Number({
+    example: -111.123412,
+    minimum: -180,
+    maximum: 180,
+  }),
 });
 
 export const applicationsRouter = new Elysia({ prefix: "/applications" })
@@ -102,14 +99,14 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
     "/create-application",
     async ({ body, set }) => {
       try {
-        const wallet = body.recoverAddressParams.wallet;
+        // const wallet = body.recoverAddressParams.wallet; redo get wallet from next-auth-jwt
         await createApplication({
-          userId: wallet,
-          ...body.fields,
+          userId: "0x18a0ba01bbec4aa358650d297ba7bb330a78b073", //TODO: get from next-auth-jwt
+          ...body,
           establishedCostOfPowerPerKWh:
-            body.fields.establishedCostOfPowerPerKWh.toString(),
+            body.establishedCostOfPowerPerKWh.toString(),
           estimatedKWhGeneratedPerYear:
-            body.fields.estimatedKWhGeneratedPerYear.toString(),
+            body.estimatedKWhGeneratedPerYear.toString(),
           createdAt: new Date(),
           farmId: null,
           currentStep: 1,
@@ -124,6 +121,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
           afterInstallVisitDateFrom: null,
           afterInstallVisitDateTo: null,
           installDate: null,
+          intallFinishedDate: null,
           paymentTxHash: null,
           finalProtocolFee: null,
           paymentDate: null,
@@ -131,6 +129,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
           gcaAcceptanceTimestamp: null,
           gcaAddress: null,
         });
+        return { message: "success" };
       } catch (e) {
         console.log("[applicationsRouter] create-application", e);
         throw new Error("Error Occured");
@@ -139,28 +138,12 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
     {
       body: CreateApplicationQueryBody,
       detail: {
-        summary: "Create ",
-        description: `Create a`,
+        summary: "Create an Application",
+        description: `Create an Application`,
         tags: [TAG.APPLICATIONS],
       },
-      beforeHandle: async ({
-        body: {
-          recoverAddressParams: { message, signature, wallet },
-        },
-        set,
-      }) => {
-        try {
-          const recoveredAddress = await recoverAddressHandler(
-            message,
-            signature,
-            wallet
-          );
-          if (recoveredAddress !== wallet) {
-            return (set.status = 401);
-          }
-        } catch (error) {
-          return (set.status = 401);
-        }
+      beforeHandle: async ({ body: {}, set }) => {
+        //TODO: guard route to only allow users to create applications and verify jwt from next-auth
       },
     }
   );

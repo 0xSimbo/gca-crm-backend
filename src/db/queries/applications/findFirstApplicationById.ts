@@ -9,6 +9,8 @@ export const FindFirstApplicationById = async (id: string) => {
       gca: true,
       user: true,
       documentsMissingWithReason: true,
+      annotations: true,
+      installer: true,
     },
   });
   return application;
