@@ -55,6 +55,7 @@ export const accountsRouter = new Elysia({ prefix: "/accounts" })
             siweNonce: body.nonce,
             salt,
             createdAt: new Date(),
+            role: "UNKNOWN",
           });
           account = await findFirstAccountById(body.wallet);
         } else {
