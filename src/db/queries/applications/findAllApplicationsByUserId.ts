@@ -15,6 +15,9 @@ export const findAllApplicationsByUserId = async (userId: string) => {
       roundRobinStatus: true,
       gcaAddress: true,
     },
+    with: {
+      installer: true,
+    },
   });
   return applicationsDb;
 };

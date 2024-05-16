@@ -120,6 +120,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                 (account.role !== "ADMIN" && account.role !== "GCA")
               ) {
                 set.status = 403;
+
                 return "Unauthorized";
               }
             }
