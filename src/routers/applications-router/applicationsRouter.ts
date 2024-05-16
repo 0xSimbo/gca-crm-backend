@@ -20,15 +20,15 @@ import { findFirstAccountById } from "../../db/queries/accounts/findFirstAccount
 import { updateApplicationContactInfos } from "../../db/mutations/applications/updateApplication";
 
 export const CreateApplicationQueryBody = t.Object({
-  establishedCostOfPowerPerKWh: t.Number({
+  establishedCostOfPowerPerKWh: t.Numeric({
     example: 0.12,
     minimum: 0,
   }),
-  enquiryEstimatedFees: t.Number({
+  enquiryEstimatedFees: t.Numeric({
     example: 109894,
     minimum: 0,
   }),
-  estimatedKWhGeneratedPerYear: t.Number({
+  estimatedKWhGeneratedPerYear: t.Numeric({
     example: 32,
     minimum: 0,
   }),
@@ -37,12 +37,12 @@ export const CreateApplicationQueryBody = t.Object({
     example: "123 John Doe Street, Phoenix, AZ 85001",
     minLength: 10, // TODO: match in frontend
   }),
-  lat: t.Number({
+  lat: t.Numeric({
     example: 38.234242,
     minimum: -90,
     maximum: 90,
   }),
-  lng: t.Number({
+  lng: t.Numeric({
     example: -111.123412,
     minimum: -180,
     maximum: 180,
@@ -98,7 +98,9 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
           }
         },
         {
-          query: GetEntityByIdQueryParamsSchema,
+          query: t.Object({
+            id: t.String(),
+          }),
           detail: {
             summary: "Get Application by ID",
             description: `Get Application by ID`,
@@ -107,8 +109,8 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
         }
       )
       .get(
-        "/all-by-user-id/:id",
-        async ({ params: { id }, set, userId }) => {
+        "/all-by-user-id",
+        async ({ query: { id }, set, userId }) => {
           if (!id) throw new Error("userId is required");
           try {
             if (id !== userId) {
@@ -122,7 +124,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               }
             }
             const applications = await findAllApplicationsByUserId(id);
-
+            console.log(applications);
             return applications;
           } catch (e) {
             if (e instanceof Error) {
@@ -154,6 +156,8 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               estimatedKWhGeneratedPerYear:
                 body.estimatedKWhGeneratedPerYear.toString(),
               enquiryEstimatedFees: body.enquiryEstimatedFees.toString(),
+              lat: body.lat.toString(),
+              lng: body.lng.toString(),
               createdAt: new Date(),
               farmId: null,
               currentStep: 1,

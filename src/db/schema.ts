@@ -450,8 +450,14 @@ export const applications = pgTable("applications", {
   contactValue: varchar("contact_value", { length: 255 }),
   // enquiry step fields
   address: varchar("address", { length: 255 }).notNull(),
-  lat: integer("lat").notNull(),
-  lng: integer("lng").notNull(),
+  lat: numeric("lat", {
+    precision: 10,
+    scale: 5,
+  }).notNull(),
+  lng: numeric("lng", {
+    precision: 10,
+    scale: 5,
+  }).notNull(),
   establishedCostOfPowerPerKWh: numeric("established_cost_of_power_per_kwh", {
     precision: 10,
     scale: 2,

@@ -105,7 +105,9 @@ export const installersRouter = new Elysia({ prefix: "/installers" })
       }
     },
     {
-      query: GetEntityByIdQueryParamsSchema,
+      query: t.Object({
+        id: t.String(),
+      }),
       detail: {
         summary: "Get Installer by ID",
         description: `Get a Installer by ID. If the installer does not exist, it will throw an error.`,
