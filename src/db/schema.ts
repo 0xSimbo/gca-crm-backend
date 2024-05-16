@@ -341,6 +341,7 @@ export const users = pgTable("users", {
   ).notNull(),
   companyAddress: varchar("company_address", { length: 255 }),
   isInstaller: boolean("is_installer").notNull().default(false), // for easier access
+  installerId: text("installer_id"),
 });
 export type UserType = InferSelectModel<typeof users>;
 export type UserInsertType = typeof users.$inferInsert;
@@ -352,8 +353,8 @@ export const usersRelations = relations(users, ({ many, one }) => ({
     references: [wallets.id],
   }),
   installer: one(installers, {
-    fields: [users.id],
-    references: [installers.userId],
+    fields: [users.installerId],
+    references: [installers.id],
   }),
   applications: many(applications),
 }));
@@ -522,7 +523,6 @@ export const installers = pgTable("installers", {
   id: text("installer_id")
     .primaryKey()
     .$defaultFn(() => crypto.randomUUID()),
-  userId: varchar("user_id", { length: 42 }).unique(), // the wallet address of the user if the user is an installer in order to link the user to the installer informations
   name: varchar("name", { length: 255 }).unique().notNull(),
   email: varchar("email", { length: 255 }).unique().notNull(),
   companyName: varchar("company_name", { length: 255 }).notNull(),
@@ -534,8 +534,8 @@ export type InstallerInsertType = typeof installers.$inferInsert;
 
 export const InstallersRelations = relations(installers, ({ one, many }) => ({
   user: one(users, {
-    fields: [installers.userId],
-    references: [users.id],
+    fields: [installers.id],
+    references: [users.installerId],
   }),
   applications: many(applications),
 }));
