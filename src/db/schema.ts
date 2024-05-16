@@ -460,6 +460,10 @@ export const applications = pgTable("applications", {
     precision: 10,
     scale: 2,
   }).notNull(),
+  enquiryEstimatedFees: numeric("enquiry_estimated_fees", {
+    precision: 10,
+    scale: 2,
+  }).notNull(),
   // null if application just got created
   updatedAt: timestamp("updatedAt"),
   // pre-install documents step fields

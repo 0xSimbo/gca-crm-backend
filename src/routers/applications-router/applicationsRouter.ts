@@ -8,17 +8,24 @@ import { bearer as bearerplugin } from "@elysiajs/bearer";
 import { createApplication } from "../../db/mutations/applications/createApplication";
 import {
   ApplicationStatusEnum,
+  ContactType,
   RoundRobinStatusEnum,
+  contactTypes,
 } from "../../types/api-types/Application";
 import { FindFirstApplicationById } from "../../db/queries/applications/findFirstApplicationById";
 import { findAllApplicationsByUserId } from "../../db/queries/applications/findAllApplicationsByUserId";
 import { bearerGuard } from "../../guards/bearerGuard";
 import { jwtHandler } from "../../handlers/jwtHandler";
 import { findFirstAccountById } from "../../db/queries/accounts/findFirstAccountById";
+import { updateApplicationContactInfos } from "../../db/mutations/applications/updateApplication";
 
 export const CreateApplicationQueryBody = t.Object({
   establishedCostOfPowerPerKWh: t.Number({
     example: 0.12,
+    minimum: 0,
+  }),
+  enquiryEstimatedFees: t.Number({
+    example: 109894,
     minimum: 0,
   }),
   estimatedKWhGeneratedPerYear: t.Number({
@@ -39,6 +46,14 @@ export const CreateApplicationQueryBody = t.Object({
     example: -111.123412,
     minimum: -180,
     maximum: 180,
+  }),
+});
+
+export const UpdateApplicationContactInfosQueryBody = t.Object({
+  applicationId: t.String(),
+  value: t.String(),
+  type: t.String({
+    enum: contactTypes,
   }),
 });
 
@@ -74,6 +89,10 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
             }
             return application;
           } catch (e) {
+            if (e instanceof Error) {
+              set.status = 400;
+              return e.message;
+            }
             console.log("[applicationsRouter] byId", e);
             throw new Error("Error Occured");
           }
@@ -106,6 +125,10 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
 
             return applications;
           } catch (e) {
+            if (e instanceof Error) {
+              set.status = 400;
+              return e.message;
+            }
             console.log("[applicationsRouter] byId", e);
             throw new Error("Error Occured");
           }
@@ -130,6 +153,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                 body.establishedCostOfPowerPerKWh.toString(),
               estimatedKWhGeneratedPerYear:
                 body.estimatedKWhGeneratedPerYear.toString(),
+              enquiryEstimatedFees: body.enquiryEstimatedFees.toString(),
               createdAt: new Date(),
               farmId: null,
               currentStep: 1,
@@ -154,12 +178,46 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
             });
             return { insertedId };
           } catch (e) {
+            if (e instanceof Error) {
+              set.status = 400;
+              return e.message;
+            }
             console.log("[applicationsRouter] create-application", e);
             throw new Error("Error Occured");
           }
         },
         {
           body: CreateApplicationQueryBody,
+          detail: {
+            summary: "Create an Application",
+            description: `Create an Application`,
+            tags: [TAG.APPLICATIONS],
+          },
+        }
+      )
+      .post(
+        "/update-contact-infos",
+        async ({ body, set, userId }) => {
+          try {
+            await updateApplicationContactInfos(
+              {
+                contactType: body.type as ContactType,
+                contactValue: body.value,
+              },
+              body.applicationId,
+              userId
+            );
+          } catch (e) {
+            if (e instanceof Error) {
+              set.status = 400;
+              return e.message;
+            }
+            console.log("[applicationsRouter] update-contact-infos", e);
+            throw new Error("Error Occured");
+          }
+        },
+        {
+          body: UpdateApplicationContactInfosQueryBody,
           detail: {
             summary: "Create an Application",
             description: `Create an Application`,
