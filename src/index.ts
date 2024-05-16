@@ -11,6 +11,7 @@ import { gcasRouter } from "./routers/gcas-router/gcasRouter";
 import { usersRouter } from "./routers/users-router/usersRouter";
 import { applicationsRouter } from "./routers/applications-router/applicationsRouter";
 import { updateWalletRewardsForWeek } from "./crons/update-wallet-rewards";
+import { installersRouter } from "./routers/installers-router/installersRouter";
 
 const PORT = process.env.PORT || 3005;
 const app = new Elysia()
@@ -19,6 +20,7 @@ const app = new Elysia()
   .use(protocolFeeRouter)
   .use(rewardsRouter)
   .use(accountsRouter)
+  .use(installersRouter)
   .use(gcasRouter)
   .use(applicationsRouter)
   .use(usersRouter)

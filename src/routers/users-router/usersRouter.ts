@@ -93,7 +93,6 @@ export const usersRouter = new Elysia({ prefix: "/users" })
               return "Email already exists";
             }
 
-            await updateRole(wallet, "USER");
             let installerId;
 
             if (body.isInstaller) {
@@ -106,7 +105,6 @@ export const usersRouter = new Elysia({ prefix: "/users" })
                 return "Company Name is required for installer";
               }
               installerId = await createInstaller({
-                id: wallet,
                 email: body.email,
                 companyName: body.companyName,
                 phone: body.phone,
@@ -120,6 +118,7 @@ export const usersRouter = new Elysia({ prefix: "/users" })
               createdAt: new Date(),
               installerId: installerId || null,
             });
+            await updateRole(wallet, "USER");
           } catch (e) {
             console.log("[UsersRouter] create-user", e);
             if (e instanceof Error) {
@@ -149,14 +148,14 @@ export const usersRouter = new Elysia({ prefix: "/users" })
               (account.role !== "ADMIN" && account.role !== "GCA")
             ) {
               set.status = 403;
-              ("Unauthorized");
+              return "Unauthorized";
             }
           }
           try {
             const user = await findFirstUserById(query.id);
             if (!user) {
               set.status = 404;
-              ("user not found");
+              return "user not found";
             }
 
             return user;
