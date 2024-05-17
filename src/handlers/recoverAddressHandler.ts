@@ -6,16 +6,16 @@ import { Accounts } from "../db/schema";
 export const recoverAddressHandler = async (
   message: string,
   signature: string,
-  wallet: string
+  accountId: string
 ) => {
   const account = await db.query.Accounts.findFirst({
-    where: eq(Accounts.id, wallet),
+    where: eq(Accounts.id, accountId),
   });
   if (!account) {
     throw new Error("Account not found");
   }
   const address = ethers.utils.verifyMessage(
-    message + account.siweNonce,
+    message + account.siweNonce + account.salt,
     signature
   );
   return address;

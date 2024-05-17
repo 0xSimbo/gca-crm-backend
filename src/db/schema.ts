@@ -536,8 +536,8 @@ export const installers = pgTable("installers", {
   id: text("installer_id")
     .primaryKey()
     .$defaultFn(() => crypto.randomUUID()),
-  name: varchar("name", { length: 255 }).unique().notNull(),
-  email: varchar("email", { length: 255 }).unique().notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  email: varchar("email", { length: 255 }).notNull(),
   companyName: varchar("company_name", { length: 255 }).notNull(),
   phone: varchar("phone", { length: 255 }).notNull(),
 });

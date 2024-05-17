@@ -19,6 +19,8 @@ import { jwtHandler } from "../../handlers/jwtHandler";
 import { findFirstAccountById } from "../../db/queries/accounts/findFirstAccountById";
 import { updateApplicationContactInfos } from "../../db/mutations/applications/updateApplication";
 import { findAllApplicationsAssignedToGca } from "../../db/queries/applications/findAllApplicationsAssignedToGca";
+import { recoverAddressHandler } from "../../handlers/recoverAddressHandler";
+import { acceptApplicationAssignement } from "../../db/mutations/applications/acceptApplicationAssignement";
 
 export const CreateApplicationQueryBody = t.Object({
   establishedCostOfPowerPerKWh: t.Numeric({
@@ -56,6 +58,11 @@ export const UpdateApplicationContactInfosQueryBody = t.Object({
   type: t.String({
     enum: contactTypes,
   }),
+});
+
+export const GcaAcceptApplicationQueryBody = t.Object({
+  applicationId: t.String(),
+  signature: t.String(),
 });
 
 export const applicationsRouter = new Elysia({ prefix: "/applications" })
@@ -109,6 +116,68 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
           },
         }
       )
+      .post(
+        "/gca-accept-application-assignement",
+        async ({ body, set, userId: gcaId }) => {
+          try {
+            const account = await findFirstAccountById(gcaId);
+
+            if (!account) {
+              set.status = 404;
+              return "Account not found";
+            }
+
+            if (account.role !== "GCA") {
+              set.status = 403;
+              return "Unauthorized";
+            }
+
+            const recoveredAddress = await recoverAddressHandler(
+              body.applicationId,
+              body.signature,
+              gcaId
+            );
+
+            if (recoveredAddress.toLowerCase() !== account.id.toLowerCase()) {
+              set.status = 403;
+              return "Invalid Signature";
+            }
+
+            const application = await FindFirstApplicationById(
+              body.applicationId
+            );
+
+            if (!application) {
+              set.status = 404;
+              return "Application not found";
+            }
+
+            if (
+              application.roundRobinStatus !==
+              RoundRobinStatusEnum.waitingToBeAccepted
+            ) {
+              set.status = 403;
+              return "Application is not in waitingToBeAccepted status";
+            }
+            await acceptApplicationAssignement(body.applicationId, gcaId);
+          } catch (e) {
+            if (e instanceof Error) {
+              set.status = 400;
+              return e.message;
+            }
+            console.log("[applicationsRouter] gca-assigned-applications", e);
+            throw new Error("Error Occured");
+          }
+        },
+        {
+          body: GcaAcceptApplicationQueryBody,
+          detail: {
+            summary: "Get Applications assigned to GCA",
+            description: `Get Applications assigned to GCA. If the user is not a GCA, it will throw an error.`,
+            tags: [TAG.APPLICATIONS],
+          },
+        }
+      )
       .get(
         "/gca-assigned-applications",
         async ({ set, userId: gcaId }) => {
@@ -126,7 +195,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
             }
 
             const applications = await findAllApplicationsAssignedToGca(gcaId);
-            console.log(applications);
+            console.log("gca-assigned-applications", { applications, gcaId });
             return applications;
           } catch (e) {
             if (e instanceof Error) {
@@ -201,7 +270,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               currentStep: 1,
               //TODO remove when @0xSimbo finished roundRobin implementation
               gcaAssignedTimestamp: new Date(),
-              gcaAddress: "0x18a0ba01bbec4aa358650d297ba7bb330a78b073",
+              gcaAddress: "0x18a0bA01Bbec4aa358650d297Ba7bB330a78B073",
               roundRobinStatus: RoundRobinStatusEnum.waitingToBeAccepted,
               // roundRobinStatus: RoundRobinStatusEnum.waitingToBeAssigned,
               status: ApplicationStatusEnum.waitingForApproval,
