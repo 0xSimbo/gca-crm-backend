@@ -75,20 +75,23 @@ export const gcasRouter = new Elysia({ prefix: "/gcas" })
       })
       .post(
         "/create-gca",
-        async ({ body, userId }) => {
+        async ({ body, userId, set }) => {
           try {
             const wallet = userId;
             const account = await findFirstAccountById(wallet);
             if (!account) {
-              throw new Error("Account not found");
+              set.status = 404;
+              return "Account not found";
             }
 
             if (account.gca) {
-              throw new Error("GCA already exists");
+              set.status = 409;
+              return "GCA already exists";
             }
 
             if (account.user) {
-              throw new Error("this account is already a user");
+              set.status = 409;
+              return "this account is already a user";
             }
 
             const signer = new Wallet(process.env.PRIVATE_KEY!!);
@@ -96,11 +99,13 @@ export const gcasRouter = new Elysia({ prefix: "/gcas" })
               addresses.gcaAndMinerPoolContract,
               signer
             );
+
             //TODO:  remove comment when finished testing
             // const isGca = await minerPoolAndGCA["isGCA(address)"](wallet);
             const isGca = true;
             if (!isGca) {
-              throw new Error("This wallet is not a GCA");
+              set.status = 401;
+              return "This wallet is not a GCA";
             }
 
             await updateRole(wallet, "GCA");
@@ -110,6 +115,9 @@ export const gcasRouter = new Elysia({ prefix: "/gcas" })
               ...body,
             });
           } catch (e) {
+            if (e instanceof Error) {
+              return e.message;
+            }
             console.log("[accountsRouter] create-gca", e);
             throw new Error("Error Occured");
           }

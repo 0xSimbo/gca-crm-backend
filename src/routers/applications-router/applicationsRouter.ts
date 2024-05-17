@@ -18,6 +18,7 @@ import { bearerGuard } from "../../guards/bearerGuard";
 import { jwtHandler } from "../../handlers/jwtHandler";
 import { findFirstAccountById } from "../../db/queries/accounts/findFirstAccountById";
 import { updateApplicationContactInfos } from "../../db/mutations/applications/updateApplication";
+import { findAllApplicationsAssignedToGca } from "../../db/queries/applications/findAllApplicationsAssignedToGca";
 
 export const CreateApplicationQueryBody = t.Object({
   establishedCostOfPowerPerKWh: t.Numeric({
@@ -109,6 +110,42 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
         }
       )
       .get(
+        "/gca-assigned-applications",
+        async ({ set, userId: gcaId }) => {
+          try {
+            const account = await findFirstAccountById(gcaId);
+
+            if (!account) {
+              set.status = 404;
+              return "Account not found";
+            }
+
+            if (account.role !== "GCA") {
+              set.status = 403;
+              return "Unauthorized";
+            }
+
+            const applications = await findAllApplicationsAssignedToGca(gcaId);
+            console.log(applications);
+            return applications;
+          } catch (e) {
+            if (e instanceof Error) {
+              set.status = 400;
+              return e.message;
+            }
+            console.log("[applicationsRouter] gca-assigned-applications", e);
+            throw new Error("Error Occured");
+          }
+        },
+        {
+          detail: {
+            summary: "Get Applications assigned to GCA",
+            description: `Get Applications assigned to GCA. If the user is not a GCA, it will throw an error.`,
+            tags: [TAG.APPLICATIONS],
+          },
+        }
+      )
+      .get(
         "/all-by-user-id",
         async ({ query: { id }, set, userId }) => {
           if (!id) throw new Error("userId is required");
@@ -132,7 +169,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               set.status = 400;
               return e.message;
             }
-            console.log("[applicationsRouter] byId", e);
+            console.log("[applicationsRouter] /all-by-user-id", e);
             throw new Error("Error Occured");
           }
         },
@@ -162,7 +199,11 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               createdAt: new Date(),
               farmId: null,
               currentStep: 1,
-              roundRobinStatus: RoundRobinStatusEnum.waitingToBeAssigned,
+              //TODO remove when @0xSimbo finished roundRobin implementation
+              gcaAssignedTimestamp: new Date(),
+              gcaAddress: "0x18a0ba01bbec4aa358650d297ba7bb330a78b073",
+              roundRobinStatus: RoundRobinStatusEnum.waitingToBeAccepted,
+              // roundRobinStatus: RoundRobinStatusEnum.waitingToBeAssigned,
               status: ApplicationStatusEnum.waitingForApproval,
               updatedAt: null,
               contactType: null,
@@ -177,9 +218,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               paymentTxHash: null,
               finalProtocolFee: null,
               paymentDate: null,
-              gcaAssignedTimestamp: null,
               gcaAcceptanceTimestamp: null,
-              gcaAddress: null,
             });
             return { insertedId };
           } catch (e) {
