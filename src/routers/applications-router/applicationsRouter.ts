@@ -1,26 +1,25 @@
 import { Elysia, t } from "elysia";
 import { TAG } from "../../constants";
-import {
-  GetEntityByIdPathParamsSchema,
-  GetEntityByIdQueryParamsSchema,
-} from "../../schemas/shared/getEntityByIdParamSchema";
+import { GetEntityByIdPathParamsSchema } from "../../schemas/shared/getEntityByIdParamSchema";
 import { bearer as bearerplugin } from "@elysiajs/bearer";
 import { createApplication } from "../../db/mutations/applications/createApplication";
 import {
   ApplicationStatusEnum,
-  ContactType,
   RoundRobinStatusEnum,
-  contactTypes,
 } from "../../types/api-types/Application";
 import { FindFirstApplicationById } from "../../db/queries/applications/findFirstApplicationById";
 import { findAllApplicationsByUserId } from "../../db/queries/applications/findAllApplicationsByUserId";
 import { bearerGuard } from "../../guards/bearerGuard";
 import { jwtHandler } from "../../handlers/jwtHandler";
 import { findFirstAccountById } from "../../db/queries/accounts/findFirstAccountById";
-import { updateApplicationContactInfos } from "../../db/mutations/applications/updateApplication";
 import { findAllApplicationsAssignedToGca } from "../../db/queries/applications/findAllApplicationsAssignedToGca";
 import { recoverAddressHandler } from "../../handlers/recoverAddressHandler";
 import { acceptApplicationAssignement } from "../../db/mutations/applications/acceptApplicationAssignement";
+import {
+  applicationAcceptedTypes,
+  deferredTypes,
+} from "../../constants/typed-data/deferment";
+import { deferApplicationAssignement } from "../../db/mutations/applications/deferApplicationAssignement";
 
 export const CreateApplicationQueryBody = t.Object({
   establishedCostOfPowerPerKWh: t.Numeric({
@@ -52,17 +51,19 @@ export const CreateApplicationQueryBody = t.Object({
   }),
 });
 
-export const UpdateApplicationContactInfosQueryBody = t.Object({
-  applicationId: t.String(),
-  value: t.String(),
-  type: t.String({
-    enum: contactTypes,
-  }),
-});
-
 export const GcaAcceptApplicationQueryBody = t.Object({
   applicationId: t.String(),
   signature: t.String(),
+  deadline: t.Numeric(),
+  accepted: t.Boolean(),
+  reason: t.Nullable(t.String()),
+  to: t.Nullable(
+    t.String({
+      example: "0x18a0bA01Bbec4aa358650d297Ba7bB330a78B073",
+      minLength: 42,
+      maxLength: 42,
+    })
+  ),
 });
 
 export const applicationsRouter = new Elysia({ prefix: "/applications" })
@@ -117,7 +118,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
         }
       )
       .post(
-        "/gca-accept-application-assignement",
+        "/gca-accept-or-defer-application-assignement",
         async ({ body, set, userId: gcaId }) => {
           try {
             const account = await findFirstAccountById(gcaId);
@@ -132,11 +133,54 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               return "Unauthorized";
             }
 
-            const recoveredAddress = await recoverAddressHandler(
-              body.applicationId,
-              body.signature,
-              gcaId
-            );
+            if (body.deadline < Date.now() / 1000) {
+              set.status = 403;
+              return "Deadline has passed";
+            }
+
+            // make deadline max 10minutes
+            if (body.deadline > Date.now() / 1000 + 600) {
+              set.status = 403;
+              return "Deadline is too far in the future";
+            }
+            let recoveredAddress;
+            if (body.accepted) {
+              const acceptedValues = {
+                applicationId: body.applicationId,
+                accepted: body.accepted,
+                deadline: body.deadline,
+                // nonce is fetched from user account. nonce is updated for every new next-auth session
+              };
+
+              recoveredAddress = await recoverAddressHandler(
+                applicationAcceptedTypes,
+                acceptedValues,
+                body.signature,
+                gcaId
+              );
+              console.log("recoveredAddress", {
+                recoveredAddress,
+                acceptedValues,
+              });
+            } else {
+              if (!body.to) {
+                set.status = 400;
+                return "to address is required for deferring application assignement";
+              }
+              const deferredValues = {
+                applicationId: body.applicationId,
+                accepted: body.accepted,
+                deadline: body.deadline,
+                to: body.to,
+                // nonce is fetched from user account. nonce is updated for every new next-auth session
+              };
+              recoveredAddress = await recoverAddressHandler(
+                deferredTypes,
+                deferredValues,
+                body.signature,
+                gcaId
+              );
+            }
 
             if (recoveredAddress.toLowerCase() !== account.id.toLowerCase()) {
               set.status = 403;
@@ -159,7 +203,26 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               set.status = 403;
               return "Application is not in waitingToBeAccepted status";
             }
-            await acceptApplicationAssignement(body.applicationId, gcaId);
+
+            if (body.accepted) {
+              await acceptApplicationAssignement(
+                body.applicationId,
+                gcaId,
+                body.signature
+              );
+            } else {
+              if (!body.to) {
+                set.status = 400;
+                return "to address is required for deferring application assignement";
+              }
+              await deferApplicationAssignement(
+                body.applicationId,
+                account.id,
+                body.to,
+                body.reason,
+                body.signature
+              );
+            }
           } catch (e) {
             if (e instanceof Error) {
               set.status = 400;
@@ -275,8 +338,6 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               // roundRobinStatus: RoundRobinStatusEnum.waitingToBeAssigned,
               status: ApplicationStatusEnum.waitingForApproval,
               updatedAt: null,
-              contactType: null,
-              contactValue: null,
               finalQuotePerWatt: null,
               preInstallVisitDateFrom: null,
               preInstallVisitDateTo: null,
@@ -301,36 +362,6 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
         },
         {
           body: CreateApplicationQueryBody,
-          detail: {
-            summary: "Create an Application",
-            description: `Create an Application`,
-            tags: [TAG.APPLICATIONS],
-          },
-        }
-      )
-      .post(
-        "/update-contact-infos",
-        async ({ body, set, userId }) => {
-          try {
-            await updateApplicationContactInfos(
-              {
-                contactType: body.type as ContactType,
-                contactValue: body.value,
-              },
-              body.applicationId,
-              userId
-            );
-          } catch (e) {
-            if (e instanceof Error) {
-              set.status = 400;
-              return e.message;
-            }
-            console.log("[applicationsRouter] update-contact-infos", e);
-            throw new Error("Error Occured");
-          }
-        },
-        {
-          body: UpdateApplicationContactInfosQueryBody,
           detail: {
             summary: "Create an Application",
             description: `Create an Application`,

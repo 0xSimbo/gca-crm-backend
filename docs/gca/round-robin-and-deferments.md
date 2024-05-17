@@ -44,6 +44,7 @@ the solar farm will be held on standby. A farm cannot be deferred to the same GC
   - `to_gca` - the address of the GCA that the solar farm was deferred to.
   - `timestamp` - the timestamp when the solar farm was deferred.
   - `notes` - an array of notes that the GCA can add when deferring the solar farm. // @0xSimbo any particular reason for it to be an array of notes ? or it can be just one note for simplicity reason ?
+  - `signature`- signature of the typedData defering the application
 
 ### Fields that are needed in the model
 

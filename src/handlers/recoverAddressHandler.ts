@@ -4,7 +4,8 @@ import { eq } from "drizzle-orm";
 import { Accounts } from "../db/schema";
 
 export const recoverAddressHandler = async (
-  message: string,
+  types: any,
+  values: any,
   signature: string,
   accountId: string
 ) => {
@@ -14,9 +15,19 @@ export const recoverAddressHandler = async (
   if (!account) {
     throw new Error("Account not found");
   }
-  const address = ethers.utils.verifyMessage(
-    message + account.siweNonce + account.salt,
+
+  const signerAddress = ethers.utils.verifyTypedData(
+    {
+      name: "Glow Crm",
+      version: "1",
+      chainId: 1,
+    },
+    types,
+    {
+      ...values,
+      nonce: account.siweNonce,
+    },
     signature
   );
-  return address;
+  return signerAddress;
 };

@@ -342,6 +342,8 @@ export const users = pgTable("users", {
   companyAddress: varchar("company_address", { length: 255 }),
   isInstaller: boolean("is_installer").notNull().default(false), // for easier access
   installerId: text("installer_id"),
+  contactType: contactTypesEnum("contact_type"),
+  contactValue: varchar("contact_value", { length: 255 }),
 });
 export type UserType = InferSelectModel<typeof users>;
 export type UserInsertType = typeof users.$inferInsert;
@@ -412,8 +414,6 @@ export const GcasRelations = relations(Gcas, ({ many, one }) => ({
  * @param {number} currentStep - The current step of the application process.
  * @param {string} roundRobinStatus - The round robin status of the application.
  * @param {string} status - The status of the application.
- * @param {string} contactType - The type of contact information provided.
- * @param {string} contactValue - The contact value provided.
  * @param {string} address - The address related to the application.
  * @param {number} lat - The latitude of the location.
  * @param {number} lng - The longitude of the location.
@@ -446,8 +446,6 @@ export const applications = pgTable("applications", {
   currentStep: integer("current_step").notNull(),
   roundRobinStatus: roundRobinStatusEnum("round_robin_status").notNull(),
   status: applicationStatusEnum("application_status").notNull(),
-  contactType: contactTypesEnum("contact_type"),
-  contactValue: varchar("contact_value", { length: 255 }),
   // enquiry step fields
   address: varchar("address", { length: 255 }).notNull(),
   lat: numeric("lat", {
@@ -491,6 +489,7 @@ export const applications = pgTable("applications", {
   gcaAssignedTimestamp: timestamp("gca_assigned_timestamp"),
   gcaAcceptanceTimestamp: timestamp("gca_acceptance_timestamp"),
   gcaAddress: varchar("gca_address", { length: 42 }),
+  gcaAcceptanceSignature: varchar("gca_acceptance_signature", { length: 255 }),
 });
 
 export type ApplicationType = InferSelectModel<typeof applications>;
@@ -563,7 +562,9 @@ export const InstallersRelations = relations(installers, ({ one, many }) => ({
  * @param {timestamp} timestamp - The timestamp when the deferment was created.
  */
 export const deferments = pgTable("deferments", {
-  id: text("deferment_id").primaryKey(),
+  id: text("deferment_id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
   applicationId: text("application_id")
     .notNull()
     .references(() => applications.id, { onDelete: "cascade" }),
@@ -571,6 +572,7 @@ export const deferments = pgTable("deferments", {
   fromGca: varchar("from_gca", { length: 42 }).notNull(),
   toGca: varchar("to_gca", { length: 42 }).notNull(),
   timestamp: timestamp("timestamp").notNull().defaultNow(),
+  defermentSignature: varchar("deferment_signature", { length: 255 }),
 });
 
 export type DefermentType = InferSelectModel<typeof deferments>;

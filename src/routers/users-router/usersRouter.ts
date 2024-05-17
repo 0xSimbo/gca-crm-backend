@@ -14,6 +14,8 @@ import { bearerGuard } from "../../guards/bearerGuard";
 import { GetEntityByIdQueryParamsSchema } from "../../schemas/shared/getEntityByIdParamSchema";
 import { createInstaller } from "../../db/mutations/installers/createInstaller";
 import { findFirstUserByEmail } from "../../db/queries/users/findFirstUserByEmail";
+import { updateUserContactInfos } from "../../db/mutations/applications/updateApplication";
+import { ContactType, contactTypes } from "../../types/api-types/Application";
 
 export const CreateUserQueryBody = t.Object({
   encryptedPrivateEncryptionKey: t.String({
@@ -52,6 +54,13 @@ export const CreateUserQueryBody = t.Object({
       example: "123-456-7890",
     })
   ),
+});
+
+export const UpdateUserContactInfosQueryBody = t.Object({
+  value: t.String(),
+  type: t.String({
+    enum: contactTypes,
+  }),
 });
 
 export const usersRouter = new Elysia({ prefix: "/users" })
@@ -133,6 +142,35 @@ export const usersRouter = new Elysia({ prefix: "/users" })
           detail: {
             summary: "Create User Account",
             description: `Create a User account. If the account already exists, it will throw an error.`,
+            tags: [TAG.USERS],
+          },
+        }
+      )
+      .post(
+        "/update-contact-infos",
+        async ({ body, set, userId }) => {
+          try {
+            await updateUserContactInfos(
+              {
+                contactType: body.type as ContactType,
+                contactValue: body.value,
+              },
+              userId
+            );
+          } catch (e) {
+            if (e instanceof Error) {
+              set.status = 400;
+              return e.message;
+            }
+            console.log("[usersRouter] update-contact-infos", e);
+            throw new Error("Error Occured");
+          }
+        },
+        {
+          body: UpdateUserContactInfosQueryBody,
+          detail: {
+            summary: "Update User Contact Infos",
+            description: ` Update User Contact Infos. If the user does not exist, it will throw an error.`,
             tags: [TAG.USERS],
           },
         }

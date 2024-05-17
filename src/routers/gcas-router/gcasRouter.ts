@@ -18,6 +18,7 @@ import { FindFirstGcaById } from "../../db/queries/gcas/findFirsGcaById";
 import { bearer as bearerplugin } from "@elysiajs/bearer";
 import { bearerGuard } from "../../guards/bearerGuard";
 import { jwtHandler } from "../../handlers/jwtHandler";
+import { findAllGcas } from "../../db/queries/gcas/findAllGcas";
 
 export const CreateGCAQueryBody = t.Object({
   publicEncryptionKey: t.String({
@@ -39,27 +40,24 @@ export const CreateGCAQueryBody = t.Object({
 
 export const gcasRouter = new Elysia({ prefix: "/gcas" })
   .get(
-    "/byId",
-    async ({ query, set }) => {
-      if (!query.id) throw new Error("ID is required");
+    "/all",
+    async ({ set }) => {
       try {
-        const gca = await FindFirstGcaById(query.id);
-        if (!gca) {
-          set.status = 404;
-          throw new Error("gca not found");
-        }
-
-        return gca;
+        const gcas = await findAllGcas();
+        return gcas;
       } catch (e) {
+        if (e instanceof Error) {
+          set.status = 400;
+          return e.message;
+        }
         console.log("[gcasRouter] byId", e);
         throw new Error("Error Occured");
       }
     },
     {
-      query: GetEntityByIdQueryParamsSchema,
       detail: {
-        summary: "Get GCA by ID",
-        description: `Get GCA by ID and return the GCA object. If the GCA is not found, it will throw an error.`,
+        summary: "Get All GCAs",
+        description: `Get all GCAs and return an array of GCA objects. If no GCAs are found, it will return an empty array`,
         tags: [TAG.GCAS],
       },
     }
@@ -73,6 +71,41 @@ export const gcasRouter = new Elysia({ prefix: "/gcas" })
           userId,
         };
       })
+      .get(
+        "/byId",
+        async ({ query, set, userId }) => {
+          if (!query.id) throw new Error("ID is required");
+          const account = await findFirstAccountById(userId);
+          if (!account) {
+            set.status = 404;
+            return "Account not found";
+          }
+          if (account.role !== "GCA") {
+            set.status = 401;
+            return "You are not a GCA";
+          }
+          try {
+            const gca = await FindFirstGcaById(query.id);
+            if (!gca) {
+              set.status = 404;
+              throw new Error("gca not found");
+            }
+
+            return gca;
+          } catch (e) {
+            console.log("[gcasRouter] byId", e);
+            throw new Error("Error Occured");
+          }
+        },
+        {
+          query: GetEntityByIdQueryParamsSchema,
+          detail: {
+            summary: "Get GCA by ID",
+            description: `Get GCA by ID and return the GCA object. If the GCA is not found, it will throw an error.`,
+            tags: [TAG.GCAS],
+          },
+        }
+      )
       .post(
         "/create-gca",
         async ({ body, userId, set }) => {

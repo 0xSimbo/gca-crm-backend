@@ -7,7 +7,16 @@ export const FindFirstApplicationById = async (id: string) => {
     where: eq(applications.id, id),
     with: {
       gca: true,
-      user: true,
+      user: {
+        columns: {
+          id: true,
+          email: true,
+          firstName: true,
+          lastName: true,
+          contactType: true,
+          contactValue: true,
+        },
+      },
       documentsMissingWithReason: true,
       annotations: true,
       installer: true,
