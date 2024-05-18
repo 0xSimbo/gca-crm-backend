@@ -14,8 +14,8 @@ import { bearerGuard } from "../../guards/bearerGuard";
 import { GetEntityByIdQueryParamsSchema } from "../../schemas/shared/getEntityByIdParamSchema";
 import { createInstaller } from "../../db/mutations/installers/createInstaller";
 import { findFirstUserByEmail } from "../../db/queries/users/findFirstUserByEmail";
-import { updateUserContactInfos } from "../../db/mutations/applications/updateApplication";
 import { ContactType, contactTypes } from "../../types/api-types/Application";
+import { updateUserContactInfos } from "../../db/mutations/users/updateUserContactInfos";
 
 export const CreateUserQueryBody = t.Object({
   encryptedPrivateEncryptionKey: t.String({

@@ -20,6 +20,9 @@ import {
   deferredTypes,
 } from "../../constants/typed-data/deferment";
 import { deferApplicationAssignement } from "../../db/mutations/applications/deferApplicationAssignement";
+import { stepApprovedTypes } from "../../constants/typed-data/step-approval";
+import { approveApplicationStep } from "../../db/mutations/applications/approveApplicationStep";
+import { updateApplicationStatus } from "../../db/mutations/applications/updateApplicationStatus";
 
 export const CreateApplicationQueryBody = t.Object({
   establishedCostOfPowerPerKWh: t.Numeric({
@@ -64,6 +67,15 @@ export const GcaAcceptApplicationQueryBody = t.Object({
       maxLength: 42,
     })
   ),
+});
+
+export const ApproveOrAskForChangesQueryBody = t.Object({
+  applicationId: t.String(),
+  signature: t.String(),
+  deadline: t.Numeric(),
+  approved: t.Boolean(),
+  annotation: t.Nullable(t.String()),
+  stepIndex: t.Numeric(),
 });
 
 export const applicationsRouter = new Elysia({ prefix: "/applications" })
@@ -113,6 +125,106 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
           detail: {
             summary: "Get Application by ID",
             description: `Get Application by ID`,
+            tags: [TAG.APPLICATIONS],
+          },
+        }
+      )
+      .post(
+        "/approve-or-ask-for-changes",
+        async ({ body, set, userId: gcaId }) => {
+          try {
+            const account = await findFirstAccountById(gcaId);
+
+            if (!account) {
+              set.status = 404;
+              return "Account not found";
+            }
+
+            if (account.role !== "GCA") {
+              set.status = 403;
+              return "Unauthorized";
+            }
+
+            if (body.deadline < Date.now() / 1000) {
+              set.status = 403;
+              return "Deadline has passed";
+            }
+
+            // deadline max 10minutes
+            if (body.deadline > Date.now() / 1000 + 600) {
+              set.status = 403;
+              return "Deadline is too far in the future";
+            }
+
+            const application = await FindFirstApplicationById(
+              body.applicationId
+            );
+
+            if (!application) {
+              set.status = 404;
+              return "Application not found";
+            }
+
+            if (
+              application.status !== ApplicationStatusEnum.waitingForApproval
+            ) {
+              set.status = 403;
+              return "Application is not in waitingForApproval status";
+            }
+
+            if (application.currentStep !== body.stepIndex) {
+              set.status = 403;
+              return "Invalid step index";
+            }
+
+            let recoveredAddress;
+            if (body.approved) {
+              const approvedValues = {
+                applicationId: body.applicationId,
+                approved: body.approved,
+                deadline: body.deadline,
+                stepIndex: body.stepIndex,
+                // nonce is fetched from user account. nonce is updated for every new next-auth session
+              };
+
+              recoveredAddress = await recoverAddressHandler(
+                stepApprovedTypes,
+                approvedValues,
+                body.signature,
+                gcaId
+              );
+              if (recoveredAddress.toLowerCase() !== account.id.toLowerCase()) {
+                set.status = 403;
+                return "Invalid Signature";
+              }
+
+              await approveApplicationStep(
+                body.applicationId,
+                account.id,
+                body.annotation,
+                body.stepIndex,
+                body.signature
+              );
+            } else {
+              await updateApplicationStatus(
+                body.applicationId,
+                ApplicationStatusEnum.changesRequired
+              );
+            }
+          } catch (e) {
+            if (e instanceof Error) {
+              set.status = 400;
+              return e.message;
+            }
+            console.log("[applicationsRouter] gca-assigned-applications", e);
+            throw new Error("Error Occured");
+          }
+        },
+        {
+          body: ApproveOrAskForChangesQueryBody,
+          detail: {
+            summary: "Approve or Ask for Changes",
+            description: `Approve or Ask for Changes. If the user is not a GCA, it will throw an error. If the deadline is in the past, it will throw an error. If the deadline is more than 10 minutes in the future, it will throw an error.`,
             tags: [TAG.APPLICATIONS],
           },
         }

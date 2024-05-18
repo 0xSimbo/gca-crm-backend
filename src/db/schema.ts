@@ -402,6 +402,7 @@ export const GcasRelations = relations(Gcas, ({ many, one }) => ({
     references: [wallets.id],
   }),
   applications: many(applications),
+  applicationStepApprovals: many(ApplicationStepApprovals),
 }));
 
 /**
@@ -511,7 +512,7 @@ export const applicationsRelations = relations(
       references: [installers.id],
     }),
     documentsMissingWithReason: many(DocumentsMissingWithReason),
-    annotations: many(ApplicationStepAnnotations),
+    applicationStepApprovals: many(ApplicationStepApprovals),
     rewardSplits: many(RewardSplits),
     documents: many(Documents),
     deferments: many(deferments),
@@ -668,41 +669,6 @@ export const DocumentsMissingWithReasonRelations = relations(
 );
 
 /**
- * @dev Represents an annotation for a step in the application process.
- * @param {string} id - The unique ID of the annotation.
- * @param {string} applicationId - The ID of the application associated with the annotation.
- * @param {string} annotation - The content of the annotation.
- * @param {number} step - The step of the application process the annotation belongs to.
- */
-export const ApplicationStepAnnotations = pgTable(
-  "applicationStepAnnotations",
-  {
-    id: text("application_step_annotation_id")
-      .primaryKey()
-      .$defaultFn(() => crypto.randomUUID()),
-    applicationId: text("application_id")
-      .notNull()
-      .references(() => applications.id, { onDelete: "cascade" }),
-    annotation: varchar("annotation", { length: 255 }).notNull(),
-    step: integer("step").notNull(),
-  }
-);
-
-export type ApplicationStepAnnotationsType = InferSelectModel<
-  typeof ApplicationStepAnnotations
->;
-
-export const ApplicationStepAnnotationsRelations = relations(
-  ApplicationStepAnnotations,
-  ({ one }) => ({
-    application: one(applications, {
-      fields: [ApplicationStepAnnotations.applicationId],
-      references: [applications.id],
-    }),
-  })
-);
-
-/**
  * @dev Represents the reward splits for USDG and GLOW.
  * @param {string} id - The unique ID of the reward split.
  * @param {string} applicationId - The ID of the application associated with the reward split.
@@ -769,3 +735,45 @@ export const DevicesRelations = relations(Devices, ({ one }) => ({
     references: [farms.id],
   }),
 }));
+
+/**
+ * @dev Represents an application step approval with an optional annotation.
+ * @param {string} id - The unique ID of the approval.
+ * @param {string} applicationId - The ID of the application associated with the approval.
+ * @param {timestamp} approvedAt - The date and time when the application was approved.
+ * @param {string} gcaAddress - The wallet address of the gca who approved the application.
+ */
+export const ApplicationStepApprovals = pgTable("applicationStepApprovals", {
+  id: text("application_step_approval_id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  applicationId: varchar("application_id", { length: 66 })
+    .notNull()
+    .references(() => applications.id, { onDelete: "cascade" }),
+  approvedAt: timestamp("approved_at").notNull().defaultNow(),
+  gcaAddress: varchar("gca_address", { length: 42 }).notNull(),
+  signature: varchar("signature", { length: 255 }).notNull(),
+  annotation: varchar("annotation", { length: 255 }), // optional annotation
+  step: integer("step").notNull(),
+});
+
+export type ApplicationStepApprovalsType = InferSelectModel<
+  typeof ApplicationStepApprovals
+>;
+
+export type ApplicationStepApprovalsInsertType =
+  typeof ApplicationStepApprovals.$inferInsert;
+
+export const ApplicationStepApprovalsRelations = relations(
+  ApplicationStepApprovals,
+  ({ one }) => ({
+    application: one(applications, {
+      fields: [ApplicationStepApprovals.applicationId],
+      references: [applications.id],
+    }),
+    gca: one(Gcas, {
+      fields: [ApplicationStepApprovals.gcaAddress],
+      references: [Gcas.id],
+    }),
+  })
+);
