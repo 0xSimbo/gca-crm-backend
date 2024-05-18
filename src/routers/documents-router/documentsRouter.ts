@@ -137,6 +137,11 @@ export const documentsRouter = new Elysia({ prefix: "/documents" })
               return "You can't update annotation on previous step";
             }
 
+            if (application.gcaAddress !== account.id) {
+              set.status = 403;
+              return "You are not the GCA assigned to this application";
+            }
+
             await updateDocumentWithAnnotation(
               body.annotation,
               body.documentId

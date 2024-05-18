@@ -30,6 +30,10 @@ import { updatePreInstallDocuments } from "../../db/mutations/applications/updat
 
 export const EnquiryQueryBody = t.Object({
   applicationId: t.Nullable(t.String()),
+  latestUtilityBillPresignedUrl: t.String({
+    example:
+      "https://pub-7e0365747f054c9e85051df5f20fa815.r2.dev/0x18a0ba01bbec4aa358650d297ba7bb330a78b073/utility-bill.enc",
+  }),
   establishedCostOfPowerPerKWh: t.Numeric({
     example: 0.12,
     minimum: 0,
@@ -509,54 +513,61 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               }
 
               const { applicationId, ...updateObject } = body;
-              await updateApplicationEnquiry(body.applicationId, {
-                ...updateObject,
+              await updateApplicationEnquiry(
+                body.applicationId,
+                body.latestUtilityBillPresignedUrl,
+                {
+                  ...updateObject,
+                  establishedCostOfPowerPerKWh:
+                    body.establishedCostOfPowerPerKWh.toString(),
+                  enquiryEstimatedFees: body.enquiryEstimatedFees.toString(),
+                  enquiryEstimatedQuotePerWatt:
+                    body.enquiryEstimatedQuotePerWatt.toString(),
+                  estimatedKWhGeneratedPerYear:
+                    body.estimatedKWhGeneratedPerYear.toString(),
+                  lat: body.lat.toString(),
+                  lng: body.lng.toString(),
+                }
+              );
+              return body.applicationId;
+            }
+            const insertedId = await createApplication(
+              body.latestUtilityBillPresignedUrl,
+              {
+                userId,
+                ...body,
                 establishedCostOfPowerPerKWh:
                   body.establishedCostOfPowerPerKWh.toString(),
+                estimatedKWhGeneratedPerYear:
+                  body.estimatedKWhGeneratedPerYear.toString(),
                 enquiryEstimatedFees: body.enquiryEstimatedFees.toString(),
                 enquiryEstimatedQuotePerWatt:
                   body.enquiryEstimatedQuotePerWatt.toString(),
-                estimatedKWhGeneratedPerYear:
-                  body.estimatedKWhGeneratedPerYear.toString(),
                 lat: body.lat.toString(),
                 lng: body.lng.toString(),
-              });
-              return body.applicationId;
-            }
-            const insertedId = await createApplication({
-              userId,
-              ...body,
-              establishedCostOfPowerPerKWh:
-                body.establishedCostOfPowerPerKWh.toString(),
-              estimatedKWhGeneratedPerYear:
-                body.estimatedKWhGeneratedPerYear.toString(),
-              enquiryEstimatedFees: body.enquiryEstimatedFees.toString(),
-              enquiryEstimatedQuotePerWatt:
-                body.enquiryEstimatedQuotePerWatt.toString(),
-              lat: body.lat.toString(),
-              lng: body.lng.toString(),
-              createdAt: new Date(),
-              farmId: null,
-              currentStep: 1,
-              //TODO remove when @0xSimbo finished roundRobin implementation
-              gcaAssignedTimestamp: new Date(),
-              gcaAddress: "0x18a0bA01Bbec4aa358650d297Ba7bB330a78B073",
-              roundRobinStatus: RoundRobinStatusEnum.waitingToBeAccepted,
-              // roundRobinStatus: RoundRobinStatusEnum.waitingToBeAssigned,
-              status: ApplicationStatusEnum.waitingForApproval,
-              updatedAt: null,
-              finalQuotePerWatt: null,
-              preInstallVisitDateFrom: null,
-              preInstallVisitDateTo: null,
-              afterInstallVisitDateFrom: null,
-              afterInstallVisitDateTo: null,
-              installDate: null,
-              intallFinishedDate: null,
-              paymentTxHash: null,
-              finalProtocolFee: null,
-              paymentDate: null,
-              gcaAcceptanceTimestamp: null,
-            });
+                createdAt: new Date(),
+                farmId: null,
+                currentStep: 1,
+                //TODO remove when @0xSimbo finished roundRobin implementation
+                gcaAssignedTimestamp: new Date(),
+                gcaAddress: "0x18a0bA01Bbec4aa358650d297Ba7bB330a78B073",
+                roundRobinStatus: RoundRobinStatusEnum.waitingToBeAccepted,
+                // roundRobinStatus: RoundRobinStatusEnum.waitingToBeAssigned,
+                status: ApplicationStatusEnum.waitingForApproval,
+                updatedAt: null,
+                finalQuotePerWatt: null,
+                preInstallVisitDateFrom: null,
+                preInstallVisitDateTo: null,
+                afterInstallVisitDateFrom: null,
+                afterInstallVisitDateTo: null,
+                installDate: null,
+                intallFinishedDate: null,
+                paymentTxHash: null,
+                finalProtocolFee: null,
+                paymentDate: null,
+                gcaAcceptanceTimestamp: null,
+              }
+            );
             return { insertedId };
           } catch (e) {
             if (e instanceof Error) {

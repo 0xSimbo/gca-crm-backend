@@ -471,7 +471,7 @@ export const applications = pgTable("applications", {
   enquiryEstimatedQuotePerWatt: numeric("enquiry_estimated_quote_per_watt", {
     precision: 10,
     scale: 2,
-  }),
+  }).notNull(),
   installerName: varchar("installer_name", { length: 255 }),
   installerCompanyName: varchar("installer_company_name", { length: 255 }),
   installerEmail: varchar("installer_email", { length: 255 }),
