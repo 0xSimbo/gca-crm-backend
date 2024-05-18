@@ -222,13 +222,13 @@ export const updatePreInstallDocuments = async (
     const applicationUpdateStatus = await tx
       .update(applications)
       .set({
-        status: ApplicationStatusEnum.approved,
+        status: ApplicationStatusEnum.waitingForApproval,
       })
       .where(and(eq(applications.id, applicationId)))
       .returning({ status: applications.status });
     if (
       !applicationUpdateStatus.every(
-        ({ status }) => status === ApplicationStatusEnum.approved
+        ({ status }) => status === ApplicationStatusEnum.waitingForApproval
       )
     ) {
       tx.rollback();

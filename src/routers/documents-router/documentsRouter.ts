@@ -9,6 +9,7 @@ import { findFirstAccountById } from "../../db/queries/accounts/findFirstAccount
 
 import { findAllDocumentsByApplicationId } from "../../db/queries/documents/findAllDocumentsByApplicationId";
 import { findFirstDocumentById } from "../../db/queries/documents/findFirstDocumentById";
+import { updateDocumentWithAnnotation } from "../../db/mutations/documents/updateDocumentWithAnnotation";
 
 export const documentsRouter = new Elysia({ prefix: "/documents" })
   .use(bearerplugin())
@@ -91,11 +92,74 @@ export const documentsRouter = new Elysia({ prefix: "/documents" })
           }
         },
         {
-          query: GetEntityByIdPathParamsSchema,
+          query: t.Object({
+            id: t.String(),
+          }),
           detail: {
             summary: "Get All Documents by Application ID",
             description: `Get all documents by application, if application is not owned by user, it will throw an error if your are not an admin or GCA`,
             tags: [TAG.DOCUMENTS],
+          },
+        }
+      )
+      .post(
+        "/annotation",
+        async ({ body, set, userId }) => {
+          try {
+            const account = await findFirstAccountById(userId);
+            if (!account) {
+              set.status = 404;
+              return "Account not found";
+            }
+            if (account.role !== "GCA") {
+              set.status = 403;
+              return "You are not a GCA";
+            }
+
+            const document = await findFirstDocumentById(body.documentId);
+
+            if (!document) {
+              set.status = 404;
+              return "Document not found";
+            }
+
+            const application = await FindFirstApplicationById(
+              document.applicationId
+            );
+
+            if (!application) {
+              set.status = 404;
+              return "Application not found";
+            }
+
+            if (application.currentStep > document.step) {
+              set.status = 400;
+              return "You can't update annotation on previous step";
+            }
+
+            await updateDocumentWithAnnotation(
+              body.annotation,
+              body.documentId
+            );
+            return body.documentId;
+          } catch (e) {
+            if (e instanceof Error) {
+              set.status = 400;
+              return e.message;
+            }
+            console.log("[documentsRouter] annotation", e);
+            throw new Error("Error Occured");
+          }
+        },
+        {
+          body: t.Object({
+            documentId: t.String(),
+            annotation: t.String(),
+          }),
+          detail: {
+            summary: "Create or Update an Application",
+            description: `Create an Application`,
+            tags: [TAG.APPLICATIONS],
           },
         }
       )

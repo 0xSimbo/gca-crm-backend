@@ -38,6 +38,10 @@ export const EnquiryQueryBody = t.Object({
     example: 109894,
     minimum: 0,
   }),
+  enquiryEstimatedQuotePerWatt: t.Numeric({
+    example: 0.32,
+    minimum: 0,
+  }),
   estimatedKWhGeneratedPerYear: t.Numeric({
     example: 32,
     minimum: 0,
@@ -510,6 +514,8 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                 establishedCostOfPowerPerKWh:
                   body.establishedCostOfPowerPerKWh.toString(),
                 enquiryEstimatedFees: body.enquiryEstimatedFees.toString(),
+                enquiryEstimatedQuotePerWatt:
+                  body.enquiryEstimatedQuotePerWatt.toString(),
                 estimatedKWhGeneratedPerYear:
                   body.estimatedKWhGeneratedPerYear.toString(),
                 lat: body.lat.toString(),
@@ -525,6 +531,8 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               estimatedKWhGeneratedPerYear:
                 body.estimatedKWhGeneratedPerYear.toString(),
               enquiryEstimatedFees: body.enquiryEstimatedFees.toString(),
+              enquiryEstimatedQuotePerWatt:
+                body.enquiryEstimatedQuotePerWatt.toString(),
               lat: body.lat.toString(),
               lng: body.lng.toString(),
               createdAt: new Date(),

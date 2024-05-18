@@ -419,6 +419,7 @@ export const GcasRelations = relations(Gcas, ({ many, one }) => ({
  * @param {number} lng - The longitude of the location.
  * @param {number} establishedCostOfPowerPerKWh - The established cost of power per kWh.
  * @param {number} estimatedKWhGeneratedPerYear - The estimated kWh generated per year.
+ * @param {number} enquiryEstimatedQuotePerWatt - The estimated quote per watt for installation.
  * @param {timestamp} updatedAt - The last updated date of the application.
  * @param {string} finalQuotePerWatt - The final quote per watt for installation.
  * @param {timestamp} preInstallVisitDateFrom - The start date of the pre-install visit.
@@ -467,6 +468,10 @@ export const applications = pgTable("applications", {
     precision: 10,
     scale: 2,
   }).notNull(),
+  enquiryEstimatedQuotePerWatt: numeric("enquiry_estimated_quote_per_watt", {
+    precision: 10,
+    scale: 2,
+  }),
   installerName: varchar("installer_name", { length: 255 }),
   installerCompanyName: varchar("installer_company_name", { length: 255 }),
   installerEmail: varchar("installer_email", { length: 255 }),
@@ -505,6 +510,7 @@ export type ApplicationUpdateEnquiryType = Pick<
   | "establishedCostOfPowerPerKWh"
   | "estimatedKWhGeneratedPerYear"
   | "enquiryEstimatedFees"
+  | "enquiryEstimatedQuotePerWatt"
 >;
 
 export const applicationsRelations = relations(

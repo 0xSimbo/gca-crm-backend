@@ -8,6 +8,7 @@ export const findAllDocumentsByApplicationId = async (
   const documentsDb = await db.query.Documents.findMany({
     where: eq(Documents.applicationId, applicationId),
     columns: {
+      id: true,
       type: true,
       url: true,
       annotation: true,
