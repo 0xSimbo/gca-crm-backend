@@ -27,6 +27,7 @@ import { updateApplicationStatus } from "../../db/mutations/applications/updateA
 import { updateApplicationEnquiry } from "../../db/mutations/applications/updateApplicationEnquiry";
 import { incrementApplicationStep } from "../../db/mutations/applications/incrementApplicationStep";
 import { updatePreInstallDocuments } from "../../db/mutations/applications/updatePreInstallDocuments";
+import { approveOrAskForChangesCheckHandler } from "../../utils/check-handlers/approve-or-ask-for-changes";
 
 export const EnquiryQueryBody = t.Object({
   applicationId: t.Nullable(t.String()),
@@ -128,14 +129,14 @@ export const GcaAcceptApplicationQueryBody = t.Object({
   ),
 });
 
-export const ApproveOrAskForChangesQueryBody = t.Object({
+export const ApproveOrAskForChangesQueryBody = {
   applicationId: t.String(),
   signature: t.String(),
   deadline: t.Numeric(),
   approved: t.Boolean(),
   annotation: t.Nullable(t.String()),
   stepIndex: t.Numeric(),
-});
+};
 
 export const applicationsRouter = new Elysia({ prefix: "/applications" })
   .use(bearerplugin())
@@ -189,51 +190,23 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
         }
       )
       .post(
-        "/approve-or-ask-for-changes",
+        "/enquiry-approve-or-ask-for-changes",
         async ({ body, set, userId: gcaId }) => {
           try {
             const account = await findFirstAccountById(gcaId);
-
             if (!account) {
-              set.status = 404;
-              return "Account not found";
+              return { errorCode: 404, errorMessage: "Account not found" };
             }
 
-            if (account.role !== "GCA") {
-              set.status = 403;
-              return "Unauthorized";
-            }
-
-            if (body.deadline < Date.now() / 1000) {
-              set.status = 403;
-              return "Deadline has passed";
-            }
-
-            // deadline max 10minutes
-            if (body.deadline > Date.now() / 1000 + 600) {
-              set.status = 403;
-              return "Deadline is too far in the future";
-            }
-
-            const application = await FindFirstApplicationById(
-              body.applicationId
+            const errorChecks = await approveOrAskForChangesCheckHandler(
+              body.stepIndex,
+              body.applicationId,
+              body.deadline,
+              account
             );
-
-            if (!application) {
-              set.status = 404;
-              return "Application not found";
-            }
-
-            if (
-              application.status !== ApplicationStatusEnum.waitingForApproval
-            ) {
-              set.status = 403;
-              return "Application is not in waitingForApproval status";
-            }
-
-            if (application.currentStep !== body.stepIndex) {
-              set.status = 403;
-              return "Invalid step index";
+            if (errorChecks) {
+              set.status = errorChecks.errorCode;
+              return errorChecks.errorMessage;
             }
 
             const approvedValues = {
@@ -280,7 +253,85 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
           }
         },
         {
-          body: ApproveOrAskForChangesQueryBody,
+          body: t.Object(ApproveOrAskForChangesQueryBody),
+          detail: {
+            summary: "Gca Approve or Ask for Changes after step submission",
+            description: `Approve or Ask for Changes. If the user is not a GCA, it will throw an error. If the deadline is in the past, it will throw an error. If the deadline is more than 10 minutes in the future, it will throw an error.`,
+            tags: [TAG.APPLICATIONS],
+          },
+        }
+      )
+      .post(
+        "/pre-install-documents-approve-or-ask-for-changes",
+        async ({ body, set, userId: gcaId }) => {
+          try {
+            const account = await findFirstAccountById(gcaId);
+            if (!account) {
+              return { errorCode: 404, errorMessage: "Account not found" };
+            }
+
+            const errorChecks = await approveOrAskForChangesCheckHandler(
+              body.stepIndex,
+              body.applicationId,
+              body.deadline,
+              account
+            );
+            if (errorChecks) {
+              set.status = errorChecks.errorCode;
+              return errorChecks.errorMessage;
+            }
+
+            const approvedValues = {
+              applicationId: body.applicationId,
+              approved: body.approved,
+              deadline: body.deadline,
+              stepIndex: body.stepIndex,
+              // nonce is fetched from user account. nonce is updated for every new next-auth session
+            };
+
+            const recoveredAddress = await recoverAddressHandler(
+              stepApprovedTypes,
+              approvedValues,
+              body.signature,
+              gcaId
+            );
+
+            if (recoveredAddress.toLowerCase() !== account.id.toLowerCase()) {
+              set.status = 403;
+              return "Invalid Signature";
+            }
+
+            if (body.approved) {
+              await approveApplicationStep(
+                body.applicationId,
+                account.id,
+                body.annotation,
+                body.stepIndex,
+                body.signature,
+                {
+                  finalQuotePerWatt: body.finalQuotePerWatt,
+                }
+              );
+            } else {
+              await updateApplicationStatus(
+                body.applicationId,
+                ApplicationStatusEnum.changesRequired
+              );
+            }
+          } catch (e) {
+            if (e instanceof Error) {
+              set.status = 400;
+              return e.message;
+            }
+            console.log("[applicationsRouter] gca-assigned-applications", e);
+            throw new Error("Error Occured");
+          }
+        },
+        {
+          body: t.Object({
+            ...ApproveOrAskForChangesQueryBody,
+            finalQuotePerWatt: t.String(),
+          }),
           detail: {
             summary: "Gca Approve or Ask for Changes after step submission",
             description: `Approve or Ask for Changes. If the user is not a GCA, it will throw an error. If the deadline is in the past, it will throw an error. If the deadline is more than 10 minutes in the future, it will throw an error.`,

@@ -1,6 +1,10 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "../../db";
-import { ApplicationStepApprovals, applications } from "../../schema";
+import {
+  ApplicationInsertType,
+  ApplicationStepApprovals,
+  applications,
+} from "../../schema";
 import { ApplicationStatusEnum } from "../../../types/api-types/Application";
 
 export const approveApplicationStep = async (
@@ -8,13 +12,15 @@ export const approveApplicationStep = async (
   gcaAddress: string,
   annotation: string | null,
   stepIndex: number,
-  signature: string
+  signature: string,
+  applicationFields?: Partial<ApplicationInsertType>
 ) => {
   return db.transaction(async (tx) => {
     const res = await tx
       .update(applications)
       .set({
         status: ApplicationStatusEnum.approved,
+        ...applicationFields,
       })
       .where(and(eq(applications.id, applicationId)))
       .returning({ status: applications.status });

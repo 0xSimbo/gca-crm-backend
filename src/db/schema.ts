@@ -624,7 +624,7 @@ export const Documents = pgTable("documents", {
     .primaryKey()
     .$defaultFn(() => crypto.randomUUID()),
   applicationId: text("application_id").notNull(),
-  annotation: varchar("annotation", { length: 255 }),
+  annotation: text("annotation"),
   step: integer("step").notNull(),
   name: varchar("name", { length: 255 }).notNull(),
   url: varchar("url", { length: 255 }).notNull(), // bytes of the encrypted document are stored on r2
@@ -770,7 +770,7 @@ export const ApplicationStepApprovals = pgTable("applicationStepApprovals", {
   approvedAt: timestamp("approved_at").notNull().defaultNow(),
   gcaAddress: varchar("gca_address", { length: 42 }).notNull(),
   signature: varchar("signature", { length: 255 }).notNull(),
-  annotation: varchar("annotation", { length: 255 }), // optional annotation
+  annotation: text("annotation"), // optional annotation
   step: integer("step").notNull(),
 });
 
