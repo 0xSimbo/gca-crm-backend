@@ -23,8 +23,10 @@ import { deferApplicationAssignement } from "../../db/mutations/applications/def
 import { stepApprovedTypes } from "../../constants/typed-data/step-approval";
 import { approveApplicationStep } from "../../db/mutations/applications/approveApplicationStep";
 import { updateApplicationStatus } from "../../db/mutations/applications/updateApplicationStatus";
+import { updateApplicationEnquiry } from "../../db/mutations/applications/updateApplicationEnquiry";
 
-export const CreateApplicationQueryBody = t.Object({
+export const EnquiryQueryBody = t.Object({
+  applicationId: t.Nullable(t.String()),
   establishedCostOfPowerPerKWh: t.Numeric({
     example: 0.12,
     minimum: 0,
@@ -37,7 +39,22 @@ export const CreateApplicationQueryBody = t.Object({
     example: 32,
     minimum: 0,
   }),
-  installerId: t.String(),
+  installerCompanyName: t.String({
+    example: "John Doe Farms",
+    minLength: 2,
+  }),
+  installerEmail: t.String({
+    example: "JohnDoe@gmail.com",
+    minLength: 2,
+  }),
+  installerPhone: t.String({
+    example: "123-456-7890",
+    minLength: 2,
+  }),
+  installerName: t.String({
+    example: "John",
+    minLength: 2,
+  }),
   address: t.String({
     example: "123 John Doe Street, Phoenix, AZ 85001",
     minLength: 10, // TODO: match in frontend
@@ -177,27 +194,27 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               return "Invalid step index";
             }
 
-            let recoveredAddress;
+            const approvedValues = {
+              applicationId: body.applicationId,
+              approved: body.approved,
+              deadline: body.deadline,
+              stepIndex: body.stepIndex,
+              // nonce is fetched from user account. nonce is updated for every new next-auth session
+            };
+
+            const recoveredAddress = await recoverAddressHandler(
+              stepApprovedTypes,
+              approvedValues,
+              body.signature,
+              gcaId
+            );
+
+            if (recoveredAddress.toLowerCase() !== account.id.toLowerCase()) {
+              set.status = 403;
+              return "Invalid Signature";
+            }
+
             if (body.approved) {
-              const approvedValues = {
-                applicationId: body.applicationId,
-                approved: body.approved,
-                deadline: body.deadline,
-                stepIndex: body.stepIndex,
-                // nonce is fetched from user account. nonce is updated for every new next-auth session
-              };
-
-              recoveredAddress = await recoverAddressHandler(
-                stepApprovedTypes,
-                approvedValues,
-                body.signature,
-                gcaId
-              );
-              if (recoveredAddress.toLowerCase() !== account.id.toLowerCase()) {
-                set.status = 403;
-                return "Invalid Signature";
-              }
-
               await approveApplicationStep(
                 body.applicationId,
                 account.id,
@@ -427,9 +444,24 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
         }
       )
       .post(
-        "/create-application",
+        "/enquiry",
         async ({ body, set, userId }) => {
           try {
+            // check if current step is 1 and if status is changesRequired
+            if (body.applicationId) {
+              const { applicationId, ...updateObject } = body;
+              await updateApplicationEnquiry(body.applicationId, {
+                ...updateObject,
+                establishedCostOfPowerPerKWh:
+                  body.establishedCostOfPowerPerKWh.toString(),
+                enquiryEstimatedFees: body.enquiryEstimatedFees.toString(),
+                estimatedKWhGeneratedPerYear:
+                  body.estimatedKWhGeneratedPerYear.toString(),
+                lat: body.lat.toString(),
+                lng: body.lng.toString(),
+              });
+              return body.applicationId;
+            }
             const insertedId = await createApplication({
               userId,
               ...body,
@@ -473,9 +505,9 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
           }
         },
         {
-          body: CreateApplicationQueryBody,
+          body: EnquiryQueryBody,
           detail: {
-            summary: "Create an Application",
+            summary: "Create or Update an Application",
             description: `Create an Application`,
             tags: [TAG.APPLICATIONS],
           },

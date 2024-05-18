@@ -19,7 +19,6 @@ export const FindFirstApplicationById = async (id: string) => {
       },
       documentsMissingWithReason: true,
       applicationStepApprovals: true,
-      installer: true,
     },
   });
   return application;

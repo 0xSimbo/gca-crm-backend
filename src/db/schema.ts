@@ -409,7 +409,6 @@ export const GcasRelations = relations(Gcas, ({ many, one }) => ({
  * @dev Represents an application in the system.
  * @param {string} id - The unique ID of the application.
  * @param {string} userId - The ID of the user who submitted the application.
- * @param {string} installerId - The ID of the installer associated with the application.
  * @param {string} farmId - The ID of the farm created after the application is completed.
  * @param {timestamp} created_at - The creation date of the application.
  * @param {number} currentStep - The current step of the application process.
@@ -440,7 +439,6 @@ export const applications = pgTable("applications", {
     .$defaultFn(() => crypto.randomUUID()),
   // always linked to a farm owner account
   userId: varchar("user_id", { length: 42 }).notNull(),
-  installerId: text("installer_id").notNull(),
   // after application is "completed", a farm is created using the hexlified farm pub key
   farmId: varchar("farm_id", { length: 66 }).unique(),
   createdAt: timestamp("createdAt").notNull().defaultNow(),
@@ -469,6 +467,10 @@ export const applications = pgTable("applications", {
     precision: 10,
     scale: 2,
   }).notNull(),
+  installerName: varchar("installer_name", { length: 255 }),
+  installerCompanyName: varchar("installer_company_name", { length: 255 }),
+  installerEmail: varchar("installer_email", { length: 255 }),
+  installerPhone: varchar("installer_phone", { length: 255 }),
   // null if application just got created
   updatedAt: timestamp("updatedAt"),
   // pre-install documents step fields
@@ -495,6 +497,15 @@ export const applications = pgTable("applications", {
 
 export type ApplicationType = InferSelectModel<typeof applications>;
 export type ApplicationInsertType = typeof applications.$inferInsert;
+export type ApplicationUpdateEnquiryType = Pick<
+  ApplicationInsertType,
+  | "address"
+  | "lat"
+  | "lng"
+  | "establishedCostOfPowerPerKWh"
+  | "estimatedKWhGeneratedPerYear"
+  | "enquiryEstimatedFees"
+>;
 
 export const applicationsRelations = relations(
   applications,
@@ -506,10 +517,6 @@ export const applicationsRelations = relations(
     farm: one(farms, {
       fields: [applications.farmId],
       references: [farms.id],
-    }),
-    installer: one(installers, {
-      fields: [applications.installerId],
-      references: [installers.id],
     }),
     documentsMissingWithReason: many(DocumentsMissingWithReason),
     applicationStepApprovals: many(ApplicationStepApprovals),
@@ -544,13 +551,15 @@ export const installers = pgTable("installers", {
 
 export type InstallerType = InferSelectModel<typeof installers>;
 export type InstallerInsertType = typeof installers.$inferInsert;
+export type InstallerUpdateType = Partial<
+  Pick<InstallerInsertType, "name" | "email" | "companyName" | "phone">
+>;
 
 export const InstallersRelations = relations(installers, ({ one, many }) => ({
   user: one(users, {
     fields: [installers.id],
     references: [users.installerId],
   }),
-  applications: many(applications),
 }));
 
 /**

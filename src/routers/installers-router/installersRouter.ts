@@ -8,6 +8,7 @@ import { createInstaller } from "../../db/mutations/installers/createInstaller";
 import { updateUser } from "../../db/mutations/users/updateUser";
 import { findFirstInstallerById } from "../../db/queries/installers/findFirstInstallerById";
 import { GetEntityByIdQueryParamsSchema } from "../../schemas/shared/getEntityByIdParamSchema";
+import { updateInstaller } from "../../db/mutations/installers/updateInstaller";
 
 export const CreateInstallerQueryBody = t.Object({
   name: t.String({
@@ -55,13 +56,58 @@ export const installersRouter = new Elysia({ prefix: "/installers" })
 
             installerId = await createInstaller({
               email: body.email,
-
               companyName: body.companyName,
               phone: body.phone,
               name: body.name,
             });
 
             await updateUser({ installerId }, userId);
+            return { installerId };
+          } catch (e) {
+            console.log("[installersRouter] create", e);
+            if (e instanceof Error) {
+              set.status = 400;
+              return e.message;
+            }
+            throw new Error("Error Occured");
+          }
+        },
+        {
+          body: CreateInstallerQueryBody,
+          detail: {
+            summary: "Create an Installer and link to User",
+            description: `Create an Installer and link to User. If the user is already linked to an installer, it will throw an error.`,
+            tags: [TAG.USERS],
+          },
+        }
+      )
+      .post(
+        "/update/:installerId",
+        async ({ query, body, set, userId }) => {
+          try {
+            const user = await findFirstUserById(userId);
+            const installerId = query.installerId;
+            if (!user) {
+              set.status = 404;
+              return "User not found";
+            }
+
+            if (!installerId) {
+              set.status = 400;
+              return "Installer ID is required";
+            }
+
+            console.log({ installerId });
+
+            await updateInstaller(
+              {
+                email: body.email,
+                companyName: body.companyName,
+                phone: body.phone,
+                name: body.name,
+              },
+              installerId
+            );
             return { installerId };
           } catch (e) {
             console.log("[installersRouter] create", e);

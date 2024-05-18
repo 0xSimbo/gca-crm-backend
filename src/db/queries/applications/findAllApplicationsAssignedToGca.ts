@@ -14,9 +14,10 @@ export const findAllApplicationsAssignedToGca = async (gcaAddress: string) => {
       currentStep: true,
       roundRobinStatus: true,
       gcaAddress: true,
-    },
-    with: {
-      installer: true,
+      installerCompanyName: true,
+      installerEmail: true,
+      installerPhone: true,
+      installerName: true,
     },
   });
   return applicationsDb;
