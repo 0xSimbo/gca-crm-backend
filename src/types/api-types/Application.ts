@@ -64,6 +64,13 @@ export const optionalDocuments = [
   "pto",
 ] as const;
 
+export enum OptionalDocumentsEnum {
+  plansets = "plansets",
+  cityPermit = "city permit",
+  inspection = "inspection",
+  pto = "pto",
+}
+
 export type OptionalDocument = (typeof optionalDocuments)[number];
 
 export const splitTokens = ["USDG", "GLOW"] as const;

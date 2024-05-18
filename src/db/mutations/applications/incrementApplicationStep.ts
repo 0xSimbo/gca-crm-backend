@@ -1,17 +1,17 @@
 import { eq } from "drizzle-orm";
 import { db } from "../../db";
-import { ApplicationUpdateEnquiryType, applications } from "../../schema";
+import { applications } from "../../schema";
 import { ApplicationStatusEnum } from "../../../types/api-types/Application";
 
-export const updateApplicationEnquiry = async (
+export const incrementApplicationStep = async (
   applicationId: string,
-  insertValues: ApplicationUpdateEnquiryType
+  index: number
 ) => {
   return await db
     .update(applications)
     .set({
-      ...insertValues,
-      status: ApplicationStatusEnum.waitingForApproval,
+      status: ApplicationStatusEnum.draft,
+      currentStep: index + 1,
     })
     .where(eq(applications.id, applicationId));
 };

@@ -19,6 +19,14 @@ export const findAllApplicationsByUserId = async (userId: string) => {
       installerPhone: true,
       installerName: true,
     },
+    with: {
+      user: {
+        columns: {
+          contactType: true,
+          contactValue: true,
+        },
+      },
+    },
   });
   return applicationsDb;
 };

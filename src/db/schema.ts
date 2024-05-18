@@ -631,6 +631,7 @@ export const Documents = pgTable("documents", {
 });
 
 export type DocumentsType = InferSelectModel<typeof Documents>;
+export type DocumentsInsertType = typeof Documents.$inferInsert;
 
 export const DocumentsRelations = relations(Documents, ({ one }) => ({
   application: one(applications, {
@@ -654,9 +655,7 @@ export const DocumentsMissingWithReason = pgTable(
     id: text("document_missing_with_reason_id")
       .primaryKey()
       .$defaultFn(() => crypto.randomUUID()),
-    applicationId: text("application_id")
-      .notNull()
-      .references(() => applications.id, { onDelete: "cascade" }),
+    applicationId: text("application_id").notNull(),
     reason: varchar("reason", { length: 255 }).notNull(),
     step: integer("step").notNull(),
     documentName: optionalDocumentsEnum("document_name").notNull(),
@@ -666,6 +665,8 @@ export const DocumentsMissingWithReason = pgTable(
 export type DocumentsMissingWithReasonType = InferSelectModel<
   typeof DocumentsMissingWithReason
 >;
+export type DocumentsMissingWithReasonInsertType =
+  typeof DocumentsMissingWithReason.$inferInsert;
 
 export const DocumentsMissingWithReasonRelations = relations(
   DocumentsMissingWithReason,

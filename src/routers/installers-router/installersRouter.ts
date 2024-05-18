@@ -82,7 +82,7 @@ export const installersRouter = new Elysia({ prefix: "/installers" })
         }
       )
       .post(
-        "/update/:installerId",
+        "/update",
         async ({ query, body, set, userId }) => {
           try {
             const user = await findFirstUserById(userId);
@@ -120,6 +120,9 @@ export const installersRouter = new Elysia({ prefix: "/installers" })
         },
         {
           body: CreateInstallerQueryBody,
+          query: t.Object({
+            installerId: t.String(),
+          }),
           detail: {
             summary: "Create an Installer and link to User",
             description: `Create an Installer and link to User. If the user is already linked to an installer, it will throw an error.`,

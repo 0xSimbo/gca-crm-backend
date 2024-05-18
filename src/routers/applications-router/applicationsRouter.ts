@@ -5,6 +5,7 @@ import { bearer as bearerplugin } from "@elysiajs/bearer";
 import { createApplication } from "../../db/mutations/applications/createApplication";
 import {
   ApplicationStatusEnum,
+  ApplicationSteps,
   RoundRobinStatusEnum,
 } from "../../types/api-types/Application";
 import { FindFirstApplicationById } from "../../db/queries/applications/findFirstApplicationById";
@@ -24,6 +25,8 @@ import { stepApprovedTypes } from "../../constants/typed-data/step-approval";
 import { approveApplicationStep } from "../../db/mutations/applications/approveApplicationStep";
 import { updateApplicationStatus } from "../../db/mutations/applications/updateApplicationStatus";
 import { updateApplicationEnquiry } from "../../db/mutations/applications/updateApplicationEnquiry";
+import { incrementApplicationStep } from "../../db/mutations/applications/incrementApplicationStep";
+import { updatePreInstallDocuments } from "../../db/mutations/applications/updatePreInstallDocuments";
 
 export const EnquiryQueryBody = t.Object({
   applicationId: t.Nullable(t.String()),
@@ -68,6 +71,37 @@ export const EnquiryQueryBody = t.Object({
     example: -111.123412,
     minimum: -180,
     maximum: 180,
+  }),
+});
+
+// r2 baseUrl + bucketName = userID + fileName.enc @0xSimbo
+const encryptedUploadedUrlExample =
+  "https://pub-7e0365747f054c9e85051df5f20fa815.r2.dev/0x18a0ba01bbec4aa358650d297ba7bb330a78b073/contract-agreement.enc";
+export const PreInstallDocumentsQueryBody = t.Object({
+  applicationId: t.String(),
+  contractAgreementPresignedUrl: t.String({
+    example: encryptedUploadedUrlExample,
+  }),
+  plansetsPresignedUrl: t.Nullable(
+    t.String({
+      example: encryptedUploadedUrlExample,
+    })
+  ),
+  plansetsNotAvailableReason: t.Nullable(t.String()),
+  declarationOfIntentionPresignedUrl: t.String({
+    example: encryptedUploadedUrlExample,
+  }),
+  firstUtilityBillPresignedUrl: t.String({
+    example: encryptedUploadedUrlExample,
+  }),
+  secondUtilityBillPresignedUrl: t.String({
+    example: encryptedUploadedUrlExample,
+  }),
+  mortgageStatementPresignedUrl: t.String({
+    example: encryptedUploadedUrlExample,
+  }),
+  propertyDeedPresignedUrl: t.String({
+    example: encryptedUploadedUrlExample,
   }),
 });
 
@@ -240,7 +274,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
         {
           body: ApproveOrAskForChangesQueryBody,
           detail: {
-            summary: "Approve or Ask for Changes",
+            summary: "Gca Approve or Ask for Changes after step submission",
             description: `Approve or Ask for Changes. If the user is not a GCA, it will throw an error. If the deadline is in the past, it will throw an error. If the deadline is more than 10 minutes in the future, it will throw an error.`,
             tags: [TAG.APPLICATIONS],
           },
@@ -423,7 +457,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               }
             }
             const applications = await findAllApplicationsByUserId(id);
-            console.log(applications);
+            // console.log(applications);
             return applications;
           } catch (e) {
             if (e instanceof Error) {
@@ -447,8 +481,29 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
         "/enquiry",
         async ({ body, set, userId }) => {
           try {
-            // check if current step is 1 and if status is changesRequired
             if (body.applicationId) {
+              const application = await FindFirstApplicationById(
+                body.applicationId
+              );
+              if (!application) {
+                set.status = 404;
+                return "Application not found";
+              }
+              if (application.userId !== userId) {
+                set.status = 403;
+                return "Unauthorized";
+              }
+              if (
+                application.status !== ApplicationStatusEnum.changesRequired
+              ) {
+                set.status = 403;
+                return "Application is not in changesRequired status";
+              }
+              if (application.currentStep !== ApplicationSteps.enquiry) {
+                set.status = 403;
+                return "Application is not in enquiry step";
+              }
+
               const { applicationId, ...updateObject } = body;
               await updateApplicationEnquiry(body.applicationId, {
                 ...updateObject,
@@ -500,7 +555,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               set.status = 400;
               return e.message;
             }
-            console.log("[applicationsRouter] create-application", e);
+            console.log("[applicationsRouter] enquiry", e);
             throw new Error("Error Occured");
           }
         },
@@ -509,6 +564,128 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
           detail: {
             summary: "Create or Update an Application",
             description: `Create an Application`,
+            tags: [TAG.APPLICATIONS],
+          },
+        }
+      )
+      .post(
+        "/pre-install-documents",
+        async ({ body, set, userId }) => {
+          try {
+            const application = await FindFirstApplicationById(
+              body.applicationId
+            );
+            if (!application) {
+              set.status = 404;
+              return "Application not found";
+            }
+            if (application.userId !== userId) {
+              set.status = 403;
+              return "Unauthorized";
+            }
+            if (
+              application.status !== ApplicationStatusEnum.draft &&
+              application.status !== ApplicationStatusEnum.changesRequired
+            ) {
+              set.status = 403;
+              return "Pre-install documents can only be uploaded in draft or changesRequired status";
+            }
+            if (
+              application.currentStep !== ApplicationSteps.preInstallDocuments
+            ) {
+              set.status = 403;
+              return "Application is not in preInstallDocuments step";
+            }
+
+            if (
+              body.plansetsNotAvailableReason &&
+              body.plansetsPresignedUrl === null
+            ) {
+              await updatePreInstallDocuments(
+                body.applicationId,
+                application.status,
+                {
+                  ...body,
+                  plansetsPresignedUrl: null,
+                  plansetsNotAvailableReason: body.plansetsNotAvailableReason,
+                }
+              );
+            } else if (
+              body.plansetsNotAvailableReason === null &&
+              body.plansetsPresignedUrl
+            ) {
+              await updatePreInstallDocuments(
+                body.applicationId,
+                application.status,
+                {
+                  ...body,
+                  plansetsNotAvailableReason: null,
+                  plansetsPresignedUrl: body.plansetsPresignedUrl,
+                }
+              );
+            } else {
+              set.status = 400;
+              return "Either plansetsPresignedUrl or plansetsNotAvailableReason is required";
+            }
+            return body.applicationId;
+          } catch (e) {
+            console.error("error", e);
+            if (e instanceof Error) {
+              set.status = 400;
+              return e.message;
+            }
+            console.log("[applicationsRouter] /pre-install-documents", e);
+            throw new Error("Error Occured");
+          }
+        },
+        {
+          body: PreInstallDocumentsQueryBody,
+          detail: {
+            summary: "Create or Update the pre-install documents",
+            description: `insert the pre-install documents in db + insert documentsMissingWithReason if plansets missing and update the application status to waitingForApproval`,
+            tags: [TAG.APPLICATIONS],
+          },
+        }
+      )
+      .post(
+        "/next-step",
+        async ({ query, set, userId }) => {
+          try {
+            const application = await FindFirstApplicationById(
+              query.applicationId
+            );
+            if (!application) {
+              set.status = 404;
+              return "Application not found";
+            }
+            if (application.userId !== userId) {
+              set.status = 403;
+              return "Unauthorized";
+            }
+            if (application.status !== ApplicationStatusEnum.approved) {
+              set.status = 403;
+              return "Application is not Approved";
+            }
+            await incrementApplicationStep(
+              query.applicationId,
+              application.currentStep
+            );
+          } catch (e) {
+            if (e instanceof Error) {
+              set.status = 400;
+              return e.message;
+            }
+            console.log("[applicationsRouter] create-application", e);
+            throw new Error("Error Occured");
+          }
+        },
+        {
+          query: t.Object({
+            applicationId: t.String(),
+          }),
+          detail: {
+            summary: "Increment the application step",
+            description: `Increment the application step after user read the annotation left by the gca on the documents`,
             tags: [TAG.APPLICATIONS],
           },
         }
