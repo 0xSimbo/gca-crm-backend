@@ -623,6 +623,7 @@ export const Documents = pgTable("documents", {
   name: varchar("name", { length: 255 }).notNull(),
   url: varchar("url", { length: 255 }).notNull(), // bytes of the encrypted document are stored on r2
   type: varchar("type", { length: 255 }).notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
   encryptedMasterKeys: json("encrypted_master_keys")
     .$type<EncryptedMasterKeySet>()
     .notNull()

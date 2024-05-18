@@ -61,6 +61,7 @@ export const updatePreInstallDocuments = async (
       annotation: null,
       step: ApplicationSteps.preInstallDocuments,
       encryptedMasterKeys: [],
+      createdAt: new Date(),
     },
     {
       name: "Declaration of Intention",
@@ -70,6 +71,7 @@ export const updatePreInstallDocuments = async (
       annotation: null,
       step: ApplicationSteps.preInstallDocuments,
       encryptedMasterKeys: [],
+      createdAt: new Date(),
     },
     {
       name: "First Utility Bill",
@@ -79,6 +81,7 @@ export const updatePreInstallDocuments = async (
       annotation: null,
       step: ApplicationSteps.preInstallDocuments,
       encryptedMasterKeys: [],
+      createdAt: new Date(),
     },
     {
       name: "Second Utility Bill",
@@ -88,6 +91,7 @@ export const updatePreInstallDocuments = async (
       annotation: null,
       step: ApplicationSteps.preInstallDocuments,
       encryptedMasterKeys: [],
+      createdAt: new Date(),
     },
     {
       name: "Mortgage Statement",
@@ -97,6 +101,7 @@ export const updatePreInstallDocuments = async (
       annotation: null,
       step: ApplicationSteps.preInstallDocuments,
       encryptedMasterKeys: [],
+      createdAt: new Date(),
     },
     {
       name: "Property Deed",
@@ -106,6 +111,7 @@ export const updatePreInstallDocuments = async (
       annotation: null,
       step: ApplicationSteps.preInstallDocuments,
       encryptedMasterKeys: [],
+      createdAt: new Date(),
     },
   ];
 
@@ -118,6 +124,7 @@ export const updatePreInstallDocuments = async (
       annotation: null,
       step: ApplicationSteps.preInstallDocuments,
       encryptedMasterKeys: [],
+      createdAt: new Date(),
     });
   }
   const documentsMissingWithReason: DocumentsMissingWithReasonInsertType[] = [];

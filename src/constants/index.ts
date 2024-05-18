@@ -9,4 +9,5 @@ export enum TAG {
   GCAS = "GCAs",
   FARMS = "Farms",
   APPLICATIONS = "Applications",
+  DOCUMENTS = "Documents",
 }
