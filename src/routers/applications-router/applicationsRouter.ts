@@ -26,8 +26,14 @@ import { approveApplicationStep } from "../../db/mutations/applications/approveA
 import { updateApplicationStatus } from "../../db/mutations/applications/updateApplicationStatus";
 import { updateApplicationEnquiry } from "../../db/mutations/applications/updateApplicationEnquiry";
 import { incrementApplicationStep } from "../../db/mutations/applications/incrementApplicationStep";
-import { updatePreInstallDocuments } from "../../db/mutations/applications/updatePreInstallDocuments";
 import { approveOrAskForChangesCheckHandler } from "../../utils/check-handlers/approve-or-ask-for-changes";
+import { fillApplicationStepCheckHandler } from "../../utils/check-handlers/fill-application-step";
+import { handleCreateOrUpdatePermitDocumentation } from "./steps/permit-documentation";
+import { handleCreateOrUpdatePreIntallDocuments } from "./steps/pre-install";
+import { updateApplicationPreInstallVisitDates } from "../../db/mutations/applications/updateApplicationPreInstallVisitDates";
+import { updateApplicationAfterInstallVisitDates } from "../../db/mutations/applications/updateApplicationAfterInstallVisitDates";
+import { updatePreInstallVisitDateConfirmedTimestamp } from "../../db/mutations/applications/updatePreInstallVisitDateConfirmedTimestamp";
+import { updateAfterInstallVisitDateConfirmedTimestamp } from "../../db/mutations/applications/updateAfterInstallVisitDateConfirmedTimestamp";
 
 export const EnquiryQueryBody = t.Object({
   applicationId: t.Nullable(t.String()),
@@ -112,6 +118,17 @@ export const PreInstallDocumentsQueryBody = t.Object({
   propertyDeedPresignedUrl: t.String({
     example: encryptedUploadedUrlExample,
   }),
+});
+
+export const PermitDocumentationQueryBody = t.Object({
+  applicationId: t.String(),
+  cityPermitPresignedUrl: t.Nullable(
+    t.String({
+      example: encryptedUploadedUrlExample,
+    })
+  ),
+  cityPermitNotAvailableReason: t.Nullable(t.String()),
+  estimatedInstallDate: t.Date(),
 });
 
 export const GcaAcceptApplicationQueryBody = t.Object({
@@ -548,19 +565,15 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                 set.status = 404;
                 return "Application not found";
               }
-              if (application.userId !== userId) {
-                set.status = 403;
-                return "Unauthorized";
-              }
-              if (
-                application.status !== ApplicationStatusEnum.changesRequired
-              ) {
-                set.status = 403;
-                return "Application is not in changesRequired status";
-              }
-              if (application.currentStep !== ApplicationSteps.enquiry) {
-                set.status = 403;
-                return "Application is not in enquiry step";
+              const errorChecks = await fillApplicationStepCheckHandler(
+                userId,
+                application,
+                ApplicationSteps.enquiry
+              );
+
+              if (errorChecks) {
+                set.status = errorChecks.errorCode;
+                return errorChecks.errorMessage;
               }
 
               const { applicationId, ...updateObject } = body;
@@ -597,7 +610,6 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                 lat: body.lat.toString(),
                 lng: body.lng.toString(),
                 createdAt: new Date(),
-                farmId: null,
                 currentStep: 1,
                 //TODO remove when @0xSimbo finished roundRobin implementation
                 gcaAssignedTimestamp: new Date(),
@@ -605,18 +617,6 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                 roundRobinStatus: RoundRobinStatusEnum.waitingToBeAccepted,
                 // roundRobinStatus: RoundRobinStatusEnum.waitingToBeAssigned,
                 status: ApplicationStatusEnum.waitingForApproval,
-                updatedAt: null,
-                finalQuotePerWatt: null,
-                preInstallVisitDateFrom: null,
-                preInstallVisitDateTo: null,
-                afterInstallVisitDateFrom: null,
-                afterInstallVisitDateTo: null,
-                installDate: null,
-                intallFinishedDate: null,
-                paymentTxHash: null,
-                finalProtocolFee: null,
-                paymentDate: null,
-                gcaAcceptanceTimestamp: null,
               }
             );
             return { insertedId };
@@ -649,31 +649,25 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               set.status = 404;
               return "Application not found";
             }
-            if (application.userId !== userId) {
-              set.status = 403;
-              return "Unauthorized";
-            }
-            if (
-              application.status !== ApplicationStatusEnum.draft &&
-              application.status !== ApplicationStatusEnum.changesRequired
-            ) {
-              set.status = 403;
-              return "Pre-install documents can only be uploaded in draft or changesRequired status";
-            }
-            if (
-              application.currentStep !== ApplicationSteps.preInstallDocuments
-            ) {
-              set.status = 403;
-              return "Application is not in preInstallDocuments step";
+
+            const errorChecks = await fillApplicationStepCheckHandler(
+              userId,
+              application,
+              ApplicationSteps.preInstallDocuments
+            );
+
+            if (errorChecks) {
+              set.status = errorChecks.errorCode;
+              return errorChecks.errorMessage;
             }
 
             if (
               body.plansetsNotAvailableReason &&
               body.plansetsPresignedUrl === null
             ) {
-              await updatePreInstallDocuments(
-                body.applicationId,
-                application.status,
+              await handleCreateOrUpdatePreIntallDocuments(
+                application,
+                ApplicationSteps.preInstallDocuments,
                 {
                   ...body,
                   plansetsPresignedUrl: null,
@@ -684,13 +678,13 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               body.plansetsNotAvailableReason === null &&
               body.plansetsPresignedUrl
             ) {
-              await updatePreInstallDocuments(
-                body.applicationId,
-                application.status,
+              await handleCreateOrUpdatePreIntallDocuments(
+                application,
+                ApplicationSteps.preInstallDocuments,
                 {
                   ...body,
-                  plansetsNotAvailableReason: null,
                   plansetsPresignedUrl: body.plansetsPresignedUrl,
+                  plansetsNotAvailableReason: null,
                 }
               );
             } else {
@@ -713,6 +707,79 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
           detail: {
             summary: "Create or Update the pre-install documents",
             description: `insert the pre-install documents in db + insert documentsMissingWithReason if plansets missing and update the application status to waitingForApproval`,
+            tags: [TAG.APPLICATIONS],
+          },
+        }
+      )
+      .post(
+        "/permit-documentation",
+        async ({ body, set, userId }) => {
+          try {
+            const application = await FindFirstApplicationById(
+              body.applicationId
+            );
+            if (!application) {
+              set.status = 404;
+              return "Application not found";
+            }
+            const errorChecks = await fillApplicationStepCheckHandler(
+              userId,
+              application,
+              ApplicationSteps.permitDocumentation
+            );
+
+            if (errorChecks) {
+              set.status = errorChecks.errorCode;
+              return errorChecks.errorMessage;
+            }
+
+            if (
+              body.cityPermitNotAvailableReason &&
+              body.cityPermitPresignedUrl === null
+            ) {
+              await handleCreateOrUpdatePermitDocumentation(
+                application,
+                ApplicationSteps.permitDocumentation,
+                {
+                  cityPermitNotAvailableReason:
+                    body.cityPermitNotAvailableReason,
+                  cityPermitPresignedUrl: null,
+                  estimatedInstallDate: body.estimatedInstallDate,
+                }
+              );
+            } else if (
+              body.cityPermitNotAvailableReason === null &&
+              body.cityPermitPresignedUrl
+            ) {
+              await handleCreateOrUpdatePermitDocumentation(
+                application,
+                ApplicationSteps.permitDocumentation,
+                {
+                  cityPermitNotAvailableReason: null,
+                  cityPermitPresignedUrl: body.cityPermitPresignedUrl,
+                  estimatedInstallDate: body.estimatedInstallDate,
+                }
+              );
+            } else {
+              set.status = 400;
+              return "Either cityPermitPresignedUrl or cityPermitNotAvailableReason is required";
+            }
+            return body.applicationId;
+          } catch (e) {
+            console.error("error", e);
+            if (e instanceof Error) {
+              set.status = 400;
+              return e.message;
+            }
+            console.log("[applicationsRouter] /permit-documentation", e);
+            throw new Error("Error Occured");
+          }
+        },
+        {
+          body: PermitDocumentationQueryBody,
+          detail: {
+            summary: "Create or Update the permit documentation",
+            description: `insert the permit documentation in db + insert documentsMissingWithReason if cityPermit missing and update the application status to waitingForApproval`,
             tags: [TAG.APPLICATIONS],
           },
         }
@@ -756,6 +823,231 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
           detail: {
             summary: "Increment the application step",
             description: `Increment the application step after user read the annotation left by the gca on the documents`,
+            tags: [TAG.APPLICATIONS],
+          },
+        }
+      )
+      .post(
+        "/gca-pre-install-visit",
+        async ({ body, set, userId: gcaId }) => {
+          try {
+            const account = await findFirstAccountById(gcaId);
+            if (!account) {
+              return { errorCode: 404, errorMessage: "Account not found" };
+            }
+            const application = await FindFirstApplicationById(
+              body.applicationId
+            );
+
+            if (!application) {
+              set.status = 404;
+              return "Application not found";
+            }
+
+            if (
+              application.currentStep !== ApplicationSteps.permitDocumentation
+            ) {
+              set.status = 403;
+              return "Application is not in the correct step";
+            }
+
+            if (
+              application.status !== ApplicationStatusEnum.waitingForApproval
+            ) {
+              set.status = 403;
+              return "Application is not in the correct status";
+            }
+
+            if (application.gcaAddress !== account.id) {
+              set.status = 403;
+              return "You are not assigned to this application";
+            }
+
+            if ("confirmed" in body && body.confirmed) {
+              await updatePreInstallVisitDateConfirmedTimestamp(
+                body.applicationId
+              );
+            } else if (
+              "preInstallVisitDateFrom" in body &&
+              "preInstallVisitDateTo" in body
+            ) {
+              const fromDate = new Date(body.preInstallVisitDateFrom);
+              const toDate = new Date(body.preInstallVisitDateTo);
+
+              if (isNaN(fromDate.getTime()) || isNaN(toDate.getTime())) {
+                set.status = 400;
+                return "Invalid date format";
+              }
+
+              if (!application.estimatedInstallDate) {
+                set.status = 400;
+                return "Estimated Install Date is not set";
+              }
+              console.log("application.intallFinishedDate", {
+                fromDateTime: fromDate.getTime(),
+                toDateTime: toDate.getTime(),
+                nowTime: new Date().getTime(),
+                applicationEstimatedInstallDateTime:
+                  application.estimatedInstallDate.getTime(),
+              });
+              const now = new Date();
+              const tomorrowTime = new Date(
+                now.setDate(now.getDate() + 1)
+              ).getTime();
+              const fourDaysLaterTime = fromDate.getTime() + 86400000 * 4;
+
+              if (
+                fromDate.getTime() >= tomorrowTime ||
+                toDate.getTime() <= fourDaysLaterTime ||
+                toDate.getTime() >= application.estimatedInstallDate.getTime()
+              ) {
+                set.status = 400;
+                return "Invalid date range";
+              }
+
+              await updateApplicationPreInstallVisitDates(
+                body.applicationId,
+                fromDate,
+                toDate
+              );
+            } else {
+              set.status = 400;
+              return "Body is malformed";
+            }
+          } catch (e) {
+            if (e instanceof Error) {
+              set.status = 400;
+              return e.message;
+            }
+            console.log("[applicationsRouter] gca-pre-install-visit", e);
+            throw new Error("Error Occured");
+          }
+        },
+        {
+          body: t.Union([
+            t.Object({
+              applicationId: t.String(),
+              preInstallVisitDateFrom: t.String(),
+              preInstallVisitDateTo: t.String(),
+            }),
+            t.Object({
+              applicationId: t.String(),
+              confirmed: t.Boolean(),
+            }),
+          ]),
+          detail: {
+            summary: "GCA Pre Install Visit",
+            description: `Set the pre install visit dates`,
+            tags: [TAG.APPLICATIONS],
+          },
+        }
+      )
+      .post(
+        "/gca-after-install-visit",
+        async ({ body, set, userId: gcaId }) => {
+          try {
+            const account = await findFirstAccountById(gcaId);
+            if (!account) {
+              return { errorCode: 404, errorMessage: "Account not found" };
+            }
+            const application = await FindFirstApplicationById(
+              body.applicationId
+            );
+
+            if (!application) {
+              set.status = 404;
+              return "Application not found";
+            }
+
+            if (
+              application.currentStep !==
+              ApplicationSteps.inspectionAndPtoDocuments
+            ) {
+              set.status = 403;
+              return "Application is not in the correct step";
+            }
+
+            if (
+              application.status !== ApplicationStatusEnum.waitingForApproval
+            ) {
+              set.status = 403;
+              return "Application is not in the correct status";
+            }
+
+            if (application.gcaAddress !== account.id) {
+              set.status = 403;
+              return "You are not assigned to this application";
+            }
+            if ("confirmed" in body && body.confirmed) {
+              await updateAfterInstallVisitDateConfirmedTimestamp(
+                body.applicationId
+              );
+            } else if (
+              "afterInstallVisitDateFrom" in body &&
+              "afterInstallVisitDateTo" in body
+            ) {
+              const fromDate = new Date(body.afterInstallVisitDateFrom);
+              const toDate = new Date(body.afterInstallVisitDateTo);
+
+              if (isNaN(fromDate.getTime()) || isNaN(toDate.getTime())) {
+                set.status = 400;
+                return "Invalid date format";
+              }
+
+              if (!application.intallFinishedDate) {
+                set.status = 400;
+                return "Install Finished Date is not set";
+              }
+
+              const oneDayInMillis = 86400000;
+              const fourDaysInMillis = oneDayInMillis * 4;
+
+              // Calculate the day after the install finished date
+              const dayAfterInstallFinishedDate = new Date(
+                application.intallFinishedDate.getTime() + oneDayInMillis
+              );
+
+              if (
+                fromDate.getTime() < dayAfterInstallFinishedDate.getTime() ||
+                toDate.getTime() < fromDate.getTime() + fourDaysInMillis
+              ) {
+                set.status = 400;
+                return "Invalid date range";
+              }
+
+              await updateApplicationAfterInstallVisitDates(
+                body.applicationId,
+                new Date(body.afterInstallVisitDateFrom),
+                new Date(body.afterInstallVisitDateTo)
+              );
+            } else {
+              set.status = 400;
+              return "Body is malformed";
+            }
+          } catch (e) {
+            if (e instanceof Error) {
+              set.status = 400;
+              return e.message;
+            }
+            console.log("[applicationsRouter] gca-pre-install-visit", e);
+            throw new Error("Error Occured");
+          }
+        },
+        {
+          body: t.Union([
+            t.Object({
+              applicationId: t.String(),
+              afterInstallVisitDateFrom: t.String(),
+              afterInstallVisitDateTo: t.String(),
+            }),
+            t.Object({
+              applicationId: t.String(),
+              confirmed: t.Boolean(),
+            }),
+          ]),
+          detail: {
+            summary: "GCA After Install Visit",
+            description: `Set the after install visit dates. If confirmed is true, it will set the confirmed timestamp`,
             tags: [TAG.APPLICATIONS],
           },
         }

@@ -424,7 +424,7 @@ export const GcasRelations = relations(Gcas, ({ many, one }) => ({
  * @param {string} finalQuotePerWatt - The final quote per watt for installation.
  * @param {timestamp} preInstallVisitDateFrom - The start date of the pre-install visit.
  * @param {timestamp} preInstallVisitDateTo - The end date of the pre-install visit.
- * @param {timestamp} installDate - The approximative installation date.
+ * @param {timestamp} estimatedInstallDate - The estimated installation date provided by the installer or farm owner.
  * @param {timestamp} afterInstallVisitDateFrom - The start date of the post-install visit.
  * @param {timestamp} afterInstallVisitDateTo - The end date of the post-install visit.
  * @param {string} finalProtocolFee - The final protocol fee.
@@ -481,15 +481,22 @@ export const applications = pgTable("applications", {
   // pre-install documents step fields
   finalQuotePerWatt: varchar("final_quote_per_watt", { length: 255 }),
   // permit-documentation step fields
+  // --- estimated installation date provided by the installer / farm owner
+  estimatedInstallDate: timestamp("estimated_install_date"),
   preInstallVisitDateFrom: timestamp("pre_install_visit_date_from"),
   preInstallVisitDateTo: timestamp("pre_install_visit_date_to"),
-  // approximative installation date provided by the installer / farm owner
-  installDate: timestamp("install_date"),
+  preInstallVisitDateConfirmedTimestamp: timestamp(
+    "pre_install_visit_date_confirmed_timestamp"
+  ),
   // inspection-pto step fields
+  // --- final installation date provided by the installer / farm owner
+  intallFinishedDate: timestamp("install_finished_date"),
   afterInstallVisitDateFrom: timestamp("after_install_visit_date_from"),
   afterInstallVisitDateTo: timestamp("after_install_visit_date_to"),
+  afterInstallVisitDateConfirmedTimestamp: timestamp(
+    "after_install_visit_date_confirmed_timestamp"
+  ),
   finalProtocolFee: varchar("final_protocol_fee", { length: 255 }),
-  intallFinishedDate: timestamp("install_finished_date"),
   // payment step fields
   paymentDate: timestamp("payment_date"),
   paymentTxHash: varchar("payment_tx_hash", { length: 66 }),
