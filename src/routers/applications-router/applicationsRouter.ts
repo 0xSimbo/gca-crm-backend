@@ -923,7 +923,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
         }
       )
       .post(
-        "/reject-quote",
+        "/reject-final-quote-per-watt",
         async ({ query, set, userId }) => {
           try {
             const application = await FindFirstApplicationById(
@@ -957,7 +957,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               set.status = 400;
               return e.message;
             }
-            console.log("[applicationsRouter] reject-quote", e);
+            console.log("[applicationsRouter] reject-final-quote-per-watt", e);
             throw new Error("Error Occured");
           }
         },
