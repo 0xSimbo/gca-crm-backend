@@ -21,7 +21,10 @@ import {
   deferredTypes,
 } from "../../constants/typed-data/deferment";
 import { deferApplicationAssignement } from "../../db/mutations/applications/deferApplicationAssignement";
-import { stepApprovedTypes } from "../../constants/typed-data/step-approval";
+import {
+  stepApprovedTypes,
+  stepApprovedWithFinalProtocolFeeTypes,
+} from "../../constants/typed-data/step-approval";
 import { approveApplicationStep } from "../../db/mutations/applications/approveApplicationStep";
 import { updateApplicationStatus } from "../../db/mutations/applications/updateApplicationStatus";
 import { updateApplicationEnquiry } from "../../db/mutations/applications/updateApplicationEnquiry";
@@ -32,8 +35,7 @@ import { handleCreateOrUpdatePermitDocumentation } from "./steps/permit-document
 import { handleCreateOrUpdatePreIntallDocuments } from "./steps/pre-install";
 import { updateApplicationPreInstallVisitDates } from "../../db/mutations/applications/updateApplicationPreInstallVisitDates";
 import { updateApplicationAfterInstallVisitDates } from "../../db/mutations/applications/updateApplicationAfterInstallVisitDates";
-import { updatePreInstallVisitDateConfirmedTimestamp } from "../../db/mutations/applications/updatePreInstallVisitDateConfirmedTimestamp";
-import { updateAfterInstallVisitDateConfirmedTimestamp } from "../../db/mutations/applications/updateAfterInstallVisitDateConfirmedTimestamp";
+import { handleCreateOrUpdateInspectionAndPto } from "./steps/inspection-and-pto";
 
 export const EnquiryQueryBody = t.Object({
   applicationId: t.Nullable(t.String()),
@@ -131,6 +133,29 @@ export const PermitDocumentationQueryBody = t.Object({
   estimatedInstallDate: t.Date(),
 });
 
+export const InspectionAndPTOQueryBody = t.Object({
+  applicationId: t.String(),
+  inspectionPresignedUrl: t.Nullable(
+    t.String({
+      example: encryptedUploadedUrlExample,
+    })
+  ),
+  inspectionNotAvailableReason: t.Nullable(t.String()),
+  ptoPresignedUrl: t.Nullable(
+    t.String({
+      example: encryptedUploadedUrlExample,
+    })
+  ),
+  ptoNotAvailableReason: t.Nullable(t.String()),
+  intallFinishedDate: t.Date(),
+  miscDocuments: t.Array(
+    t.Object({
+      name: t.String(),
+      presignedUrl: t.String(),
+    })
+  ),
+});
+
 export const GcaAcceptApplicationQueryBody = t.Object({
   applicationId: t.String(),
   signature: t.String(),
@@ -221,7 +246,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               body.deadline,
               account
             );
-            if (errorChecks) {
+            if (errorChecks.errorCode !== 200 || !errorChecks.data) {
               set.status = errorChecks.errorCode;
               return errorChecks.errorMessage;
             }
@@ -293,7 +318,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               body.deadline,
               account
             );
-            if (errorChecks) {
+            if (errorChecks.errorCode !== 200 || !errorChecks.data) {
               set.status = errorChecks.errorCode;
               return errorChecks.errorMessage;
             }
@@ -319,6 +344,10 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
             }
 
             if (body.approved) {
+              if (!body.finalQuotePerWatt) {
+                set.status = 400;
+                return "finalQuotePerWatt is required";
+              }
               await approveApplicationStep(
                 body.applicationId,
                 account.id,
@@ -347,7 +376,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
         {
           body: t.Object({
             ...ApproveOrAskForChangesQueryBody,
-            finalQuotePerWatt: t.String(),
+            finalQuotePerWatt: t.Nullable(t.String()),
           }),
           detail: {
             summary: "Gca Approve or Ask for Changes after step submission",
@@ -497,7 +526,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
             }
 
             const applications = await findAllApplicationsAssignedToGca(gcaId);
-            console.log("gca-assigned-applications", { applications, gcaId });
+            // console.log("gca-assigned-applications", { applications, gcaId });
             return applications;
           } catch (e) {
             if (e instanceof Error) {
@@ -785,6 +814,69 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
         }
       )
       .post(
+        "/inspection-and-pto",
+        async ({ body, set, userId }) => {
+          try {
+            const application = await FindFirstApplicationById(
+              body.applicationId
+            );
+            if (!application) {
+              set.status = 404;
+              return "Application not found";
+            }
+            const errorChecks = await fillApplicationStepCheckHandler(
+              userId,
+              application,
+              ApplicationSteps.inspectionAndPtoDocuments
+            );
+
+            if (errorChecks) {
+              set.status = errorChecks.errorCode;
+              return errorChecks.errorMessage;
+            }
+
+            if (
+              !body.inspectionPresignedUrl &&
+              !body.inspectionNotAvailableReason
+            ) {
+              set.status = 400;
+              return "Either inspectionPresignedUrl or inspectionNotAvailableReason is required";
+            }
+
+            if (!body.ptoPresignedUrl && !body.ptoNotAvailableReason) {
+              set.status = 400;
+              return "Either ptoPresignedUrl or ptoNotAvailableReason is required";
+            }
+
+            await handleCreateOrUpdateInspectionAndPto(application, {
+              inspectionNotAvailableReason: body.inspectionNotAvailableReason,
+              inspectionPresignedUrl: body.inspectionPresignedUrl,
+              ptoNotAvailableReason: body.ptoNotAvailableReason,
+              ptoPresignedUrl: body.ptoPresignedUrl,
+              intallFinishedDate: body.intallFinishedDate,
+              miscDocuments: body.miscDocuments,
+            });
+            return body.applicationId;
+          } catch (e) {
+            console.error("error", e);
+            if (e instanceof Error) {
+              set.status = 400;
+              return e.message;
+            }
+            console.log("[applicationsRouter] /permit-documentation", e);
+            throw new Error("Error Occured");
+          }
+        },
+        {
+          body: InspectionAndPTOQueryBody,
+          detail: {
+            summary: "Create or Update the Inspection and PTO documents",
+            description: `insert the Inspection and PTO documents in db + insert documentsMissingWithReason if inspection or pto missing and update the application status to waitingForApproval`,
+            tags: [TAG.APPLICATIONS],
+          },
+        }
+      )
+      .post(
         "/next-step",
         async ({ query, set, userId }) => {
           try {
@@ -828,6 +920,243 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
         }
       )
       .post(
+        "/permit-documentation-approve-or-ask-for-changes",
+        async ({ body, set, userId: gcaId }) => {
+          try {
+            const account = await findFirstAccountById(gcaId);
+            if (!account) {
+              return { errorCode: 404, errorMessage: "Account not found" };
+            }
+
+            const errorChecks = await approveOrAskForChangesCheckHandler(
+              body.stepIndex,
+              body.applicationId,
+              body.deadline,
+              account
+            );
+
+            const application = errorChecks.data;
+
+            if (errorChecks.errorCode !== 200 || !application) {
+              set.status = errorChecks.errorCode;
+              return errorChecks.errorMessage;
+            }
+
+            const approvedValues = {
+              applicationId: body.applicationId,
+              approved: body.approved,
+              deadline: body.deadline,
+              stepIndex: body.stepIndex,
+              // nonce is fetched from user account. nonce is updated for every new next-auth session
+            };
+
+            const recoveredAddress = await recoverAddressHandler(
+              stepApprovedTypes,
+              approvedValues,
+              body.signature,
+              gcaId
+            );
+
+            if (recoveredAddress.toLowerCase() !== account.id.toLowerCase()) {
+              set.status = 403;
+              return "Invalid Signature";
+            }
+
+            if (body.approved) {
+              if (
+                !application.preInstallVisitDateFrom ||
+                !application.preInstallVisitDateTo
+              ) {
+                set.status = 400;
+                return "Pre Install Visit Dates are not set";
+              }
+
+              const now = new Date();
+              const today = new Date(
+                now.getFullYear(),
+                now.getMonth(),
+                now.getDate()
+              );
+              const preInstallVisitDateFromTime = new Date(
+                application.preInstallVisitDateFrom.getFullYear(),
+                application.preInstallVisitDateFrom.getMonth(),
+                application.preInstallVisitDateFrom.getDate()
+              ).getTime();
+
+              if (today.getTime() < preInstallVisitDateFromTime) {
+                set.status = 400;
+                return "Pre Install Visit Date is not passed yet";
+              }
+
+              await approveApplicationStep(
+                body.applicationId,
+                account.id,
+                body.annotation,
+                body.stepIndex,
+                body.signature,
+                {
+                  preInstallVisitDateConfirmedTimestamp: new Date(),
+                }
+              );
+            } else {
+              await updateApplicationStatus(
+                body.applicationId,
+                ApplicationStatusEnum.changesRequired
+              );
+            }
+          } catch (e) {
+            if (e instanceof Error) {
+              set.status = 400;
+              return e.message;
+            }
+            console.log("[applicationsRouter] gca-assigned-applications", e);
+            throw new Error("Error Occured");
+          }
+        },
+        {
+          body: t.Object(ApproveOrAskForChangesQueryBody),
+          detail: {
+            summary:
+              "Gca Approve and confirm pre install visit date or Ask for Changes",
+            description: `Approve and confirm pre install visit date or Ask for Changes. If the user is not a GCA, it will throw an error. If the deadline is in the past, it will throw an error. If the deadline is more than 10 minutes in the future, it will throw an error.`,
+            tags: [TAG.APPLICATIONS],
+          },
+        }
+      )
+      .post(
+        "/inspection-and-pto-approve-or-ask-for-changes",
+        async ({ body, set, userId: gcaId }) => {
+          try {
+            const account = await findFirstAccountById(gcaId);
+            if (!account) {
+              return { errorCode: 404, errorMessage: "Account not found" };
+            }
+
+            const errorChecks = await approveOrAskForChangesCheckHandler(
+              body.stepIndex,
+              body.applicationId,
+              body.deadline,
+              account
+            );
+
+            const application = errorChecks.data;
+
+            if (errorChecks.errorCode !== 200 || !application) {
+              set.status = errorChecks.errorCode;
+              return errorChecks.errorMessage;
+            }
+
+            let approvedValues;
+            let recoveredAddress;
+            if (body.approved) {
+              if (body.finalProtocolFee) {
+                approvedValues = {
+                  applicationId: body.applicationId,
+                  approved: body.approved,
+                  deadline: body.deadline,
+                  finalProtocolFee: body.finalProtocolFee,
+                  stepIndex: body.stepIndex,
+                  // nonce is fetched from user account. nonce is updated for every new next-auth session
+                };
+              } else {
+                set.status = 400;
+                return "Final Protocol Fee is required in case of approval";
+              }
+
+              recoveredAddress = await recoverAddressHandler(
+                stepApprovedWithFinalProtocolFeeTypes,
+                approvedValues,
+                body.signature,
+                gcaId
+              );
+            } else {
+              approvedValues = {
+                applicationId: body.applicationId,
+                approved: body.approved,
+                deadline: body.deadline,
+                stepIndex: body.stepIndex,
+                // nonce is fetched from user account. nonce is updated for every new next-auth session
+              };
+
+              recoveredAddress = await recoverAddressHandler(
+                stepApprovedTypes,
+                approvedValues,
+                body.signature,
+                gcaId
+              );
+            }
+
+            if (recoveredAddress.toLowerCase() !== account.id.toLowerCase()) {
+              set.status = 403;
+              return "Invalid Signature";
+            }
+
+            if (body.approved) {
+              if (
+                !application.afterInstallVisitDateFrom ||
+                !application.afterInstallVisitDateTo
+              ) {
+                set.status = 400;
+                return "After Install Visit Dates are not set";
+              }
+
+              const now = new Date();
+              const today = new Date(
+                now.getFullYear(),
+                now.getMonth(),
+                now.getDate()
+              );
+              const afterInstallVisitDateFromTime = new Date(
+                application.afterInstallVisitDateFrom.getFullYear(),
+                application.afterInstallVisitDateFrom.getMonth(),
+                application.afterInstallVisitDateFrom.getDate()
+              ).getTime();
+
+              if (today.getTime() < afterInstallVisitDateFromTime) {
+                set.status = 400;
+                return "After Install Visit Date is not passed yet";
+              }
+
+              await approveApplicationStep(
+                body.applicationId,
+                account.id,
+                body.annotation,
+                body.stepIndex,
+                body.signature,
+                {
+                  afterInstallVisitDateConfirmedTimestamp: new Date(),
+                  finalProtocolFee: body.finalProtocolFee,
+                }
+              );
+            } else {
+              await updateApplicationStatus(
+                body.applicationId,
+                ApplicationStatusEnum.changesRequired
+              );
+            }
+          } catch (e) {
+            if (e instanceof Error) {
+              set.status = 400;
+              return e.message;
+            }
+            console.log("[applicationsRouter] gca-assigned-applications", e);
+            throw new Error("Error Occured");
+          }
+        },
+        {
+          body: t.Object({
+            ...ApproveOrAskForChangesQueryBody,
+            finalProtocolFee: t.Nullable(t.String()),
+          }),
+          detail: {
+            summary:
+              "Gca Approve and confirm pre install visit date or Ask for Changes",
+            description: `Approve and confirm pre install visit date or Ask for Changes. If the user is not a GCA, it will throw an error. If the deadline is in the past, it will throw an error. If the deadline is more than 10 minutes in the future, it will throw an error.`,
+            tags: [TAG.APPLICATIONS],
+          },
+        }
+      )
+      .post(
         "/gca-pre-install-visit",
         async ({ body, set, userId: gcaId }) => {
           try {
@@ -863,57 +1192,39 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               return "You are not assigned to this application";
             }
 
-            if ("confirmed" in body && body.confirmed) {
-              await updatePreInstallVisitDateConfirmedTimestamp(
-                body.applicationId
-              );
-            } else if (
-              "preInstallVisitDateFrom" in body &&
-              "preInstallVisitDateTo" in body
-            ) {
-              const fromDate = new Date(body.preInstallVisitDateFrom);
-              const toDate = new Date(body.preInstallVisitDateTo);
+            const fromDate = new Date(body.preInstallVisitDateFrom);
+            const toDate = new Date(body.preInstallVisitDateTo);
 
-              if (isNaN(fromDate.getTime()) || isNaN(toDate.getTime())) {
-                set.status = 400;
-                return "Invalid date format";
-              }
-
-              if (!application.estimatedInstallDate) {
-                set.status = 400;
-                return "Estimated Install Date is not set";
-              }
-              console.log("application.intallFinishedDate", {
-                fromDateTime: fromDate.getTime(),
-                toDateTime: toDate.getTime(),
-                nowTime: new Date().getTime(),
-                applicationEstimatedInstallDateTime:
-                  application.estimatedInstallDate.getTime(),
-              });
-              const now = new Date();
-              const tomorrowTime = new Date(
-                now.setDate(now.getDate() + 1)
-              ).getTime();
-              const fourDaysLaterTime = fromDate.getTime() + 86400000 * 4;
-
-              if (
-                fromDate.getTime() >= tomorrowTime ||
-                toDate.getTime() <= fourDaysLaterTime ||
-                toDate.getTime() >= application.estimatedInstallDate.getTime()
-              ) {
-                set.status = 400;
-                return "Invalid date range";
-              }
-
-              await updateApplicationPreInstallVisitDates(
-                body.applicationId,
-                fromDate,
-                toDate
-              );
-            } else {
+            if (isNaN(fromDate.getTime()) || isNaN(toDate.getTime())) {
               set.status = 400;
-              return "Body is malformed";
+              return "Invalid date format";
             }
+
+            if (!application.estimatedInstallDate) {
+              set.status = 400;
+              return "Estimated Install Date is not set";
+            }
+
+            const now = new Date();
+            const tomorrowTime = new Date(
+              now.setDate(now.getDate() + 1)
+            ).getTime();
+            const fourDaysLaterTime = fromDate.getTime() + 86400000 * 4;
+
+            if (
+              fromDate.getTime() >= tomorrowTime ||
+              toDate.getTime() <= fourDaysLaterTime ||
+              toDate.getTime() >= application.estimatedInstallDate.getTime()
+            ) {
+              set.status = 400;
+              return "Invalid date range";
+            }
+
+            await updateApplicationPreInstallVisitDates(
+              body.applicationId,
+              fromDate,
+              toDate
+            );
           } catch (e) {
             if (e instanceof Error) {
               set.status = 400;
@@ -924,17 +1235,12 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
           }
         },
         {
-          body: t.Union([
-            t.Object({
-              applicationId: t.String(),
-              preInstallVisitDateFrom: t.String(),
-              preInstallVisitDateTo: t.String(),
-            }),
-            t.Object({
-              applicationId: t.String(),
-              confirmed: t.Boolean(),
-            }),
-          ]),
+          body: t.Object({
+            applicationId: t.String(),
+            preInstallVisitDateFrom: t.String(),
+            preInstallVisitDateTo: t.String(),
+          }),
+
           detail: {
             summary: "GCA Pre Install Visit",
             description: `Set the pre install visit dates`,
@@ -978,52 +1284,41 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               set.status = 403;
               return "You are not assigned to this application";
             }
-            if ("confirmed" in body && body.confirmed) {
-              await updateAfterInstallVisitDateConfirmedTimestamp(
-                body.applicationId
-              );
-            } else if (
-              "afterInstallVisitDateFrom" in body &&
-              "afterInstallVisitDateTo" in body
-            ) {
-              const fromDate = new Date(body.afterInstallVisitDateFrom);
-              const toDate = new Date(body.afterInstallVisitDateTo);
 
-              if (isNaN(fromDate.getTime()) || isNaN(toDate.getTime())) {
-                set.status = 400;
-                return "Invalid date format";
-              }
+            const fromDate = new Date(body.afterInstallVisitDateFrom);
+            const toDate = new Date(body.afterInstallVisitDateTo);
 
-              if (!application.intallFinishedDate) {
-                set.status = 400;
-                return "Install Finished Date is not set";
-              }
-
-              const oneDayInMillis = 86400000;
-              const fourDaysInMillis = oneDayInMillis * 4;
-
-              // Calculate the day after the install finished date
-              const dayAfterInstallFinishedDate = new Date(
-                application.intallFinishedDate.getTime() + oneDayInMillis
-              );
-
-              if (
-                fromDate.getTime() < dayAfterInstallFinishedDate.getTime() ||
-                toDate.getTime() < fromDate.getTime() + fourDaysInMillis
-              ) {
-                set.status = 400;
-                return "Invalid date range";
-              }
-
-              await updateApplicationAfterInstallVisitDates(
-                body.applicationId,
-                new Date(body.afterInstallVisitDateFrom),
-                new Date(body.afterInstallVisitDateTo)
-              );
-            } else {
+            if (isNaN(fromDate.getTime()) || isNaN(toDate.getTime())) {
               set.status = 400;
-              return "Body is malformed";
+              return "Invalid date format";
             }
+
+            if (!application.intallFinishedDate) {
+              set.status = 400;
+              return "Install Finished Date is not set";
+            }
+
+            const oneDayInMillis = 86400000;
+            const fourDaysInMillis = oneDayInMillis * 4;
+
+            // Calculate the day after the install finished date
+            const dayAfterInstallFinishedDate = new Date(
+              application.intallFinishedDate.getTime() + oneDayInMillis
+            );
+
+            if (
+              fromDate.getTime() < dayAfterInstallFinishedDate.getTime() ||
+              toDate.getTime() < fromDate.getTime() + fourDaysInMillis
+            ) {
+              set.status = 400;
+              return "Invalid date range";
+            }
+
+            await updateApplicationAfterInstallVisitDates(
+              body.applicationId,
+              new Date(body.afterInstallVisitDateFrom),
+              new Date(body.afterInstallVisitDateTo)
+            );
           } catch (e) {
             if (e instanceof Error) {
               set.status = 400;
@@ -1034,17 +1329,12 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
           }
         },
         {
-          body: t.Union([
-            t.Object({
-              applicationId: t.String(),
-              afterInstallVisitDateFrom: t.String(),
-              afterInstallVisitDateTo: t.String(),
-            }),
-            t.Object({
-              applicationId: t.String(),
-              confirmed: t.Boolean(),
-            }),
-          ]),
+          body: t.Object({
+            applicationId: t.String(),
+            afterInstallVisitDateFrom: t.String(),
+            afterInstallVisitDateTo: t.String(),
+          }),
+
           detail: {
             summary: "GCA After Install Visit",
             description: `Set the after install visit dates. If confirmed is true, it will set the confirmed timestamp`,
