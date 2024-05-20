@@ -721,6 +721,7 @@ export const RewardSplits = pgTable("rewardsSplits", {
 });
 
 export type RewardSplitsType = InferSelectModel<typeof RewardSplits>;
+export type RewardSplitsInsertType = typeof RewardSplits.$inferInsert;
 
 export const RewardSplitsRelations = relations(RewardSplits, ({ one }) => ({
   application: one(applications, {

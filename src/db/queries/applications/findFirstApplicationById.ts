@@ -19,6 +19,7 @@ export const FindFirstApplicationById = async (id: string) => {
       },
       documentsMissingWithReason: true,
       applicationStepApprovals: true,
+      rewardSplits: true,
     },
   });
   return application;
