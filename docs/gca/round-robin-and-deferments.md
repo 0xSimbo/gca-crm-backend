@@ -70,22 +70,4 @@ NOTE: a `null` value for `gca_assigned_timestamp` means that no GCA has assigned
 @JulienWebDeveloppeur
 
 - What to do when a GCA defers a farm and there are no other GCAs? Do we need a special status?
-
-@0xSimbo you can use roundRobinStatus inside the application.
-
-export const roundRobinStatus = [
-"waiting-to-be-assigned",
-"waiting-to-be-accepted",
-"assigned",
-] as const;
-
-@0xSimbo regarding deferments, we have a one to many relation in Application. the relationName is "deferments", the entity look like this :
-
-export type Deferment = {
-id: string;
-applicationId: string;
-reason: string;
-fromGca: string; // walletAddress ( aka gcaId )
-toGca: string; // walletAddress ( aka gcaId )
-timestamp: string;
-};
+  @0xSimbo they can't defer if no available gca i blocked it in the ui. We can add a special status depends on what you wanna do on the logic side

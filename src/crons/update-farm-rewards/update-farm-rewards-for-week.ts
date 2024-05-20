@@ -26,7 +26,7 @@ export async function updateFarmRewardsForWeek({
         BigInt(Math.floor(farm.rewards.glow)) * BigInt(10 ** DB_DECIMALS),
       totalUSDGRewards:
         BigInt(Math.floor(farm.rewards.usdg)) * BigInt(10 ** DB_DECIMALS),
-      shortId: Number(farm.shortId),
+      // shortId: Number(farm.shortId), // fix the cron by creating devices with shortId and asigning them to farms, get the device id by calling rust api
       auditCompleteDate: farm.auditCompleteDate
         ? new Date(Number(farm.auditCompleteDate))
         : new Date(),

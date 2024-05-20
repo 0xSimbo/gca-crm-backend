@@ -161,8 +161,9 @@ export const WalletWeeklyRewardRelations = relations(
 export const farms = pgTable(
   "farms",
   {
-    id: varchar("farm_id", { length: 66 }).primaryKey(), // hexlified farm pub key
-    shortId: integer("short_id").notNull(), // short id for simplicity and readability
+    id: varchar("farm_id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()), // later on will be pulled from gca server
     totalGlowRewards: bigint("total_glow_rewards", { mode: "bigint" })
       .default(sql`'0'::bigint`)
       .notNull(),
@@ -170,13 +171,12 @@ export const farms = pgTable(
       .default(sql`'0'::bigint`)
       .notNull(),
     createdAt: timestamp("created_at").notNull().defaultNow(),
-    auditCompleteDate: timestamp("audit_complete_date"),
+    auditCompleteDate: timestamp("audit_complete_date").notNull(),
     gcaId: varchar("gca_id", { length: 42 }).notNull(),
     userId: varchar("user_id", { length: 42 }).notNull(),
   },
   (t) => {
     return {
-      shortIdIndex: index("short_id_ix").on(t.shortId),
       farmIdIndex: index("farm_id_ix").on(t.id),
     };
   }
@@ -196,6 +196,7 @@ export const FarmRelations = relations(farms, ({ many, one }) => ({
     references: [Gcas.id],
   }),
   farmUpdatesHistory: many(farmUpdatesHistory),
+  devices: many(Devices),
 }));
 
 /**
@@ -496,7 +497,9 @@ export const applications = pgTable("applications", {
   afterInstallVisitDateConfirmedTimestamp: timestamp(
     "after_install_visit_date_confirmed_timestamp"
   ),
-  finalProtocolFee: varchar("final_protocol_fee", { length: 255 }),
+  finalProtocolFee: bigint("final_protocol_fee", { mode: "bigint" })
+    .default(sql`'0'::bigint`)
+    .notNull(),
   // payment step fields
   paymentDate: timestamp("payment_date"),
   paymentTxHash: varchar("payment_tx_hash", { length: 66 }),
@@ -635,7 +638,7 @@ export const Documents = pgTable("documents", {
   step: integer("step").notNull(),
   name: varchar("name", { length: 255 }).notNull(),
   url: varchar("url", { length: 255 }).notNull(), // bytes of the encrypted document are stored on r2
-  type: varchar("type", { length: 255 }).notNull(),
+  type: varchar("type", { length: 255 }).notNull(), // if not "enc" then it's a regular document not encrypted
   createdAt: timestamp("created_at").notNull(),
   encryptedMasterKeys: json("encrypted_master_keys")
     .$type<EncryptedMasterKeySet>()
@@ -749,10 +752,11 @@ export const Devices = pgTable("devices", {
     .notNull()
     .references(() => farms.id, { onDelete: "cascade" }),
   publicKey: varchar("public_key", { length: 255 }).unique().notNull(),
-  shortId: integer("short_id").notNull(),
+  shortId: varchar("short_id", { length: 255 }).notNull(), // can have multiple devices with the same shortId but different public keys // @0xSimbo will store as varchar since it's planned to change it to an hex
 });
 
 export type DeviceType = InferSelectModel<typeof Devices>;
+export type DeviceInsertType = typeof Devices.$inferInsert;
 
 export const DevicesRelations = relations(Devices, ({ one }) => ({
   farm: one(farms, {

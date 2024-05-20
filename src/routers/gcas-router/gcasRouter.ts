@@ -19,6 +19,7 @@ import { bearer as bearerplugin } from "@elysiajs/bearer";
 import { bearerGuard } from "../../guards/bearerGuard";
 import { jwtHandler } from "../../handlers/jwtHandler";
 import { findAllGcas } from "../../db/queries/gcas/findAllGcas";
+import { updateServers } from "../../db/mutations/gcas/updateServers";
 
 export const CreateGCAQueryBody = t.Object({
   publicEncryptionKey: t.String({
@@ -160,6 +161,41 @@ export const gcasRouter = new Elysia({ prefix: "/gcas" })
           detail: {
             summary: "Create GCA Account",
             description: `Create a GCA account. If the account already exists, it will throw an error.`,
+            tags: [TAG.GCAS],
+          },
+        }
+      )
+      .post(
+        "/update-servers",
+        async ({ body, userId, set }) => {
+          try {
+            const wallet = userId;
+            const account = await findFirstAccountById(wallet);
+            if (!account) {
+              set.status = 404;
+              return "Account not found";
+            }
+
+            // TODO: ping server to check if it is valid @0xSimbo
+
+            if (account.role !== "GCA") {
+              set.status = 401;
+              return "You are not a GCA";
+            }
+            await updateServers(wallet, body.serverUrls);
+          } catch (e) {
+            if (e instanceof Error) {
+              return e.message;
+            }
+            console.log("[accountsRouter] update-servers-url", e);
+            throw new Error("Error Occured");
+          }
+        },
+        {
+          body: t.Object({ serverUrls: t.Array(t.String()) }),
+          detail: {
+            summary: "Create ",
+            description: `Create `,
             tags: [TAG.GCAS],
           },
         }

@@ -22,6 +22,7 @@ import {
 } from "../../constants/typed-data/deferment";
 import { deferApplicationAssignement } from "../../db/mutations/applications/deferApplicationAssignement";
 import {
+  applicationCompletedWithPaymentTypes,
   stepApprovedTypes,
   stepApprovedWithFinalProtocolFeeTypes,
 } from "../../constants/typed-data/step-approval";
@@ -42,6 +43,8 @@ import {
   getProtocolFeePaymentFromTransactionHash,
   GetProtocolFeePaymentFromTransactionHashSubgraphResponseIndividual,
 } from "../../subgraph/queries/getProtocolFeePaymentFromTransactionHash";
+import { ethers } from "ethers";
+import { handleCreateWithoutPIIDocumentsAndCompleteApplication } from "./steps/gca-application-completion";
 
 export const EnquiryQueryBody = t.Object({
   applicationId: t.Nullable(t.String()),
@@ -1143,6 +1146,119 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
         }
       )
       .post(
+        "/gca-complete-application",
+        async ({ body, set, userId: gcaId }) => {
+          try {
+            const account = await findFirstAccountById(gcaId);
+            if (!account) {
+              return { errorCode: 404, errorMessage: "Account not found" };
+            }
+
+            //TODO: rename function when time
+            const errorChecks = await approveOrAskForChangesCheckHandler(
+              ApplicationSteps.payment,
+              body.applicationId,
+              body.deadline,
+              account
+            );
+
+            const application = errorChecks.data;
+
+            if (errorChecks.errorCode !== 200 || !application) {
+              set.status = errorChecks.errorCode;
+              return errorChecks.errorMessage;
+            }
+
+            if (!application.paymentTxHash) {
+              set.status = 400;
+              return "No payment has been made yet";
+            }
+
+            const approvedValues = {
+              applicationId: body.applicationId,
+              deadline: body.deadline,
+              devices: body.devices.map((device) => device.publicKey),
+              txHash: application.paymentTxHash,
+              // nonce is fetched from user account. nonce is updated for every new next-auth session
+            };
+
+            const recoveredAddress = await recoverAddressHandler(
+              applicationCompletedWithPaymentTypes,
+              approvedValues,
+              body.signature,
+              gcaId
+            );
+
+            if (recoveredAddress.toLowerCase() !== account.id.toLowerCase()) {
+              set.status = 403;
+              return "Invalid Signature";
+            }
+
+            if (application.status === ApplicationStatusEnum.completed) {
+              set.status = 400;
+              return "Application already completed";
+            }
+
+            if (application.farmId) {
+              set.status = 400;
+              return "Application already linked with a farm";
+            }
+
+            await handleCreateWithoutPIIDocumentsAndCompleteApplication(
+              application,
+              gcaId,
+              body.signature,
+              ApplicationSteps.payment,
+              {
+                ...body.withoutPIIdocuments,
+                devices: body.devices,
+              }
+            );
+          } catch (e) {
+            if (e instanceof Error) {
+              set.status = 400;
+              return e.message;
+            }
+            console.log("[applicationsRouter] gca-complete-application", e);
+            throw new Error("Error Occured");
+          }
+        },
+        {
+          body: t.Object({
+            applicationId: t.String(),
+            signature: t.String(),
+            deadline: t.Numeric(),
+            annotation: t.Nullable(t.String()),
+            devices: t.Array(
+              t.Object({ publicKey: t.String(), shortId: t.String() })
+            ),
+            withoutPIIdocuments: t.Object({
+              contractAgreementPresignedUrl: t.String(),
+              mortgageStatementPresignedUrl: t.String(),
+              propertyDeedPresignedUrl: t.String(),
+              firstUtilityBillPresignedUrl: t.String(),
+              secondUtilityBillPresignedUrl: t.String(),
+              declarationOfIntentionPresignedUrl: t.String(),
+              plansetsPresignedUrl: t.Nullable(t.String()),
+              permitPresignedUrl: t.Nullable(t.String()),
+              inspectionPresignedUrl: t.Nullable(t.String()),
+              ptoPresignedUrl: t.Nullable(t.String()),
+              miscDocuments: t.Array(
+                t.Object({
+                  presignedUrl: t.String(),
+                  documentName: t.String(),
+                })
+              ),
+            }),
+          }),
+          detail: {
+            summary: "",
+            description: ``,
+            tags: [TAG.APPLICATIONS],
+          },
+        }
+      )
+      .post(
         "/inspection-and-pto-approve-or-ask-for-changes",
         async ({ body, set, userId: gcaId }) => {
           try {
@@ -1244,7 +1360,9 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                 body.signature,
                 {
                   afterInstallVisitDateConfirmedTimestamp: new Date(),
-                  finalProtocolFee: body.finalProtocolFee,
+                  finalProtocolFee: ethers.utils
+                    .parseUnits(body.finalProtocolFee!!, 6)
+                    .toBigInt(),
                 }
               );
             } else {

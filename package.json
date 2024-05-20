@@ -1,13 +1,13 @@
 {
   "name": "@glowlabs-org/crm-bindings",
-  "version": "0.0.37",
+  "version": "0.0.38",
   "description": "A library containing all API bindings for the Elysia App",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "bun run src/index.ts",
     "dev": "bun run --watch src/index.ts",
     "build:types": "rm -rf lib && npm run build:cjs && npm run build:esm",
-    "build:cjs": "tsc  --module commonjs --outDir ./lib/cjs  && node postbuild-cjs.mjs",
+    "build:cjs": "tsc  --module es2015 --outDir ./lib/cjs  && node postbuild-cjs.mjs",
     "build:esm": "tsc  --module es2015 --outDir ./lib/esm   && node postbuild-esm.mjs",
     "db:push": "bun test && drizzle-kit push",
     "db:generate": "bun test && drizzle-kit generate",
