@@ -1,8 +1,8 @@
 import { subgraphClient } from "../subgraphClient";
-import { gql } from "@apollo/client";
+import { gql } from "graphql-request";
 function createQuery(txHash: string) {
   const query = gql` 
-    query {
+     {
       donations(where:{
           and: [
         { transactionHash: "${txHash}"},
@@ -38,16 +38,16 @@ export async function getProtocolFeePaymentFromTransactionHash(
   txHash: string
 ): Promise<GetProtocolFeePaymentFromTransactionHashSubgraphResponseIndividual | null> {
   const query = createQuery(txHash);
-  const { data: result } =
-    await subgraphClient.query<GetProtocolFeePaymentFromTransactionHashSubgraphResponse>(
-      {
-        query,
-      }
+  const result =
+    await subgraphClient.request<GetProtocolFeePaymentFromTransactionHashSubgraphResponse>(
+      query
     );
   if (result.donations.length === 0) {
     return null;
   }
 
-  return result
+  const res = result
     .donations[0] as GetProtocolFeePaymentFromTransactionHashSubgraphResponseIndividual;
+  console.log(res);
+  return res;
 }
