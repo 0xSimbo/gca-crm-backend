@@ -38,6 +38,10 @@ import { updateApplicationAfterInstallVisitDates } from "../../db/mutations/appl
 import { handleCreateOrUpdateInspectionAndPto } from "./steps/inspection-and-pto";
 import { updateApplication } from "../../db/mutations/applications/updateApplication";
 import { roundRobinAssignement } from "../../db/queries/gcas/roundRobinAssignement";
+import {
+  getProtocolFeePaymentFromTransactionHash,
+  GetProtocolFeePaymentFromTransactionHashSubgraphResponseIndividual,
+} from "../../subgraph/queries/getProtocolFeePaymentFromTransactionHash";
 
 export const EnquiryQueryBody = t.Object({
   applicationId: t.Nullable(t.String()),
@@ -905,6 +909,15 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
             }
 
             //TODO: verify txHash
+            const protocolFeeData: GetProtocolFeePaymentFromTransactionHashSubgraphResponseIndividual | null =
+              await getProtocolFeePaymentFromTransactionHash(body.txHash);
+
+            if (!protocolFeeData) {
+              /// @JulienWebDeveloppeur this means the tx hash is not valid, we should return an error
+            }
+
+            /// @JulienWebDeveloppeur Here we need to check to make sure it's >= the amount we are expecting
+            /// If it's greater, need to check with david what to do on that. For now, let's not change anything
 
             await updateApplicationStatus(
               body.applicationId,

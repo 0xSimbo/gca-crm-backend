@@ -427,7 +427,7 @@ export const GcasRelations = relations(Gcas, ({ many, one }) => ({
  * @param {timestamp} estimatedInstallDate - The estimated installation date provided by the installer or farm owner.
  * @param {timestamp} afterInstallVisitDateFrom - The start date of the post-install visit.
  * @param {timestamp} afterInstallVisitDateTo - The end date of the post-install visit.
- * @param {string} finalProtocolFee - The final protocol fee.
+ * @param {string} finalProtocolFee - The final protocol fee. /// @JulienWebDeveloppeur is this 6 decimals or USD ?
  * @param {timestamp} paymentDate - The payment date.
  * @param {string} paymentTxHash - The transaction hash of the payment.
  * @param {timestamp} gcaAssignedTimestamp - The timestamp when the GCA was assigned.
