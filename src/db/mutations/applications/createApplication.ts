@@ -1,4 +1,7 @@
-import { ApplicationSteps } from "../../../types/api-types/Application";
+import {
+  ApplicationSteps,
+  EncryptedMasterKeySet,
+} from "../../../types/api-types/Application";
 import { db } from "../../db";
 import {
   ApplicationInsertType,
@@ -8,7 +11,8 @@ import {
 } from "../../schema";
 
 export const createApplication = async (
-  latestUtilityBillPresignedUrl: string,
+  latestUtilityBillPublicUrl: string,
+  keysSet: EncryptedMasterKeySet[],
   application: ApplicationInsertType
 ) => {
   const insertedId = await db.transaction(async (tx) => {
@@ -25,11 +29,11 @@ export const createApplication = async (
       {
         name: "Latest Utility Bill",
         applicationId: resInsertedId,
-        url: latestUtilityBillPresignedUrl,
+        url: latestUtilityBillPublicUrl,
         type: "enc",
         annotation: null,
         step: ApplicationSteps.enquiry,
-        encryptedMasterKeys: [],
+        encryptedMasterKeys: keysSet,
         createdAt: new Date(),
       },
     ];

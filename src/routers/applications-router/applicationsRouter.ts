@@ -48,9 +48,17 @@ import { handleCreateWithoutPIIDocumentsAndCompleteApplication } from "./steps/g
 
 export const EnquiryQueryBody = t.Object({
   applicationId: t.Nullable(t.String()),
-  latestUtilityBillPresignedUrl: t.String({
-    example:
-      "https://pub-7e0365747f054c9e85051df5f20fa815.r2.dev/0x18a0ba01bbec4aa358650d297ba7bb330a78b073/utility-bill.enc",
+  latestUtilityBill: t.Object({
+    publicUrl: t.String({
+      example:
+        "https://pub-7e0365747f054c9e85051df5f20fa815.r2.dev/0x18a0ba01bbec4aa358650d297ba7bb330a78b073/utility-bill.enc",
+    }),
+    keysSet: t.Array(
+      t.Object({
+        publicKey: t.String(),
+        encryptedMasterKey: t.String(),
+      })
+    ),
   }),
   establishedCostOfPowerPerKWh: t.Numeric({
     example: 0.12,
@@ -617,7 +625,8 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               const { applicationId, ...updateObject } = body;
               await updateApplicationEnquiry(
                 body.applicationId,
-                body.latestUtilityBillPresignedUrl,
+                body.latestUtilityBill.publicUrl,
+                body.latestUtilityBill.keysSet,
                 {
                   ...updateObject,
                   establishedCostOfPowerPerKWh:
@@ -633,9 +642,11 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               );
               return body.applicationId;
             }
+
             const gcaAddress = await roundRobinAssignement();
             const insertedId = await createApplication(
-              body.latestUtilityBillPresignedUrl,
+              body.latestUtilityBill.publicUrl,
+              body.latestUtilityBill.keysSet,
               {
                 userId,
                 ...body,

@@ -9,11 +9,13 @@ import {
 import {
   ApplicationStatusEnum,
   ApplicationSteps,
+  EncryptedMasterKeySet,
 } from "../../../types/api-types/Application";
 
 export const updateApplicationEnquiry = async (
   applicationId: string,
-  latestUtilityBillPresignedUrl: string,
+  latestUtilityBillPublicUrl: string,
+  keysSet: EncryptedMasterKeySet[],
   insertValues: ApplicationUpdateEnquiryType
 ) => {
   return await db.transaction(async (tx) => {
@@ -34,11 +36,11 @@ export const updateApplicationEnquiry = async (
       {
         name: "Latest Utility Bill",
         applicationId,
-        url: latestUtilityBillPresignedUrl,
+        url: latestUtilityBillPublicUrl,
         type: "enc",
         annotation: null,
         step: ApplicationSteps.enquiry,
-        encryptedMasterKeys: [],
+        encryptedMasterKeys: keysSet,
         createdAt: new Date(),
       },
     ];
