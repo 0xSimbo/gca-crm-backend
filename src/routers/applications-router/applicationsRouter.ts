@@ -86,7 +86,7 @@ export const EnquiryQueryBody = t.Object({
   }),
   address: t.String({
     example: "123 John Doe Street, Phoenix, AZ 85001",
-    minLength: 10, // TODO: match in frontend
+    minLength: 10,
   }),
   lat: t.Numeric({
     example: 38.234242,
@@ -911,21 +911,20 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               return "Application is not waiting for payment";
             }
 
-            //TODO: verify txHash
             const protocolFeeData: GetProtocolFeePaymentFromTransactionHashSubgraphResponseIndividual | null =
               await getProtocolFeePaymentFromTransactionHash(body.txHash);
 
             if (!protocolFeeData) {
-              /// @JulienWebDeveloppeur this means the tx hash is not valid, we should return an error
+              ///TODO: @JulienWebDeveloppeur this means the tx hash is not valid, we should return an error
             }
 
             /// @JulienWebDeveloppeur Here we need to check to make sure it's >= the amount we are expecting
             /// If it's greater, need to check with david what to do on that. For now, let's not change anything
 
-            await updateApplicationStatus(
-              body.applicationId,
-              ApplicationStatusEnum.paymentConfirmed
-            );
+            await updateApplication(body.applicationId, {
+              status: ApplicationStatusEnum.paymentConfirmed,
+              paymentTxHash: body.txHash,
+            });
           } catch (e) {
             if (e instanceof Error) {
               set.status = 400;

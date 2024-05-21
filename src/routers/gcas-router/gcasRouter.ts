@@ -73,9 +73,8 @@ export const gcasRouter = new Elysia({ prefix: "/gcas" })
         };
       })
       .get(
-        "/byId",
-        async ({ query, set, userId }) => {
-          if (!query.id) throw new Error("ID is required");
+        "/currrent",
+        async ({ set, userId }) => {
           const account = await findFirstAccountById(userId);
           if (!account) {
             set.status = 404;
@@ -86,7 +85,7 @@ export const gcasRouter = new Elysia({ prefix: "/gcas" })
             return "You are not a GCA";
           }
           try {
-            const gca = await FindFirstGcaById(query.id);
+            const gca = await FindFirstGcaById(userId);
             if (!gca) {
               set.status = 404;
               throw new Error("gca not found");
@@ -99,7 +98,6 @@ export const gcasRouter = new Elysia({ prefix: "/gcas" })
           }
         },
         {
-          query: GetEntityByIdQueryParamsSchema,
           detail: {
             summary: "Get GCA by ID",
             description: `Get GCA by ID and return the GCA object. If the GCA is not found, it will throw an error.`,
@@ -134,9 +132,8 @@ export const gcasRouter = new Elysia({ prefix: "/gcas" })
               signer
             );
 
-            //TODO:  remove comment when finished testing
-            // const isGca = await minerPoolAndGCA["isGCA(address)"](wallet);
-            const isGca = true;
+            const isGca = await minerPoolAndGCA["isGCA(address)"](wallet);
+            // const isGca = true;
             if (!isGca) {
               set.status = 401;
               return "This wallet is not a GCA";

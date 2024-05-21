@@ -42,7 +42,8 @@ export const approveOrAskForChangesCheckHandler = async (
 
   if (
     application.status !== ApplicationStatusEnum.waitingForApproval &&
-    application.status !== ApplicationStatusEnum.waitingForVisit
+    application.status !== ApplicationStatusEnum.waitingForVisit &&
+    application.status !== ApplicationStatusEnum.paymentConfirmed
   ) {
     return {
       data: null,

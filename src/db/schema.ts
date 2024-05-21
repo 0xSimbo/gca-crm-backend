@@ -510,7 +510,12 @@ export const applications = pgTable("applications", {
   gcaAcceptanceSignature: varchar("gca_acceptance_signature", { length: 255 }),
 });
 
-export type ApplicationType = InferSelectModel<typeof applications>;
+export type ApplicationType = Omit<
+  InferSelectModel<typeof applications>,
+  "finalProtocolFee"
+> & {
+  finalProtocolFee: string;
+};
 export type ApplicationInsertType = typeof applications.$inferInsert;
 export type ApplicationUpdateEnquiryType = Pick<
   ApplicationInsertType,

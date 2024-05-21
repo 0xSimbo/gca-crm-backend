@@ -16,6 +16,10 @@ import { updateApplicationStatus } from "../../db/mutations/applications/updateA
 import { updateApplication } from "../../db/mutations/applications/updateApplication";
 import { findFirstFarmById } from "../../db/queries/farms/findFirstFarmByShortId";
 import { findAllDevicesByFarmId } from "../../db/queries/devices/findAllDevicesByFarmId";
+import { getPubkeysAndShortIds } from "./get-pubkeys-and-short-ids";
+import { db } from "../../db/db";
+import { inArray } from "drizzle-orm";
+import { Devices } from "../../db/schema";
 
 export const devicesRouter = new Elysia({ prefix: "/devices" })
   .use(bearerplugin())
@@ -81,18 +85,19 @@ export const devicesRouter = new Elysia({ prefix: "/devices" })
               return "Unauthorized";
             }
 
-            // TODO: Call GCA server to get devices
-            const devices = [
-              {
-                pubKey: "0x123",
-                shortId: "123",
-              },
-              {
-                pubKey: "0x456",
-                shortId: "456",
-              },
-            ];
-            return devices;
+            const pubKeysAndShortIds = await getPubkeysAndShortIds(
+              body.gcaServerurl
+            );
+
+            const devicesAlreadyInDb = await db.query.Devices.findMany({
+              where: inArray(
+                Devices.publicKey,
+                pubKeysAndShortIds.map((c) => c.pubkey)
+              ),
+            });
+            return pubKeysAndShortIds.filter(
+              (d) => !devicesAlreadyInDb.find((db) => db.publicKey === d.pubkey)
+            );
           } catch (e) {
             if (e instanceof Error) {
               set.status = 400;

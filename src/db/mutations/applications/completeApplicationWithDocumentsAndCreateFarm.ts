@@ -60,9 +60,10 @@ export const completeApplicationWithDocumentsAndCreateFarmWithDevices = async (
       })
       .where(and(eq(applications.id, applicationId)))
       .returning({ status: applications.status });
+
     if (
       !applicationUpdateStatus.every(
-        ({ status }) => status === ApplicationStatusEnum.waitingForApproval
+        ({ status }) => status === ApplicationStatusEnum.completed
       )
     ) {
       tx.rollback();
