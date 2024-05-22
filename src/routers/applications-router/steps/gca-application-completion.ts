@@ -1,6 +1,10 @@
 import { completeApplicationWithDocumentsAndCreateFarmWithDevices } from "../../../db/mutations/applications/completeApplicationWithDocumentsAndCreateFarm";
 import { ApplicationType, DocumentsInsertType } from "../../../db/schema";
-import { ApplicationSteps } from "../../../types/api-types/Application";
+import {
+  ApplicationSteps,
+  OptionalDocumentsNamesEnum,
+  RequiredDocumentsNamesEnum,
+} from "../../../types/api-types/Application";
 
 type WithoutPiiDocumentsType = {
   contractAgreementPresignedUrl: string;
@@ -30,7 +34,7 @@ export const handleCreateWithoutPIIDocumentsAndCompleteApplication = async (
 ) => {
   const documents: DocumentsInsertType[] = [
     {
-      name: "Contract Agreement",
+      name: RequiredDocumentsNamesEnum.contractAgreement,
       applicationId: application.id,
       url: args.contractAgreementPresignedUrl,
       type: "pdf",
@@ -40,7 +44,7 @@ export const handleCreateWithoutPIIDocumentsAndCompleteApplication = async (
       createdAt: new Date(),
     },
     {
-      name: "Declaration of Intention",
+      name: RequiredDocumentsNamesEnum.declarationOfIntention,
       applicationId: application.id,
       url: args.declarationOfIntentionPresignedUrl,
       type: "pdf",
@@ -50,7 +54,7 @@ export const handleCreateWithoutPIIDocumentsAndCompleteApplication = async (
       createdAt: new Date(),
     },
     {
-      name: "First Utility Bill",
+      name: RequiredDocumentsNamesEnum.firstUtilityBill,
       applicationId: application.id,
       url: args.firstUtilityBillPresignedUrl,
       type: "pdf",
@@ -60,7 +64,7 @@ export const handleCreateWithoutPIIDocumentsAndCompleteApplication = async (
       createdAt: new Date(),
     },
     {
-      name: "Second Utility Bill",
+      name: RequiredDocumentsNamesEnum.secondUtilityBill,
       applicationId: application.id,
       url: args.secondUtilityBillPresignedUrl,
       type: "pdf",
@@ -70,7 +74,7 @@ export const handleCreateWithoutPIIDocumentsAndCompleteApplication = async (
       createdAt: new Date(),
     },
     {
-      name: "Mortgage Statement",
+      name: RequiredDocumentsNamesEnum.mortgageStatement,
       applicationId: application.id,
       url: args.mortgageStatementPresignedUrl,
       type: "pdf",
@@ -80,7 +84,7 @@ export const handleCreateWithoutPIIDocumentsAndCompleteApplication = async (
       createdAt: new Date(),
     },
     {
-      name: "Property Deed",
+      name: RequiredDocumentsNamesEnum.propertyDeed,
       applicationId: application.id,
       url: args.propertyDeedPresignedUrl,
       type: "pdf",
@@ -93,7 +97,7 @@ export const handleCreateWithoutPIIDocumentsAndCompleteApplication = async (
 
   if (args.plansetsPresignedUrl) {
     documents.push({
-      name: "Plansets",
+      name: OptionalDocumentsNamesEnum.plansets,
       applicationId: application.id,
       url: args.plansetsPresignedUrl,
       type: "pdf",
@@ -106,7 +110,7 @@ export const handleCreateWithoutPIIDocumentsAndCompleteApplication = async (
 
   if (args.permitPresignedUrl) {
     documents.push({
-      name: "Permit",
+      name: OptionalDocumentsNamesEnum.cityPermit,
       applicationId: application.id,
       url: args.permitPresignedUrl,
       type: "pdf",
@@ -119,7 +123,7 @@ export const handleCreateWithoutPIIDocumentsAndCompleteApplication = async (
 
   if (args.inspectionPresignedUrl) {
     documents.push({
-      name: "Inspection",
+      name: OptionalDocumentsNamesEnum.inspection,
       applicationId: application.id,
       url: args.inspectionPresignedUrl,
       type: "pdf",
@@ -132,7 +136,7 @@ export const handleCreateWithoutPIIDocumentsAndCompleteApplication = async (
 
   if (args.ptoPresignedUrl) {
     documents.push({
-      name: "PTO",
+      name: OptionalDocumentsNamesEnum.pto,
       applicationId: application.id,
       url: args.ptoPresignedUrl,
       type: "pdf",

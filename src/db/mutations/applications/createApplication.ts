@@ -46,8 +46,5 @@ export const createApplication = async (
     if (documentInsert.length !== documents.length) {
       tx.rollback();
     }
-
-    return resInsertedId;
   });
-  return insertedId;
 };

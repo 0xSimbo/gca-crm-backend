@@ -363,6 +363,7 @@ export const usersRelations = relations(users, ({ many, one }) => ({
     references: [installers.id],
   }),
   applications: many(applications),
+  applicationsDraft: many(applicationsDraft),
 }));
 
 /**
@@ -406,6 +407,32 @@ export const GcasRelations = relations(Gcas, ({ many, one }) => ({
   applicationStepApprovals: many(ApplicationStepApprovals),
 }));
 
+export const applicationsDraft = pgTable("applicationsDraft", {
+  id: text("application_id")
+    .primaryKey()
+    .references(() => applications.id, { onDelete: "cascade" })
+    .$defaultFn(() => crypto.randomUUID()),
+  userId: varchar("user_id", { length: 42 }).notNull(),
+  createdAt: timestamp("createdAt").notNull(),
+});
+
+export type ApplicationDraftType = InferSelectModel<typeof applicationsDraft>;
+export type ApplicationDraftInsertType = typeof applicationsDraft.$inferInsert;
+
+export const applicationsDraftRelations = relations(
+  applicationsDraft,
+  ({ one }) => ({
+    user: one(users, {
+      fields: [applicationsDraft.userId],
+      references: [users.id],
+    }),
+    application: one(applications, {
+      fields: [applicationsDraft.id],
+      references: [applications.id],
+    }),
+  })
+);
+
 /**
  * @dev Represents an application in the system.
  * @param {string} id - The unique ID of the application.
@@ -436,9 +463,7 @@ export const GcasRelations = relations(Gcas, ({ many, one }) => ({
  * @param {string} gcaAddress - The address of the GCA.
  */
 export const applications = pgTable("applications", {
-  id: text("application_id")
-    .primaryKey()
-    .$defaultFn(() => crypto.randomUUID()),
+  id: text("application_id").primaryKey(),
   // always linked to a farm owner account
   userId: varchar("user_id", { length: 42 }).notNull(),
   // after application is "completed", a farm is created using the hexlified farm pub key
@@ -547,6 +572,10 @@ export const applicationsRelations = relations(
     gca: one(Gcas, {
       fields: [applications.gcaAddress],
       references: [Gcas.id],
+    }),
+    applicationDraft: one(applicationsDraft, {
+      fields: [applications.id],
+      references: [applicationsDraft.id],
     }),
   })
 );

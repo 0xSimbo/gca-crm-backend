@@ -102,6 +102,7 @@ export const documentsRouter = new Elysia({ prefix: "/documents" })
           },
         }
       )
+
       .post(
         "/annotation",
         async ({ body, set, userId }) => {

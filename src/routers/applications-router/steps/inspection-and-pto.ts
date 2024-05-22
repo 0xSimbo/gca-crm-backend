@@ -7,6 +7,7 @@ import {
 import {
   ApplicationSteps,
   OptionalDocumentsEnum,
+  OptionalDocumentsNamesEnum,
 } from "../../../types/api-types/Application";
 
 type UpdateInspectionAndPtoType = {
@@ -27,7 +28,7 @@ export const handleCreateOrUpdateInspectionAndPto = async (
 
   if (args.inspectionPresignedUrl) {
     documents.push({
-      name: "Inspection",
+      name: OptionalDocumentsNamesEnum.inspection,
       applicationId: application.id,
       url: args.inspectionPresignedUrl,
       type: "enc",
@@ -40,7 +41,7 @@ export const handleCreateOrUpdateInspectionAndPto = async (
 
   if (args.ptoPresignedUrl) {
     documents.push({
-      name: "Permission to Operate (PTO)",
+      name: OptionalDocumentsNamesEnum.pto,
       applicationId: application.id,
       url: args.ptoPresignedUrl,
       type: "enc",
@@ -52,7 +53,7 @@ export const handleCreateOrUpdateInspectionAndPto = async (
   }
 
   const miscDocuments = args.miscDocuments.map((misc) => ({
-    name: misc.name,
+    name: `misc_${misc.name}`,
     applicationId: application.id,
     url: misc.presignedUrl,
     type: "enc",

@@ -7,6 +7,7 @@ import {
 import {
   ApplicationSteps,
   OptionalDocumentsEnum,
+  OptionalDocumentsNamesEnum,
 } from "../../../types/api-types/Application";
 
 type UpdatePermitDocumentationRequiredType = {
@@ -36,7 +37,7 @@ export const handleCreateOrUpdatePermitDocumentation = async (
 
   if (args.cityPermitPresignedUrl) {
     documents.push({
-      name: "City Permit",
+      name: OptionalDocumentsNamesEnum.cityPermit,
       applicationId: application.id,
       url: args.cityPermitPresignedUrl,
       type: "enc",

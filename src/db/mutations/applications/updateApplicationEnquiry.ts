@@ -10,6 +10,7 @@ import {
   ApplicationStatusEnum,
   ApplicationSteps,
   EncryptedMasterKeySet,
+  RequiredDocumentsNamesEnum,
 } from "../../../types/api-types/Application";
 
 export const updateApplicationEnquiry = async (
@@ -32,9 +33,11 @@ export const updateApplicationEnquiry = async (
       tx.rollback();
     }
 
+    console.log("updateRes", updateRes);
+
     const documents: DocumentsInsertType[] = [
       {
-        name: "Latest Utility Bill",
+        name: RequiredDocumentsNamesEnum.latestUtilityBill,
         applicationId,
         url: latestUtilityBillPublicUrl,
         type: "enc",
@@ -45,11 +48,20 @@ export const updateApplicationEnquiry = async (
       },
     ];
 
+    const deleteAllDocuments = await tx
+      .delete(Documents)
+      .where(eq(Documents.applicationId, applicationId))
+      .returning({ id: Documents.id });
+    console.log(deleteAllDocuments);
+    if (deleteAllDocuments.length === 0) {
+      tx.rollback();
+    }
+
     const documentInsert = await tx
       .insert(Documents)
       .values(documents)
       .returning({ id: Documents.id });
-
+    console.log(documentInsert);
     if (documentInsert.length !== documents.length) {
       tx.rollback();
     }

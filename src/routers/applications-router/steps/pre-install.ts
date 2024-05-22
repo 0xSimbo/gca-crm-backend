@@ -7,6 +7,8 @@ import {
 import {
   ApplicationSteps,
   OptionalDocumentsEnum,
+  OptionalDocumentsNamesEnum,
+  RequiredDocumentsNamesEnum,
 } from "../../../types/api-types/Application";
 
 type UpdatePreInstallDocumentsRequiredType = {
@@ -39,7 +41,7 @@ export const handleCreateOrUpdatePreIntallDocuments = async (
 ) => {
   const documents: DocumentsInsertType[] = [
     {
-      name: "Contract Agreement",
+      name: RequiredDocumentsNamesEnum.contractAgreement,
       applicationId: application.id,
       url: args.contractAgreementPresignedUrl,
       type: "enc",
@@ -49,7 +51,7 @@ export const handleCreateOrUpdatePreIntallDocuments = async (
       createdAt: new Date(),
     },
     {
-      name: "Declaration of Intention",
+      name: RequiredDocumentsNamesEnum.declarationOfIntention,
       applicationId: application.id,
       url: args.declarationOfIntentionPresignedUrl,
       type: "enc",
@@ -59,7 +61,7 @@ export const handleCreateOrUpdatePreIntallDocuments = async (
       createdAt: new Date(),
     },
     {
-      name: "First Utility Bill",
+      name: RequiredDocumentsNamesEnum.firstUtilityBill,
       applicationId: application.id,
       url: args.firstUtilityBillPresignedUrl,
       type: "enc",
@@ -69,7 +71,7 @@ export const handleCreateOrUpdatePreIntallDocuments = async (
       createdAt: new Date(),
     },
     {
-      name: "Second Utility Bill",
+      name: RequiredDocumentsNamesEnum.secondUtilityBill,
       applicationId: application.id,
       url: args.secondUtilityBillPresignedUrl,
       type: "enc",
@@ -79,7 +81,7 @@ export const handleCreateOrUpdatePreIntallDocuments = async (
       createdAt: new Date(),
     },
     {
-      name: "Mortgage Statement",
+      name: RequiredDocumentsNamesEnum.mortgageStatement,
       applicationId: application.id,
       url: args.mortgageStatementPresignedUrl,
       type: "enc",
@@ -89,7 +91,7 @@ export const handleCreateOrUpdatePreIntallDocuments = async (
       createdAt: new Date(),
     },
     {
-      name: "Property Deed",
+      name: RequiredDocumentsNamesEnum.propertyDeed,
       applicationId: application.id,
       url: args.propertyDeedPresignedUrl,
       type: "enc",
@@ -102,7 +104,7 @@ export const handleCreateOrUpdatePreIntallDocuments = async (
 
   if (args.plansetsPresignedUrl) {
     documents.push({
-      name: "Plansets",
+      name: OptionalDocumentsNamesEnum.plansets,
       applicationId: application.id,
       url: args.plansetsPresignedUrl,
       type: "enc",

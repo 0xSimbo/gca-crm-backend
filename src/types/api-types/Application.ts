@@ -73,6 +73,23 @@ export enum OptionalDocumentsEnum {
   pto = "pto",
 }
 
+export enum RequiredDocumentsNamesEnum {
+  contractAgreement = "required_contract_agreement",
+  latestUtilityBill = "required_latest_utility_bill",
+  declarationOfIntention = "required_declaration_of_intention",
+  firstUtilityBill = "required_first_utility_bill",
+  secondUtilityBill = "required_second_utility_bill",
+  mortgageStatement = "required_mortgage_statement",
+  propertyDeed = "required_property_deed",
+}
+
+export enum OptionalDocumentsNamesEnum {
+  plansets = "misc_plansets",
+  cityPermit = "misc_city_permit",
+  inspection = "misc_inspection",
+  pto = "misc_pto",
+}
+
 export type OptionalDocument = (typeof optionalDocuments)[number];
 
 export const splitTokens = ["USDG", "GLOW"] as const;

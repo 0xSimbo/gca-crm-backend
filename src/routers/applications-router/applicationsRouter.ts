@@ -45,9 +45,11 @@ import {
 } from "../../subgraph/queries/getProtocolFeePaymentFromTransactionHash";
 import { ethers } from "ethers";
 import { handleCreateWithoutPIIDocumentsAndCompleteApplication } from "./steps/gca-application-completion";
+import { db } from "../../db/db";
+import { applicationsDraft } from "../../db/schema";
 
 export const EnquiryQueryBody = t.Object({
-  applicationId: t.Nullable(t.String()),
+  applicationId: t.String(),
   latestUtilityBill: t.Object({
     publicUrl: t.String({
       example:
@@ -599,21 +601,86 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
           },
         }
       )
+      .get(
+        "/new-application-id",
+        async ({ set, userId }) => {
+          try {
+            const account = await findFirstAccountById(userId);
+            if (!account) {
+              set.status = 404;
+              return "Account not found";
+            }
+
+            if (account.role !== "USER") {
+              set.status = 403;
+              return "Unauthorized";
+            }
+
+            const insert = await db
+              .insert(applicationsDraft)
+              .values({
+                userId,
+                createdAt: new Date(),
+              })
+              .returning({ id: applicationsDraft.id });
+
+            return insert[0].id;
+          } catch (e) {
+            if (e instanceof Error) {
+              set.status = 400;
+              return e.message;
+            }
+            console.log("[applicationsRouter] /all-by-user-id", e);
+            throw new Error("Error Occured");
+          }
+        },
+        {
+          detail: {
+            summary: "Get Applications by userId",
+            description: `Get Applications by userId`,
+            tags: [TAG.APPLICATIONS],
+          },
+        }
+      )
       .post(
         "/enquiry",
         async ({ body, set, userId }) => {
           try {
-            if (body.applicationId) {
-              const application = await FindFirstApplicationById(
-                body.applicationId
+            const existingApplication = await FindFirstApplicationById(
+              body.applicationId
+            );
+
+            console.log("existingApplication", existingApplication?.id);
+            if (!existingApplication) {
+              const gcaAddress = await roundRobinAssignement();
+              await createApplication(
+                body.latestUtilityBill.publicUrl,
+                body.latestUtilityBill.keysSet,
+                {
+                  id: body.applicationId,
+                  userId,
+                  ...body,
+                  establishedCostOfPowerPerKWh:
+                    body.establishedCostOfPowerPerKWh.toString(),
+                  estimatedKWhGeneratedPerYear:
+                    body.estimatedKWhGeneratedPerYear.toString(),
+                  enquiryEstimatedFees: body.enquiryEstimatedFees.toString(),
+                  enquiryEstimatedQuotePerWatt:
+                    body.enquiryEstimatedQuotePerWatt.toString(),
+                  lat: body.lat.toString(),
+                  lng: body.lng.toString(),
+                  createdAt: new Date(),
+                  currentStep: 1,
+                  gcaAssignedTimestamp: new Date(),
+                  gcaAddress,
+                  roundRobinStatus: RoundRobinStatusEnum.waitingToBeAccepted,
+                  status: ApplicationStatusEnum.waitingForApproval,
+                }
               );
-              if (!application) {
-                set.status = 404;
-                return "Application not found";
-              }
+            } else {
               const errorChecks = await fillApplicationStepCheckHandler(
                 userId,
-                application,
+                existingApplication,
                 ApplicationSteps.enquiry
               );
 
@@ -624,7 +691,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
 
               const { applicationId, ...updateObject } = body;
               await updateApplicationEnquiry(
-                body.applicationId,
+                existingApplication.id,
                 body.latestUtilityBill.publicUrl,
                 body.latestUtilityBill.keysSet,
                 {
@@ -640,36 +707,9 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                   lng: body.lng.toString(),
                 }
               );
-              return body.applicationId;
             }
 
-            const gcaAddress = await roundRobinAssignement();
-            const insertedId = await createApplication(
-              body.latestUtilityBill.publicUrl,
-              body.latestUtilityBill.keysSet,
-              {
-                userId,
-                ...body,
-                establishedCostOfPowerPerKWh:
-                  body.establishedCostOfPowerPerKWh.toString(),
-                estimatedKWhGeneratedPerYear:
-                  body.estimatedKWhGeneratedPerYear.toString(),
-                enquiryEstimatedFees: body.enquiryEstimatedFees.toString(),
-                enquiryEstimatedQuotePerWatt:
-                  body.enquiryEstimatedQuotePerWatt.toString(),
-                lat: body.lat.toString(),
-                lng: body.lng.toString(),
-                createdAt: new Date(),
-                currentStep: 1,
-                //TODO remove when @0xSimbo finished roundRobin implementation
-                gcaAssignedTimestamp: new Date(),
-                gcaAddress,
-                roundRobinStatus: RoundRobinStatusEnum.waitingToBeAccepted,
-                // roundRobinStatus: RoundRobinStatusEnum.waitingToBeAssigned,
-                status: ApplicationStatusEnum.waitingForApproval,
-              }
-            );
-            return { insertedId };
+            return body.applicationId;
           } catch (e) {
             if (e instanceof Error) {
               set.status = 400;

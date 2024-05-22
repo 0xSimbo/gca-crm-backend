@@ -20,6 +20,7 @@ import { bearerGuard } from "../../guards/bearerGuard";
 import { jwtHandler } from "../../handlers/jwtHandler";
 import { findAllGcas } from "../../db/queries/gcas/findAllGcas";
 import { updateServers } from "../../db/mutations/gcas/updateServers";
+import { db } from "../../db/db";
 
 export const CreateGCAQueryBody = t.Object({
   publicEncryptionKey: t.String({
@@ -72,6 +73,41 @@ export const gcasRouter = new Elysia({ prefix: "/gcas" })
           userId,
         };
       })
+      .get(
+        "/public-encryption-keys",
+        async ({ set, userId }) => {
+          try {
+            console.log("userId", userId);
+            const account = await findFirstAccountById(userId);
+
+            if (!account) {
+              set.status = 404;
+              return "Account not found";
+            }
+
+            const gcaPubKeys = db.query.Gcas.findMany({
+              columns: {
+                publicEncryptionKey: true,
+              },
+            });
+            return gcaPubKeys;
+          } catch (e) {
+            if (e instanceof Error) {
+              set.status = 400;
+              return e.message;
+            }
+            console.log("[documentsRouter] /all-by-application-id", e);
+            throw new Error("Error Occured");
+          }
+        },
+        {
+          detail: {
+            summary: "Get All Public Encryption Keys",
+            description: `Get all public encryption keys of GCAs and return an array of public encryption keys. If no GCAs are found, it will return an empty array`,
+            tags: [TAG.GCAS],
+          },
+        }
+      )
       .get(
         "/currrent",
         async ({ set, userId }) => {
