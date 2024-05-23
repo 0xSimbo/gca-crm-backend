@@ -6,6 +6,7 @@ import { createApplication } from "../../db/mutations/applications/createApplica
 import {
   ApplicationStatusEnum,
   ApplicationSteps,
+  EncryptedMasterKeySet,
   RoundRobinStatusEnum,
 } from "../../types/api-types/Application";
 import { FindFirstApplicationById } from "../../db/queries/applications/findFirstApplicationById";
@@ -48,20 +49,27 @@ import { handleCreateWithoutPIIDocumentsAndCompleteApplication } from "./steps/g
 import { db } from "../../db/db";
 import { applicationsDraft } from "../../db/schema";
 
+const encryptedFileUpload = t.Object({
+  publicUrl: t.String({
+    example:
+      "https://pub-7e0365747f054c9e85051df5f20fa815.r2.dev/0x18a0ba01bbec4aa358650d297ba7bb330a78b073/utility-bill.enc",
+  }),
+  keysSet: t.Array(
+    t.Object({
+      publicKey: t.String(),
+      encryptedMasterKey: t.String(),
+    })
+  ),
+});
+
+export type EncryptedFileUploadType = {
+  publicUrl: string;
+  keysSet: EncryptedMasterKeySet[];
+};
+
 export const EnquiryQueryBody = t.Object({
   applicationId: t.String(),
-  latestUtilityBill: t.Object({
-    publicUrl: t.String({
-      example:
-        "https://pub-7e0365747f054c9e85051df5f20fa815.r2.dev/0x18a0ba01bbec4aa358650d297ba7bb330a78b073/utility-bill.enc",
-    }),
-    keysSet: t.Array(
-      t.Object({
-        publicKey: t.String(),
-        encryptedMasterKey: t.String(),
-      })
-    ),
-  }),
+  latestUtilityBill: encryptedFileUpload,
   establishedCostOfPowerPerKWh: t.Numeric({
     example: 0.12,
     minimum: 0,
@@ -115,62 +123,40 @@ const encryptedUploadedUrlExample =
   "https://pub-7e0365747f054c9e85051df5f20fa815.r2.dev/0x18a0ba01bbec4aa358650d297ba7bb330a78b073/contract-agreement.enc";
 export const PreInstallDocumentsQueryBody = t.Object({
   applicationId: t.String(),
-  contractAgreementPresignedUrl: t.String({
-    example: encryptedUploadedUrlExample,
-  }),
-  plansetsPresignedUrl: t.Nullable(
-    t.String({
-      example: encryptedUploadedUrlExample,
-    })
-  ),
+  contractAgreement: encryptedFileUpload,
+  plansets: t.Nullable(encryptedFileUpload),
   plansetsNotAvailableReason: t.Nullable(t.String()),
-  declarationOfIntentionPresignedUrl: t.String({
-    example: encryptedUploadedUrlExample,
-  }),
-  firstUtilityBillPresignedUrl: t.String({
-    example: encryptedUploadedUrlExample,
-  }),
-  secondUtilityBillPresignedUrl: t.String({
-    example: encryptedUploadedUrlExample,
-  }),
-  mortgageStatementPresignedUrl: t.String({
-    example: encryptedUploadedUrlExample,
-  }),
-  propertyDeedPresignedUrl: t.String({
-    example: encryptedUploadedUrlExample,
-  }),
+  declarationOfIntention: encryptedFileUpload,
+  firstUtilityBill: encryptedFileUpload,
+  secondUtilityBill: encryptedFileUpload,
+  mortgageStatement: encryptedFileUpload,
+  propertyDeed: encryptedFileUpload,
 });
 
 export const PermitDocumentationQueryBody = t.Object({
   applicationId: t.String(),
-  cityPermitPresignedUrl: t.Nullable(
-    t.String({
-      example: encryptedUploadedUrlExample,
-    })
-  ),
+  cityPermit: t.Nullable(encryptedFileUpload),
   cityPermitNotAvailableReason: t.Nullable(t.String()),
   estimatedInstallDate: t.Date(),
 });
 
 export const InspectionAndPTOQueryBody = t.Object({
   applicationId: t.String(),
-  inspectionPresignedUrl: t.Nullable(
-    t.String({
-      example: encryptedUploadedUrlExample,
-    })
-  ),
+  inspection: t.Nullable(encryptedFileUpload),
   inspectionNotAvailableReason: t.Nullable(t.String()),
-  ptoPresignedUrl: t.Nullable(
-    t.String({
-      example: encryptedUploadedUrlExample,
-    })
-  ),
+  pto: t.Nullable(encryptedFileUpload),
   ptoNotAvailableReason: t.Nullable(t.String()),
   intallFinishedDate: t.Date(),
   miscDocuments: t.Array(
     t.Object({
       name: t.String(),
-      presignedUrl: t.String(),
+      encryptedFileUpload,
+      extension: t.Union([
+        t.Literal("pdf"),
+        t.Literal("png"),
+        t.Literal("jpg"),
+        t.Literal("jpeg"),
+      ]),
     })
   ),
 });
@@ -751,35 +737,32 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               return errorChecks.errorMessage;
             }
 
-            if (
-              body.plansetsNotAvailableReason &&
-              body.plansetsPresignedUrl === null
-            ) {
+            if (body.plansetsNotAvailableReason && body.plansets === null) {
               await handleCreateOrUpdatePreIntallDocuments(
                 application,
                 ApplicationSteps.preInstallDocuments,
                 {
                   ...body,
-                  plansetsPresignedUrl: null,
+                  plansets: null,
                   plansetsNotAvailableReason: body.plansetsNotAvailableReason,
                 }
               );
             } else if (
               body.plansetsNotAvailableReason === null &&
-              body.plansetsPresignedUrl
+              body.plansets
             ) {
               await handleCreateOrUpdatePreIntallDocuments(
                 application,
                 ApplicationSteps.preInstallDocuments,
                 {
                   ...body,
-                  plansetsPresignedUrl: body.plansetsPresignedUrl,
+                  plansets: body.plansets,
                   plansetsNotAvailableReason: null,
                 }
               );
             } else {
               set.status = 400;
-              return "Either plansetsPresignedUrl or plansetsNotAvailableReason is required";
+              return "Either plansets file or plansetsNotAvailableReason is required";
             }
             return body.applicationId;
           } catch (e) {
@@ -823,36 +806,33 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               return errorChecks.errorMessage;
             }
 
-            if (
-              body.cityPermitNotAvailableReason &&
-              body.cityPermitPresignedUrl === null
-            ) {
+            if (body.cityPermitNotAvailableReason && body.cityPermit === null) {
               await handleCreateOrUpdatePermitDocumentation(
                 application,
                 ApplicationSteps.permitDocumentation,
                 {
                   cityPermitNotAvailableReason:
                     body.cityPermitNotAvailableReason,
-                  cityPermitPresignedUrl: null,
+                  cityPermit: null,
                   estimatedInstallDate: body.estimatedInstallDate,
                 }
               );
             } else if (
               body.cityPermitNotAvailableReason === null &&
-              body.cityPermitPresignedUrl
+              body.cityPermit
             ) {
               await handleCreateOrUpdatePermitDocumentation(
                 application,
                 ApplicationSteps.permitDocumentation,
                 {
                   cityPermitNotAvailableReason: null,
-                  cityPermitPresignedUrl: body.cityPermitPresignedUrl,
+                  cityPermit: body.cityPermit,
                   estimatedInstallDate: body.estimatedInstallDate,
                 }
               );
             } else {
               set.status = 400;
-              return "Either cityPermitPresignedUrl or cityPermitNotAvailableReason is required";
+              return "Either cityPermit file or cityPermitNotAvailableReason is required";
             }
             return body.applicationId;
           } catch (e) {
@@ -896,24 +876,30 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               return errorChecks.errorMessage;
             }
 
-            if (
-              !body.inspectionPresignedUrl &&
-              !body.inspectionNotAvailableReason
-            ) {
+            if (!body.inspection && !body.inspectionNotAvailableReason) {
               set.status = 400;
-              return "Either inspectionPresignedUrl or inspectionNotAvailableReason is required";
+              return "Either inspection file or inspectionNotAvailableReason is required";
             }
 
-            if (!body.ptoPresignedUrl && !body.ptoNotAvailableReason) {
+            if (!body.pto && !body.ptoNotAvailableReason) {
               set.status = 400;
-              return "Either ptoPresignedUrl or ptoNotAvailableReason is required";
+              return "Either pto file or ptoNotAvailableReason is required";
+            }
+
+            if (
+              body.miscDocuments.some(
+                (doc) => !doc.name.toLowerCase().includes("misc")
+              )
+            ) {
+              set.status = 400;
+              return "Every miscDocuments name should include the word 'misc'";
             }
 
             await handleCreateOrUpdateInspectionAndPto(application, {
               inspectionNotAvailableReason: body.inspectionNotAvailableReason,
-              inspectionPresignedUrl: body.inspectionPresignedUrl,
+              inspection: body.inspection,
               ptoNotAvailableReason: body.ptoNotAvailableReason,
-              ptoPresignedUrl: body.ptoPresignedUrl,
+              pto: body.pto,
               intallFinishedDate: body.intallFinishedDate,
               miscDocuments: body.miscDocuments,
             });
@@ -1261,9 +1247,11 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               ApplicationSteps.payment,
               {
                 ...body.withoutPIIdocuments,
+                miscDocuments: body.miscDocuments,
                 devices: body.devices,
               }
             );
+            // upload all the documents withoutPII for audits and public on website
           } catch (e) {
             if (e instanceof Error) {
               set.status = 400;
@@ -1282,23 +1270,24 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
             devices: t.Array(
               t.Object({ publicKey: t.String(), shortId: t.String() })
             ),
+            miscDocuments: t.Array(
+              t.Object({
+                publicUrl: t.String(),
+                documentName: t.String(),
+                extension: t.String(),
+              })
+            ),
             withoutPIIdocuments: t.Object({
-              contractAgreementPresignedUrl: t.String(),
-              mortgageStatementPresignedUrl: t.String(),
-              propertyDeedPresignedUrl: t.String(),
-              firstUtilityBillPresignedUrl: t.String(),
-              secondUtilityBillPresignedUrl: t.String(),
-              declarationOfIntentionPresignedUrl: t.String(),
-              plansetsPresignedUrl: t.Nullable(t.String()),
-              permitPresignedUrl: t.Nullable(t.String()),
-              inspectionPresignedUrl: t.Nullable(t.String()),
-              ptoPresignedUrl: t.Nullable(t.String()),
-              miscDocuments: t.Array(
-                t.Object({
-                  presignedUrl: t.String(),
-                  documentName: t.String(),
-                })
-              ),
+              contractAgreement: t.String(),
+              mortgageStatement: t.String(),
+              propertyDeed: t.String(),
+              firstUtilityBill: t.String(),
+              secondUtilityBill: t.String(),
+              declarationOfIntention: t.String(),
+              plansets: t.Nullable(t.String()),
+              cityPermit: t.Nullable(t.String()),
+              inspection: t.Nullable(t.String()),
+              pto: t.Nullable(t.String()),
             }),
           }),
           detail: {

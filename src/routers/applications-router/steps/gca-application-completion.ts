@@ -5,22 +5,17 @@ import {
   OptionalDocumentsNamesEnum,
   RequiredDocumentsNamesEnum,
 } from "../../../types/api-types/Application";
-
 type WithoutPiiDocumentsType = {
-  contractAgreementPresignedUrl: string;
-  declarationOfIntentionPresignedUrl: string;
-  firstUtilityBillPresignedUrl: string;
-  secondUtilityBillPresignedUrl: string;
-  mortgageStatementPresignedUrl: string;
-  propertyDeedPresignedUrl: string;
-  plansetsPresignedUrl: string | null;
-  permitPresignedUrl: string | null;
-  inspectionPresignedUrl: string | null;
-  ptoPresignedUrl: string | null;
-  miscDocuments: {
-    presignedUrl: string;
-    documentName: string;
-  }[];
+  contractAgreement: string;
+  declarationOfIntention: string;
+  firstUtilityBill: string;
+  secondUtilityBill: string;
+  mortgageStatement: string;
+  propertyDeed: string;
+  plansets: string | null;
+  cityPermit: string | null;
+  inspection: string | null;
+  pto: string | null;
 };
 
 export const handleCreateWithoutPIIDocumentsAndCompleteApplication = async (
@@ -30,13 +25,18 @@ export const handleCreateWithoutPIIDocumentsAndCompleteApplication = async (
   step: ApplicationSteps,
   args: WithoutPiiDocumentsType & {
     devices: { publicKey: string; shortId: string }[];
+    miscDocuments: {
+      publicUrl: string;
+      documentName: string;
+      extension: string;
+    }[];
   }
 ) => {
   const documents: DocumentsInsertType[] = [
     {
       name: RequiredDocumentsNamesEnum.contractAgreement,
       applicationId: application.id,
-      url: args.contractAgreementPresignedUrl,
+      url: args.contractAgreement,
       type: "pdf",
       annotation: null,
       step,
@@ -46,7 +46,7 @@ export const handleCreateWithoutPIIDocumentsAndCompleteApplication = async (
     {
       name: RequiredDocumentsNamesEnum.declarationOfIntention,
       applicationId: application.id,
-      url: args.declarationOfIntentionPresignedUrl,
+      url: args.declarationOfIntention,
       type: "pdf",
       annotation: null,
       step,
@@ -56,7 +56,7 @@ export const handleCreateWithoutPIIDocumentsAndCompleteApplication = async (
     {
       name: RequiredDocumentsNamesEnum.firstUtilityBill,
       applicationId: application.id,
-      url: args.firstUtilityBillPresignedUrl,
+      url: args.firstUtilityBill,
       type: "pdf",
       annotation: null,
       step,
@@ -66,7 +66,7 @@ export const handleCreateWithoutPIIDocumentsAndCompleteApplication = async (
     {
       name: RequiredDocumentsNamesEnum.secondUtilityBill,
       applicationId: application.id,
-      url: args.secondUtilityBillPresignedUrl,
+      url: args.secondUtilityBill,
       type: "pdf",
       annotation: null,
       step,
@@ -76,7 +76,7 @@ export const handleCreateWithoutPIIDocumentsAndCompleteApplication = async (
     {
       name: RequiredDocumentsNamesEnum.mortgageStatement,
       applicationId: application.id,
-      url: args.mortgageStatementPresignedUrl,
+      url: args.mortgageStatement,
       type: "pdf",
       annotation: null,
       step,
@@ -86,7 +86,7 @@ export const handleCreateWithoutPIIDocumentsAndCompleteApplication = async (
     {
       name: RequiredDocumentsNamesEnum.propertyDeed,
       applicationId: application.id,
-      url: args.propertyDeedPresignedUrl,
+      url: args.propertyDeed,
       type: "pdf",
       annotation: null,
       step,
@@ -95,11 +95,11 @@ export const handleCreateWithoutPIIDocumentsAndCompleteApplication = async (
     },
   ];
 
-  if (args.plansetsPresignedUrl) {
+  if (args.plansets) {
     documents.push({
       name: OptionalDocumentsNamesEnum.plansets,
       applicationId: application.id,
-      url: args.plansetsPresignedUrl,
+      url: args.plansets,
       type: "pdf",
       annotation: null,
       step,
@@ -108,11 +108,11 @@ export const handleCreateWithoutPIIDocumentsAndCompleteApplication = async (
     });
   }
 
-  if (args.permitPresignedUrl) {
+  if (args.cityPermit) {
     documents.push({
       name: OptionalDocumentsNamesEnum.cityPermit,
       applicationId: application.id,
-      url: args.permitPresignedUrl,
+      url: args.cityPermit,
       type: "pdf",
       annotation: null,
       step,
@@ -121,11 +121,11 @@ export const handleCreateWithoutPIIDocumentsAndCompleteApplication = async (
     });
   }
 
-  if (args.inspectionPresignedUrl) {
+  if (args.inspection) {
     documents.push({
       name: OptionalDocumentsNamesEnum.inspection,
       applicationId: application.id,
-      url: args.inspectionPresignedUrl,
+      url: args.inspection,
       type: "pdf",
       annotation: null,
       step,
@@ -134,17 +134,32 @@ export const handleCreateWithoutPIIDocumentsAndCompleteApplication = async (
     });
   }
 
-  if (args.ptoPresignedUrl) {
+  if (args.pto) {
     documents.push({
       name: OptionalDocumentsNamesEnum.pto,
       applicationId: application.id,
-      url: args.ptoPresignedUrl,
+      url: args.pto,
       type: "pdf",
       annotation: null,
       step,
       encryptedMasterKeys: [],
       createdAt: new Date(),
     });
+  }
+
+  if (args.miscDocuments) {
+    documents.push(
+      ...args.miscDocuments.map((misc) => ({
+        name: misc.documentName,
+        applicationId: application.id,
+        url: misc.publicUrl,
+        type: misc.extension,
+        annotation: null,
+        step: step,
+        encryptedMasterKeys: [],
+        createdAt: new Date(),
+      }))
+    );
   }
 
   return await completeApplicationWithDocumentsAndCreateFarmWithDevices(

@@ -9,14 +9,19 @@ import {
   OptionalDocumentsEnum,
   OptionalDocumentsNamesEnum,
 } from "../../../types/api-types/Application";
+import { EncryptedFileUploadType } from "../applicationsRouter";
 
 type UpdateInspectionAndPtoType = {
   intallFinishedDate: Date;
-  inspectionPresignedUrl: string | null;
-  ptoPresignedUrl: string | null;
+  inspection: EncryptedFileUploadType | null;
+  pto: EncryptedFileUploadType | null;
   inspectionNotAvailableReason: string | null;
   ptoNotAvailableReason: string | null;
-  miscDocuments: { presignedUrl: string; name: string }[];
+  miscDocuments: {
+    encryptedFileUpload: EncryptedFileUploadType;
+    name: string;
+    extension: string;
+  }[];
 };
 
 export const handleCreateOrUpdateInspectionAndPto = async (
@@ -26,40 +31,43 @@ export const handleCreateOrUpdateInspectionAndPto = async (
   const documents: DocumentsInsertType[] = [];
   const step = ApplicationSteps.inspectionAndPtoDocuments;
 
-  if (args.inspectionPresignedUrl) {
+  if (args.inspection) {
     documents.push({
       name: OptionalDocumentsNamesEnum.inspection,
       applicationId: application.id,
-      url: args.inspectionPresignedUrl,
-      type: "enc",
+      url: args.inspection.publicUrl,
+      type: "pdf",
       annotation: null,
       step: step,
-      encryptedMasterKeys: [],
+      isEncrypted: true,
+      encryptedMasterKeys: args.inspection.keysSet,
       createdAt: new Date(),
     });
   }
 
-  if (args.ptoPresignedUrl) {
+  if (args.pto) {
     documents.push({
       name: OptionalDocumentsNamesEnum.pto,
       applicationId: application.id,
-      url: args.ptoPresignedUrl,
-      type: "enc",
+      url: args.pto.publicUrl,
+      type: "pdf",
       annotation: null,
       step: step,
-      encryptedMasterKeys: [],
+      isEncrypted: true,
+      encryptedMasterKeys: args.pto.keysSet,
       createdAt: new Date(),
     });
   }
 
   const miscDocuments = args.miscDocuments.map((misc) => ({
-    name: `misc_${misc.name}`,
+    name: misc.name,
     applicationId: application.id,
-    url: misc.presignedUrl,
-    type: "enc",
+    url: misc.encryptedFileUpload.publicUrl,
+    type: misc.extension,
     annotation: null,
     step: step,
-    encryptedMasterKeys: [],
+    isEncrypted: true,
+    encryptedMasterKeys: misc.encryptedFileUpload.keysSet,
     createdAt: new Date(),
   }));
   console.log(miscDocuments);

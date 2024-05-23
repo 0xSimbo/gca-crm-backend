@@ -10,25 +10,26 @@ import {
   OptionalDocumentsNamesEnum,
   RequiredDocumentsNamesEnum,
 } from "../../../types/api-types/Application";
+import { EncryptedFileUploadType } from "../applicationsRouter";
 
 type UpdatePreInstallDocumentsRequiredType = {
-  contractAgreementPresignedUrl: string;
-  declarationOfIntentionPresignedUrl: string;
-  firstUtilityBillPresignedUrl: string;
-  secondUtilityBillPresignedUrl: string;
-  mortgageStatementPresignedUrl: string;
-  propertyDeedPresignedUrl: string;
+  contractAgreement: EncryptedFileUploadType;
+  declarationOfIntention: EncryptedFileUploadType;
+  firstUtilityBill: EncryptedFileUploadType;
+  secondUtilityBill: EncryptedFileUploadType;
+  mortgageStatement: EncryptedFileUploadType;
+  propertyDeed: EncryptedFileUploadType;
 };
 
 type UpdatePreInstallDocumentsWithPlansetsNotAvailableType =
   UpdatePreInstallDocumentsRequiredType & {
-    plansetsPresignedUrl: null;
+    plansets: null;
     plansetsNotAvailableReason: string;
   };
 
 type UpdatePreInstallDocumentsWithPlansetsAvailableType =
   UpdatePreInstallDocumentsRequiredType & {
-    plansetsPresignedUrl: string;
+    plansets: EncryptedFileUploadType;
     plansetsNotAvailableReason: null;
   };
 
@@ -43,74 +44,81 @@ export const handleCreateOrUpdatePreIntallDocuments = async (
     {
       name: RequiredDocumentsNamesEnum.contractAgreement,
       applicationId: application.id,
-      url: args.contractAgreementPresignedUrl,
-      type: "enc",
+      url: args.contractAgreement.publicUrl,
+      type: "pdf",
+      isEncrypted: true,
       annotation: null,
       step,
-      encryptedMasterKeys: [],
+      encryptedMasterKeys: args.contractAgreement.keysSet,
       createdAt: new Date(),
     },
     {
       name: RequiredDocumentsNamesEnum.declarationOfIntention,
       applicationId: application.id,
-      url: args.declarationOfIntentionPresignedUrl,
-      type: "enc",
+      url: args.declarationOfIntention.publicUrl,
+      type: "pdf",
+      isEncrypted: true,
       annotation: null,
       step,
-      encryptedMasterKeys: [],
+      encryptedMasterKeys: args.declarationOfIntention.keysSet,
       createdAt: new Date(),
     },
     {
       name: RequiredDocumentsNamesEnum.firstUtilityBill,
       applicationId: application.id,
-      url: args.firstUtilityBillPresignedUrl,
-      type: "enc",
+      url: args.firstUtilityBill.publicUrl,
+      type: "pdf",
+      isEncrypted: true,
       annotation: null,
       step,
-      encryptedMasterKeys: [],
+      encryptedMasterKeys: args.firstUtilityBill.keysSet,
       createdAt: new Date(),
     },
     {
       name: RequiredDocumentsNamesEnum.secondUtilityBill,
       applicationId: application.id,
-      url: args.secondUtilityBillPresignedUrl,
-      type: "enc",
+      url: args.secondUtilityBill.publicUrl,
+      type: "pdf",
+      isEncrypted: true,
       annotation: null,
       step,
-      encryptedMasterKeys: [],
+      encryptedMasterKeys: args.secondUtilityBill.keysSet,
       createdAt: new Date(),
     },
     {
       name: RequiredDocumentsNamesEnum.mortgageStatement,
       applicationId: application.id,
-      url: args.mortgageStatementPresignedUrl,
-      type: "enc",
+      url: args.mortgageStatement.publicUrl,
+      type: "pdf",
+      isEncrypted: true,
       annotation: null,
       step,
-      encryptedMasterKeys: [],
+      encryptedMasterKeys: args.mortgageStatement.keysSet,
       createdAt: new Date(),
     },
     {
       name: RequiredDocumentsNamesEnum.propertyDeed,
       applicationId: application.id,
-      url: args.propertyDeedPresignedUrl,
-      type: "enc",
+      url: args.propertyDeed.publicUrl,
+      type: "pdf",
+      isEncrypted: true,
       annotation: null,
       step,
-      encryptedMasterKeys: [],
+      encryptedMasterKeys: args.propertyDeed.keysSet,
       createdAt: new Date(),
     },
   ];
 
-  if (args.plansetsPresignedUrl) {
+  if (args.plansets) {
     documents.push({
       name: OptionalDocumentsNamesEnum.plansets,
       applicationId: application.id,
-      url: args.plansetsPresignedUrl,
-      type: "enc",
+      url: args.plansets.publicUrl,
+      type: "pdf",
+      isEncrypted: true,
       annotation: null,
       step,
-      encryptedMasterKeys: [],
+      encryptedMasterKeys: args.plansets.keysSet,
       createdAt: new Date(),
     });
   }

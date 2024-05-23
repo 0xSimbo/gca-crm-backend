@@ -9,6 +9,7 @@ import {
   OptionalDocumentsEnum,
   OptionalDocumentsNamesEnum,
 } from "../../../types/api-types/Application";
+import { EncryptedFileUploadType } from "../applicationsRouter";
 
 type UpdatePermitDocumentationRequiredType = {
   estimatedInstallDate: Date;
@@ -16,13 +17,13 @@ type UpdatePermitDocumentationRequiredType = {
 
 type UpdatePermitDocumentationWithCityPermitNotAvailableType =
   UpdatePermitDocumentationRequiredType & {
-    cityPermitPresignedUrl: null;
+    cityPermit: null;
     cityPermitNotAvailableReason: string;
   };
 
 type UpdatePermitDocumentationWithCityPermitAvailableType =
   UpdatePermitDocumentationRequiredType & {
-    cityPermitPresignedUrl: string;
+    cityPermit: EncryptedFileUploadType;
     cityPermitNotAvailableReason: null;
   };
 
@@ -35,15 +36,16 @@ export const handleCreateOrUpdatePermitDocumentation = async (
 ) => {
   const documents: DocumentsInsertType[] = [];
 
-  if (args.cityPermitPresignedUrl) {
+  if (args.cityPermit) {
     documents.push({
       name: OptionalDocumentsNamesEnum.cityPermit,
       applicationId: application.id,
-      url: args.cityPermitPresignedUrl,
-      type: "enc",
+      url: args.cityPermit.publicUrl,
+      type: "pdf",
       annotation: null,
       step: step,
-      encryptedMasterKeys: [],
+      isEncrypted: true,
+      encryptedMasterKeys: args.cityPermit.keysSet,
       createdAt: new Date(),
     });
   }

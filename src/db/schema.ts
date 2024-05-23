@@ -410,7 +410,6 @@ export const GcasRelations = relations(Gcas, ({ many, one }) => ({
 export const applicationsDraft = pgTable("applicationsDraft", {
   id: text("application_id")
     .primaryKey()
-    .references(() => applications.id, { onDelete: "cascade" })
     .$defaultFn(() => crypto.randomUUID()),
   userId: varchar("user_id", { length: 42 }).notNull(),
   createdAt: timestamp("createdAt").notNull(),
@@ -672,7 +671,8 @@ export const Documents = pgTable("documents", {
   step: integer("step").notNull(),
   name: varchar("name", { length: 255 }).notNull(),
   url: varchar("url", { length: 255 }).notNull(), // bytes of the encrypted document are stored on r2
-  type: varchar("type", { length: 255 }).notNull(), // if not "enc" then it's a regular document not encrypted
+  type: varchar("type", { length: 255 }).notNull(), // extension of the document ( pdf, png, jpg, ...)
+  isEncrypted: boolean("isEncrypted").notNull().default(false), // if true the document is stored on r2 with the ".enc" extension
   createdAt: timestamp("created_at").notNull(),
   encryptedMasterKeys: json("encrypted_master_keys")
     .$type<EncryptedMasterKeySet>()

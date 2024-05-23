@@ -5,6 +5,7 @@ export const findAllGcas = async () => {
     columns: {
       id: true,
       email: true,
+      publicEncryptionKey: true,
     },
   });
   return gcas;

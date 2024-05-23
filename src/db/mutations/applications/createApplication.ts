@@ -1,6 +1,7 @@
 import {
   ApplicationSteps,
   EncryptedMasterKeySet,
+  RequiredDocumentsNamesEnum,
 } from "../../../types/api-types/Application";
 import { db } from "../../db";
 import {
@@ -27,7 +28,7 @@ export const createApplication = async (
 
     const documents: DocumentsInsertType[] = [
       {
-        name: "Latest Utility Bill",
+        name: RequiredDocumentsNamesEnum.latestUtilityBill,
         applicationId: resInsertedId,
         url: latestUtilityBillPublicUrl,
         type: "enc",
