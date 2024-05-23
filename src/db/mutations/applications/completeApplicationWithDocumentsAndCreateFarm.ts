@@ -94,6 +94,8 @@ export const completeApplicationWithDocumentsAndCreateFarmWithDevices = async (
       })
       .returning({ farmId: applications.farmId });
 
+    //TODO: patch rewardsSplits with the new farmId
+
     if (!farmInsert[0].farmId || farmInsert[0].farmId === null) {
       tx.rollback();
     }

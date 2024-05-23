@@ -42,6 +42,7 @@ export const updateApplicationEnquiry = async (
         url: latestUtilityBillPublicUrl,
         type: "enc",
         annotation: null,
+        isEncrypted: true,
         step: ApplicationSteps.enquiry,
         encryptedMasterKeys: keysSet,
         createdAt: new Date(),

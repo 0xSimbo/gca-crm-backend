@@ -15,6 +15,7 @@ export const fillApplicationStepCheckHandler = async (
       errorMessage: "Only the application owner can perform this action",
     };
   }
+
   if (
     application.status !== ApplicationStatusEnum.draft &&
     application.status !== ApplicationStatusEnum.changesRequired

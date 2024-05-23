@@ -16,6 +16,7 @@ export const findAllDocumentsByApplicationId = async (
       createdAt: true,
       name: true,
       step: true,
+      isEncrypted: true,
     },
     orderBy: asc(Documents.id),
   });

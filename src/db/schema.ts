@@ -197,6 +197,10 @@ export const FarmRelations = relations(farms, ({ many, one }) => ({
   }),
   farmUpdatesHistory: many(farmUpdatesHistory),
   devices: many(Devices),
+  application: one(applications, {
+    fields: [farms.id],
+    references: [applications.farmId],
+  }),
 }));
 
 /**
