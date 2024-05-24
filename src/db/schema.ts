@@ -580,6 +580,7 @@ export const applicationsRelations = relations(
       fields: [applications.id],
       references: [applicationsDraft.id],
     }),
+    devices: many(Devices),
   })
 );
 
@@ -801,6 +802,10 @@ export const DevicesRelations = relations(Devices, ({ one }) => ({
     fields: [Devices.farmId],
     references: [farms.id],
   }),
+  application: one(applications, {
+    fields: [Devices.farmId],
+    references: [applications.farmId],
+  }),
 }));
 
 /**
@@ -820,7 +825,7 @@ export const ApplicationStepApprovals = pgTable("applicationStepApprovals", {
   approvedAt: timestamp("approved_at").notNull(),
   gcaAddress: varchar("gca_address", { length: 42 }).notNull(),
   signature: varchar("signature", { length: 255 }).notNull(),
-  annotation: text("annotation"), // optional annotation
+  annotation: text("annotation"), // optional annotation extra thoughts
   step: integer("step").notNull(),
 });
 
