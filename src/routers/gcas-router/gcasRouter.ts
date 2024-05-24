@@ -175,12 +175,12 @@ export const gcasRouter = new Elysia({ prefix: "/gcas" })
               return "This wallet is not a GCA";
             }
 
-            await updateRole(wallet, "GCA");
             await createGca({
               id: wallet,
               createdAt: new Date(),
               ...body,
             });
+            await updateRole(wallet, "GCA");
           } catch (e) {
             if (e instanceof Error) {
               return e.message;

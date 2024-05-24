@@ -19,13 +19,19 @@ export const approveApplicationStep = async (
     const res = await tx
       .update(applications)
       .set({
-        status: ApplicationStatusEnum.approved,
         ...applicationFields,
       })
       .where(and(eq(applications.id, applicationId)))
       .returning({ status: applications.status });
 
-    if (!res.every(({ status }) => status === ApplicationStatusEnum.approved)) {
+    console.log(res);
+    if (
+      !res.every(
+        ({ status }) =>
+          status === ApplicationStatusEnum.approved ||
+          status === ApplicationStatusEnum.draft
+      )
+    ) {
       tx.rollback(); // if fails will rollback and don't reach second tx
     }
 

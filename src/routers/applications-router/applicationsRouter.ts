@@ -282,7 +282,11 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                 account.id,
                 body.annotation,
                 body.stepIndex,
-                body.signature
+                body.signature,
+                {
+                  status: ApplicationStatusEnum.draft,
+                  currentStep: body.stepIndex + 1,
+                }
               );
             } else {
               await updateApplicationStatus(
@@ -360,6 +364,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                 body.stepIndex,
                 body.signature,
                 {
+                  status: ApplicationStatusEnum.approved,
                   finalQuotePerWatt: body.finalQuotePerWatt,
                 }
               );
@@ -1152,7 +1157,9 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                 body.stepIndex,
                 body.signature,
                 {
+                  status: ApplicationStatusEnum.draft,
                   preInstallVisitDateConfirmedTimestamp: new Date(),
+                  currentStep: body.stepIndex + 1,
                 }
               );
             } else {
@@ -1398,10 +1405,12 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                 body.stepIndex,
                 body.signature,
                 {
+                  status: ApplicationStatusEnum.draft,
                   afterInstallVisitDateConfirmedTimestamp: new Date(),
                   finalProtocolFee: ethers.utils
                     .parseUnits(body.finalProtocolFee!!, 6)
                     .toBigInt(),
+                  currentStep: body.stepIndex + 1,
                 }
               );
             } else {
