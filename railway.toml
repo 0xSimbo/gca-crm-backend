@@ -1,0 +1,7 @@
+[build.nixpacksPlan.phases.install]
+dependsOn = ["setup"]
+cmds = ["bun i --no-save"]
+
+
+[deploy]
+startCommand = "bun run start"
