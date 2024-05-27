@@ -35,8 +35,8 @@ import { approveOrAskForChangesCheckHandler } from "../../utils/check-handlers/a
 import { fillApplicationStepCheckHandler } from "../../utils/check-handlers/fill-application-step";
 import { handleCreateOrUpdatePermitDocumentation } from "./steps/permit-documentation";
 import { handleCreateOrUpdatePreIntallDocuments } from "./steps/pre-install";
-import { updateApplicationPreInstallVisitDates } from "../../db/mutations/applications/updateApplicationPreInstallVisitDates";
-import { updateApplicationAfterInstallVisitDates } from "../../db/mutations/applications/updateApplicationAfterInstallVisitDates";
+import { updateApplicationPreInstallVisitDate } from "../../db/mutations/applications/updateApplicationPreInstallVisitDate";
+import { updateApplicationAfterInstallVisitDate } from "../../db/mutations/applications/updateApplicationAfterInstallVisitDate";
 import { handleCreateOrUpdateInspectionAndPto } from "./steps/inspection-and-pto";
 import { updateApplication } from "../../db/mutations/applications/updateApplication";
 import { roundRobinAssignement } from "../../db/queries/gcas/roundRobinAssignement";
@@ -48,6 +48,12 @@ import { ethers } from "ethers";
 import { handleCreateWithoutPIIDocumentsAndCompleteApplication } from "./steps/gca-application-completion";
 import { db } from "../../db/db";
 import { applicationsDraft } from "../../db/schema";
+import {
+  EstimateProtocolFeeArgs,
+  estimateProtocolFees,
+} from "../../constants/protocol-fee-assumptions";
+import { convertKWhToMWh } from "../../utils/format/convertKWhToMWh";
+import { getSunlightHoursAndCertificates } from "../protocol-fee-router/utils/get-sunlight-hours-and-certificates";
 
 const encryptedFileUpload = t.Object({
   publicUrl: t.String({
@@ -70,7 +76,7 @@ export type EncryptedFileUploadType = {
 export const EnquiryQueryBody = t.Object({
   applicationId: t.String(),
   latestUtilityBill: encryptedFileUpload,
-  establishedCostOfPowerPerKWh: t.Numeric({
+  estimatedCostOfPowerPerKWh: t.Numeric({
     example: 0.12,
     minimum: 0,
   }),
@@ -129,24 +135,24 @@ export const PreInstallDocumentsQueryBody = t.Object({
   declarationOfIntention: encryptedFileUpload,
   firstUtilityBill: encryptedFileUpload,
   secondUtilityBill: encryptedFileUpload,
-  mortgageStatement: encryptedFileUpload,
-  propertyDeed: encryptedFileUpload,
+  mortgageStatement: t.Nullable(encryptedFileUpload),
+  propertyDeed: t.Nullable(encryptedFileUpload),
 });
 
 export const PermitDocumentationQueryBody = t.Object({
   applicationId: t.String(),
-  cityPermit: t.Nullable(encryptedFileUpload),
-  cityPermitNotAvailableReason: t.Nullable(t.String()),
   estimatedInstallDate: t.Date(),
 });
 
 export const InspectionAndPTOQueryBody = t.Object({
   applicationId: t.String(),
+  cityPermit: t.Nullable(encryptedFileUpload),
+  cityPermitNotAvailableReason: t.Nullable(t.String()),
   inspection: t.Nullable(encryptedFileUpload),
   inspectionNotAvailableReason: t.Nullable(t.String()),
   pto: t.Nullable(encryptedFileUpload),
   ptoNotAvailableReason: t.Nullable(t.String()),
-  intallFinishedDate: t.Date(),
+  installFinishedDate: t.Date(),
   miscDocuments: t.Array(
     t.Object({
       name: t.String(),
@@ -357,6 +363,19 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                 set.status = 400;
                 return "finalQuotePerWatt is required";
               }
+
+              if (!body.revisedKwhGeneratedPerYear) {
+                set.status = 400;
+                return "revisedKwhGeneratedPerYear is required";
+              }
+
+              const protocolFees =
+                parseFloat(body.finalQuotePerWatt) *
+                parseFloat(convertKWhToMWh(body.revisedKwhGeneratedPerYear)) *
+                1e6;
+
+              console.log("protocolFees", protocolFees);
+
               await approveApplicationStep(
                 body.applicationId,
                 account.id,
@@ -366,6 +385,8 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                 {
                   status: ApplicationStatusEnum.approved,
                   finalQuotePerWatt: body.finalQuotePerWatt,
+                  revisedEstimatedProtocolFees: protocolFees.toString(),
+                  revisedKwhGeneratedPerYear: body.revisedKwhGeneratedPerYear,
                 }
               );
             } else {
@@ -387,6 +408,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
           body: t.Object({
             ...ApproveOrAskForChangesQueryBody,
             finalQuotePerWatt: t.Nullable(t.String()),
+            revisedKwhGeneratedPerYear: t.Nullable(t.String()),
           }),
           detail: {
             summary: "Gca Approve or Ask for Changes after step submission",
@@ -651,8 +673,8 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                   id: body.applicationId,
                   userId,
                   ...body,
-                  establishedCostOfPowerPerKWh:
-                    body.establishedCostOfPowerPerKWh.toString(),
+                  estimatedCostOfPowerPerKWh:
+                    body.estimatedCostOfPowerPerKWh.toString(),
                   estimatedKWhGeneratedPerYear:
                     body.estimatedKWhGeneratedPerYear.toString(),
                   enquiryEstimatedFees: body.enquiryEstimatedFees.toString(),
@@ -687,8 +709,8 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                 body.latestUtilityBill.keysSet,
                 {
                   ...updateObject,
-                  establishedCostOfPowerPerKWh:
-                    body.establishedCostOfPowerPerKWh.toString(),
+                  estimatedCostOfPowerPerKWh:
+                    body.estimatedCostOfPowerPerKWh.toString(),
                   enquiryEstimatedFees: body.enquiryEstimatedFees.toString(),
                   enquiryEstimatedQuotePerWatt:
                     body.enquiryEstimatedQuotePerWatt.toString(),
@@ -742,6 +764,11 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               return errorChecks.errorMessage;
             }
 
+            if (!body.mortgageStatement && !body.propertyDeed) {
+              set.status = 400;
+              return "Either mortgageStatement or propertyDeed is required";
+            }
+
             if (body.plansetsNotAvailableReason && body.plansets === null) {
               await handleCreateOrUpdatePreIntallDocuments(
                 application,
@@ -790,7 +817,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
         }
       )
       .post(
-        "/permit-documentation",
+        "/estimated-install-date",
         async ({ body, set, userId }) => {
           try {
             const application = await FindFirstApplicationById(
@@ -811,34 +838,10 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               return errorChecks.errorMessage;
             }
 
-            if (body.cityPermitNotAvailableReason && body.cityPermit === null) {
-              await handleCreateOrUpdatePermitDocumentation(
-                application,
-                ApplicationSteps.permitDocumentation,
-                {
-                  cityPermitNotAvailableReason:
-                    body.cityPermitNotAvailableReason,
-                  cityPermit: null,
-                  estimatedInstallDate: body.estimatedInstallDate,
-                }
-              );
-            } else if (
-              body.cityPermitNotAvailableReason === null &&
-              body.cityPermit
-            ) {
-              await handleCreateOrUpdatePermitDocumentation(
-                application,
-                ApplicationSteps.permitDocumentation,
-                {
-                  cityPermitNotAvailableReason: null,
-                  cityPermit: body.cityPermit,
-                  estimatedInstallDate: body.estimatedInstallDate,
-                }
-              );
-            } else {
-              set.status = 400;
-              return "Either cityPermit file or cityPermitNotAvailableReason is required";
-            }
+            await handleCreateOrUpdatePermitDocumentation(application, {
+              estimatedInstallDate: body.estimatedInstallDate,
+            });
+
             return body.applicationId;
           } catch (e) {
             console.error("error", e);
@@ -846,15 +849,15 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               set.status = 400;
               return e.message;
             }
-            console.log("[applicationsRouter] /permit-documentation", e);
+            console.log("[applicationsRouter] /estimated-install-date", e);
             throw new Error("Error Occured");
           }
         },
         {
           body: PermitDocumentationQueryBody,
           detail: {
-            summary: "Create or Update the permit documentation",
-            description: `insert the permit documentation in db + insert documentsMissingWithReason if cityPermit missing and update the application status to waitingForApproval`,
+            summary: "Create or Update the estimated install date",
+            description: `insert the estimated install date in db and update the application status to waitingForApproval`,
             tags: [TAG.APPLICATIONS],
           },
         }
@@ -891,6 +894,11 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               return "Either pto file or ptoNotAvailableReason is required";
             }
 
+            if (!body.cityPermit && !body.cityPermitNotAvailableReason) {
+              set.status = 400;
+              return "Either cityPermit file or cityPermitNotAvailableReason is required";
+            }
+
             if (
               body.miscDocuments.some(
                 (doc) => !doc.name.toLowerCase().includes("misc")
@@ -905,8 +913,10 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               inspection: body.inspection,
               ptoNotAvailableReason: body.ptoNotAvailableReason,
               pto: body.pto,
-              intallFinishedDate: body.intallFinishedDate,
+              installFinishedDate: body.installFinishedDate,
               miscDocuments: body.miscDocuments,
+              cityPermit: body.cityPermit,
+              cityPermitNotAvailableReason: body.cityPermitNotAvailableReason,
             });
             return body.applicationId;
           } catch (e) {
@@ -915,7 +925,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               set.status = 400;
               return e.message;
             }
-            console.log("[applicationsRouter] /permit-documentation", e);
+            console.log("[applicationsRouter] /inspection-and-pto", e);
             throw new Error("Error Occured");
           }
         },
@@ -1082,7 +1092,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
         }
       )
       .post(
-        "/permit-documentation-approve-or-ask-for-changes",
+        "/pre-install-visit-approve-or-ask-for-changes",
         async ({ body, set, userId: gcaId }) => {
           try {
             const account = await findFirstAccountById(gcaId);
@@ -1125,12 +1135,9 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
             }
 
             if (body.approved) {
-              if (
-                !application.preInstallVisitDateFrom ||
-                !application.preInstallVisitDateTo
-              ) {
+              if (!application.preInstallVisitDate) {
                 set.status = 400;
-                return "Pre Install Visit Dates are not set";
+                return "Pre Install Visit Date is not set";
               }
 
               const now = new Date();
@@ -1139,13 +1146,13 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                 now.getMonth(),
                 now.getDate()
               );
-              const preInstallVisitDateFromTime = new Date(
-                application.preInstallVisitDateFrom.getFullYear(),
-                application.preInstallVisitDateFrom.getMonth(),
-                application.preInstallVisitDateFrom.getDate()
+              const preInstallVisitDateTime = new Date(
+                application.preInstallVisitDate.getFullYear(),
+                application.preInstallVisitDate.getMonth(),
+                application.preInstallVisitDate.getDate()
               ).getTime();
 
-              if (today.getTime() < preInstallVisitDateFromTime) {
+              if (today.getTime() < preInstallVisitDateTime) {
                 set.status = 400;
                 return "Pre Install Visit Date is not passed yet";
               }
@@ -1165,8 +1172,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
             } else {
               await updateApplication(body.applicationId, {
                 status: ApplicationStatusEnum.changesRequired,
-                preInstallVisitDateFrom: null,
-                preInstallVisitDateTo: null,
+                preInstallVisitDate: null,
               });
             }
           } catch (e) {
@@ -1373,12 +1379,9 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
             }
 
             if (body.approved) {
-              if (
-                !application.afterInstallVisitDateFrom ||
-                !application.afterInstallVisitDateTo
-              ) {
+              if (!application.afterInstallVisitDate) {
                 set.status = 400;
-                return "After Install Visit Dates are not set";
+                return "After Install Visit Date is not set";
               }
 
               const now = new Date();
@@ -1387,13 +1390,13 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                 now.getMonth(),
                 now.getDate()
               );
-              const afterInstallVisitDateFromTime = new Date(
-                application.afterInstallVisitDateFrom.getFullYear(),
-                application.afterInstallVisitDateFrom.getMonth(),
-                application.afterInstallVisitDateFrom.getDate()
+              const afterInstallVisitDateTime = new Date(
+                application.afterInstallVisitDate.getFullYear(),
+                application.afterInstallVisitDate.getMonth(),
+                application.afterInstallVisitDate.getDate()
               ).getTime();
 
-              if (today.getTime() < afterInstallVisitDateFromTime) {
+              if (today.getTime() < afterInstallVisitDateTime) {
                 set.status = 400;
                 return "After Install Visit Date is not passed yet";
               }
@@ -1405,19 +1408,17 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                 body.stepIndex,
                 body.signature,
                 {
-                  status: ApplicationStatusEnum.waitingForPayment,
+                  status: ApplicationStatusEnum.approved,
                   afterInstallVisitDateConfirmedTimestamp: new Date(),
                   finalProtocolFee: ethers.utils
                     .parseUnits(body.finalProtocolFee!!, 6)
                     .toBigInt(),
-                  currentStep: body.stepIndex + 1,
                 }
               );
             } else {
               await updateApplication(body.applicationId, {
                 status: ApplicationStatusEnum.changesRequired,
-                afterInstallVisitDateFrom: null,
-                afterInstallVisitDateTo: null,
+                afterInstallVisitDate: null,
               });
             }
           } catch (e) {
@@ -1478,10 +1479,9 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               return "You are not assigned to this application";
             }
 
-            const fromDate = new Date(body.preInstallVisitDateFrom);
-            const toDate = new Date(body.preInstallVisitDateTo);
+            const preInstallVisitDate = new Date(body.preInstallVisitDate);
 
-            if (isNaN(fromDate.getTime()) || isNaN(toDate.getTime())) {
+            if (isNaN(preInstallVisitDate.getTime())) {
               set.status = 400;
               return "Invalid date format";
             }
@@ -1491,25 +1491,25 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               return "Estimated Install Date is not set";
             }
 
-            const now = new Date();
-            const tomorrowTime = new Date(
-              now.setDate(now.getDate() + 1)
-            ).getTime();
-            const fourDaysLaterTime = fromDate.getTime() + 86400000 * 4;
+            const today = new Date(
+              new Date().getFullYear(),
+              new Date().getMonth(),
+              new Date().getDate()
+            );
+            const tomorrowTime = new Date(today.getTime() + 86400000).getTime();
 
             if (
-              fromDate.getTime() >= tomorrowTime ||
-              toDate.getTime() <= fourDaysLaterTime ||
-              toDate.getTime() >= application.estimatedInstallDate.getTime()
+              preInstallVisitDate.getTime() <= tomorrowTime ||
+              preInstallVisitDate.getTime() >=
+                application.estimatedInstallDate.getTime()
             ) {
               set.status = 400;
-              return "Invalid date range";
+              return "Invalid date";
             }
 
-            await updateApplicationPreInstallVisitDates(
+            await updateApplicationPreInstallVisitDate(
               body.applicationId,
-              fromDate,
-              toDate
+              preInstallVisitDate
             );
           } catch (e) {
             if (e instanceof Error) {
@@ -1523,8 +1523,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
         {
           body: t.Object({
             applicationId: t.String(),
-            preInstallVisitDateFrom: t.String(),
-            preInstallVisitDateTo: t.String(),
+            preInstallVisitDate: t.Date(),
           }),
 
           detail: {
@@ -1571,39 +1570,34 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               return "You are not assigned to this application";
             }
 
-            const fromDate = new Date(body.afterInstallVisitDateFrom);
-            const toDate = new Date(body.afterInstallVisitDateTo);
+            const afterInstallVisitDate = new Date(body.afterInstallVisitDate);
 
-            if (isNaN(fromDate.getTime()) || isNaN(toDate.getTime())) {
+            if (isNaN(afterInstallVisitDate.getTime())) {
               set.status = 400;
               return "Invalid date format";
             }
 
-            if (!application.intallFinishedDate) {
+            if (!application.installFinishedDate) {
               set.status = 400;
               return "Install Finished Date is not set";
             }
 
-            const oneDayInMillis = 86400000;
-            const fourDaysInMillis = oneDayInMillis * 4;
-
             // Calculate the day after the install finished date
             const dayAfterInstallFinishedDate = new Date(
-              application.intallFinishedDate.getTime() + oneDayInMillis
+              application.installFinishedDate.getTime()
             );
 
             if (
-              fromDate.getTime() < dayAfterInstallFinishedDate.getTime() ||
-              toDate.getTime() < fromDate.getTime() + fourDaysInMillis
+              afterInstallVisitDate.getTime() <
+              dayAfterInstallFinishedDate.getTime()
             ) {
               set.status = 400;
               return "Invalid date range";
             }
 
-            await updateApplicationAfterInstallVisitDates(
+            await updateApplicationAfterInstallVisitDate(
               body.applicationId,
-              new Date(body.afterInstallVisitDateFrom),
-              new Date(body.afterInstallVisitDateTo)
+              new Date(body.afterInstallVisitDate)
             );
           } catch (e) {
             if (e instanceof Error) {
@@ -1617,8 +1611,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
         {
           body: t.Object({
             applicationId: t.String(),
-            afterInstallVisitDateFrom: t.String(),
-            afterInstallVisitDateTo: t.String(),
+            afterInstallVisitDate: t.Date(),
           }),
 
           detail: {

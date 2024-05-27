@@ -12,9 +12,11 @@ import {
 import { EncryptedFileUploadType } from "../applicationsRouter";
 
 type UpdateInspectionAndPtoType = {
-  intallFinishedDate: Date;
+  installFinishedDate: Date;
   inspection: EncryptedFileUploadType | null;
   pto: EncryptedFileUploadType | null;
+  cityPermit: EncryptedFileUploadType | null;
+  cityPermitNotAvailableReason: string | null;
   inspectionNotAvailableReason: string | null;
   ptoNotAvailableReason: string | null;
   miscDocuments: {
@@ -59,6 +61,20 @@ export const handleCreateOrUpdateInspectionAndPto = async (
     });
   }
 
+  if (args.cityPermit) {
+    documents.push({
+      name: OptionalDocumentsNamesEnum.cityPermit,
+      applicationId: application.id,
+      url: args.cityPermit.publicUrl,
+      type: "pdf",
+      annotation: null,
+      step: step,
+      isEncrypted: true,
+      encryptedMasterKeys: args.cityPermit.keysSet,
+      createdAt: new Date(),
+    });
+  }
+
   const miscDocuments = args.miscDocuments.map((misc) => ({
     name: misc.name,
     applicationId: application.id,
@@ -96,12 +112,21 @@ export const handleCreateOrUpdateInspectionAndPto = async (
     });
   }
 
+  if (args.cityPermitNotAvailableReason) {
+    documentsMissingWithReason.push({
+      applicationId: application.id,
+      documentName: OptionalDocumentsEnum.cityPermit,
+      reason: args.cityPermitNotAvailableReason,
+      step: step,
+    });
+  }
+
   return await fillApplicationStepWithDocuments(
     application.id,
     application.status,
     application.currentStep,
     documents,
     documentsMissingWithReason,
-    { intallFinishedDate: args.intallFinishedDate }
+    { installFinishedDate: args.installFinishedDate }
   );
 };

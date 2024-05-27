@@ -120,13 +120,9 @@ export const rewardSplitsRouter = new Elysia({ prefix: "/rewardsSplits" })
               }))
             );
 
-            await updateApplicationStatus(
-              body.applicationId,
-              ApplicationStatusEnum.waitingForPayment
-            );
-
             await updateApplication(body.applicationId, {
               currentStep: ApplicationSteps.payment,
+              status: ApplicationStatusEnum.waitingForPayment,
             });
           } catch (e) {
             if (e instanceof Error) {

@@ -3,16 +3,14 @@ import { db } from "../../db";
 import { applications } from "../../schema";
 import { ApplicationStatusEnum } from "../../../types/api-types/Application";
 
-export const updateApplicationPreInstallVisitDates = async (
+export const updateApplicationAfterInstallVisitDate = async (
   applicationId: string,
-  preInstallVisitDateFrom: Date,
-  preInstallVisitDateTo: Date
+  afterInstallVisitDate: Date
 ) => {
   return await db
     .update(applications)
     .set({
-      preInstallVisitDateFrom: preInstallVisitDateFrom,
-      preInstallVisitDateTo: preInstallVisitDateTo,
+      afterInstallVisitDate: afterInstallVisitDate,
       status: ApplicationStatusEnum.waitingForVisit,
     })
     .where(eq(applications.id, applicationId));

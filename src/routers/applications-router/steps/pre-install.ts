@@ -17,8 +17,8 @@ type UpdatePreInstallDocumentsRequiredType = {
   declarationOfIntention: EncryptedFileUploadType;
   firstUtilityBill: EncryptedFileUploadType;
   secondUtilityBill: EncryptedFileUploadType;
-  mortgageStatement: EncryptedFileUploadType;
-  propertyDeed: EncryptedFileUploadType;
+  mortgageStatement: EncryptedFileUploadType | null;
+  propertyDeed: EncryptedFileUploadType | null;
 };
 
 type UpdatePreInstallDocumentsWithPlansetsNotAvailableType =
@@ -85,7 +85,10 @@ export const handleCreateOrUpdatePreIntallDocuments = async (
       encryptedMasterKeys: args.secondUtilityBill.keysSet,
       createdAt: new Date(),
     },
-    {
+  ];
+
+  if (args.mortgageStatement) {
+    documents.push({
       name: RequiredDocumentsNamesEnum.mortgageStatement,
       applicationId: application.id,
       url: args.mortgageStatement.publicUrl,
@@ -95,8 +98,11 @@ export const handleCreateOrUpdatePreIntallDocuments = async (
       step,
       encryptedMasterKeys: args.mortgageStatement.keysSet,
       createdAt: new Date(),
-    },
-    {
+    });
+  }
+
+  if (args.propertyDeed) {
+    documents.push({
       name: RequiredDocumentsNamesEnum.propertyDeed,
       applicationId: application.id,
       url: args.propertyDeed.publicUrl,
@@ -106,8 +112,8 @@ export const handleCreateOrUpdatePreIntallDocuments = async (
       step,
       encryptedMasterKeys: args.propertyDeed.keysSet,
       createdAt: new Date(),
-    },
-  ];
+    });
+  }
 
   if (args.plansets) {
     documents.push({

@@ -448,17 +448,17 @@ export const applicationsDraftRelations = relations(
  * @param {string} address - The address related to the application.
  * @param {number} lat - The latitude of the location.
  * @param {number} lng - The longitude of the location.
- * @param {number} establishedCostOfPowerPerKWh - The established cost of power per kWh.
+ * @param {number} estimatedCostOfPowerPerKWh - The estimated cost of power per kWh.
  * @param {number} estimatedKWhGeneratedPerYear - The estimated kWh generated per year.
  * @param {number} enquiryEstimatedQuotePerWatt - The estimated quote per watt for installation.
  * @param {timestamp} updatedAt - The last updated date of the application.
  * @param {string} finalQuotePerWatt - The final quote per watt for installation.
- * @param {timestamp} preInstallVisitDateFrom - The start date of the pre-install visit.
- * @param {timestamp} preInstallVisitDateTo - The end date of the pre-install visit.
+ * @param {number} revisedKwhGeneratedPerYear - The revised kWh generated per year.
+ * @param {number} revisedEstimatedProtocolFees - The revised estimated protocol fees.
+ * @param {timestamp} preInstallVisitDateF - The date of the pre-install visit.
  * @param {timestamp} estimatedInstallDate - The estimated installation date provided by the installer or farm owner.
- * @param {timestamp} afterInstallVisitDateFrom - The start date of the post-install visit.
- * @param {timestamp} afterInstallVisitDateTo - The end date of the post-install visit.
- * @param {string} finalProtocolFee - The final protocol fee. /// @JulienWebDeveloppeur is this 6 decimals or USD ?
+ * @param {timestamp} afterInstallVisitDate - The date of the post-install visit.
+ * @param {bigint} finalProtocolFee - The final protocol fee as bigint 6decimals.
  * @param {timestamp} paymentDate - The payment date.
  * @param {string} paymentTxHash - The transaction hash of the payment.
  * @param {timestamp} gcaAssignedTimestamp - The timestamp when the GCA was assigned.
@@ -485,7 +485,7 @@ export const applications = pgTable("applications", {
     precision: 10,
     scale: 5,
   }).notNull(),
-  establishedCostOfPowerPerKWh: numeric("established_cost_of_power_per_kwh", {
+  estimatedCostOfPowerPerKWh: numeric("estimated_cost_of_power_per_kwh", {
     precision: 10,
     scale: 2,
   }).notNull(),
@@ -509,19 +509,25 @@ export const applications = pgTable("applications", {
   updatedAt: timestamp("updatedAt"),
   // pre-install documents step fields
   finalQuotePerWatt: varchar("final_quote_per_watt", { length: 255 }),
+  revisedKwhGeneratedPerYear: numeric("revised_kwh_generated_per_year", {
+    precision: 10,
+    scale: 2,
+  }),
+  revisedEstimatedProtocolFees: numeric("revised_estimated_protocol_fees", {
+    precision: 10,
+    scale: 2,
+  }),
   // permit-documentation step fields
   // --- estimated installation date provided by the installer / farm owner
   estimatedInstallDate: timestamp("estimated_install_date"),
-  preInstallVisitDateFrom: timestamp("pre_install_visit_date_from"),
-  preInstallVisitDateTo: timestamp("pre_install_visit_date_to"),
+  preInstallVisitDate: timestamp("pre_install_visit_date"),
   preInstallVisitDateConfirmedTimestamp: timestamp(
     "pre_install_visit_date_confirmed_timestamp"
   ),
   // inspection-pto step fields
   // --- final installation date provided by the installer / farm owner
-  intallFinishedDate: timestamp("install_finished_date"),
-  afterInstallVisitDateFrom: timestamp("after_install_visit_date_from"),
-  afterInstallVisitDateTo: timestamp("after_install_visit_date_to"),
+  installFinishedDate: timestamp("install_finished_date"),
+  afterInstallVisitDate: timestamp("after_install_visit_date"),
   afterInstallVisitDateConfirmedTimestamp: timestamp(
     "after_install_visit_date_confirmed_timestamp"
   ),
@@ -550,7 +556,7 @@ export type ApplicationUpdateEnquiryType = Pick<
   | "address"
   | "lat"
   | "lng"
-  | "establishedCostOfPowerPerKWh"
+  | "estimatedCostOfPowerPerKWh"
   | "estimatedKWhGeneratedPerYear"
   | "enquiryEstimatedFees"
   | "enquiryEstimatedQuotePerWatt"
