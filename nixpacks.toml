@@ -1,3 +1,7 @@
 [phases.setup]
     nixpkgsArchive = 'd1c6a5decfd9ad4c84354612d418b2856a57be1d'
     #
+
+[setup]
+engine = "nodejs_18"
+framework = "bun"
