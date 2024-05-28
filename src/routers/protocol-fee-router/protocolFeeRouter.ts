@@ -1,4 +1,5 @@
 import { Elysia, t, UnwrapSchema } from "elysia";
+import { getRedisKey, setRedisKey } from "../../lib/redis-client";
 import { TAG } from "../../constants";
 import { getSunlightHoursAndCertificates } from "./utils/get-sunlight-hours-and-certificates";
 import {
@@ -43,8 +44,8 @@ export const protocolFeeRouter = new Elysia({ prefix: "/protocolFees" })
     "/sunlightAndCertificates",
     async ({ query }) => {
       const parsedQuery = {
-        latitude: query.latitude,
-        longitude: query.longitude,
+        latitude: parseFloat(query.latitude),
+        longitude: parseFloat(query.longitude),
       };
       const sunlightHoursAndCertificates =
         await getSunlightHoursAndCertificates(parsedQuery);
