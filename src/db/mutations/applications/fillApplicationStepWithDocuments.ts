@@ -54,7 +54,10 @@ export const fillApplicationStepWithDocuments = async (
         )
         .returning({ id: Documents.id });
 
-      if (documentsDelete.length !== documentsCountRes[0].count) {
+      if (
+        documentsDelete.length !==
+        documentsCountRes.reduce((acc, { count }) => acc + count, 0)
+      ) {
         tx.rollback();
       }
 
@@ -80,7 +83,10 @@ export const fillApplicationStepWithDocuments = async (
 
       if (
         documentsMissingWithReasonDelete.length !==
-        documentsMissingWithReasonCountRes[0].count
+        documentsMissingWithReasonCountRes.reduce(
+          (acc, { count }) => acc + count,
+          0
+        )
       ) {
         tx.rollback();
       }

@@ -10,6 +10,7 @@ import { findFirstAccountById } from "../../db/queries/accounts/findFirstAccount
 import { findAllDocumentsByApplicationId } from "../../db/queries/documents/findAllDocumentsByApplicationId";
 import { findFirstDocumentById } from "../../db/queries/documents/findFirstDocumentById";
 import { updateDocumentWithAnnotation } from "../../db/mutations/documents/updateDocumentWithAnnotation";
+import { updateDocumentKeysSets } from "../../db/mutations/documents/updateDocumentKeysSets";
 
 export const documentsRouter = new Elysia({ prefix: "/documents" })
   .use(bearerplugin())
@@ -102,7 +103,6 @@ export const documentsRouter = new Elysia({ prefix: "/documents" })
           },
         }
       )
-
       .post(
         "/annotation",
         async ({ body, set, userId }) => {
@@ -161,6 +161,57 @@ export const documentsRouter = new Elysia({ prefix: "/documents" })
           body: t.Object({
             documentId: t.String(),
             annotation: t.String(),
+          }),
+          detail: {
+            summary: "Create or Update an Application",
+            description: `Create an Application`,
+            tags: [TAG.APPLICATIONS],
+          },
+        }
+      )
+      .post(
+        "/gca-patch-documents",
+        async ({ body, set, userId }) => {
+          try {
+            const account = await findFirstAccountById(userId);
+            if (!account) {
+              set.status = 404;
+              return "Account not found";
+            }
+            if (account.role !== "GCA") {
+              set.status = 403;
+              return "You are not a GCA";
+            }
+
+            //TODO: WIP finish after sync with Simon
+            // updateDocumentKeysSets(userId, body.documents);
+
+            if (!document) {
+              set.status = 404;
+              return "Document not found";
+            }
+          } catch (e) {
+            if (e instanceof Error) {
+              set.status = 400;
+              return e.message;
+            }
+            console.log("[documentsRouter] annotation", e);
+            throw new Error("Error Occured");
+          }
+        },
+        {
+          body: t.Object({
+            documents: t.Array(
+              t.Object({
+                documentId: t.String(),
+                keysSets: t.Array(
+                  t.Object({
+                    publicKey: t.String(),
+                    encryptedMasterKey: t.String(),
+                  })
+                ),
+              })
+            ),
           }),
           detail: {
             summary: "Create or Update an Application",

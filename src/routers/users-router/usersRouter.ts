@@ -16,6 +16,9 @@ import { createInstaller } from "../../db/mutations/installers/createInstaller";
 import { findFirstUserByEmail } from "../../db/queries/users/findFirstUserByEmail";
 import { ContactType, contactTypes } from "../../types/api-types/Application";
 import { updateUserContactInfos } from "../../db/mutations/users/updateUserContactInfos";
+import { getUserFarmsCount } from "../../db/queries/farms/getUserFarmsCount";
+import { getUserPendingApplicationsCount } from "../../db/queries/applications/getUserPendingApplicationsCount";
+import { getWalletRewards } from "../../db/queries/wallets/getWalletRewards";
 
 export const CreateUserQueryBody = t.Object({
   encryptedPrivateEncryptionKey: t.String({
@@ -197,6 +200,54 @@ export const usersRouter = new Elysia({ prefix: "/users" })
             }
 
             return user;
+          } catch (e) {
+            if (e instanceof Error) {
+              set.status = 400;
+              return e.message;
+            }
+            console.log("[UsersRouter] byId", e);
+            throw new Error("Error Occured");
+          }
+        },
+        {
+          query: GetEntityByIdQueryParamsSchema,
+          detail: {
+            summary: "Get User by ID",
+            description: `Get a User by ID. If the user does not exist, it will throw an error.`,
+            tags: [TAG.USERS],
+          },
+        }
+      )
+      .get(
+        "/user-stats",
+        async ({ query, set, userId }) => {
+          if (!query.id) throw new Error("ID is required");
+          if (userId !== query.id) {
+            const account = await findFirstAccountById(userId);
+            if (
+              !account ||
+              (account.role !== "ADMIN" && account.role !== "GCA")
+            ) {
+              set.status = 403;
+              return "Unauthorized";
+            }
+          }
+          try {
+            const userFarmsCount = await getUserFarmsCount(query.id);
+            const pendingApplicationsCount =
+              await getUserPendingApplicationsCount(query.id);
+            const walletRewards = await getWalletRewards(query.id);
+            console.log("walletRewards", {
+              walletRewards,
+              userFarmsCount,
+              pendingApplicationsCount,
+            });
+            return {
+              userFarmsCount,
+              pendingApplicationsCount,
+              usdgRewards: walletRewards?.totalUSDGRewards || 0,
+              glowRewards: walletRewards?.totalGlowRewards || 0,
+            };
           } catch (e) {
             if (e instanceof Error) {
               set.status = 400;

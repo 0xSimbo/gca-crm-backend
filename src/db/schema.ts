@@ -29,12 +29,6 @@ export type FarmUpdate = {
   updatedValue: any;
 };
 
-//TODO: finish
-// export type QuoteEstimate = {
-//   previousValue: any;
-//   updatedValue: any;
-// };
-
 /**
     * @dev
     Rewards in the database are stored in 2 decimals.
@@ -685,6 +679,7 @@ export const Documents = pgTable("documents", {
   type: varchar("type", { length: 255 }).notNull(), // extension of the document ( pdf, png, jpg, ...)
   isEncrypted: boolean("isEncrypted").notNull().default(false), // if true the document is stored on r2 with the ".enc" extension
   createdAt: timestamp("created_at").notNull(),
+  updatedAt: timestamp("updated_at"),
   encryptedMasterKeys: json("encrypted_master_keys")
     .$type<EncryptedMasterKeySet>()
     .notNull()
@@ -695,12 +690,39 @@ export const Documents = pgTable("documents", {
 export type DocumentsType = InferSelectModel<typeof Documents>;
 export type DocumentsInsertType = typeof Documents.$inferInsert;
 
-export const DocumentsRelations = relations(Documents, ({ one }) => ({
+export const DocumentsRelations = relations(Documents, ({ one, many }) => ({
   application: one(applications, {
     fields: [Documents.applicationId],
     references: [applications.id],
   }),
+  updates: many(documentsUpdates),
 }));
+
+export const documentsUpdates = pgTable("documentsUpdates", {
+  id: text("document_update_id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  documentId: text("document_id").notNull(),
+  updatedBy: varchar("updated_by", { length: 42 }).notNull(),
+  createdAt: timestamp("created_at").notNull(),
+});
+
+export type DocumentsUpdatesType = InferSelectModel<typeof documentsUpdates>;
+export type DocumentsUpdatesInsertType = typeof documentsUpdates.$inferInsert;
+
+export const DocumentsUpdatesRelations = relations(
+  documentsUpdates,
+  ({ one }) => ({
+    document: one(Documents, {
+      fields: [documentsUpdates.documentId],
+      references: [Documents.id],
+    }),
+    wallet: one(wallets, {
+      fields: [documentsUpdates.updatedBy],
+      references: [wallets.id],
+    }),
+  })
+);
 
 /**
  * @dev Represents a missing document with a reason in the system.

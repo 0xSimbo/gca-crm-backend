@@ -1,4 +1,4 @@
-import { asc, eq } from "drizzle-orm";
+import { asc, desc, eq } from "drizzle-orm";
 import { db } from "../../db";
 import { Documents } from "../../schema";
 
@@ -17,8 +17,9 @@ export const findAllDocumentsByApplicationId = async (
       name: true,
       step: true,
       isEncrypted: true,
+      encryptedMasterKeys: true,
     },
-    orderBy: asc(Documents.step),
+    orderBy: desc(Documents.step),
   });
   return documentsDb;
 };
