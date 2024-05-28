@@ -47,11 +47,11 @@ const app = new Elysia()
   .use(gcasRouter)
   .use(applicationsRouter)
   .use(usersRouter)
-  .get("/update-rewards", async () => {
+  .get("/update-rewards-for-current-week", async () => {
+    //Will only work if the GCA has submitted the report for the current week.
     const currentWeek = getProtocolWeek();
-    const weekToQuery = currentWeek - 1;
-    await updateWalletRewardsForWeek(weekToQuery);
-    await updateFarmRewardsForWeek({ weekNumber: weekToQuery });
+    await updateWalletRewardsForWeek(currentWeek);
+    await updateFarmRewardsForWeek({ weekNumber: currentWeek });
     return { message: "success" };
   })
   .listen(PORT);
