@@ -47,3 +47,6 @@ lib/**/*
 **/*.log
 package-lock.json
 **/*.bun
+
+
+bun.lockb
