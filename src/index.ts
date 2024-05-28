@@ -15,11 +15,28 @@ import { installersRouter } from "./routers/installers-router/installersRouter";
 import { documentsRouter } from "./routers/documents-router/documentsRouter";
 import { rewardSplitsRouter } from "./routers/reward-splits-router/rewardSplitsRouter";
 import { devicesRouter } from "./routers/devices/devicesRouter";
+import { cron, Patterns } from "@elysiajs/cron";
+import { getProtocolWeek } from "./utils/getProtocolWeek";
 
 const PORT = process.env.PORT || 3005;
 const app = new Elysia()
   .use(cors())
   .use(swagger({ autoDarkMode: true, path: "/swagger" }))
+  .use(
+    cron({
+      name: "Updating Rewards",
+      pattern: Patterns.everyHours(2),
+      async run() {
+        const currentWeek = getProtocolWeek();
+        const weekToQuery = currentWeek - 1;
+        // Make sure to keep updateWalletRewardsForWeek before updateFarmRewardsForWeek
+        // Update Wallet Rewards For Week checks the merkle tree for the previous week
+        // We don't want to update the farm rewards for the current week if a GCA hasn;t submitted the report yet.
+        await updateWalletRewardsForWeek(weekToQuery);
+        await updateFarmRewardsForWeek({ weekNumber: weekToQuery });
+      },
+    })
+  )
   .use(protocolFeeRouter)
   .use(rewardsRouter)
   .use(accountsRouter)
@@ -30,33 +47,12 @@ const app = new Elysia()
   .use(gcasRouter)
   .use(applicationsRouter)
   .use(usersRouter)
-  .get("/", () => "Hello Elysia")
-  .get("/farm-rewards", async () => {
-    try {
-      for (let i = 11; i < 23; ++i) {
-        await updateFarmRewardsForWeek({ weekNumber: i });
-      }
-      return { message: "success" };
-    } catch (e) {
-      console.log(e);
-      return { error: true };
-    }
-  })
-  .get("/test-cron", async () => {
-    try {
-      for (let i = 10; i < 23; ++i) {
-        await updateWalletRewardsForWeek(i);
-      }
-      return { message: "success" };
-    } catch (e) {
-      console.log(e);
-      return { error: true };
-    }
-  })
-  .get("/delete", async () => {
-    await db.delete(wallets);
-    await db.delete(walletWeeklyRewards);
-    return { deletion: "success" };
+  .get("/update-rewards", async () => {
+    const currentWeek = getProtocolWeek();
+    const weekToQuery = currentWeek - 1;
+    await updateWalletRewardsForWeek(weekToQuery);
+    await updateFarmRewardsForWeek({ weekNumber: weekToQuery });
+    return { message: "success" };
   })
   .listen(PORT);
 

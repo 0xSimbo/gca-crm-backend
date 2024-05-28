@@ -26,8 +26,8 @@ async function scrapeFarms({
   const body = {
     urls: ["http://95.217.194.59:35015"],
     week_number: weekNumber,
-    with_full_data: false,
-    with_raw_data: false,
+    with_full_data: true,
+    with_raw_data: true,
   };
   const url = `https://fun-rust-production.up.railway.app/headline_farm_stats`;
 

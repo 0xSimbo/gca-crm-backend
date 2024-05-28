@@ -7,9 +7,10 @@ export type GetMerkleTreeFromRootResponse = {
 };
 
 export const getMerkleTreeForWeek = async (
-  weekNumber: number,
+  weekNumber: number
 ): Promise<GetMerkleTreeFromRootResponse> => {
   const fetchRoute = `https://pub-7e0365747f054c9e85051df5f20fa815.r2.dev/week-${weekNumber}/merkletree.json`;
+  console.log(fetchRoute);
   const res = await fetch(fetchRoute);
   const merkleTree = (await res.json()) as MerkleTreeApiResponse[];
   const cleanedMerkleTree = merkleTree.map((leaf) => {
