@@ -6,7 +6,7 @@ import { minerPoolAndGCAAbi } from "../../abis/MinerPoolAndGCA.abi";
             - has 6 decimals
  */
 export const getRewardsInBucket = async (
-  weekNumber: number,
+  weekNumber: number
 ): Promise<BigInt> => {
   //TODO: viem or ethers and grab it on-chain
 
