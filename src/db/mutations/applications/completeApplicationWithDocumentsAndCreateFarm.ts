@@ -40,6 +40,10 @@ export const completeApplicationWithDocumentsAndCreateFarmWithDevices = async (
   documents: DocumentsInsertType[],
   devices: { publicKey: string; shortId: string }[]
 ) => {
+  if (!process.env.R2_NOT_ENCRYPTED_FILES_BUCKET_NAME) {
+    throw new Error("R2_NOT_ENCRYPTED_FILES_BUCKET_NAME is not defined");
+  }
+
   if (devices.length === 0) {
     throw new Error("No devices provided");
   }
@@ -70,7 +74,7 @@ export const completeApplicationWithDocumentsAndCreateFarmWithDevices = async (
   // sync with @0xSimbo for misc_doc_name_rationale.txt ?? do we need to upload the missing documents with reason ?
   const annotationsTxtPromises = applicationEncryptedDocuments.map((doc) =>
     createAndUploadTXTFile(
-      "gca-crm-public",
+      process.env.R2_NOT_ENCRYPTED_FILES_BUCKET_NAME!!,
       `${applicationId}/${doc.name}_annotations.txt`,
       doc.annotation || ""
     )
@@ -78,21 +82,21 @@ export const completeApplicationWithDocumentsAndCreateFarmWithDevices = async (
 
   const encryptionKeysTxtPromises = applicationEncryptedDocuments.map((doc) =>
     createAndUploadJsonFile(
-      "gca-crm-public",
+      process.env.R2_NOT_ENCRYPTED_FILES_BUCKET_NAME!!,
       `${applicationId}/${doc.name}_encryption_keys.json`,
       doc.encryptedMasterKeys
     )
   );
 
   const defermentsTxtPromises = createAndUploadJsonFile(
-    "gca-crm-public",
+    process.env.R2_NOT_ENCRYPTED_FILES_BUCKET_NAME!!,
     `${applicationId}/deferments.json`,
     applicationDeferments
   );
 
   const extraThoughtsTxtPromises = applicationStepApprovals.map((approval) =>
     createAndUploadTXTFile(
-      "gca-crm-public",
+      process.env.R2_NOT_ENCRYPTED_FILES_BUCKET_NAME!!,
       `${applicationId}/${getStepNameFromIndex(
         approval.step
       )}_extra_thoughts.txt`,
