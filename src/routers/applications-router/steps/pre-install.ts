@@ -15,10 +15,6 @@ import { EncryptedFileUploadType } from "../applicationsRouter";
 type UpdatePreInstallDocumentsRequiredType = {
   contractAgreement: EncryptedFileUploadType;
   declarationOfIntention: EncryptedFileUploadType;
-  firstUtilityBill: EncryptedFileUploadType;
-  secondUtilityBill: EncryptedFileUploadType;
-  mortgageStatement: EncryptedFileUploadType | null;
-  propertyDeed: EncryptedFileUploadType | null;
 };
 
 type UpdatePreInstallDocumentsWithPlansetsNotAvailableType =
@@ -63,57 +59,7 @@ export const handleCreateOrUpdatePreIntallDocuments = async (
       encryptedMasterKeys: args.declarationOfIntention.keysSet,
       createdAt: new Date(),
     },
-    {
-      name: RequiredDocumentsNamesEnum.firstUtilityBill,
-      applicationId: application.id,
-      url: args.firstUtilityBill.publicUrl,
-      type: "pdf",
-      isEncrypted: true,
-      annotation: null,
-      step,
-      encryptedMasterKeys: args.firstUtilityBill.keysSet,
-      createdAt: new Date(),
-    },
-    {
-      name: RequiredDocumentsNamesEnum.secondUtilityBill,
-      applicationId: application.id,
-      url: args.secondUtilityBill.publicUrl,
-      type: "pdf",
-      isEncrypted: true,
-      annotation: null,
-      step,
-      encryptedMasterKeys: args.secondUtilityBill.keysSet,
-      createdAt: new Date(),
-    },
   ];
-
-  if (args.mortgageStatement) {
-    documents.push({
-      name: RequiredDocumentsNamesEnum.mortgageStatement,
-      applicationId: application.id,
-      url: args.mortgageStatement.publicUrl,
-      type: "pdf",
-      isEncrypted: true,
-      annotation: null,
-      step,
-      encryptedMasterKeys: args.mortgageStatement.keysSet,
-      createdAt: new Date(),
-    });
-  }
-
-  if (args.propertyDeed) {
-    documents.push({
-      name: RequiredDocumentsNamesEnum.propertyDeed,
-      applicationId: application.id,
-      url: args.propertyDeed.publicUrl,
-      type: "pdf",
-      isEncrypted: true,
-      annotation: null,
-      step,
-      encryptedMasterKeys: args.propertyDeed.keysSet,
-      createdAt: new Date(),
-    });
-  }
 
   if (args.plansets) {
     documents.push({

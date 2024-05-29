@@ -8,6 +8,7 @@ import {
   ApplicationSteps,
   OptionalDocumentsEnum,
   OptionalDocumentsNamesEnum,
+  RequiredDocumentsNamesEnum,
 } from "../../../types/api-types/Application";
 import { EncryptedFileUploadType } from "../applicationsRouter";
 
@@ -18,6 +19,10 @@ type UpdateInspectionAndPtoType = {
   cityPermit: EncryptedFileUploadType | null;
   cityPermitNotAvailableReason: string | null;
   inspectionNotAvailableReason: string | null;
+  firstUtilityBill: EncryptedFileUploadType;
+  secondUtilityBill: EncryptedFileUploadType;
+  mortgageStatement: EncryptedFileUploadType | null;
+  propertyDeed: EncryptedFileUploadType | null;
   ptoNotAvailableReason: string | null;
   miscDocuments: {
     encryptedFileUpload: EncryptedFileUploadType;
@@ -26,12 +31,63 @@ type UpdateInspectionAndPtoType = {
   }[];
 };
 
-export const handleCreateOrUpdateInspectionAndPto = async (
+export const handleCreateOrUpdateAfterInstallDocuments = async (
   application: ApplicationType,
   args: UpdateInspectionAndPtoType
 ) => {
-  const documents: DocumentsInsertType[] = [];
   const step = ApplicationSteps.inspectionAndPtoDocuments;
+  const documents: DocumentsInsertType[] = [
+    {
+      name: RequiredDocumentsNamesEnum.firstUtilityBill,
+      applicationId: application.id,
+      url: args.firstUtilityBill.publicUrl,
+      type: "pdf",
+      isEncrypted: true,
+      annotation: null,
+      step,
+      encryptedMasterKeys: args.firstUtilityBill.keysSet,
+      createdAt: new Date(),
+    },
+    {
+      name: RequiredDocumentsNamesEnum.secondUtilityBill,
+      applicationId: application.id,
+      url: args.secondUtilityBill.publicUrl,
+      type: "pdf",
+      isEncrypted: true,
+      annotation: null,
+      step,
+      encryptedMasterKeys: args.secondUtilityBill.keysSet,
+      createdAt: new Date(),
+    },
+  ];
+
+  if (args.mortgageStatement) {
+    documents.push({
+      name: RequiredDocumentsNamesEnum.mortgageStatement,
+      applicationId: application.id,
+      url: args.mortgageStatement.publicUrl,
+      type: "pdf",
+      isEncrypted: true,
+      annotation: null,
+      step,
+      encryptedMasterKeys: args.mortgageStatement.keysSet,
+      createdAt: new Date(),
+    });
+  }
+
+  if (args.propertyDeed) {
+    documents.push({
+      name: RequiredDocumentsNamesEnum.propertyDeed,
+      applicationId: application.id,
+      url: args.propertyDeed.publicUrl,
+      type: "pdf",
+      isEncrypted: true,
+      annotation: null,
+      step,
+      encryptedMasterKeys: args.propertyDeed.keysSet,
+      createdAt: new Date(),
+    });
+  }
 
   if (args.inspection) {
     documents.push({

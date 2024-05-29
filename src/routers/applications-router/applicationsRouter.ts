@@ -37,7 +37,7 @@ import { handleCreateOrUpdatePermitDocumentation } from "./steps/permit-document
 import { handleCreateOrUpdatePreIntallDocuments } from "./steps/pre-install";
 import { updateApplicationPreInstallVisitDate } from "../../db/mutations/applications/updateApplicationPreInstallVisitDate";
 import { updateApplicationAfterInstallVisitDate } from "../../db/mutations/applications/updateApplicationAfterInstallVisitDate";
-import { handleCreateOrUpdateInspectionAndPto } from "./steps/inspection-and-pto";
+import { handleCreateOrUpdateAfterInstallDocuments } from "./steps/after-install";
 import { updateApplication } from "../../db/mutations/applications/updateApplication";
 import { roundRobinAssignement } from "../../db/queries/gcas/roundRobinAssignement";
 import {
@@ -133,10 +133,6 @@ export const PreInstallDocumentsQueryBody = t.Object({
   plansets: t.Nullable(encryptedFileUpload),
   plansetsNotAvailableReason: t.Nullable(t.String()),
   declarationOfIntention: encryptedFileUpload,
-  firstUtilityBill: encryptedFileUpload,
-  secondUtilityBill: encryptedFileUpload,
-  mortgageStatement: t.Nullable(encryptedFileUpload),
-  propertyDeed: t.Nullable(encryptedFileUpload),
 });
 
 export const PermitDocumentationQueryBody = t.Object({
@@ -151,6 +147,10 @@ export const InspectionAndPTOQueryBody = t.Object({
   inspection: t.Nullable(encryptedFileUpload),
   inspectionNotAvailableReason: t.Nullable(t.String()),
   pto: t.Nullable(encryptedFileUpload),
+  firstUtilityBill: encryptedFileUpload,
+  secondUtilityBill: encryptedFileUpload,
+  mortgageStatement: t.Nullable(encryptedFileUpload),
+  propertyDeed: t.Nullable(encryptedFileUpload),
   ptoNotAvailableReason: t.Nullable(t.String()),
   installFinishedDate: t.Date(),
   miscDocuments: t.Array(
@@ -765,11 +765,6 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               return errorChecks.errorMessage;
             }
 
-            if (!body.mortgageStatement && !body.propertyDeed) {
-              set.status = 400;
-              return "Either mortgageStatement or propertyDeed is required";
-            }
-
             if (body.plansetsNotAvailableReason && body.plansets === null) {
               await handleCreateOrUpdatePreIntallDocuments(
                 application,
@@ -900,6 +895,11 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               return "Either cityPermit file or cityPermitNotAvailableReason is required";
             }
 
+            if (!body.mortgageStatement && !body.propertyDeed) {
+              set.status = 400;
+              return "Either mortgageStatement or propertyDeed is required";
+            }
+
             if (
               body.miscDocuments.some(
                 (doc) => !doc.name.toLowerCase().includes("misc")
@@ -909,7 +909,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               return "Every miscDocuments name should include the word 'misc'";
             }
 
-            await handleCreateOrUpdateInspectionAndPto(application, {
+            await handleCreateOrUpdateAfterInstallDocuments(application, {
               inspectionNotAvailableReason: body.inspectionNotAvailableReason,
               inspection: body.inspection,
               ptoNotAvailableReason: body.ptoNotAvailableReason,
@@ -918,6 +918,10 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               miscDocuments: body.miscDocuments,
               cityPermit: body.cityPermit,
               cityPermitNotAvailableReason: body.cityPermitNotAvailableReason,
+              mortgageStatement: body.mortgageStatement,
+              propertyDeed: body.propertyDeed,
+              firstUtilityBill: body.firstUtilityBill,
+              secondUtilityBill: body.secondUtilityBill,
             });
             return body.applicationId;
           } catch (e) {
@@ -1078,6 +1082,65 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               return e.message;
             }
             console.log("[applicationsRouter] reject-final-quote-per-watt", e);
+            throw new Error("Error Occured");
+          }
+        },
+        {
+          query: t.Object({
+            applicationId: t.String(),
+          }),
+          detail: {
+            summary: "Reject Final Quote Per Watt",
+            description: `Update application status to quoteRejected after user rejected the final quote per watt`,
+            tags: [TAG.APPLICATIONS],
+          },
+        }
+      )
+      .post(
+        "/gca-resume-quote-rejected",
+        async ({ query, set, userId }) => {
+          try {
+            const application = await FindFirstApplicationById(
+              query.applicationId
+            );
+            if (!application) {
+              set.status = 404;
+              return "Application not found";
+            }
+            const account = await findFirstAccountById(userId);
+
+            if (!account) {
+              set.status = 404;
+              return "Account not found";
+            }
+
+            if (account.role !== "GCA") {
+              set.status = 403;
+              return "Unauthorized";
+            }
+
+            if (application.status !== ApplicationStatusEnum.quoteRejected) {
+              set.status = 403;
+              return "Application is not in quoteRejected status";
+            }
+
+            if (
+              application.currentStep !== ApplicationSteps.preInstallDocuments
+            ) {
+              set.status = 403;
+              return "Action not authorized";
+            }
+
+            await updateApplicationStatus(
+              query.applicationId,
+              ApplicationStatusEnum.approved
+            );
+          } catch (e) {
+            if (e instanceof Error) {
+              set.status = 400;
+              return e.message;
+            }
+            console.log("[applicationsRouter] gca-resume-quote-rejected", e);
             throw new Error("Error Occured");
           }
         },
