@@ -168,9 +168,9 @@ export const gcasRouter = new Elysia({ prefix: "/gcas" })
               signer
             );
 
-            //todo: uncomment for prod
-            // const isGca = await minerPoolAndGCA["isGCA(address)"](wallet);
-            const isGca = true;
+            const isGca = await minerPoolAndGCA["isGCA(address)"](wallet);
+            //todo: uncomment for staging
+            // const isGca = true;
             if (!isGca) {
               set.status = 401;
               return "This wallet is not a GCA";
