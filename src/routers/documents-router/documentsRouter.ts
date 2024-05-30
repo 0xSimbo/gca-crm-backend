@@ -10,7 +10,7 @@ import { findFirstAccountById } from "../../db/queries/accounts/findFirstAccount
 import { findAllDocumentsByApplicationId } from "../../db/queries/documents/findAllDocumentsByApplicationId";
 import { findFirstDocumentById } from "../../db/queries/documents/findFirstDocumentById";
 import { updateDocumentWithAnnotation } from "../../db/mutations/documents/updateDocumentWithAnnotation";
-import { updateDocumentKeysSets } from "../../db/mutations/documents/updateDocumentKeysSets";
+import { findAllDocumentsByStep } from "../../db/queries/documents/findAllDocumentsByStep";
 
 export const documentsRouter = new Elysia({ prefix: "/documents" })
   .use(bearerplugin())
@@ -99,6 +99,52 @@ export const documentsRouter = new Elysia({ prefix: "/documents" })
           detail: {
             summary: "Get All Documents by Application ID",
             description: `Get all documents by application, if application is not owned by user, it will throw an error if your are not an admin or GCA`,
+            tags: [TAG.DOCUMENTS],
+          },
+        }
+      )
+      .get(
+        "/all-application-documents-by-step-index",
+        async ({ query: { stepIndex, applicationId }, set, userId }) => {
+          if (!stepIndex || !applicationId)
+            throw new Error("stepIndex and applicationId is required");
+          try {
+            const application = await FindFirstApplicationById(applicationId);
+            if (application?.userId !== userId) {
+              const account = await findFirstAccountById(userId);
+              if (
+                !account ||
+                (account.role !== "ADMIN" && account.role !== "GCA")
+              ) {
+                set.status = 403;
+
+                return "Unauthorized";
+              }
+            }
+
+            const documents = await findAllDocumentsByStep(
+              stepIndex,
+              applicationId
+            );
+
+            return documents;
+          } catch (e) {
+            if (e instanceof Error) {
+              set.status = 400;
+              return e.message;
+            }
+            console.log("[documentsRouter] /all-by-step-index", e);
+            throw new Error("Error Occured");
+          }
+        },
+        {
+          query: t.Object({
+            applicationId: t.String(),
+            stepIndex: t.Numeric(),
+          }),
+          detail: {
+            summary: "Get All Documents by Step Index",
+            description: `Get all documents by Step Index, it will throw an error if your are not an admin or GCA`,
             tags: [TAG.DOCUMENTS],
           },
         }

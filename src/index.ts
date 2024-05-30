@@ -32,8 +32,12 @@ const app = new Elysia()
         // Make sure to keep updateWalletRewardsForWeek before updateFarmRewardsForWeek
         // Update Wallet Rewards For Week checks the merkle tree for the previous week
         // We don't want to update the farm rewards for the current week if a GCA hasn;t submitted the report yet.
-        await updateWalletRewardsForWeek(weekToQuery);
-        await updateFarmRewardsForWeek({ weekNumber: weekToQuery });
+        try {
+          await updateWalletRewardsForWeek(weekToQuery);
+          await updateFarmRewardsForWeek({ weekNumber: weekToQuery });
+        } catch (error) {
+          console.error("Error updating rewards", error);
+        }
       },
     })
   )
@@ -50,9 +54,14 @@ const app = new Elysia()
   .get("/update-rewards-for-current-week", async () => {
     //Will only work if the GCA has submitted the report for the current week.
     const currentWeek = getProtocolWeek();
-    await updateWalletRewardsForWeek(currentWeek);
-    await updateFarmRewardsForWeek({ weekNumber: currentWeek });
-    return { message: "success" };
+    try {
+      await updateWalletRewardsForWeek(currentWeek);
+      await updateFarmRewardsForWeek({ weekNumber: currentWeek });
+      return { message: "success" };
+    } catch (error) {
+      console.error("Error updating rewards", error);
+      return { message: "error" };
+    }
   })
   .listen(PORT);
 

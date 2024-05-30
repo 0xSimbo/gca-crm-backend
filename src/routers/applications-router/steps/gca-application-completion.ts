@@ -24,6 +24,7 @@ export const handleCreateWithoutPIIDocumentsAndCompleteApplication = async (
   signature: string,
   step: ApplicationSteps,
   args: WithoutPiiDocumentsType & {
+    finalAuditReport: string;
     devices: { publicKey: string; shortId: string }[];
     miscDocuments: {
       publicUrl: string;
@@ -33,6 +34,16 @@ export const handleCreateWithoutPIIDocumentsAndCompleteApplication = async (
   }
 ) => {
   const documents: DocumentsInsertType[] = [
+    {
+      name: RequiredDocumentsNamesEnum.finalAuditReport,
+      applicationId: application.id,
+      url: args.finalAuditReport,
+      type: "pdf",
+      annotation: null,
+      step,
+      encryptedMasterKeys: [],
+      createdAt: new Date(),
+    },
     {
       name: RequiredDocumentsNamesEnum.contractAgreement,
       applicationId: application.id,

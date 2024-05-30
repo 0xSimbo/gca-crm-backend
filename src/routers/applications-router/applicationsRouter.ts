@@ -1324,12 +1324,13 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               body.signature,
               ApplicationSteps.payment,
               {
+                finalAuditReport: body.finalAuditReport,
                 ...body.withoutPIIdocuments,
                 miscDocuments: body.miscDocuments,
                 devices: body.devices,
               }
             );
-            // upload all the documents withoutPII for audits and public on website
+            //TODO: send event with kafka to notify that the application is completed and publish audit;
           } catch (e) {
             if (e instanceof Error) {
               set.status = 400;
@@ -1348,6 +1349,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
             devices: t.Array(
               t.Object({ publicKey: t.String(), shortId: t.String() })
             ),
+            finalAuditReport: t.String(),
             miscDocuments: t.Array(
               t.Object({
                 publicUrl: t.String(),

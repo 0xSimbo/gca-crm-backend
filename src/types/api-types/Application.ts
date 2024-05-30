@@ -81,6 +81,7 @@ export enum RequiredDocumentsNamesEnum {
   secondUtilityBill = "required_second_utility_bill",
   mortgageStatement = "required_mortgage_statement",
   propertyDeed = "required_property_deed",
+  finalAuditReport = "required_final_audit_report",
 }
 
 export enum OptionalDocumentsNamesEnum {
