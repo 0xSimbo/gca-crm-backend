@@ -49,7 +49,7 @@ const app = new Elysia()
     return "Internal Server Error";
   })
   .use(cors())
-  .use(swagger({ autoDarkMode: true, path: "/swagger" }))
+  // .use(swagger({ autoDarkMode: true, path: "/swagger" }))
   .use(
     cron({
       name: "Updating Rewards",
