@@ -438,11 +438,12 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               return "Deadline has passed";
             }
 
+            //TODO: uncomment when finished testing
             // make deadline max 10minutes
-            if (body.deadline > Date.now() / 1000 + 600) {
-              set.status = 403;
-              return "Deadline is too far in the future";
-            }
+            // if (body.deadline > Date.now() / 1000 + 600) {
+            //   set.status = 403;
+            //   return "Deadline is too far in the future";
+            // }
             let recoveredAddress;
             if (body.accepted) {
               const acceptedValues = {
