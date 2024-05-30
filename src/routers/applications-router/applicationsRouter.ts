@@ -1153,10 +1153,11 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                 application.preInstallVisitDate.getDate()
               ).getTime();
 
-              if (today.getTime() < preInstallVisitDateTime) {
-                set.status = 400;
-                return "Pre Install Visit Date is not passed yet";
-              }
+              //TODO: uncomment after finished testing
+              // if (today.getTime() < preInstallVisitDateTime) {
+              //   set.status = 400;
+              //   return "Pre Install Visit Date is not passed yet";
+              // }
 
               await approveApplicationStep(
                 body.applicationId,
@@ -1397,10 +1398,11 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                 application.afterInstallVisitDate.getDate()
               ).getTime();
 
-              if (today.getTime() < afterInstallVisitDateTime) {
-                set.status = 400;
-                return "After Install Visit Date is not passed yet";
-              }
+              //TODO: uncomment after finished testing
+              // if (today.getTime() < afterInstallVisitDateTime) {
+              //   set.status = 400;
+              //   return "After Install Visit Date is not passed yet";
+              // }
 
               await approveApplicationStep(
                 body.applicationId,
