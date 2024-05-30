@@ -438,12 +438,10 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               return "Deadline has passed";
             }
 
-            //TODO: uncomment when finished testing
-            // make deadline max 10minutes
-            // if (body.deadline > Date.now() / 1000 + 600) {
-            //   set.status = 403;
-            //   return "Deadline is too far in the future";
-            // }
+            if (body.deadline > Date.now() / 1000 + 600) {
+              set.status = 403;
+              return "Deadline is too far in the future";
+            }
             let recoveredAddress;
             if (body.accepted) {
               const acceptedValues = {
@@ -1216,11 +1214,10 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                 application.preInstallVisitDate.getDate()
               ).getTime();
 
-              //TODO: uncomment after finished testing
-              // if (today.getTime() < preInstallVisitDateTime) {
-              //   set.status = 400;
-              //   return "Pre Install Visit Date is not passed yet";
-              // }
+              if (today.getTime() < preInstallVisitDateTime) {
+                set.status = 400;
+                return "Pre Install Visit Date is not passed yet";
+              }
 
               await approveApplicationStep(
                 body.applicationId,
@@ -1463,11 +1460,10 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                 application.afterInstallVisitDate.getDate()
               ).getTime();
 
-              //TODO: uncomment after finished testing
-              // if (today.getTime() < afterInstallVisitDateTime) {
-              //   set.status = 400;
-              //   return "After Install Visit Date is not passed yet";
-              // }
+              if (today.getTime() < afterInstallVisitDateTime) {
+                set.status = 400;
+                return "After Install Visit Date is not passed yet";
+              }
 
               await approveApplicationStep(
                 body.applicationId,

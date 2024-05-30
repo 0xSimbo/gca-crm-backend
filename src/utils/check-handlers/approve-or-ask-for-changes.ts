@@ -21,15 +21,14 @@ export const approveOrAskForChangesCheckHandler = async (
     return { data: null, errorCode: 403, errorMessage: "Deadline has passed" };
   }
 
-  //TODO: uncomment when finished testing
   // deadline max 10minutes
-  // if (deadline > Date.now() / 1000 + 600) {
-  //   return {
-  //     data: null,
-  //     errorCode: 403,
-  //     errorMessage: "Deadline is too far in the future",
-  //   };
-  // }
+  if (deadline > Date.now() / 1000 + 600) {
+    return {
+      data: null,
+      errorCode: 403,
+      errorMessage: "Deadline is too far in the future",
+    };
+  }
 
   const application = await FindFirstApplicationById(applicationId);
 
