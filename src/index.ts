@@ -1,4 +1,4 @@
-import { Elysia } from "elysia";
+import { Elysia, NotFoundError, ParseError, ValidationError } from "elysia";
 import { swagger } from "@elysiajs/swagger";
 import { cors } from "@elysiajs/cors";
 import { protocolFeeRouter } from "./routers/protocol-fee-router/protocolFeeRouter";
@@ -20,6 +20,34 @@ import { getProtocolWeek } from "./utils/getProtocolWeek";
 
 const PORT = process.env.PORT || 3005;
 const app = new Elysia()
+  .onError({ as: "global" }, ({ request, set, error, body }) => {
+    if (error instanceof NotFoundError) {
+      const pathname = new URL(request.url).pathname;
+      const method = request.method;
+      set.status = 404;
+      return `Cannot ${method} ${pathname}`;
+    }
+
+    if (error instanceof ParseError) {
+      set.status = 400;
+      return `Invalid JSON`;
+    }
+
+    if (error instanceof ValidationError) {
+      set.status = 422;
+      const pathname = new URL(request.url).pathname;
+      const validationError = error as ValidationError;
+      console.error(
+        "Validation Error at " + pathname,
+        JSON.stringify(validationError.all[0])
+      );
+
+      return JSON.stringify(validationError.all[0]);
+    }
+
+    set.status = 500;
+    return "Internal Server Error";
+  })
   .use(cors())
   .use(swagger({ autoDarkMode: true, path: "/swagger" }))
   .use(

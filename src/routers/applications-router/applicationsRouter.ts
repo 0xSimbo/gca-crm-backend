@@ -185,6 +185,7 @@ export const GcaAcceptApplicationQueryBody = t.Object({
 export const ApproveOrAskForChangesQueryBody = {
   applicationId: t.String(),
   signature: t.String(),
+  fzefzefe: t.String(),
   deadline: t.Numeric(),
   approved: t.Boolean(),
   annotation: t.Nullable(t.String()),
@@ -217,7 +218,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                 !account ||
                 (account.role !== "ADMIN" && account.role !== "GCA")
               ) {
-                set.status = 403;
+                set.status = 401;
                 return "Unauthorized";
               }
             }
@@ -278,7 +279,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
             );
 
             if (recoveredAddress.toLowerCase() !== account.id.toLowerCase()) {
-              set.status = 403;
+              set.status = 400;
               return "Invalid Signature";
             }
 
@@ -354,7 +355,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
             );
 
             if (recoveredAddress.toLowerCase() !== account.id.toLowerCase()) {
-              set.status = 403;
+              set.status = 400;
               return "Invalid Signature";
             }
 
@@ -429,12 +430,12 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
             }
 
             if (account.role !== "GCA") {
-              set.status = 403;
+              set.status = 400;
               return "Unauthorized";
             }
 
             if (body.deadline < Date.now() / 1000) {
-              set.status = 403;
+              set.status = 400;
               return "Deadline has passed";
             }
 
@@ -484,7 +485,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
             }
 
             if (recoveredAddress.toLowerCase() !== account.id.toLowerCase()) {
-              set.status = 403;
+              set.status = 400;
               return "Invalid Signature";
             }
 
@@ -501,7 +502,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               application.roundRobinStatus !==
               RoundRobinStatusEnum.waitingToBeAccepted
             ) {
-              set.status = 403;
+              set.status = 400;
               return "Application is not in waitingToBeAccepted status";
             }
 
@@ -554,7 +555,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
             }
 
             if (account.role !== "GCA") {
-              set.status = 403;
+              set.status = 400;
               return "Unauthorized";
             }
 
@@ -589,7 +590,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                 !account ||
                 (account.role !== "ADMIN" && account.role !== "GCA")
               ) {
-                set.status = 403;
+                set.status = 400;
 
                 return "Unauthorized";
               }
@@ -626,7 +627,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
             }
 
             if (account.role !== "USER") {
-              set.status = 403;
+              set.status = 400;
               return "Unauthorized";
             }
 
@@ -957,14 +958,14 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
             }
 
             if (application.userId !== userId) {
-              set.status = 403;
+              set.status = 400;
               return "Unauthorized";
             }
 
             if (
               application.status !== ApplicationStatusEnum.waitingForPayment
             ) {
-              set.status = 403;
+              set.status = 400;
               return "Application is not waiting for payment";
             }
 
@@ -1015,11 +1016,11 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               return "Application not found";
             }
             if (application.userId !== userId) {
-              set.status = 403;
+              set.status = 400;
               return "Unauthorized";
             }
             if (application.status !== ApplicationStatusEnum.approved) {
-              set.status = 403;
+              set.status = 400;
               return "Application is not Approved";
             }
             await incrementApplicationStep(
@@ -1058,17 +1059,17 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               return "Application not found";
             }
             if (application.userId !== userId) {
-              set.status = 403;
+              set.status = 400;
               return "Unauthorized";
             }
             if (application.status !== ApplicationStatusEnum.approved) {
-              set.status = 403;
+              set.status = 400;
               return "Application is not Approved";
             }
             if (
               application.currentStep !== ApplicationSteps.preInstallDocuments
             ) {
-              set.status = 403;
+              set.status = 400;
               return "Action not authorized";
             }
 
@@ -1115,19 +1116,19 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
             }
 
             if (account.role !== "GCA") {
-              set.status = 403;
+              set.status = 400;
               return "Unauthorized";
             }
 
             if (application.status !== ApplicationStatusEnum.quoteRejected) {
-              set.status = 403;
+              set.status = 400;
               return "Application is not in quoteRejected status";
             }
 
             if (
               application.currentStep !== ApplicationSteps.preInstallDocuments
             ) {
-              set.status = 403;
+              set.status = 400;
               return "Action not authorized";
             }
 
@@ -1194,7 +1195,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
             );
 
             if (recoveredAddress.toLowerCase() !== account.id.toLowerCase()) {
-              set.status = 403;
+              set.status = 400;
               return "Invalid Signature";
             }
 
@@ -1304,7 +1305,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
             );
 
             if (recoveredAddress.toLowerCase() !== account.id.toLowerCase()) {
-              set.status = 403;
+              set.status = 400;
               return "Invalid Signature";
             }
 
@@ -1441,7 +1442,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
             }
 
             if (recoveredAddress.toLowerCase() !== account.id.toLowerCase()) {
-              set.status = 403;
+              set.status = 400;
               return "Invalid Signature";
             }
 
@@ -1531,19 +1532,19 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
             if (
               application.currentStep !== ApplicationSteps.permitDocumentation
             ) {
-              set.status = 403;
+              set.status = 400;
               return "Application is not in the correct step";
             }
 
             if (
               application.status !== ApplicationStatusEnum.waitingForApproval
             ) {
-              set.status = 403;
+              set.status = 400;
               return "Application is not in the correct status";
             }
 
             if (application.gcaAddress !== account.id) {
-              set.status = 403;
+              set.status = 400;
               return "You are not assigned to this application";
             }
 
@@ -1622,19 +1623,19 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               application.currentStep !==
               ApplicationSteps.inspectionAndPtoDocuments
             ) {
-              set.status = 403;
+              set.status = 400;
               return "Application is not in the correct step";
             }
 
             if (
               application.status !== ApplicationStatusEnum.waitingForApproval
             ) {
-              set.status = 403;
+              set.status = 400;
               return "Application is not in the correct status";
             }
 
             if (application.gcaAddress !== account.id) {
-              set.status = 403;
+              set.status = 400;
               return "You are not assigned to this application";
             }
 

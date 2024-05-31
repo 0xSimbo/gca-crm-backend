@@ -38,7 +38,7 @@ export const rewardSplitsRouter = new Elysia({ prefix: "/rewardsSplits" })
                 !account ||
                 (account.role !== "ADMIN" && account.role !== "GCA")
               ) {
-                set.status = 403;
+                set.status = 401;
                 return "Unauthorized";
               }
             }
@@ -77,23 +77,23 @@ export const rewardSplitsRouter = new Elysia({ prefix: "/rewardsSplits" })
               return "Application not found";
             }
             if (application.userId !== userId) {
-              set.status = 403;
+              set.status = 400;
               return "Unauthorized";
             }
             if (application.status !== ApplicationStatusEnum.approved) {
-              set.status = 403;
+              set.status = 400;
               return "Application is not Approved";
             }
             if (
               application.currentStep !==
               ApplicationSteps.inspectionAndPtoDocuments
             ) {
-              set.status = 403;
+              set.status = 400;
               return "Application is not in the correct step";
             }
 
             if (application.rewardSplits.length > 0) {
-              set.status = 403;
+              set.status = 400;
               return "Reward Splits already created";
             }
 

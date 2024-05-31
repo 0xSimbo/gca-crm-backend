@@ -14,7 +14,7 @@ export const approveOrAskForChangesCheckHandler = async (
   errorMessage: string;
 }> => {
   if (account.role !== "GCA") {
-    return { data: null, errorCode: 403, errorMessage: "Unauthorized" };
+    return { data: null, errorCode: 401, errorMessage: "Unauthorized" };
   }
 
   if (deadline < Date.now() / 1000) {
