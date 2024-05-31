@@ -185,7 +185,6 @@ export const GcaAcceptApplicationQueryBody = t.Object({
 export const ApproveOrAskForChangesQueryBody = {
   applicationId: t.String(),
   signature: t.String(),
-  fzefzefe: t.String(),
   deadline: t.Numeric(),
   approved: t.Boolean(),
   annotation: t.Nullable(t.String()),
