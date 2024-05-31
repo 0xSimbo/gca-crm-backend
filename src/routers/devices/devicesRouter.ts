@@ -43,7 +43,7 @@ export const devicesRouter = new Elysia({ prefix: "/devices" })
                 !account ||
                 (account.role !== "ADMIN" && account.role !== "GCA")
               ) {
-                set.status = 403;
+                set.status = 401;
                 return "Unauthorized";
               }
             }
@@ -81,7 +81,7 @@ export const devicesRouter = new Elysia({ prefix: "/devices" })
             }
 
             if (account.role !== "GCA") {
-              set.status = 403;
+              set.status = 400;
               return "Unauthorized";
             }
 

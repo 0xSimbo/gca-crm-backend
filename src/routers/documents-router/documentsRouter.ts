@@ -38,7 +38,7 @@ export const documentsRouter = new Elysia({ prefix: "/documents" })
                 !account ||
                 (account.role !== "ADMIN" && account.role !== "GCA")
               ) {
-                set.status = 403;
+                set.status = 401;
                 return "Unauthorized";
               }
             }
@@ -75,7 +75,7 @@ export const documentsRouter = new Elysia({ prefix: "/documents" })
                 !account ||
                 (account.role !== "ADMIN" && account.role !== "GCA")
               ) {
-                set.status = 403;
+                set.status = 400;
 
                 return "Unauthorized";
               }
@@ -116,7 +116,7 @@ export const documentsRouter = new Elysia({ prefix: "/documents" })
                 !account ||
                 (account.role !== "ADMIN" && account.role !== "GCA")
               ) {
-                set.status = 403;
+                set.status = 400;
 
                 return "Unauthorized";
               }
@@ -159,7 +159,7 @@ export const documentsRouter = new Elysia({ prefix: "/documents" })
               return "Account not found";
             }
             if (account.role !== "GCA") {
-              set.status = 403;
+              set.status = 400;
               return "You are not a GCA";
             }
 
@@ -185,7 +185,7 @@ export const documentsRouter = new Elysia({ prefix: "/documents" })
             }
 
             if (application.gcaAddress !== account.id) {
-              set.status = 403;
+              set.status = 400;
               return "You are not the GCA assigned to this application";
             }
 
@@ -225,7 +225,7 @@ export const documentsRouter = new Elysia({ prefix: "/documents" })
               return "Account not found";
             }
             if (account.role !== "GCA") {
-              set.status = 403;
+              set.status = 400;
               return "You are not a GCA";
             }
 

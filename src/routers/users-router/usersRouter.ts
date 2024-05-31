@@ -188,7 +188,7 @@ export const usersRouter = new Elysia({ prefix: "/users" })
               !account ||
               (account.role !== "ADMIN" && account.role !== "GCA")
             ) {
-              set.status = 403;
+              set.status = 400;
               return "Unauthorized";
             }
           }
@@ -228,7 +228,7 @@ export const usersRouter = new Elysia({ prefix: "/users" })
               !account ||
               (account.role !== "ADMIN" && account.role !== "GCA")
             ) {
-              set.status = 403;
+              set.status = 400;
               return "Unauthorized";
             }
           }
