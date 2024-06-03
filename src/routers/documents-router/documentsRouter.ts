@@ -229,7 +229,7 @@ export const documentsRouter = new Elysia({ prefix: "/documents" })
               return "You are not a GCA";
             }
 
-            //TODO: WIP finish after sync with Simon
+            //TODO: WIP finish when we have enough gcas to justify making this feature
             // updateDocumentKeysSets(userId, body.documents);
 
             if (!document) {
