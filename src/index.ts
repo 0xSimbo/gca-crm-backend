@@ -61,7 +61,13 @@ const app = new Elysia()
         // Update Wallet Rewards For Week checks the merkle tree for the previous week
         // We don't want to update the farm rewards for the current week if a GCA hasn;t submitted the report yet.
         try {
-          await updateWalletRewardsForWeek(weekToQuery);
+          const keepGoing = await updateWalletRewardsForWeek(weekToQuery);
+          if (!keepGoing.keepGoing) {
+            console.log(
+              `Already Updated Wallet Rewards for week ${weekToQuery}`
+            );
+            return;
+          }
           await updateFarmRewardsForWeek({ weekNumber: weekToQuery });
         } catch (error) {
           console.error("Error updating rewards", error);

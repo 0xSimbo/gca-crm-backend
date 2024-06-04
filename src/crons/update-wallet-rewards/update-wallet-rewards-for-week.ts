@@ -1,5 +1,5 @@
 import { db } from "../../db/db";
-import { sql } from "drizzle-orm";
+import { sql, eq } from "drizzle-orm";
 import { getMerkleTreeForWeek } from "../../lib/get-merkletree-for-week";
 import { getRewardsInBucket } from "../../lib/web3-view/get-rewards-in-bucket";
 import { DB_DECIMALS, GLOW_REWARDS_PER_WEEK } from "../../constants";
@@ -7,11 +7,23 @@ import { formatUnits } from "viem";
 import MerkleTree from "merkletreejs";
 import keccak256 from "keccak256";
 import { ethers } from "ethers";
+import { walletWeeklyRewards } from "../../db/schema";
 /**
     Each
 */
-export const updateWalletRewardsForWeek = async (weekNumber: number) => {
+export const updateWalletRewardsForWeek = async (
+  weekNumber: number
+): Promise<{ keepGoing: boolean }> => {
   //We need to get the tree for the (week - 1) since the data in report 21 is of week 20
+  //Find first in db for
+  const existsInCurrentWeek = await db
+    .select()
+    .from(walletWeeklyRewards)
+    .where(eq(walletWeeklyRewards.weekNumber, weekNumber))
+    .limit(1);
+  if (existsInCurrentWeek.length > 0) {
+    return { keepGoing: false };
+  }
   const { merkleTree } = await getMerkleTreeForWeek(weekNumber - 1);
   const leafType = ["address", "uint256", "uint256"];
 
@@ -108,4 +120,5 @@ export const updateWalletRewardsForWeek = async (weekNumber: number) => {
   `);
 
   await db.execute(sqlQuery);
+  return { keepGoing: true };
 };
