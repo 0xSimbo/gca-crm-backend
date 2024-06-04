@@ -1,0 +1,1158 @@
+[
+  {
+    "auditor": "0x2e2771032d119fe590FD65061Ad3B366C8e9B7b9",
+    "auditor_percentage_glow_weight": 0.1,
+    "auditor_percentage_usdc_weight": 0.03,
+    "comments": [
+      "Replaced short id 23 in week 24 because the firmware was not reliable and it had to be reprogrammed to client id 95"
+    ],
+    "glow_weight": 134.049,
+    "payment_tx_hash": "0x01ef9a72905242bb5347acc0f548430ad2551e736735f6e88e574a4a8f36ce10",
+    "payout_wallet": "0x4740dC0846985471b2Ad31D4E72B142d7112279b",
+    "protocol_fee_paid_week": 14,
+    "short_id": 95,
+    "old_short_ids": [23],
+    "status": {
+      "AuditInherited": {
+        "oldFarmId": 23,
+        "originalAuditCompleteWeek": 24,
+        "slotRangeActiveInWeekInherited": [0, 2016],
+        "weekAuditWasInherited": 24
+      }
+    },
+    "timestamp_audited_completed": 1715125737,
+    "weeks_and_slot_ranges_to_invert_power_map": null,
+    "weeks_and_slots_to_invalidate_power_map": null,
+    "carbonCreditsProduced": 0.03488500924217381,
+    "hexlified_public_key": "0xceedc1d9e1552c0c7d8991974060dba85fedbe3b9e0e1a63f382176fef8e50bf",
+    "impactRates": [],
+    "installer_glow_fee_percent": 0.1,
+    "installer_usdg_fee_percent": 0.03,
+    "installer_wallet": "0x2e2771032d119fe590FD65061Ad3B366C8e9B7b9",
+    "payoutWallet": "0x4740dC0846985471b2Ad31D4E72B142d7112279b",
+    "powerOutput": 112.20754,
+    "powerOutputs": [],
+    "protocol_fee": 25737.408000000003,
+    "protocol_fee_payment_hash": "0x01ef9a72905242bb5347acc0f548430ad2551e736735f6e88e574a4a8f36ce10",
+    "rollingImpactPoints": 310.8647883239139,
+    "shortId": 95,
+    "weeklyPayment": 134.049,
+    "weeksAndSlotRangesToInvertPowerMap": null,
+    "weeksAndSlotsToInvalidatePowerMap": null
+  },
+  {
+    "auditor": "0x2e2771032d119fe590FD65061Ad3B366C8e9B7b9",
+    "auditor_percentage_glow_weight": 0.05,
+    "auditor_percentage_usdc_weight": 0.03,
+    "comments": ["Farm 65 and 70 got paid in the same tx hash"],
+    "glow_weight": 95.621,
+    "payment_tx_hash": "0x2a89098df410ce67edcd7b6fedeb5921a44390a390e2e35dfd0dae377b64d495",
+    "payout_wallet": "0xCB0695C5e231D04a36feb07841e26D44e6D08c9d",
+    "protocol_fee_paid_week": 7,
+    "short_id": 70,
+    "status": {
+      "AuditCompleted": {
+        "week": 21
+      }
+    },
+    "timestamp_audited_completed": 1713052800,
+    "weeks_and_slot_ranges_to_invert_power_map": null,
+    "weeks_and_slots_to_invalidate_power_map": {
+      "21": [
+        {
+          "end_slot": 700,
+          "start_slot": 0
+        }
+      ],
+      "22": [
+        {
+          "end_slot": 1092,
+          "start_slot": 992
+        }
+      ]
+    },
+    "carbonCreditsProduced": 0.056463395067683664,
+    "hexlified_public_key": "0x900818d3050a9a9514bcde8d725d1f078b6dc14b20e8b67239144b2d9edfb497",
+    "impactRates": [],
+    "installer_glow_fee_percent": 0.05,
+    "installer_usdg_fee_percent": 0.03,
+    "installer_wallet": "0x2e2771032d119fe590FD65061Ad3B366C8e9B7b9",
+
+    "powerOutput": 126.06449,
+    "powerOutputs": [],
+    "protocol_fee": 18359.232,
+    "protocol_fee_payment_hash": "0x2a89098df410ce67edcd7b6fedeb5921a44390a390e2e35dfd0dae377b64d495",
+    "rollingImpactPoints": 450.92233956196304,
+    "shortId": 70,
+    "weeklyPayment": 95.621,
+    "weeksAndSlotRangesToInvertPowerMap": null,
+    "weeksAndSlotsToInvalidatePowerMap": {
+      "21": [
+        {
+          "end_slot": 700,
+          "start_slot": 0
+        }
+      ],
+      "22": [
+        {
+          "end_slot": 1092,
+          "start_slot": 992
+        }
+      ]
+    }
+  },
+  {
+    "auditor": "0x2e2771032d119fe590FD65061Ad3B366C8e9B7b9",
+    "auditor_percentage_glow_weight": 0.1,
+    "auditor_percentage_usdc_weight": 0.03,
+    "comments": null,
+    "glow_weight": 62.873,
+    "payment_tx_hash": "0x372e45b80c1455334fee2e40b7ce4147e44f34239c35fa419b5ce7331cc37ad7",
+    "payout_wallet": "0x5AfBDc24A4287da5B1cA718110cbC1Ba8E7156de",
+    "protocol_fee_paid_week": 13,
+    "short_id": 80,
+    "old_short_ids": [25],
+    "status": {
+      "AuditInherited": {
+        "oldFarmId": 25,
+        "originalAuditCompleteWeek": 21,
+        "slotRangeActiveInWeekInherited": [1430, 2016],
+        "weekAuditWasInherited": 22
+      }
+    },
+    "weeks_and_slot_ranges_to_invert_power_map": null,
+    "weeks_and_slots_to_invalidate_power_map": {
+      "21": [
+        {
+          "end_slot": 1808,
+          "start_slot": 0
+        }
+      ]
+    },
+    "carbonCreditsProduced": 0.04052535473505562,
+    "hexlified_public_key": "0xb363b5b12927d2bdb83ec3ff8b46b9c804d93b0b061753fea4f30a3ed14ca88f",
+    "impactRates": [],
+    "installer_glow_fee_percent": 0.1,
+    "installer_usdg_fee_percent": 0.03,
+    "installer_wallet": "0x2e2771032d119fe590FD65061Ad3B366C8e9B7b9",
+    "payoutWallet": "0x5AfBDc24A4287da5B1cA718110cbC1Ba8E7156de",
+    "powerOutput": 88.311621,
+    "powerOutputs": [],
+    "protocol_fee": 12071.616,
+    "protocol_fee_payment_hash": "0x372e45b80c1455334fee2e40b7ce4147e44f34239c35fa419b5ce7331cc37ad7",
+    "rollingImpactPoints": 456.6279446885395,
+    "shortId": 80,
+    "timestamp_audited_completed": 1713052800,
+    "weeklyPayment": 62.873,
+    "weeksAndSlotRangesToInvertPowerMap": null,
+    "weeksAndSlotsToInvalidatePowerMap": {
+      "21": [
+        {
+          "end_slot": 1808,
+          "start_slot": 0
+        }
+      ]
+    }
+  },
+  {
+    "auditor": "0x2e2771032d119fe590FD65061Ad3B366C8e9B7b9",
+    "auditor_percentage_glow_weight": 0.1,
+    "auditor_percentage_usdc_weight": 0.03,
+    "comments": null,
+    "glow_weight": 63.799,
+    "payment_tx_hash": "0x82cd98d2da4f4281ca4bed4c95f585a26966fee4fd7aaf43cf9f2f6e81bc2565",
+    "payout_wallet": "0x5345E3f4561058cA116FaD856845e4049b6513e9",
+    "protocol_fee_paid_week": 20,
+    "short_id": 100,
+    "old_short_ids": [55],
+    "status": {
+      "AuditInherited": {
+        "oldFarmId": 55,
+        "originalAuditCompleteWeek": 20,
+        "slotRangeActiveInWeekInherited": [510, 2016],
+        "weekAuditWasInherited": 25
+      }
+    },
+    "weeks_and_slot_ranges_to_invert_power_map": {
+      "21": [
+        {
+          "end_slot": 2016,
+          "start_slot": 1955
+        }
+      ],
+      "22": [
+        {
+          "end_slot": 1346,
+          "start_slot": 0
+        }
+      ]
+    },
+    "weeks_and_slots_to_invalidate_power_map": {
+      "20": [
+        {
+          "end_slot": 2016,
+          "start_slot": 0
+        }
+      ]
+    },
+    "carbonCreditsProduced": 0,
+    "hexlified_public_key": "0x377a98e315228c22e8fefe7509c5070eb70600e3564bc8a0c0db4983cdbe19ab",
+    "impactRates": [],
+    "installer_glow_fee_percent": 0.1,
+    "installer_usdg_fee_percent": 0.03,
+    "installer_wallet": "0x2e2771032d119fe590FD65061Ad3B366C8e9B7b9",
+    "payoutWallet": "0x5345E3f4561058cA116FaD856845e4049b6513e9",
+    "powerOutput": 0,
+    "powerOutputs": [],
+    "protocol_fee": 12249.408,
+    "protocol_fee_payment_hash": "0x82cd98d2da4f4281ca4bed4c95f585a26966fee4fd7aaf43cf9f2f6e81bc2565",
+    "rollingImpactPoints": 454.3559162523743,
+    "shortId": 100,
+    "timestamp_audited_completed": 1712448000,
+    "weeklyPayment": 63.799,
+    "weeksAndSlotRangesToInvertPowerMap": {
+      "21": [
+        {
+          "end_slot": 2016,
+          "start_slot": 1955
+        }
+      ],
+      "22": [
+        {
+          "end_slot": 1346,
+          "start_slot": 0
+        }
+      ]
+    },
+    "weeksAndSlotsToInvalidatePowerMap": {
+      "20": [
+        {
+          "end_slot": 2016,
+          "start_slot": 0
+        }
+      ]
+    }
+  },
+  {
+    "auditor": "0x2e2771032d119fe590FD65061Ad3B366C8e9B7b9",
+    "auditor_percentage_glow_weight": 0.1,
+    "auditor_percentage_usdc_weight": 0.03,
+    "comments": null,
+    "glow_weight": 82.781,
+    "payment_tx_hash": "0x1f43b14c8d49a377ce3bc70447033e9e4e4efe164b8f54575c56b16f7a23f882",
+    "payout_wallet": "0x66CD48DDec669942deA2dF87a896B4FD8e3abc8D",
+    "protocol_fee_paid_week": 17,
+    "short_id": 26,
+    "status": {
+      "AuditCompleted": {
+        "week": 19
+      }
+    },
+    "weeks_and_slot_ranges_to_invert_power_map": null,
+    "weeks_and_slots_to_invalidate_power_map": null,
+    "carbonCreditsProduced": 0.04149875367618614,
+    "hexlified_public_key": "0xa12b8b72b7315344cf92113bc9a4b697a49b72d18fd249e0ffd4264445f37bbf",
+    "impactRates": [],
+    "installer_glow_fee_percent": 0.1,
+    "installer_usdg_fee_percent": 0.03,
+    "installer_wallet": "0x2e2771032d119fe590FD65061Ad3B366C8e9B7b9",
+    "payoutWallet": "0x66CD48DDec669942deA2dF87a896B4FD8e3abc8D",
+    "powerOutput": 90.101438,
+    "powerOutputs": [],
+    "protocol_fee": 15893.952000000001,
+    "protocol_fee_payment_hash": "0x1f43b14c8d49a377ce3bc70447033e9e4e4efe164b8f54575c56b16f7a23f882",
+    "rollingImpactPoints": 456.74413609601277,
+    "shortId": 26,
+    "timestamp_audited_completed": 1711843200,
+    "weeklyPayment": 82.781,
+    "weeksAndSlotRangesToInvertPowerMap": null,
+    "weeksAndSlotsToInvalidatePowerMap": null
+  },
+  {
+    "auditor": "0x2e2771032d119fe590FD65061Ad3B366C8e9B7b9",
+    "auditor_percentage_glow_weight": 0.1,
+    "auditor_percentage_usdc_weight": 0.03,
+    "comments": null,
+    "glow_weight": 194.57770833333333,
+    "payment_tx_hash": "0xf543e662bab5d0c1879d497dad4a643257dacb2278c1d11fdf0830e555c3c9c0",
+    "payout_wallet": "0xc7Bdb81B44aC069C6Ae22327E8742e769a7A9F50",
+    "protocol_fee_paid_week": 12,
+    "short_id": 110,
+    "status": {
+      "AuditCompleted": {
+        "week": 26
+      }
+    },
+    "weeks_and_slot_ranges_to_invert_power_map": {
+      "26": [
+        {
+          "end_slot": 1975,
+          "start_slot": 844
+        }
+      ]
+    },
+    "weeks_and_slots_to_invalidate_power_map": null,
+    "carbonCreditsProduced": 0.03668627139826557,
+    "hexlified_public_key": "0x2ec3a847866765a2cd24d8cdcc1448dc4ac8c7b88933e1f2622a9ddfe6644972",
+    "impactRates": [],
+    "installer_glow_fee_percent": 0.1,
+    "installer_usdg_fee_percent": 0.03,
+    "installer_wallet": "0x2e2771032d119fe590FD65061Ad3B366C8e9B7b9",
+    "payoutWallet": "0xc7Bdb81B44aC069C6Ae22327E8742e769a7A9F50",
+    "powerOutput": 79.107555,
+    "powerOutputs": [],
+    "protocol_fee": 37358.92,
+    "protocol_fee_payment_hash": "0xf543e662bab5d0c1879d497dad4a643257dacb2278c1d11fdf0830e555c3c9c0",
+    "rollingImpactPoints": 457.29774222182476,
+    "shortId": 110,
+    "timestamp_audited_completed": 1716400163,
+    "weeklyPayment": 194.57770833333333,
+    "weeksAndSlotRangesToInvertPowerMap": {
+      "26": [
+        {
+          "end_slot": 1975,
+          "start_slot": 844
+        }
+      ]
+    },
+    "weeksAndSlotsToInvalidatePowerMap": null
+  },
+  {
+    "auditor": "0x2e2771032d119fe590FD65061Ad3B366C8e9B7b9",
+    "auditor_percentage_glow_weight": 0.1,
+    "auditor_percentage_usdc_weight": 0.03,
+    "comments": [
+      "Firmware was updated at timestamp 1714440693, which is week 23, slot 885. Outputs on week 22 and 23 are invalid"
+    ],
+    "glow_weight": 110.65,
+    "payment_tx_hash": "0xcc325e8896454ba79701e16eacdb0f9910d6a660c38bfef7e7361134eda754c8",
+    "payout_wallet": "0x88266CE39E97128B6eD8c5F2E912AA2C95d8e72A",
+    "protocol_fee_paid_week": 23,
+    "short_id": 75,
+    "status": {
+      "AuditCompleted": {
+        "week": 23
+      }
+    },
+    "weeks_and_slot_ranges_to_invert_power_map": {
+      "23": [
+        {
+          "end_slot": 1034,
+          "start_slot": 0
+        }
+      ]
+    },
+    "weeks_and_slots_to_invalidate_power_map": {
+      "22": [
+        {
+          "end_slot": 2016,
+          "start_slot": 0
+        }
+      ],
+      "23": [
+        {
+          "end_slot": 594,
+          "start_slot": 0
+        }
+      ],
+      "27": [
+        {
+          "end_slot": 520,
+          "start_slot": 491
+        }
+      ]
+    },
+    "carbonCreditsProduced": 0.04955759480909669,
+    "hexlified_public_key": "0xd05549b62a1aa2f462d8c33689c7e011e69ef147e44733f9cab0d292bb169f40",
+    "impactRates": [],
+    "installer_glow_fee_percent": 0.1,
+    "installer_usdg_fee_percent": 0.03,
+    "installer_wallet": "0x2e2771032d119fe590FD65061Ad3B366C8e9B7b9",
+    "payoutWallet": "0x88266CE39E97128B6eD8c5F2E912AA2C95d8e72A",
+    "powerOutput": 106.866549,
+    "powerOutputs": [],
+    "protocol_fee": 21244.800000000003,
+    "protocol_fee_payment_hash": "0xcc325e8896454ba79701e16eacdb0f9910d6a660c38bfef7e7361134eda754c8",
+    "rollingImpactPoints": 456.92539333058534,
+    "shortId": 75,
+    "timestamp_audited_completed": 1714377120,
+    "weeklyPayment": 110.65,
+    "weeksAndSlotRangesToInvertPowerMap": {
+      "23": [
+        {
+          "end_slot": 1034,
+          "start_slot": 0
+        }
+      ]
+    },
+    "weeksAndSlotsToInvalidatePowerMap": {
+      "22": [
+        {
+          "end_slot": 2016,
+          "start_slot": 0
+        }
+      ],
+      "23": [
+        {
+          "end_slot": 594,
+          "start_slot": 0
+        }
+      ],
+      "27": [
+        {
+          "end_slot": 520,
+          "start_slot": 491
+        }
+      ]
+    }
+  },
+  {
+    "auditor": "0x016025c4c4C4B2885bb07583921E60EF6341aA91",
+    "auditor_percentage_glow_weight": 0.5,
+    "auditor_percentage_usdc_weight": 0.5,
+    "comments": null,
+    "glow_weight": 30.899,
+    "payment_tx_hash": "0x11f6a53c2733b0fc49088f694d858dbcc6dec5f91ac3fd047de8e29d2030bdaf",
+    "payout_wallet": "0x41b2CB3aDd173f17c22b4c6201F0FB68fBeDc16F",
+    "protocol_fee_paid_week": 20,
+    "short_id": 60,
+    "status": {
+      "AuditCompleted": {
+        "week": 20
+      }
+    },
+    "weeks_and_slot_ranges_to_invert_power_map": null,
+    "weeks_and_slots_to_invalidate_power_map": {
+      "20": [
+        {
+          "end_slot": 2016,
+          "start_slot": 0
+        }
+      ]
+    },
+    "carbonCreditsProduced": 0.009166269355048905,
+    "hexlified_public_key": "0x0266517a949ff80ac4268d353e63e3de5f9d31d0984cfb0bc0089249b8c4aac8",
+    "impactRates": [],
+    "installer_glow_fee_percent": 0.5,
+    "installer_usdg_fee_percent": 0.5,
+    "installer_wallet": "0x016025c4c4C4B2885bb07583921E60EF6341aA91",
+    "payoutWallet": "0x41b2CB3aDd173f17c22b4c6201F0FB68fBeDc16F",
+    "powerOutput": 28.986805,
+    "powerOutputs": [],
+    "protocol_fee": 5932.608,
+    "protocol_fee_payment_hash": "0x11f6a53c2733b0fc49088f694d858dbcc6dec5f91ac3fd047de8e29d2030bdaf",
+    "rollingImpactPoints": 312.62127168405976,
+    "shortId": 60,
+    "timestamp_audited_completed": 1712448000,
+    "weeklyPayment": 30.899,
+    "weeksAndSlotRangesToInvertPowerMap": null,
+    "weeksAndSlotsToInvalidatePowerMap": {
+      "20": [
+        {
+          "end_slot": 2016,
+          "start_slot": 0
+        }
+      ]
+    }
+  },
+  {
+    "auditor": "0x2e2771032d119fe590FD65061Ad3B366C8e9B7b9",
+    "auditor_percentage_glow_weight": 0.1,
+    "auditor_percentage_usdc_weight": 0.03,
+    "comments": null,
+    "glow_weight": 35.256,
+    "payment_tx_hash": "0xe4bc4545854e8155a4a21eb4fad5588fe9f81171609334fefbf4b6dea8cf5985",
+    "payout_wallet": "0x246879aCEBd1C80267bC328178DbC8bf230Bb9D0",
+    "protocol_fee_paid_week": 13,
+    "short_id": 28,
+    "status": {
+      "AuditCompleted": {
+        "week": 21
+      }
+    },
+    "weeks_and_slot_ranges_to_invert_power_map": null,
+    "weeks_and_slots_to_invalidate_power_map": {
+      "20": [
+        {
+          "end_slot": 2016,
+          "start_slot": 0
+        }
+      ],
+      "21": [
+        {
+          "end_slot": 1808,
+          "start_slot": 0
+        }
+      ]
+    },
+    "carbonCreditsProduced": 0.012847185526699549,
+    "hexlified_public_key": "0x4b152d5968166c634fda67fddeb643985b96fa9d6ae688eb838f8ed619bf2764",
+    "impactRates": [],
+    "installer_glow_fee_percent": 0.1,
+    "installer_usdg_fee_percent": 0.03,
+    "installer_wallet": "0x2e2771032d119fe590FD65061Ad3B366C8e9B7b9",
+    "payoutWallet": "0x246879aCEBd1C80267bC328178DbC8bf230Bb9D0",
+    "powerOutput": 27.749164,
+    "powerOutputs": [],
+    "protocol_fee": 6769.152,
+    "protocol_fee_payment_hash": "0xe4bc4545854e8155a4a21eb4fad5588fe9f81171609334fefbf4b6dea8cf5985",
+    "rollingImpactPoints": 456.4061783174581,
+    "shortId": 28,
+    "timestamp_audited_completed": 1713052800,
+    "weeklyPayment": 35.256,
+    "weeksAndSlotRangesToInvertPowerMap": null,
+    "weeksAndSlotsToInvalidatePowerMap": {
+      "20": [
+        {
+          "end_slot": 2016,
+          "start_slot": 0
+        }
+      ],
+      "21": [
+        {
+          "end_slot": 1808,
+          "start_slot": 0
+        }
+      ]
+    }
+  },
+  {
+    "auditor": "0x2e2771032d119fe590FD65061Ad3B366C8e9B7b9",
+    "auditor_percentage_glow_weight": 0.1,
+    "auditor_percentage_usdc_weight": 0.03,
+    "comments": null,
+    "glow_weight": 123.68,
+    "payment_tx_hash": "0x6e0b74176968bd8cf3b35e8b2640722b3a22d42e5c2b1501312a4a9fec820ea4",
+    "payout_wallet": "0xd8cf559B95E51F0aCc97CFE56DA61fe37178DDC9",
+    "protocol_fee_paid_week": 11,
+    "short_id": 27,
+    "status": {
+      "AuditCompleted": {
+        "week": 19
+      }
+    },
+    "weeks_and_slot_ranges_to_invert_power_map": null,
+    "weeks_and_slots_to_invalidate_power_map": {
+      "22": [
+        {
+          "end_slot": 1074,
+          "start_slot": 1018
+        }
+      ]
+    },
+    "carbonCreditsProduced": 0.09221460940721722,
+    "hexlified_public_key": "0x48e8729233008cce25f46bb55e6284000127dc6490022cb54f7e0a9a2d9b0f2b",
+    "impactRates": [],
+    "installer_glow_fee_percent": 0.1,
+    "installer_usdg_fee_percent": 0.03,
+    "installer_wallet": "0x2e2771032d119fe590FD65061Ad3B366C8e9B7b9",
+    "payoutWallet": "0xd8cf559B95E51F0aCc97CFE56DA61fe37178DDC9",
+    "powerOutput": 200.420883,
+    "powerOutputs": [],
+    "protocol_fee": 23746.56,
+    "protocol_fee_payment_hash": "0x6e0b74176968bd8cf3b35e8b2640722b3a22d42e5c2b1501312a4a9fec820ea4",
+    "rollingImpactPoints": 456.9107141094135,
+    "shortId": 27,
+    "timestamp_audited_completed": 1711843200,
+    "weeklyPayment": 123.68,
+    "weeksAndSlotRangesToInvertPowerMap": null,
+    "weeksAndSlotsToInvalidatePowerMap": {
+      "22": [
+        {
+          "end_slot": 1074,
+          "start_slot": 1018
+        }
+      ]
+    }
+  },
+  {
+    "auditor": "0x2e2771032d119fe590FD65061Ad3B366C8e9B7b9",
+    "auditor_percentage_glow_weight": 0.05,
+    "auditor_percentage_usdc_weight": 0.03,
+    "comments": ["Farm 65 and 70 got paid in the same tx hash"],
+    "glow_weight": 95.621,
+    "payment_tx_hash": "0x2a89098df410ce67edcd7b6fedeb5921a44390a390e2e35dfd0dae377b64d495",
+    "payout_wallet": "0xCB0695C5e231D04a36feb07841e26D44e6D08c9d",
+    "protocol_fee_paid_week": 6,
+    "short_id": 65,
+    "status": {
+      "AuditCompleted": {
+        "week": 21
+      }
+    },
+    "weeks_and_slot_ranges_to_invert_power_map": {
+      "21": [
+        {
+          "end_slot": 1848,
+          "start_slot": 1560
+        }
+      ]
+    },
+    "weeks_and_slots_to_invalidate_power_map": {
+      "21": [
+        {
+          "end_slot": 1560,
+          "start_slot": 0
+        }
+      ],
+      "22": [
+        {
+          "end_slot": 1148,
+          "start_slot": 990
+        }
+      ]
+    },
+    "carbonCreditsProduced": 0.04220219224486938,
+    "hexlified_public_key": "0xe5471d140f70c8b43da885ad9ec2460d030c11b0c5fd593da73af8dc6d8ca26a",
+    "impactRates": [],
+    "installer_glow_fee_percent": 0.05,
+    "installer_usdg_fee_percent": 0.03,
+    "installer_wallet": "0x2e2771032d119fe590FD65061Ad3B366C8e9B7b9",
+    "payoutWallet": "0xCB0695C5e231D04a36feb07841e26D44e6D08c9d",
+    "powerOutput": 94.205025,
+    "powerOutputs": [],
+    "protocol_fee": 18359.232,
+    "protocol_fee_payment_hash": "0x2a89098df410ce67edcd7b6fedeb5921a44390a390e2e35dfd0dae377b64d495",
+    "rollingImpactPoints": 450.99539911113345,
+    "shortId": 65,
+    "timestamp_audited_completed": 1713052800,
+    "weeklyPayment": 95.621,
+    "weeksAndSlotRangesToInvertPowerMap": {
+      "21": [
+        {
+          "end_slot": 1848,
+          "start_slot": 1560
+        }
+      ]
+    },
+    "weeksAndSlotsToInvalidatePowerMap": {
+      "21": [
+        {
+          "end_slot": 1560,
+          "start_slot": 0
+        }
+      ],
+      "22": [
+        {
+          "end_slot": 1148,
+          "start_slot": 990
+        }
+      ]
+    }
+  },
+  {
+    "auditor": "0x2e2771032d119fe590FD65061Ad3B366C8e9B7b9",
+    "auditor_percentage_glow_weight": 0.05,
+    "auditor_percentage_usdc_weight": 0.0,
+    "comments": null,
+    "glow_weight": 333.395,
+    "payment_tx_hash": "0x50f86dbe5662cf529dbb4f47d6119f35948efcd0299915df95aa7d5b8fbcef88",
+    "payout_wallet": "0x005679cae803224443c7f96440a175eff6de003a",
+    "protocol_fee_paid_week": 25,
+    "short_id": 105,
+    "status": {
+      "AuditCompleted": {
+        "week": 25
+      }
+    },
+    "weeks_and_slot_ranges_to_invert_power_map": {
+      "25": [
+        {
+          "end_slot": 846,
+          "start_slot": 808
+        }
+      ],
+      "27": [
+        {
+          "end_slot": 447,
+          "start_slot": 122
+        }
+      ]
+    },
+    "weeks_and_slots_to_invalidate_power_map": null,
+    "carbonCreditsProduced": 0.06497248965030598,
+    "hexlified_public_key": "0xdc562f79319c6a5b8960a501a6e5ee90c434e5cb0da28f0f8eb2d0c869db1cc6",
+    "impactRates": [],
+    "installer_glow_fee_percent": 0.05,
+    "installer_usdg_fee_percent": 0,
+    "installer_wallet": "0x2e2771032d119fe590FD65061Ad3B366C8e9B7b9",
+    "payoutWallet": "0x005679cae803224443c7f96440a175eff6de003a",
+    "powerOutput": 193.428,
+    "powerOutputs": [],
+    "protocol_fee": 64011.84,
+    "protocol_fee_payment_hash": "0x50f86dbe5662cf529dbb4f47d6119f35948efcd0299915df95aa7d5b8fbcef88",
+    "rollingImpactPoints": 338.0742229619434,
+    "shortId": 105,
+    "timestamp_audited_completed": 1715800682,
+    "weeklyPayment": 333.395,
+    "weeksAndSlotRangesToInvertPowerMap": {
+      "25": [
+        {
+          "end_slot": 846,
+          "start_slot": 808
+        }
+      ],
+      "27": [
+        {
+          "end_slot": 447,
+          "start_slot": 122
+        }
+      ]
+    },
+    "weeksAndSlotsToInvalidatePowerMap": null
+  },
+  {
+    "auditor": "0x2e2771032d119fe590FD65061Ad3B366C8e9B7b9",
+    "auditor_percentage_glow_weight": 0.1,
+    "auditor_percentage_usdc_weight": 0.03,
+    "comments": null,
+    "glow_weight": 128.595,
+    "payment_tx_hash": "0x4fca6952f83f166c9643f4e614b9a4694c0e2a98c252fd106776a5bef612e7dc",
+    "payout_wallet": "0x77f41144E787CB8Cd29A37413A71F53f92ee050C",
+    "protocol_fee_paid_week": 23,
+    "short_id": 90,
+    "status": {
+      "AuditCompleted": {
+        "week": 24
+      }
+    },
+    "weeks_and_slot_ranges_to_invert_power_map": null,
+    "weeks_and_slots_to_invalidate_power_map": null,
+    "carbonCreditsProduced": 0.028226405444468177,
+    "hexlified_public_key": "0x46027fb50964069e837b42604935f11061d2ada9c5d1e5bc435b4827e6de17d8",
+    "impactRates": [],
+    "installer_glow_fee_percent": 0.1,
+    "installer_usdg_fee_percent": 0.03,
+    "installer_wallet": "0x2e2771032d119fe590FD65061Ad3B366C8e9B7b9",
+    "payoutWallet": "0x77f41144E787CB8Cd29A37413A71F53f92ee050C",
+    "powerOutput": 106.560352,
+    "powerOutputs": [],
+    "protocol_fee": 24690.239999999998,
+    "protocol_fee_payment_hash": "0x4fca6952f83f166c9643f4e614b9a4694c0e2a98c252fd106776a5bef612e7dc",
+    "rollingImpactPoints": 264.9152217071233,
+    "shortId": 90,
+    "timestamp_audited_completed": 1715022089,
+    "weeklyPayment": 128.595,
+    "weeksAndSlotRangesToInvertPowerMap": null,
+    "weeksAndSlotsToInvalidatePowerMap": null
+  },
+  {
+    "auditor": "0x2e2771032d119fe590FD65061Ad3B366C8e9B7b9",
+    "auditor_percentage_glow_weight": 0.1,
+    "auditor_percentage_usdc_weight": 0.03,
+    "comments": null,
+    "glow_weight": 51.63348958333333,
+    "payment_tx_hash": "0x3f0d79995faf837550eff1a09f6aee854228247183c181db4139055451676e8b",
+    "payout_wallet": "0x6F0D28e78F45122f829Be51D4b39b8566245Ccda",
+    "protocol_fee_paid_week": 26,
+    "short_id": 120,
+    "status": {
+      "AuditCompleted": {
+        "week": 26
+      }
+    },
+    "weeks_and_slot_ranges_to_invert_power_map": {
+      "26": [
+        {
+          "end_slot": 1757,
+          "start_slot": 1052
+        }
+      ]
+    },
+    "weeks_and_slots_to_invalidate_power_map": null,
+    "carbonCreditsProduced": 0.01297153747166875,
+    "hexlified_public_key": "0xaa20dbe7dfec2489de5bb156a1a7efd036adba3722c96ac761c8648a82ba21bd",
+    "impactRates": [],
+    "installer_glow_fee_percent": 0.1,
+    "installer_usdg_fee_percent": 0.03,
+    "installer_wallet": "0x2e2771032d119fe590FD65061Ad3B366C8e9B7b9",
+    "payoutWallet": "0x6F0D28e78F45122f829Be51D4b39b8566245Ccda",
+    "powerOutput": 27.978325,
+    "powerOutputs": [],
+    "protocol_fee": 9913.63,
+    "protocol_fee_payment_hash": "0x3f0d79995faf837550eff1a09f6aee854228247183c181db4139055451676e8b",
+    "rollingImpactPoints": 457.24455568132964,
+    "shortId": 120,
+    "timestamp_audited_completed": 1716560746,
+    "weeklyPayment": 51.63348958333333,
+    "weeksAndSlotRangesToInvertPowerMap": {
+      "26": [
+        {
+          "end_slot": 1757,
+          "start_slot": 1052
+        }
+      ]
+    },
+    "weeksAndSlotsToInvalidatePowerMap": null
+  },
+  {
+    "auditor": "0x2e2771032d119fe590FD65061Ad3B366C8e9B7b9",
+    "auditor_percentage_glow_weight": 0.1,
+    "auditor_percentage_usdc_weight": 0.03,
+    "comments": [
+      "Firmware was updated at timestamp 1714440693, which is week 23, slot 885. Outputs on week 22 and 23 are invalid"
+    ],
+    "glow_weight": 104.839,
+    "payment_tx_hash": "0x76c57e74962ce90cb8e7ec14d13280113659a9f3056792cc9f4180105e9a77d4",
+    "payout_wallet": "0x0Bf577194d261ADA9B69e0726DAa65fB8d8d1Bf8",
+    "protocol_fee_paid_week": 11,
+    "short_id": 85,
+    "status": {
+      "AuditCompleted": {
+        "week": 22
+      }
+    },
+    "weeks_and_slot_ranges_to_invert_power_map": null,
+    "weeks_and_slots_to_invalidate_power_map": {
+      "22": [
+        {
+          "end_slot": 2016,
+          "start_slot": 0
+        }
+      ],
+      "23": [
+        {
+          "end_slot": 594,
+          "start_slot": 0
+        }
+      ]
+    },
+    "carbonCreditsProduced": 0.025954735340743045,
+    "hexlified_public_key": "0xd1984eeb3c7771b3ac7e762cf46659da7b4462685273cece1ba9e0f779e4595a",
+    "impactRates": [],
+    "installer_glow_fee_percent": 0.1,
+    "installer_usdg_fee_percent": 0.03,
+    "installer_wallet": "0x2e2771032d119fe590FD65061Ad3B366C8e9B7b9",
+    "payoutWallet": "0x0Bf577194d261ADA9B69e0726DAa65fB8d8d1Bf8",
+    "powerOutput": 104.242918,
+    "powerOutputs": [],
+    "protocol_fee": 20129.088,
+    "protocol_fee_payment_hash": "0x76c57e74962ce90cb8e7ec14d13280113659a9f3056792cc9f4180105e9a77d4",
+    "rollingImpactPoints": 227.9616567937791,
+    "shortId": 85,
+    "timestamp_audited_completed": 1714167835,
+    "weeklyPayment": 104.839,
+    "weeksAndSlotRangesToInvertPowerMap": null,
+    "weeksAndSlotsToInvalidatePowerMap": {
+      "22": [
+        {
+          "end_slot": 2016,
+          "start_slot": 0
+        }
+      ],
+      "23": [
+        {
+          "end_slot": 594,
+          "start_slot": 0
+        }
+      ]
+    }
+  },
+  {
+    "auditor": "0x2e2771032d119fe590FD65061Ad3B366C8e9B7b9",
+    "auditor_percentage_glow_weight": 0.1,
+    "auditor_percentage_usdc_weight": 0.03,
+    "comments": null,
+    "glow_weight": 43.747760416666665,
+    "payment_tx_hash": "0x1c145b879170c42b4f62390bd8d4581e29d2323ef62f928cfd717d34e7ba3586",
+    "payout_wallet": "0xB3C2a4ce7ce57A74371b7E3dAE8f3393229c2aaC",
+    "protocol_fee_paid_week": 27,
+    "short_id": 130,
+    "status": {
+      "AuditCompleted": {
+        "week": 27
+      }
+    },
+    "weeks_and_slot_ranges_to_invert_power_map": null,
+    "weeks_and_slots_to_invalidate_power_map": null,
+    "carbonCreditsProduced": 0.011005992146901943,
+    "hexlified_public_key": "0xcdd1bd9a5f82dfe76e5b7eb0907decd10896719870a1c14a51488df0e363b3ff",
+    "impactRates": [],
+    "installer_glow_fee_percent": 0.1,
+    "installer_usdg_fee_percent": 0.03,
+    "installer_wallet": "0x2e2771032d119fe590FD65061Ad3B366C8e9B7b9",
+    "payoutWallet": "0xB3C2a4ce7ce57A74371b7E3dAE8f3393229c2aaC",
+    "powerOutput": 43.969418,
+    "powerOutputs": [],
+    "protocol_fee": 8399.57,
+    "protocol_fee_payment_hash": "0x1c145b879170c42b4f62390bd8d4581e29d2323ef62f928cfd717d34e7ba3586",
+    "rollingImpactPoints": 235.29313725974654,
+    "shortId": 130,
+    "timestamp_audited_completed": 1717164000,
+    "weeklyPayment": 43.747760416666665,
+    "weeksAndSlotRangesToInvertPowerMap": null,
+    "weeksAndSlotsToInvalidatePowerMap": null
+  },
+  {
+    "auditor": "0x2e2771032d119fe590FD65061Ad3B366C8e9B7b9",
+    "auditor_percentage_glow_weight": 0.05,
+    "auditor_percentage_usdc_weight": 0.03,
+    "comments": null,
+    "glow_weight": 68.504,
+    "payment_tx_hash": "0x0d97f11d9eec2a20ef165360cb6be8873fdff85804c0c97ac2497de6023659d0",
+    "payout_wallet": "0xCB0695C5e231D04a36feb07841e26D44e6D08c9d",
+    "protocol_fee_paid_week": 7,
+    "short_id": 20,
+    "status": {
+      "AuditCompleted": {
+        "week": 19
+      }
+    },
+    "weeks_and_slot_ranges_to_invert_power_map": null,
+    "weeks_and_slots_to_invalidate_power_map": null,
+    "carbonCreditsProduced": 0.017121890209443404,
+    "hexlified_public_key": "0x1db6aa004aec98b202feb7448199c3b909203fb53f9afe94008e96f7d61bee4f",
+    "impactRates": [],
+    "installer_glow_fee_percent": 0.05,
+    "installer_usdg_fee_percent": 0.03,
+    "installer_wallet": "0x2e2771032d119fe590FD65061Ad3B366C8e9B7b9",
+    "payoutWallet": "0xCB0695C5e231D04a36feb07841e26D44e6D08c9d",
+    "powerOutput": 37.148878,
+    "powerOutputs": [],
+    "protocol_fee": 13152.768,
+    "protocol_fee_payment_hash": "0x0d97f11d9eec2a20ef165360cb6be8873fdff85804c0c97ac2497de6023659d0",
+    "rollingImpactPoints": 455.92841416662765,
+    "shortId": 20,
+    "timestamp_audited_completed": 1711843200,
+    "weeklyPayment": 68.504,
+    "weeksAndSlotRangesToInvertPowerMap": null,
+    "weeksAndSlotsToInvalidatePowerMap": null
+  },
+  {
+    "auditor": "0x2e2771032d119fe590FD65061Ad3B366C8e9B7b9",
+    "auditor_percentage_glow_weight": 0.1,
+    "auditor_percentage_usdc_weight": 0.03,
+    "comments": ["Was farm 27 and then farm 37 due to gca server updates"],
+    "glow_weight": 67.21,
+    "payment_tx_hash": "0xd30a63812d7864a7df4aae31d2daa1c1a231e06f2b01bfacef346697ec709040",
+    "payout_wallet": "0xdC71a1BDEaBd3c347dc21e9354aFf91ad375EB97",
+    "protocol_fee_paid_week": 16,
+    "short_id": 50,
+    "status": {
+      "AuditCompleted": {
+        "week": 21
+      }
+    },
+    "weeks_and_slot_ranges_to_invert_power_map": {
+      "21": [
+        {
+          "end_slot": 1856,
+          "start_slot": 0
+        },
+        {
+          "end_slot": 2016,
+          "start_slot": 1956
+        }
+      ],
+      "22": [
+        {
+          "end_slot": 1002,
+          "start_slot": 0
+        }
+      ]
+    },
+    "weeks_and_slots_to_invalidate_power_map": {
+      "21": [
+        {
+          "end_slot": 700,
+          "start_slot": 0
+        }
+      ]
+    },
+    "carbonCreditsProduced": 0.014979556161864185,
+    "hexlified_public_key": "0xcca99db39baf554d3dc147824be7011c11f64f12164383b1623560cfa1e99a33",
+    "impactRates": [],
+    "installer_glow_fee_percent": 0.1,
+    "installer_usdg_fee_percent": 0.03,
+    "installer_wallet": "0x2e2771032d119fe590FD65061Ad3B366C8e9B7b9",
+    "payoutWallet": "0xdC71a1BDEaBd3c347dc21e9354aFf91ad375EB97",
+    "powerOutput": 35.198747,
+    "powerOutputs": [],
+    "protocol_fee": 12904.32,
+    "protocol_fee_payment_hash": "0xd30a63812d7864a7df4aae31d2daa1c1a231e06f2b01bfacef346697ec709040",
+    "rollingImpactPoints": 424.79895529743715,
+    "shortId": 50,
+    "timestamp_audited_completed": 1713052800,
+    "weeklyPayment": 67.21,
+    "weeksAndSlotRangesToInvertPowerMap": {
+      "21": [
+        {
+          "end_slot": 1856,
+          "start_slot": 0
+        },
+        {
+          "end_slot": 2016,
+          "start_slot": 1956
+        }
+      ],
+      "22": [
+        {
+          "end_slot": 1002,
+          "start_slot": 0
+        }
+      ]
+    },
+    "weeksAndSlotsToInvalidatePowerMap": {
+      "21": [
+        {
+          "end_slot": 700,
+          "start_slot": 0
+        }
+      ]
+    }
+  },
+  {
+    "auditor": "0x2e2771032d119fe590FD65061Ad3B366C8e9B7b9",
+    "auditor_percentage_glow_weight": 0.1,
+    "auditor_percentage_usdc_weight": 0.03,
+    "comments": null,
+    "glow_weight": 175.426,
+    "payment_tx_hash": "0xe315c718d0f01427d6e3c8c0beaf39cc10350edcbd632ad218abf52236d1a4b4",
+    "payout_wallet": "0x77f41144E787CB8Cd29A37413A71F53f92ee050C",
+    "protocol_fee_paid_week": 23,
+    "short_id": 19,
+    "status": {
+      "AuditCompleted": {
+        "week": 24
+      }
+    },
+    "weeks_and_slot_ranges_to_invert_power_map": null,
+    "weeks_and_slots_to_invalidate_power_map": null,
+    "carbonCreditsProduced": 0.052906427617524794,
+    "hexlified_public_key": "0xc42c83c92e2dbd7fbaf2641bebd7a0f5bda96f8eecc014e33006205091c6d6e8",
+    "impactRates": [],
+    "installer_glow_fee_percent": 0.1,
+    "installer_usdg_fee_percent": 0.03,
+    "installer_wallet": "0x2e2771032d119fe590FD65061Ad3B366C8e9B7b9",
+    "payoutWallet": "0x77f41144E787CB8Cd29A37413A71F53f92ee050C",
+    "powerOutput": 201.837262,
+    "powerOutputs": [],
+    "protocol_fee": 33681.792,
+    "protocol_fee_payment_hash": "0xe315c718d0f01427d6e3c8c0beaf39cc10350edcbd632ad218abf52236d1a4b4",
+    "rollingImpactPoints": 262.12234143412195,
+    "shortId": 19,
+    "timestamp_audited_completed": 1715022089,
+    "weeklyPayment": 175.426,
+    "weeksAndSlotRangesToInvertPowerMap": null,
+    "weeksAndSlotsToInvalidatePowerMap": null
+  },
+  {
+    "auditor": "0x2e2771032d119fe590FD65061Ad3B366C8e9B7b9",
+    "auditor_percentage_glow_weight": 0.1,
+    "auditor_percentage_usdc_weight": 0.03,
+    "comments": null,
+    "glow_weight": 78.74270833333334,
+    "payment_tx_hash": "0x8ef53c79e06f604094224f04f767e5387219def9eed09b992333c58e555a4d4c",
+    "payout_wallet": "0xfE2418A132C585850cc15e18a03eB2A32bA14C84",
+    "protocol_fee_paid_week": 27,
+    "short_id": 125,
+    "status": {
+      "AuditCompleted": {
+        "week": 27
+      }
+    },
+    "weeks_and_slot_ranges_to_invert_power_map": null,
+    "weeks_and_slots_to_invalidate_power_map": null,
+    "carbonCreditsProduced": 0.033716579628633045,
+    "hexlified_public_key": "0x2f6862c40d6f8c6d53ca3461abcaedfce716d5b1ad0ee70842bbd36d09d9c86a",
+    "impactRates": [],
+    "installer_glow_fee_percent": 0.1,
+    "installer_usdg_fee_percent": 0.03,
+    "installer_wallet": "0x2e2771032d119fe590FD65061Ad3B366C8e9B7b9",
+    "payoutWallet": "0xfE2418A132C585850cc15e18a03eB2A32bA14C84",
+    "powerOutput": 72.65774,
+    "powerOutputs": [],
+    "protocol_fee": 15118.600000000002,
+    "protocol_fee_payment_hash": "0x8ef53c79e06f604094224f04f767e5387219def9eed09b992333c58e555a4d4c",
+    "rollingImpactPoints": 457.1217208577847,
+    "shortId": 125,
+    "timestamp_audited_completed": 1717164000,
+    "weeklyPayment": 78.74270833333334,
+    "weeksAndSlotRangesToInvertPowerMap": null,
+    "weeksAndSlotsToInvalidatePowerMap": null
+  },
+  {
+    "auditor": "0x2e2771032d119fe590FD65061Ad3B366C8e9B7b9",
+    "auditor_percentage_glow_weight": 0.1,
+    "auditor_percentage_usdc_weight": 0.03,
+    "comments": null,
+    "glow_weight": 76.253,
+    "payment_tx_hash": "0x218f0c5d01b136a16910ddf8dcd0ab8ddd4e85100bf4f1f6f2ec55267145d066",
+    "payout_wallet": "0x7781182412aC86aC1a1a50686847728002211882",
+    "protocol_fee_paid_week": 13,
+    "short_id": 24,
+    "status": {
+      "AuditCompleted": {
+        "week": 19
+      }
+    },
+    "timestamp_audited_completed": 1711843200,
+    "weeks_and_slot_ranges_to_invert_power_map": null,
+    "weeks_and_slots_to_invalidate_power_map": null,
+    "carbonCreditsProduced": 0.014365874091589754,
+    "hexlified_public_key": "0x30a11294823ba340933958d29e6993df2da5d0c8d81bcc7bd05ebc1474daf274",
+    "impactRates": [],
+    "installer_glow_fee_percent": 0.1,
+    "installer_usdg_fee_percent": 0.03,
+    "installer_wallet": "0x2e2771032d119fe590FD65061Ad3B366C8e9B7b9",
+    "payoutWallet": "0x7781182412aC86aC1a1a50686847728002211882",
+    "powerOutput": 46.440508,
+    "powerOutputs": [],
+    "protocol_fee": 14640.576000000001,
+    "protocol_fee_payment_hash": "0x218f0c5d01b136a16910ddf8dcd0ab8ddd4e85100bf4f1f6f2ec55267145d066",
+    "rollingImpactPoints": 309.8507310708876,
+    "shortId": 24,
+    "weeklyPayment": 76.253,
+    "weeksAndSlotRangesToInvertPowerMap": null,
+    "weeksAndSlotsToInvalidatePowerMap": null
+  },
+  {
+    "auditor": "0x2e2771032d119fe590FD65061Ad3B366C8e9B7b9",
+    "auditor_percentage_glow_weight": 0.1,
+    "auditor_percentage_usdc_weight": 0.03,
+    "comments": null,
+    "glow_weight": 51.77317708333334,
+    "payment_tx_hash": "0xeb1e0651c9e7786c37c2605eab64a01833a61b6c581d003e82b08fecfc3a5aed",
+    "payout_wallet": "0x6F0D28e78F45122f829Be51D4b39b8566245Ccda",
+    "protocol_fee_paid_week": 26,
+    "short_id": 115,
+    "status": {
+      "AuditCompleted": {
+        "week": 26
+      }
+    },
+    "weeks_and_slot_ranges_to_invert_power_map": {
+      "26": [
+        {
+          "end_slot": 1977,
+          "start_slot": 1048
+        }
+      ]
+    },
+    "weeks_and_slots_to_invalidate_power_map": null,
+    "carbonCreditsProduced": 0.01665965041983015,
+    "hexlified_public_key": "0xa38e5153d08479d20a56e789bdd07145431dd80b2a7383685dae824946c0f158",
+    "impactRates": [],
+    "installer_glow_fee_percent": 0.1,
+    "installer_usdg_fee_percent": 0.03,
+    "installer_wallet": "0x2e2771032d119fe590FD65061Ad3B366C8e9B7b9",
+    "payoutWallet": "0x6F0D28e78F45122f829Be51D4b39b8566245Ccda",
+    "powerOutput": 35.996201,
+    "powerOutputs": [],
+    "protocol_fee": 9940.45,
+    "protocol_fee_payment_hash": "0xeb1e0651c9e7786c37c2605eab64a01833a61b6c581d003e82b08fecfc3a5aed",
+    "rollingImpactPoints": 456.9542536845989,
+    "shortId": 115,
+    "timestamp_audited_completed": 1716560746,
+    "weeklyPayment": 51.77317708333334,
+    "weeksAndSlotRangesToInvertPowerMap": {
+      "26": [
+        {
+          "end_slot": 1977,
+          "start_slot": 1048
+        }
+      ]
+    },
+    "weeksAndSlotsToInvalidatePowerMap": null
+  }
+]

@@ -3,8 +3,6 @@ import { swagger } from "@elysiajs/swagger";
 import { cors } from "@elysiajs/cors";
 import { protocolFeeRouter } from "./routers/protocol-fee-router/protocolFeeRouter";
 import { rewardsRouter } from "./routers/rewards-router/rewardsRouter";
-import { walletWeeklyRewards, wallets } from "./db/schema";
-import { db } from "./db/db";
 import { updateFarmRewardsForWeek } from "./crons/update-farm-rewards/update-farm-rewards-for-week";
 import { accountsRouter } from "./routers/accounts-router/accountsRouter";
 import { gcasRouter } from "./routers/gcas-router/gcasRouter";
@@ -17,6 +15,11 @@ import { rewardSplitsRouter } from "./routers/reward-splits-router/rewardSplitsR
 import { devicesRouter } from "./routers/devices/devicesRouter";
 import { cron, Patterns } from "@elysiajs/cron";
 import { getProtocolWeek } from "./utils/getProtocolWeek";
+import {
+  MigrationFarmData,
+  insertFarmWithDependencies,
+} from "./db/scripts/farm-migration";
+import LegacyFarmsData from "./db/scripts/legacy-farms.json";
 
 const PORT = process.env.PORT || 3005;
 const app = new Elysia()
@@ -49,7 +52,7 @@ const app = new Elysia()
     return "Internal Server Error";
   })
   .use(cors())
-  // .use(swagger({ autoDarkMode: true, path: "/swagger" }))
+  .use(swagger({ autoDarkMode: true, path: "/swagger" }))
   .use(
     cron({
       name: "Updating Rewards",
@@ -88,6 +91,37 @@ const app = new Elysia()
       return { message: "success" };
     } catch (error) {
       console.error("Error updating rewards", error);
+      return { message: "error" };
+    }
+  })
+  .get("/update-rewards-for-all-weeks", async () => {
+    const lastWeek = getProtocolWeek() - 1;
+    try {
+      for (let i = 8; i <= lastWeek; i++) {
+        await updateWalletRewardsForWeek(lastWeek);
+        await updateFarmRewardsForWeek({ weekNumber: i });
+      }
+      return { message: "success" };
+    } catch (error) {
+      console.error("Error updating rewards", error);
+      return { message: "error" };
+    }
+  })
+  .get("/migrate-farms", async () => {
+    const farmsData: MigrationFarmData[] = LegacyFarmsData.map((farm) => ({
+      ...farm,
+      old_short_ids: (farm.old_short_ids || []).map((shortId) =>
+        shortId.toString()
+      ),
+    }));
+
+    try {
+      for (const farmData of farmsData) {
+        await insertFarmWithDependencies(farmData);
+      }
+      return { message: "success" };
+    } catch (error) {
+      console.error("Error migrating farm", error);
       return { message: "error" };
     }
   })

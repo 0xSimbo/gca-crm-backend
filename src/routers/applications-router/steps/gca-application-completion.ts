@@ -173,12 +173,18 @@ export const handleCreateWithoutPIIDocumentsAndCompleteApplication = async (
     );
   }
 
+  if (!application.paymentTxHash) {
+    throw new Error("Payment transaction hash is missing");
+  }
+
   return await completeApplicationWithDocumentsAndCreateFarmWithDevices(
     application.id,
     gcaId,
     application.userId,
     signature,
     documents,
-    args.devices
+    args.devices,
+    BigInt(application.finalProtocolFee),
+    application.paymentTxHash
   );
 };

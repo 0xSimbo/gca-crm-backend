@@ -166,8 +166,15 @@ export const farms = pgTable(
       .notNull(),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     auditCompleteDate: timestamp("audit_complete_date").notNull(),
+    protocolFee: bigint("final_protocol_fee", { mode: "bigint" })
+      .default(sql`'0'::bigint`)
+      .notNull(),
+    protocolFeePaymentHash: varchar("protocol_fee_payment_hash", {
+      length: 66,
+    }).notNull(),
     gcaId: varchar("gca_id", { length: 42 }).notNull(),
     userId: varchar("user_id", { length: 42 }).notNull(),
+    oldShortIds: varchar("old_short_ids", { length: 255 }).array(),
   },
   (t) => {
     return {
@@ -776,7 +783,7 @@ export const RewardSplits = pgTable("rewardsSplits", {
   id: text("rewards_split_id")
     .primaryKey()
     .$defaultFn(() => crypto.randomUUID()),
-  applicationId: text("application_id").notNull(),
+  applicationId: text("application_id"),
   // farmId can be null if the application is not yet completed, it's being patched after the farm is created.
   farmId: varchar("farm_id", { length: 66 }),
   walletAddress: varchar("wallet_address", { length: 42 }).notNull(),

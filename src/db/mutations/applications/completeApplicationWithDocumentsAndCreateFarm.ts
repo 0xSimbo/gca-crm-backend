@@ -38,7 +38,9 @@ export const completeApplicationWithDocumentsAndCreateFarmWithDevices = async (
   userId: string,
   signature: string,
   documents: DocumentsInsertType[],
-  devices: { publicKey: string; shortId: string }[]
+  devices: { publicKey: string; shortId: string }[],
+  protocolFee: bigint,
+  protocolFeePaymentHash: string
 ) => {
   if (!process.env.R2_NOT_ENCRYPTED_FILES_BUCKET_NAME) {
     throw new Error("R2_NOT_ENCRYPTED_FILES_BUCKET_NAME is not defined");
@@ -144,7 +146,9 @@ export const completeApplicationWithDocumentsAndCreateFarmWithDevices = async (
         gcaId: gcaId,
         userId: userId,
         createdAt: new Date(),
-        auditCompleteDate: new Date(), //TODO: check if this is correct
+        auditCompleteDate: new Date(),
+        protocolFee,
+        protocolFeePaymentHash,
       })
       .returning({ farmId: applications.farmId });
 
