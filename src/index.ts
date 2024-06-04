@@ -97,6 +97,7 @@ const app = new Elysia()
       return { message: "error" };
     }
   })
+  .get("/", () => "Hey!")
   .listen(PORT);
 
 console.log(
