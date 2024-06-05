@@ -966,32 +966,33 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               return "Application is not waiting for payment";
             }
 
-            const protocolFeeData: GetProtocolFeePaymentFromTransactionHashSubgraphResponseIndividual | null =
-              await getProtocolFeePaymentFromTransactionHash(body.txHash);
+            if (process.env.NODE_ENV === "production") {
+              const protocolFeeData: GetProtocolFeePaymentFromTransactionHashSubgraphResponseIndividual | null =
+                await getProtocolFeePaymentFromTransactionHash(body.txHash);
 
-            if (!protocolFeeData) {
-              ///TODO: @JulienWebDeveloppeur this means the tx hash is not valid, we should return an error
-              set.status = 400;
-              return "Invalid Transaction Hash";
-            }
+              if (!protocolFeeData) {
+                set.status = 400;
+                return "Invalid Transaction Hash";
+              }
 
-            if (protocolFeeData.user.id !== userId) {
-              set.status = 400;
-              return "The transaction hash does not belong to the user";
-            }
+              if (protocolFeeData.user.id !== userId) {
+                set.status = 400;
+                return "The transaction hash does not belong to the user";
+              }
 
-            if (BigInt(application.finalProtocolFee) === BigInt(0)) {
-              set.status = 400;
-              return "Final Protocol Fee is not set";
-            }
+              if (BigInt(application.finalProtocolFee) === BigInt(0)) {
+                set.status = 400;
+                return "Final Protocol Fee is not set";
+              }
 
-            /// TODO: If it's greater, need to check with david what to do on that. For now, let's not change anything
-            if (
-              BigInt(protocolFeeData.amount) <
-              BigInt(application.finalProtocolFee)
-            ) {
-              set.status = 400;
-              return "Invalid Amount";
+              /// TODO: If it's greater, need to check with david what to do on that. For now, let's not change anything
+              if (
+                BigInt(protocolFeeData.amount) <
+                BigInt(application.finalProtocolFee)
+              ) {
+                set.status = 400;
+                return "Invalid Amount";
+              }
             }
 
             await updateApplication(body.applicationId, {
