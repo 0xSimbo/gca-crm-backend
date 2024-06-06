@@ -471,6 +471,9 @@ export const applications = pgTable("applications", {
   status: applicationStatusEnum("application_status").notNull(),
   // enquiry step fields
   address: varchar("address", { length: 255 }).notNull(),
+  farmOwnerName: varchar("farm_owner_name", { length: 255 })
+    .notNull()
+    .default("N/A"),
   lat: numeric("lat", {
     precision: 10,
     scale: 5,

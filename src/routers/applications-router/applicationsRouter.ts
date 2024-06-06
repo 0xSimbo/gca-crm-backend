@@ -92,6 +92,10 @@ export const EnquiryQueryBody = t.Object({
     example: 32,
     minimum: 0,
   }),
+  farmOwnerName: t.String({
+    example: "John Doe",
+    minLength: 2,
+  }),
   installerCompanyName: t.String({
     example: "John Doe Farms",
     minLength: 2,
