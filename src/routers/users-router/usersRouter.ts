@@ -129,6 +129,8 @@ export const usersRouter = new Elysia({ prefix: "/users" })
               ...body,
               createdAt: new Date(),
               installerId: installerId || null,
+              contactType: "email",
+              contactValue: body.email,
             });
             await updateRole(wallet, "USER");
           } catch (e) {
