@@ -19,6 +19,9 @@ import { updateUserContactInfos } from "../../db/mutations/users/updateUserConta
 import { getUserFarmsCount } from "../../db/queries/farms/getUserFarmsCount";
 import { getUserPendingApplicationsCount } from "../../db/queries/applications/getUserPendingApplicationsCount";
 import { getWalletRewards } from "../../db/queries/wallets/getWalletRewards";
+import { updateInstaller } from "../../db/mutations/installers/updateInstaller";
+import { findFirstInstallerById } from "../../db/queries/installers/findFirstInstallerById";
+import { updateUser } from "../../db/mutations/users/updateUser";
 
 export const CreateUserQueryBody = t.Object({
   encryptedPrivateEncryptionKey: t.String({
@@ -188,21 +191,15 @@ export const usersRouter = new Elysia({ prefix: "/users" })
         "/update-user-infos",
         async ({ body, set, userId }) => {
           try {
-            const wallet = userId;
-            const account = await findFirstAccountById(userId);
-            if (!account) {
+            const user = await findFirstUserById(userId);
+            if (!user) {
               set.status = 404;
-              return "Account not found";
-            }
-
-            if (!account.user) {
-              set.status = 409;
-              return "User already exists";
+              return "User not found";
             }
 
             // check if email already exists
             const emailExists = await findFirstUserByEmail(body.email);
-            if (emailExists) {
+            if (emailExists && body.email !== user.email) {
               set.status = 409;
               return "Email already exists";
             }
@@ -216,16 +213,57 @@ export const usersRouter = new Elysia({ prefix: "/users" })
                 set.status = 400;
                 return "Company Name is required for installer";
               }
-              //TODO: update installer
-              await createInstaller({
-                email: body.email,
-                companyName: body.companyName,
-                phone: body.phone,
-                name: `${body.firstName} ${body.lastName}`,
-              });
+              if (user.installerId) {
+                await updateInstaller(
+                  {
+                    email: body.email,
+                    companyName: body.companyName,
+                    phone: body.phone,
+                    name: `${body.firstName} ${body.lastName}`,
+                  },
+                  user.installerId
+                );
+                await updateUser(
+                  {
+                    companyAddress: body.companyAddress,
+                    companyName: body.companyName,
+                    email: body.email,
+                    firstName: body.firstName,
+                    lastName: body.lastName,
+                  },
+                  userId
+                );
+              } else {
+                const installerId = await createInstaller({
+                  email: body.email,
+                  companyName: body.companyName,
+                  phone: body.phone,
+                  name: `${body.firstName} ${body.lastName}`,
+                });
+                await updateUser(
+                  {
+                    companyAddress: body.companyAddress,
+                    companyName: body.companyName,
+                    email: body.email,
+                    firstName: body.firstName,
+                    lastName: body.lastName,
+                    installerId,
+                  },
+                  userId
+                );
+              }
+            } else {
+              await updateUser(
+                {
+                  companyAddress: body.companyAddress,
+                  companyName: body.companyName,
+                  email: body.email,
+                  firstName: body.firstName,
+                  lastName: body.lastName,
+                },
+                userId
+              );
             }
-
-            //TODO: update user
           } catch (e) {
             console.log("[UsersRouter] create-user", e);
             if (e instanceof Error) {

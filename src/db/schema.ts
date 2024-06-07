@@ -347,7 +347,15 @@ export const users = pgTable("users", {
 export type UserType = InferSelectModel<typeof users>;
 export type UserInsertType = typeof users.$inferInsert;
 export type UserUpdateType = Partial<
-  Pick<UserInsertType, "firstName" | "lastName" | "email" | "installerId">
+  Pick<
+    UserInsertType,
+    | "firstName"
+    | "lastName"
+    | "email"
+    | "installerId"
+    | "companyAddress"
+    | "companyName"
+  >
 >;
 
 export const usersRelations = relations(users, ({ many, one }) => ({
