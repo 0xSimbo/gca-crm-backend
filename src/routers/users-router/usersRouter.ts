@@ -59,6 +59,39 @@ export const CreateUserQueryBody = t.Object({
   ),
 });
 
+export const UpdateUserQueryBody = t.Object({
+  isInstaller: t.Boolean({
+    example: false,
+  }),
+  firstName: t.String({
+    example: "John",
+    minLength: 2,
+  }),
+  lastName: t.String({
+    example: "Doe",
+    minLength: 2,
+  }),
+  email: t.String({
+    example: "JohnDoe@gmail.com",
+    minLength: 2,
+  }),
+  companyName: t.Nullable(
+    t.String({
+      example: "John Doe Farms",
+    })
+  ),
+  companyAddress: t.Nullable(
+    t.String({
+      example: "123 John Doe Street",
+    })
+  ),
+  phone: t.Nullable(
+    t.String({
+      example: "123-456-7890",
+    })
+  ),
+});
+
 export const UpdateUserContactInfosQueryBody = t.Object({
   value: t.String(),
   type: t.String({
@@ -147,6 +180,66 @@ export const usersRouter = new Elysia({ prefix: "/users" })
           detail: {
             summary: "Create User Account",
             description: `Create a User account. If the account already exists, it will throw an error.`,
+            tags: [TAG.USERS],
+          },
+        }
+      )
+      .post(
+        "/update-user-infos",
+        async ({ body, set, userId }) => {
+          try {
+            const wallet = userId;
+            const account = await findFirstAccountById(userId);
+            if (!account) {
+              set.status = 404;
+              return "Account not found";
+            }
+
+            if (!account.user) {
+              set.status = 409;
+              return "User already exists";
+            }
+
+            // check if email already exists
+            const emailExists = await findFirstUserByEmail(body.email);
+            if (emailExists) {
+              set.status = 409;
+              return "Email already exists";
+            }
+
+            if (body.isInstaller) {
+              if (!body.phone) {
+                set.status = 400;
+                return "Phone number is required for installer";
+              }
+              if (!body.companyName) {
+                set.status = 400;
+                return "Company Name is required for installer";
+              }
+              //TODO: update installer
+              await createInstaller({
+                email: body.email,
+                companyName: body.companyName,
+                phone: body.phone,
+                name: `${body.firstName} ${body.lastName}`,
+              });
+            }
+
+            //TODO: update user
+          } catch (e) {
+            console.log("[UsersRouter] create-user", e);
+            if (e instanceof Error) {
+              set.status = 400;
+              return e.message;
+            }
+            throw new Error("Error Occured");
+          }
+        },
+        {
+          body: UpdateUserQueryBody,
+          detail: {
+            summary: "Update User Infos",
+            description: `Create`,
             tags: [TAG.USERS],
           },
         }
