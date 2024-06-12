@@ -290,7 +290,7 @@ export const FarmRewardsRelations = relations(farmRewards, ({ one }) => ({
  */
 export const Accounts = pgTable("accounts", {
   id: varchar("wallet_id", { length: 42 }).primaryKey().notNull(),
-  role: accountRoleEnum("role"),
+  role: accountRoleEnum("role").notNull().default("UNKNOWN"),
   createdAt: timestamp("createdAt").notNull(),
   siweNonce: varchar("nonce", { length: 64 }).notNull(),
   salt: varchar("salt", { length: 255 }).notNull(),

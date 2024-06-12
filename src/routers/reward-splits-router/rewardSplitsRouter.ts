@@ -13,6 +13,8 @@ import {
 } from "../../types/api-types/Application";
 import { createSplits } from "../../db/mutations/reward-splits/createSplits";
 import { incrementApplicationStep } from "../../db/mutations/applications/incrementApplicationStep";
+import { updateApplicationStatus } from "../../db/mutations/applications/updateApplicationStatus";
+import { updateApplication } from "../../db/mutations/applications/updateApplication";
 
 export const rewardSplitsRouter = new Elysia({ prefix: "/rewardsSplits" })
   .use(bearerplugin())
@@ -108,6 +110,7 @@ export const rewardSplitsRouter = new Elysia({ prefix: "/rewardsSplits" })
               return "Sum of the percentages for each token should be 100";
             }
 
+            //TODO: change to atomic transaction
             await createSplits(
               body.splits.map((split) => ({
                 walletAddress: split.walletAddress,
@@ -116,10 +119,15 @@ export const rewardSplitsRouter = new Elysia({ prefix: "/rewardsSplits" })
                 applicationId: body.applicationId,
               }))
             );
-            await incrementApplicationStep(
+
+            await updateApplicationStatus(
               body.applicationId,
-              application.currentStep
+              ApplicationStatusEnum.waitingForPayment
             );
+
+            await updateApplication(body.applicationId, {
+              currentStep: ApplicationSteps.payment,
+            });
           } catch (e) {
             if (e instanceof Error) {
               set.status = 400;

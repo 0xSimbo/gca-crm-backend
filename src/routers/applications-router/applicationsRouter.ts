@@ -36,7 +36,7 @@ import { handleCreateOrUpdatePreIntallDocuments } from "./steps/pre-install";
 import { updateApplicationPreInstallVisitDates } from "../../db/mutations/applications/updateApplicationPreInstallVisitDates";
 import { updateApplicationAfterInstallVisitDates } from "../../db/mutations/applications/updateApplicationAfterInstallVisitDates";
 import { handleCreateOrUpdateInspectionAndPto } from "./steps/inspection-and-pto";
-import { updateApplication } from "../../db/mutations/applications/updateApplicationS";
+import { updateApplication } from "../../db/mutations/applications/updateApplication";
 import { roundRobinAssignement } from "../../db/queries/gcas/roundRobinAssignement";
 
 export const EnquiryQueryBody = t.Object({
@@ -875,6 +875,58 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
           detail: {
             summary: "Create or Update the Inspection and PTO documents",
             description: `insert the Inspection and PTO documents in db + insert documentsMissingWithReason if inspection or pto missing and update the application status to waitingForApproval`,
+            tags: [TAG.APPLICATIONS],
+          },
+        }
+      )
+      .post(
+        "/verify-payment",
+        async ({ body, set, userId }) => {
+          try {
+            const application = await FindFirstApplicationById(
+              body.applicationId
+            );
+
+            if (!application) {
+              set.status = 404;
+              return "Application not found";
+            }
+
+            if (application.userId !== userId) {
+              set.status = 403;
+              return "Unauthorized";
+            }
+
+            if (
+              application.status !== ApplicationStatusEnum.waitingForPayment
+            ) {
+              set.status = 403;
+              return "Application is not waiting for payment";
+            }
+
+            //TODO: verify txHash
+
+            await updateApplicationStatus(
+              body.applicationId,
+              ApplicationStatusEnum.paymentConfirmed
+            );
+          } catch (e) {
+            if (e instanceof Error) {
+              set.status = 400;
+              return e.message;
+            }
+            console.log("[applicationsRouter] verify-payment", e);
+            throw new Error("Error Occured");
+          }
+        },
+        {
+          body: t.Object({
+            applicationId: t.String(),
+            txHash: t.String(),
+          }),
+          detail: {
+            summary: "Increment the application step",
+            description: `Increment the application step after user read the annotation left by the gca on the documents`,
             tags: [TAG.APPLICATIONS],
           },
         }
