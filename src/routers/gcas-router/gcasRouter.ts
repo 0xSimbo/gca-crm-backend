@@ -8,7 +8,7 @@ import { updateRole } from "../../db/mutations/accounts/updateRole";
 
 import { GetEntityByIdQueryParamsSchema } from "../../schemas/shared/getEntityByIdParamSchema";
 import { findFirstAccountById } from "../../db/queries/accounts/findFirstAccountById";
-import { Wallet } from "ethers";
+import { Wallet, ethers } from "ethers";
 import {
   MinerPoolAndGCA__factory,
   addresses,
@@ -48,8 +48,8 @@ export const gcasRouter = new Elysia({ prefix: "/gcas" })
         const gcas = await findAllGcas();
         return gcas;
       } catch (e) {
+        set.status = 400;
         if (e instanceof Error) {
-          set.status = 400;
           return e.message;
         }
         console.log("[gcasRouter] byId", e);
@@ -162,18 +162,24 @@ export const gcasRouter = new Elysia({ prefix: "/gcas" })
               return "this account is already a user";
             }
 
-            const signer = new Wallet(process.env.PRIVATE_KEY!!);
+            const provider = new ethers.providers.StaticJsonRpcProvider({
+              url: process.env.MAINNET_RPC_URL!!,
+              skipFetchSetup: true,
+            });
             const minerPoolAndGCA = MinerPoolAndGCA__factory.connect(
               addresses.gcaAndMinerPoolContract,
-              signer
+              provider
             );
 
-            //todo: uncomment for prod
-            // const isGca = await minerPoolAndGCA["isGCA(address)"](wallet);
-            const isGca = true;
-            if (!isGca) {
-              set.status = 401;
-              return "This wallet is not a GCA";
+            if (process.env.NODE_ENV === "production") {
+              const allGcas = await minerPoolAndGCA.allGcas();
+              const isGca = allGcas
+                .map((c) => c.toLowerCase())
+                .includes(wallet.toLowerCase());
+              if (!isGca) {
+                set.status = 401;
+                return "This wallet is not a GCA";
+              }
             }
 
             await createGca({
@@ -183,6 +189,7 @@ export const gcasRouter = new Elysia({ prefix: "/gcas" })
             });
             await updateRole(wallet, "GCA");
           } catch (e) {
+            set.status = 400;
             if (e instanceof Error) {
               return e.message;
             }
@@ -218,6 +225,7 @@ export const gcasRouter = new Elysia({ prefix: "/gcas" })
             }
             await updateServers(wallet, body.serverUrls);
           } catch (e) {
+            set.status = 400;
             if (e instanceof Error) {
               return e.message;
             }

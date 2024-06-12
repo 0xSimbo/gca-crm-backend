@@ -33,7 +33,7 @@ export const insertFarmWithDependencies = async (
     const farmId = await tx
       .insert(farms)
       .values({
-        gcaId: farmData.auditor,
+        gcaId: "0xB2d687b199ee40e6113CD490455cC81eC325C496", // jared wallet address
         userId: farmData.installer_wallet,
         createdAt: new Date(),
         auditCompleteDate: new Date(

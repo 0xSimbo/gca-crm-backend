@@ -33,10 +33,11 @@ export async function updateFarmRewardsForWeek({
     previousUsdgRewards: bigint;
     previousGlowRewards: bigint;
   })[] = farmsWithRewards.reduce((carry: any[], farm) => {
-    const farmMatch = allFarmsIdsWithDevices.find(
-      (dbFarm) =>
-        dbFarm.devices.find((device) => device.shortId === farm.shortId) ||
-        dbFarm.oldShortIds?.includes(farm.shortId)
+    const farmMatch = allFarmsIdsWithDevices.find((dbFarm) =>
+      dbFarm.devices.find(
+        (device) =>
+          device.publicKey.toLowerCase() === farm.hexPubKey.toLowerCase()
+      )
     );
 
     if (farmMatch) {
