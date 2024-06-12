@@ -101,7 +101,7 @@ const app = new Elysia()
     }
   })
   .get("/update-rewards-for-all-weeks", async () => {
-    const lastWeek = getProtocolWeek() - 1;
+    const lastWeek = getProtocolWeek() - 2;
     try {
       for (let i = 12; i <= lastWeek; i++) {
         await updateWalletRewardsForWeek(lastWeek);

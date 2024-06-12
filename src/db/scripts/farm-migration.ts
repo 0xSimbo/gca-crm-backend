@@ -70,24 +70,11 @@ export const insertFarmWithDependencies = async (
       {
         walletAddress: farmData.payout_wallet,
         glowSplitPercent: parseFloat(
-          (
-            1 -
-            farmData.installer_glow_fee_percent -
-            farmData.auditor_percentage_glow_weight
-          ).toFixed(2)
+          (1 - farmData.auditor_percentage_glow_weight).toFixed(2)
         ),
         usdgSplitPercent: parseFloat(
-          (
-            1 -
-            farmData.installer_usdg_fee_percent -
-            farmData.auditor_percentage_usdc_weight
-          ).toFixed(2)
+          (1 - farmData.auditor_percentage_usdc_weight).toFixed(2)
         ),
-      },
-      {
-        walletAddress: farmData.auditor,
-        glowSplitPercent: farmData.auditor_percentage_glow_weight,
-        usdgSplitPercent: farmData.auditor_percentage_usdc_weight,
       },
     ];
 

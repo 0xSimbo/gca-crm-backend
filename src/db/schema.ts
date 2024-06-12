@@ -75,6 +75,7 @@ export const wallets = pgTable("wallets", {
  */
 export const WalletsRelations = relations(wallets, ({ many }) => ({
   weeklyRewards: many(walletWeeklyRewards),
+  rewardSplits: many(RewardSplits),
 }));
 
 export type WalletType = InferSelectModel<typeof wallets>;
@@ -820,6 +821,10 @@ export const RewardSplitsRelations = relations(RewardSplits, ({ one }) => ({
     fields: [RewardSplits.farmId],
     references: [farms.id],
   }),
+  wallet: one(wallets, {
+    fields: [RewardSplits.walletAddress],
+    references: [wallets.id],
+  }),
 }));
 
 /**
@@ -895,3 +900,12 @@ export const ApplicationStepApprovalsRelations = relations(
     }),
   })
 );
+
+// wallet: 0x246879aCEBd1C80267bC328178DbC8bf230Bb9D0
+// total glow rewards: 266000
+// total usdg rewards: 60987
+// glow split percents: 90.00
+// usdg split percents: 97.00
+
+// farm total glow rewards: 295500
+// farm total usdg rewards: 62800

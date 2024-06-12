@@ -48,22 +48,22 @@ export async function updateFarmRewardsForWeek({
           hexlifiedFarmPubKey,
           weekNumber,
           usdgRewards:
-            BigInt(Math.floor(farm.rewards.usdg)) * BigInt(DB_DECIMALS),
+            BigInt(Math.floor(farm.rewards.usdg)) * BigInt(10 ** DB_DECIMALS),
           glowRewards:
-            BigInt(Math.floor(farm.rewards.glow)) * BigInt(DB_DECIMALS),
+            BigInt(Math.floor(farm.rewards.glow)) * BigInt(10 ** DB_DECIMALS),
           previousUsdgRewards: farmMatch.totalUSDGRewards,
           previousGlowRewards: farmMatch.totalGlowRewards,
         },
       ];
     }
-    console.log("No match found for farm", farm.shortId);
+    // console.log("No match found for farm", farm.shortId);
     return carry;
   }, []);
 
   if (farmWithRewards.length === 0) {
     return;
   }
-
+  console.log(farmWithRewards);
   await db.transaction(async (trx) => {
     await Promise.all(
       farmWithRewards.map((farm) =>

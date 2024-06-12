@@ -90,6 +90,7 @@ export async function getScrapedFarmsAndRewards({
     farms,
     parseFloat(rewardsInBucket)
   );
+
   //Const farms with hex pub key and rewards only and short id
   const minimalData = farmsWithRewards.map((farm) => {
     return {
@@ -101,6 +102,10 @@ export async function getScrapedFarmsAndRewards({
       payoutWallet: farm.payoutWallet,
     };
   });
+  const findFarm28 = minimalData.find((farm) => farm.shortId === "28");
+  if (findFarm28) {
+    console.log("Farms with rewards minimalData", findFarm28);
+  }
 
   return minimalData;
 }
