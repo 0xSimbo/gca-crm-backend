@@ -52,7 +52,7 @@ const app = new Elysia()
     return "Internal Server Error";
   })
   .use(cors())
-  .use(swagger({ autoDarkMode: true, path: "/swagger" }))
+  // .use(swagger({ autoDarkMode: true, path: "/swagger" }))
   .use(
     cron({
       name: "Updating Rewards",
@@ -104,7 +104,7 @@ const app = new Elysia()
     const lastWeek = getProtocolWeek() - 2;
     try {
       for (let i = 12; i <= lastWeek; i++) {
-        await updateWalletRewardsForWeek(lastWeek);
+        await updateWalletRewardsForWeek(i);
         await updateFarmRewardsForWeek({ weekNumber: i });
       }
       return { message: "success" };
