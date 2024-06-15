@@ -142,6 +142,53 @@ export const WalletWeeklyRewardRelations = relations(
   })
 );
 
+// add a delegated wallet, then needs to be confirmed by a signature from the delegated wallet
+export const Delegates = pgTable("delegates", {
+  id: text("delegate_id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  walletId: varchar("wallet_id", { length: 42 })
+    .notNull()
+    .references(() => Accounts.id, { onDelete: "cascade" }),
+  delegator: varchar("delegator", { length: 42 })
+    .notNull()
+    .references(() => Accounts.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at").notNull(),
+});
+
+export const Ressources = pgTable("ressources", {
+  id: text("ressource_id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  label: varchar("label", { length: 155 }).notNull(),
+});
+
+export const DelegateToRessources = pgTable("delegate_to_ressources", {
+  id: text("delegate_to_ressource_id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  delegateId: text("delegate_id")
+    .notNull()
+    .references(() => Delegates.id, { onDelete: "cascade" }),
+  ressourceId: text("ressource_id")
+    .notNull()
+    .references(() => Ressources.id, { onDelete: "cascade" }),
+  confirmationSignature: text("confirmation_signature").notNull(),
+});
+
+export const DelegatedEncryptedMasterKeys = pgTable(
+  "delegated_encrypted_master_keys",
+  {
+    id: text("delegated_encrypted_master_key_id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    delegateId: text("delegate_id")
+      .notNull()
+      .references(() => Delegates.id, { onDelete: "cascade" }),
+    encryptedMasterKeySet: json("encrypted_master_key_set").notNull(),
+  }
+);
+
 /**
  * @dev Represents a farm in the system.
  * @param {string} id - The hexlified farm public key.
