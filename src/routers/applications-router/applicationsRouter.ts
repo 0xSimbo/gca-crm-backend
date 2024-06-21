@@ -1584,15 +1584,15 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               new Date().getDate()
             );
             const tomorrowTime = new Date(today.getTime() + 86400000).getTime();
-
-            if (
-              preInstallVisitDate.getTime() <= tomorrowTime ||
-              preInstallVisitDate.getTime() >=
-                application.estimatedInstallDate.getTime()
-            ) {
-              set.status = 400;
-              return "Invalid date";
-            }
+            //TODO: Uncomment this after finishing migrating old farms
+            // if (
+            //   preInstallVisitDate.getTime() <= tomorrowTime ||
+            //   preInstallVisitDate.getTime() >=
+            //     application.estimatedInstallDate.getTime()
+            // ) {
+            //   set.status = 400;
+            //   return "Invalid date";
+            // }
 
             await updateApplicationPreInstallVisitDate(
               body.applicationId,
@@ -1674,13 +1674,14 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               application.installFinishedDate.getTime()
             );
 
-            if (
-              afterInstallVisitDate.getTime() <
-              dayAfterInstallFinishedDate.getTime()
-            ) {
-              set.status = 400;
-              return "Invalid date range";
-            }
+            //TODO: Uncomment this after finishing migrating old farms
+            // if (
+            //   afterInstallVisitDate.getTime() <
+            //   dayAfterInstallFinishedDate.getTime()
+            // ) {
+            //   set.status = 400;
+            //   return "Invalid date";
+            // }
 
             await updateApplicationAfterInstallVisitDate(
               body.applicationId,
