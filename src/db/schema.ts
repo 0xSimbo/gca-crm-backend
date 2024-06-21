@@ -142,51 +142,160 @@ export const WalletWeeklyRewardRelations = relations(
   })
 );
 
-// add a delegated wallet, then needs to be confirmed by a signature from the delegated wallet
-export const Delegates = pgTable("delegates", {
-  id: text("delegate_id")
+export const Organizations = pgTable("organizations", {
+  id: text("organization_id")
     .primaryKey()
     .$defaultFn(() => crypto.randomUUID()),
-  walletId: varchar("wallet_id", { length: 42 })
+  name: varchar("name", { length: 255 }).notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  ownerId: varchar("owner_id", { length: 42 })
     .notNull()
     .references(() => Accounts.id, { onDelete: "cascade" }),
-  delegator: varchar("delegator", { length: 42 })
-    .notNull()
-    .references(() => Accounts.id, { onDelete: "cascade" }),
-  createdAt: timestamp("created_at").notNull(),
 });
 
-export const Ressources = pgTable("ressources", {
-  id: text("ressource_id")
+export const OrganizationRelations = relations(
+  Organizations,
+  ({ one, many }) => ({
+    owner: one(Accounts, {
+      fields: [Organizations.ownerId],
+      references: [Accounts.id],
+    }),
+    users: many(OrganizationUsers),
+    roles: many(Roles),
+  })
+);
+
+export const OrganizationUsers = pgTable("organization_users", {
+  id: text("organization_user_id")
     .primaryKey()
     .$defaultFn(() => crypto.randomUUID()),
-  label: varchar("label", { length: 155 }).notNull(),
+  accountId: varchar("account_id", { length: 42 })
+    .notNull()
+    .references(() => Accounts.id, { onDelete: "cascade" }),
+  organizationId: text("organization_id")
+    .notNull()
+    .references(() => Organizations.id, { onDelete: "cascade" }),
+  joinedAt: timestamp("joined_at").notNull().defaultNow(),
 });
 
-export const DelegateToRessources = pgTable("delegate_to_ressources", {
-  id: text("delegate_to_ressource_id")
+export const OrganizationUsersRelations = relations(
+  OrganizationUsers,
+  ({ one, many }) => ({
+    account: one(Accounts, {
+      fields: [OrganizationUsers.accountId],
+      references: [Accounts.id],
+    }),
+    organization: one(Organizations, {
+      fields: [OrganizationUsers.organizationId],
+      references: [Organizations.id],
+    }),
+    roles: many(OrganizationUsersToRoles),
+    encryptedMasterKeys: many(EncryptedMasterKeys),
+  })
+);
+
+export const OrganizationUsersToRoles = pgTable("organization_users_to_roles", {
+  id: text("organization_user_to_role_id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  organizationUserId: text("organization_user_id")
+    .notNull()
+    .references(() => OrganizationUsers.id, { onDelete: "cascade" }),
+  roleId: text("role_id")
+    .notNull()
+    .references(() => Roles.id, { onDelete: "cascade" }),
+});
+
+export const OrganizationUsersToRolesRelations = relations(
+  OrganizationUsersToRoles,
+  ({ one }) => ({
+    organizationUser: one(OrganizationUsers, {
+      fields: [OrganizationUsersToRoles.organizationUserId],
+      references: [OrganizationUsers.id],
+    }),
+    role: one(Roles, {
+      fields: [OrganizationUsersToRoles.roleId],
+      references: [Roles.id],
+    }),
+  })
+);
+
+export const Permissions = pgTable("permissions", {
+  id: text("permission_id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+});
+
+export const PermissionRelations = relations(Permissions, ({ many }) => ({
+  roles: many(RolePermissions),
+}));
+
+export const Roles = pgTable("roles", {
+  id: text("role_id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  organizationId: text("organization_id")
+    .notNull()
+    .references(() => Organizations.id, { onDelete: "cascade" }),
+  name: varchar("name", { length: 255 }).notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const RoleRelations = relations(Roles, ({ one, many }) => ({
+  organization: one(Organizations, {
+    fields: [Roles.organizationId],
+    references: [Organizations.id],
+  }),
+  permissions: many(RolePermissions),
+  users: many(OrganizationUsersToRoles),
+}));
+
+export const RolePermissions = pgTable("role_permissions", {
+  id: text("role_permission_id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  roleId: text("role_id")
+    .notNull()
+    .references(() => Roles.id, { onDelete: "cascade" }),
+  permissionId: text("permission_id")
+    .notNull()
+    .references(() => Permissions.id, { onDelete: "cascade" }),
+});
+
+export const RolePermissionRelations = relations(
+  RolePermissions,
+  ({ one }) => ({
+    role: one(Roles, {
+      fields: [RolePermissions.roleId],
+      references: [Roles.id],
+    }),
+    permission: one(Permissions, {
+      fields: [RolePermissions.permissionId],
+      references: [Permissions.id],
+    }),
+  })
+);
+
+export const EncryptedMasterKeys = pgTable("encrypted_master_keys", {
+  id: text("encrypted_master_key_id")
     .primaryKey()
     .$defaultFn(() => crypto.randomUUID()),
   delegateId: text("delegate_id")
     .notNull()
-    .references(() => Delegates.id, { onDelete: "cascade" }),
-  ressourceId: text("ressource_id")
-    .notNull()
-    .references(() => Ressources.id, { onDelete: "cascade" }),
-  confirmationSignature: text("confirmation_signature").notNull(),
+    .references(() => OrganizationUsers.accountId, { onDelete: "cascade" }),
+  encryptedMasterKeySet: json("encrypted_master_key_set").notNull(),
 });
 
-export const DelegatedEncryptedMasterKeys = pgTable(
-  "delegated_encrypted_master_keys",
-  {
-    id: text("delegated_encrypted_master_key_id")
-      .primaryKey()
-      .$defaultFn(() => crypto.randomUUID()),
-    delegateId: text("delegate_id")
-      .notNull()
-      .references(() => Delegates.id, { onDelete: "cascade" }),
-    encryptedMasterKeySet: json("encrypted_master_key_set").notNull(),
-  }
+export const EncryptedMasterKeyRelations = relations(
+  EncryptedMasterKeys,
+  ({ one }) => ({
+    delegate: one(OrganizationUsers, {
+      fields: [EncryptedMasterKeys.delegateId],
+      references: [OrganizationUsers.accountId],
+    }),
+  })
 );
 
 /**
@@ -947,12 +1056,3 @@ export const ApplicationStepApprovalsRelations = relations(
     }),
   })
 );
-
-// wallet: 0x246879aCEBd1C80267bC328178DbC8bf230Bb9D0
-// total glow rewards: 266000
-// total usdg rewards: 60987
-// glow split percents: 90.00
-// usdg split percents: 97.00
-
-// farm total glow rewards: 295500
-// farm total usdg rewards: 62800
