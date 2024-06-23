@@ -11,6 +11,7 @@ import {
   json,
   boolean,
   numeric,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { relations, type InferSelectModel, sql } from "drizzle-orm";
 import { EncryptedMasterKeySet } from "../types/api-types/Application";
@@ -142,89 +143,97 @@ export const WalletWeeklyRewardRelations = relations(
   })
 );
 
-export const Organizations = pgTable("organizations", {
-  id: text("organization_id")
-    .primaryKey()
-    .$defaultFn(() => crypto.randomUUID()),
-  name: varchar("name", { length: 255 }).notNull(),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  ownerId: varchar("owner_id", { length: 42 })
-    .notNull()
-    .references(() => Accounts.id, { onDelete: "cascade" }),
-});
+export const Organizations = pgTable(
+  "organizations",
+  {
+    id: text("organization_id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    name: varchar("name", { length: 255 }).notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    ownerId: varchar("owner_id", { length: 42 })
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+  },
+  (t) => {
+    return {
+      ownerIdIndex: index("owner_id_ix").on(t.ownerId),
+    };
+  }
+);
 
 export const OrganizationRelations = relations(
   Organizations,
   ({ one, many }) => ({
-    owner: one(Accounts, {
+    owner: one(users, {
       fields: [Organizations.ownerId],
-      references: [Accounts.id],
+      references: [users.id],
     }),
     users: many(OrganizationUsers),
-    roles: many(Roles),
+    role: one(Roles),
   })
 );
 
-export const OrganizationUsers = pgTable("organization_users", {
-  id: text("organization_user_id")
-    .primaryKey()
-    .$defaultFn(() => crypto.randomUUID()),
-  accountId: varchar("account_id", { length: 42 })
-    .notNull()
-    .references(() => Accounts.id, { onDelete: "cascade" }),
-  organizationId: text("organization_id")
-    .notNull()
-    .references(() => Organizations.id, { onDelete: "cascade" }),
-  joinedAt: timestamp("joined_at").notNull().defaultNow(),
-});
+export type OrganizationType = InferSelectModel<typeof Organizations>;
+export type OrganizationInsertType = typeof Organizations.$inferInsert;
+
+export const OrganizationUsers = pgTable(
+  "organization_users",
+  {
+    id: text("organization_user_id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    userId: varchar("user_id", { length: 42 })
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => Organizations.id, { onDelete: "cascade" }),
+    roleId: text("role_id")
+      .notNull()
+      .references(() => Roles.id, { onDelete: "cascade" }),
+    joinedAt: timestamp("joined_at"),
+    invitedAt: timestamp("invited_at").notNull(),
+    signature: varchar("signature", { length: 255 }), // Signature of the user accepting the invitation
+    isAccepted: boolean("is_accepted").notNull().default(false),
+  },
+  (t) => {
+    return {
+      userIdOrganizationIdRoleIdIndex: index(
+        "user_id_organization_id_role_id_ix"
+      ).on(t.userId, t.organizationId, t.roleId),
+    };
+  }
+);
 
 export const OrganizationUsersRelations = relations(
   OrganizationUsers,
   ({ one, many }) => ({
-    account: one(Accounts, {
-      fields: [OrganizationUsers.accountId],
-      references: [Accounts.id],
+    user: one(users, {
+      fields: [OrganizationUsers.userId],
+      references: [users.id],
     }),
     organization: one(Organizations, {
       fields: [OrganizationUsers.organizationId],
       references: [Organizations.id],
     }),
-    roles: many(OrganizationUsersToRoles),
-    encryptedMasterKeys: many(EncryptedMasterKeys),
-  })
-);
-
-export const OrganizationUsersToRoles = pgTable("organization_users_to_roles", {
-  id: text("organization_user_to_role_id")
-    .primaryKey()
-    .$defaultFn(() => crypto.randomUUID()),
-  organizationUserId: text("organization_user_id")
-    .notNull()
-    .references(() => OrganizationUsers.id, { onDelete: "cascade" }),
-  roleId: text("role_id")
-    .notNull()
-    .references(() => Roles.id, { onDelete: "cascade" }),
-});
-
-export const OrganizationUsersToRolesRelations = relations(
-  OrganizationUsersToRoles,
-  ({ one }) => ({
-    organizationUser: one(OrganizationUsers, {
-      fields: [OrganizationUsersToRoles.organizationUserId],
-      references: [OrganizationUsers.id],
-    }),
     role: one(Roles, {
-      fields: [OrganizationUsersToRoles.roleId],
+      fields: [OrganizationUsers.roleId],
       references: [Roles.id],
     }),
+    encryptedMasterKeys: many(DelegatedOrganizationEncryptedMasterKeys),
   })
 );
+
+export type OrganizationUserType = InferSelectModel<typeof OrganizationUsers>;
+export type OrganizationUserInsertType = typeof OrganizationUsers.$inferInsert;
 
 export const Permissions = pgTable("permissions", {
   id: text("permission_id")
     .primaryKey()
     .$defaultFn(() => crypto.randomUUID()),
   name: varchar("name", { length: 255 }).notNull(),
+  key: varchar("key", { length: 255 }).notNull().unique(),
   description: text("description"),
 });
 
@@ -232,37 +241,59 @@ export const PermissionRelations = relations(Permissions, ({ many }) => ({
   roles: many(RolePermissions),
 }));
 
-export const Roles = pgTable("roles", {
-  id: text("role_id")
-    .primaryKey()
-    .$defaultFn(() => crypto.randomUUID()),
-  organizationId: text("organization_id")
-    .notNull()
-    .references(() => Organizations.id, { onDelete: "cascade" }),
-  name: varchar("name", { length: 255 }).notNull(),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+export type PermissionType = InferSelectModel<typeof Permissions>;
+export type PermissionInsertType = typeof Permissions.$inferInsert;
+
+export const Roles = pgTable(
+  "roles",
+  {
+    id: text("role_id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => Organizations.id, { onDelete: "cascade" }),
+    name: varchar("name", { length: 255 }).notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => {
+    return {
+      organizationIdIndex: index("organization_id_ix").on(t.organizationId),
+    };
+  }
+);
 
 export const RoleRelations = relations(Roles, ({ one, many }) => ({
   organization: one(Organizations, {
     fields: [Roles.organizationId],
     references: [Organizations.id],
   }),
-  permissions: many(RolePermissions),
-  users: many(OrganizationUsersToRoles),
+  rolePermissions: many(RolePermissions),
+  users: many(OrganizationUsers),
 }));
 
-export const RolePermissions = pgTable("role_permissions", {
-  id: text("role_permission_id")
-    .primaryKey()
-    .$defaultFn(() => crypto.randomUUID()),
-  roleId: text("role_id")
-    .notNull()
-    .references(() => Roles.id, { onDelete: "cascade" }),
-  permissionId: text("permission_id")
-    .notNull()
-    .references(() => Permissions.id, { onDelete: "cascade" }),
-});
+export const RolePermissions = pgTable(
+  "role_permissions",
+  {
+    id: text("role_permission_id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    roleId: text("role_id")
+      .notNull()
+      .references(() => Roles.id, { onDelete: "cascade" }),
+    permissionId: text("permission_id")
+      .notNull()
+      .references(() => Permissions.id, { onDelete: "cascade" }),
+  },
+  (t) => {
+    return {
+      roleIdPermissionIdIndex: index("role_id_permission_id_ix").on(
+        t.roleId,
+        t.permissionId
+      ),
+    };
+  }
+);
 
 export const RolePermissionRelations = relations(
   RolePermissions,
@@ -278,22 +309,32 @@ export const RolePermissionRelations = relations(
   })
 );
 
-export const EncryptedMasterKeys = pgTable("encrypted_master_keys", {
-  id: text("encrypted_master_key_id")
-    .primaryKey()
-    .$defaultFn(() => crypto.randomUUID()),
-  delegateId: text("delegate_id")
-    .notNull()
-    .references(() => OrganizationUsers.accountId, { onDelete: "cascade" }),
-  encryptedMasterKeySet: json("encrypted_master_key_set").notNull(),
-});
+export const DelegatedOrganizationEncryptedMasterKeys = pgTable(
+  "delegated_organization_encrypted_master_keys",
+  {
+    id: text("encrypted_master_key_id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    organizationUserId: text("organization_user_id")
+      .notNull()
+      .references(() => OrganizationUsers.id, { onDelete: "cascade" }),
+    encryptedMasterKeySet: json("encrypted_master_key_set").notNull(),
+  },
+  (t) => {
+    return {
+      organizationUserIdIndex: index("organization_user_id_ix").on(
+        t.organizationUserId
+      ),
+    };
+  }
+);
 
 export const EncryptedMasterKeyRelations = relations(
-  EncryptedMasterKeys,
+  DelegatedOrganizationEncryptedMasterKeys,
   ({ one }) => ({
-    delegate: one(OrganizationUsers, {
-      fields: [EncryptedMasterKeys.delegateId],
-      references: [OrganizationUsers.accountId],
+    user: one(OrganizationUsers, {
+      fields: [DelegatedOrganizationEncryptedMasterKeys.organizationUserId],
+      references: [OrganizationUsers.id],
     }),
   })
 );

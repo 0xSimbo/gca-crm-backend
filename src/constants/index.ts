@@ -12,4 +12,6 @@ export enum TAG {
   DOCUMENTS = "Documents",
   REWARD_SPLITS = "Reward Splits",
   DEVICES = "Devices",
+  INSTALLERS = "Installers",
+  ORGANIZATIONS = "Organizations",
 }

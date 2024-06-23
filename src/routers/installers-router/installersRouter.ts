@@ -7,7 +7,6 @@ import { bearerGuard } from "../../guards/bearerGuard";
 import { createInstaller } from "../../db/mutations/installers/createInstaller";
 import { updateUser } from "../../db/mutations/users/updateUser";
 import { findFirstInstallerById } from "../../db/queries/installers/findFirstInstallerById";
-import { GetEntityByIdQueryParamsSchema } from "../../schemas/shared/getEntityByIdParamSchema";
 import { updateInstaller } from "../../db/mutations/installers/updateInstaller";
 
 export const CreateInstallerQueryBody = t.Object({
@@ -77,7 +76,7 @@ export const installersRouter = new Elysia({ prefix: "/installers" })
           detail: {
             summary: "Create an Installer and link to User",
             description: `Create an Installer and link to User. If the user is already linked to an installer, it will throw an error.`,
-            tags: [TAG.USERS],
+            tags: [TAG.INSTALLERS],
           },
         }
       )
@@ -126,7 +125,7 @@ export const installersRouter = new Elysia({ prefix: "/installers" })
           detail: {
             summary: "Create an Installer and link to User",
             description: `Create an Installer and link to User. If the user is already linked to an installer, it will throw an error.`,
-            tags: [TAG.USERS],
+            tags: [TAG.INSTALLERS],
           },
         }
       )
@@ -160,7 +159,7 @@ export const installersRouter = new Elysia({ prefix: "/installers" })
       detail: {
         summary: "Get Installer by ID",
         description: `Get a Installer by ID. If the installer does not exist, it will throw an error.`,
-        tags: [TAG.USERS],
+        tags: [TAG.INSTALLERS],
       },
     }
   );

@@ -20,6 +20,10 @@ import {
   insertFarmWithDependencies,
 } from "./db/scripts/farm-migration";
 import LegacyFarmsData from "./db/scripts/legacy-farms.json";
+import { organizationsRouter } from "./routers/organizations-router/organizationsRouter";
+import { permissions } from "./types/api-types/Permissions";
+import { findAllPermissions } from "./db/queries/permissions/findAllPermissions";
+import { createPermission } from "./db/mutations/permissions/createPermission";
 
 const PORT = process.env.PORT || 3005;
 const app = new Elysia()
@@ -52,7 +56,7 @@ const app = new Elysia()
     return "Internal Server Error";
   })
   .use(cors())
-  // .use(swagger({ autoDarkMode: true, path: "/swagger" }))
+  .use(swagger({ autoDarkMode: true, path: "/swagger" }))
   .use(
     cron({
       name: "Updating Rewards",
@@ -87,6 +91,7 @@ const app = new Elysia()
   .use(devicesRouter)
   .use(gcasRouter)
   .use(applicationsRouter)
+  .use(organizationsRouter)
   .use(usersRouter)
   .get("/update-rewards-for-current-week", async () => {
     //Will only work if the GCA has submitted the report for the current week.
@@ -128,6 +133,24 @@ const app = new Elysia()
       return { message: "success" };
     } catch (error) {
       console.error("Error migrating farm", error);
+      return { message: "error" };
+    }
+  })
+  .get("/seed-permissions", async () => {
+    try {
+      const dbPermissions = await findAllPermissions();
+      if (dbPermissions.length > 0) {
+        throw new Error("Permissions already seeded");
+      }
+      for (const permission of permissions) {
+        await createPermission(permission);
+      }
+      return { message: "success" };
+    } catch (error) {
+      console.error("Error seeding permissions", error);
+      if (error instanceof Error) {
+        return { message: error.message };
+      }
       return { message: "error" };
     }
   })
