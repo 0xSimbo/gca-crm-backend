@@ -19,6 +19,11 @@ import { organizationInvitationAcceptedTypes } from "../../constants/typed-data/
 import { recoverAddressHandler } from "../../handlers/recoverAddressHandler";
 import { acceptOrganizationInvitation } from "../../db/mutations/organizations/acceptOrganizationInvitation";
 import { deleteOrganizationUser } from "../../db/mutations/organizations/deleteOrganizationUser";
+import { createOrganizationRole } from "../../db/mutations/organizations/createOrganizationRole";
+import { findAllPermissions } from "../../db/queries/permissions/findAllPermissions";
+import { deleteOrganizationRole } from "../../db/mutations/organizations/deleteOrganizationRole";
+import { findOrganizationRoleById } from "../../db/queries/organizations/findOrganizationRoleById";
+import { updateOrganizationRolePermissions } from "../../db/mutations/organizations/updateOrganizationRolePermissions";
 
 export const organizationsRouter = new Elysia({ prefix: "/organizations" })
   .get(
@@ -93,6 +98,10 @@ export const organizationsRouter = new Elysia({ prefix: "/organizations" })
 
         return organizationRoles;
       } catch (e) {
+        if (e instanceof Error) {
+          set.status = 400;
+          return e.message;
+        }
         console.log("[organizationsRouter] organization-roles", e);
         throw new Error("Error Occured");
       }
@@ -101,6 +110,30 @@ export const organizationsRouter = new Elysia({ prefix: "/organizations" })
       query: t.Object({
         id: t.String(),
       }),
+      detail: {
+        summary: "Get Organization Members by ID",
+        description: `Get Organization Members by ID`,
+        tags: [TAG.ORGANIZATIONS],
+      },
+    }
+  )
+  .get(
+    "/permissions",
+    async ({ set }) => {
+      try {
+        const permissions = await findAllPermissions();
+
+        return permissions;
+      } catch (e) {
+        if (e instanceof Error) {
+          set.status = 400;
+          return e.message;
+        }
+        console.log("[organizationsRouter] permissions", e);
+        throw new Error("Error Occured");
+      }
+    },
+    {
       detail: {
         summary: "Get Organization Members by ID",
         description: `Get Organization Members by ID`,
@@ -185,6 +218,166 @@ export const organizationsRouter = new Elysia({ prefix: "/organizations" })
           detail: {
             summary: "Create an Organization",
             description: `Create an Organization`,
+            tags: [TAG.ORGANIZATIONS],
+          },
+        }
+      )
+      .post(
+        "/create-organization-role",
+        async ({ body, set, userId }) => {
+          try {
+            const user = await findFirstUserById(userId);
+            if (!user) {
+              set.status = 404;
+              return "User not found";
+            }
+
+            const organization = await findOrganizationById(
+              body.organizationId
+            );
+
+            if (!organization) {
+              set.status = 404;
+              return "Organization not found";
+            }
+
+            if (organization.ownerId !== userId) {
+              set.status = 401;
+              return "Unauthorized";
+            }
+            const roleId = await createOrganizationRole(
+              { organizationId: body.organizationId, name: body.roleName },
+              body.permissions.map((permission) => ({
+                id: permission,
+              }))
+            );
+            return roleId;
+          } catch (e) {
+            if (e instanceof Error) {
+              set.status = 400;
+              return e.message;
+            }
+            console.log("[organizationsRouter] create-organization-role", e);
+            throw new Error("Error Occured");
+          }
+        },
+        {
+          body: t.Object({
+            organizationId: t.String(),
+            roleName: t.String(),
+            permissions: t.Array(t.String()),
+          }),
+          detail: {
+            summary: "Create an Organization Role",
+            description: `Create an Organization Role`,
+            tags: [TAG.ORGANIZATIONS],
+          },
+        }
+      )
+      .post(
+        "/update-organization-role-permissions",
+        async ({ body, set, userId }) => {
+          try {
+            const user = await findFirstUserById(userId);
+            if (!user) {
+              set.status = 404;
+              return "User not found";
+            }
+
+            const organization = await findOrganizationById(
+              body.organizationId
+            );
+
+            if (!organization) {
+              set.status = 404;
+              return "Organization not found";
+            }
+
+            if (organization.ownerId !== userId) {
+              set.status = 401;
+              return "Unauthorized";
+            }
+
+            await updateOrganizationRolePermissions(
+              body.organizationId,
+              body.permissions.map((permission) => ({
+                id: permission,
+              }))
+            );
+          } catch (e) {
+            if (e instanceof Error) {
+              set.status = 400;
+              return e.message;
+            }
+            console.log("[organizationsRouter] update-organization-role", e);
+            throw new Error("Error Occured");
+          }
+        },
+        {
+          body: t.Object({
+            organizationId: t.String(),
+
+            permissions: t.Array(t.String()),
+          }),
+          detail: {
+            summary: "Create an Organization Role",
+            description: `Create an Organization Role`,
+            tags: [TAG.ORGANIZATIONS],
+          },
+        }
+      )
+      .post(
+        "/delete-organization-role",
+        async ({ body, set, userId }) => {
+          try {
+            const user = await findFirstUserById(userId);
+            if (!user) {
+              set.status = 404;
+              return "User not found";
+            }
+
+            const role = await findOrganizationRoleById(body.roleId);
+
+            if (!role) {
+              set.status = 404;
+              return "Role not found";
+            }
+
+            if (role.name === "Admin") {
+              set.status = 400;
+              return "Cannot delete Admin role";
+            }
+
+            const organization = await findOrganizationById(
+              role.organizationId
+            );
+
+            if (!organization) {
+              set.status = 404;
+              return "Organization not found";
+            }
+
+            if (organization.ownerId !== userId) {
+              set.status = 401;
+              return "Unauthorized";
+            }
+            await deleteOrganizationRole(body.roleId);
+          } catch (e) {
+            if (e instanceof Error) {
+              set.status = 400;
+              return e.message;
+            }
+            console.log("[organizationsRouter] delete-organization-role", e);
+            throw new Error("Error Occured");
+          }
+        },
+        {
+          body: t.Object({
+            roleId: t.String(),
+          }),
+          detail: {
+            summary: "Delete an Organization Role",
+            description: `Delete an Organization Role`,
             tags: [TAG.ORGANIZATIONS],
           },
         }
@@ -320,7 +513,7 @@ export const organizationsRouter = new Elysia({ prefix: "/organizations" })
         }
       )
       .post(
-        "/leave-organization",
+        "/delete-organization-member",
         async ({ body, set, userId }) => {
           try {
             const user = await findFirstUserById(userId);
@@ -337,13 +530,28 @@ export const organizationsRouter = new Elysia({ prefix: "/organizations" })
               return "Invitation not found";
             }
 
+            const organization = await findOrganizationById(
+              organizationUser?.organizationId
+            );
+
+            if (!organization) {
+              set.status = 404;
+              return "Organization not found";
+            }
+            const isOwner = organization.ownerId === userId;
+
+            if (organizationUser.userId !== userId && !isOwner) {
+              set.status = 401;
+              return "Unauthorized";
+            }
+
             await deleteOrganizationUser(body.organizationUserId);
           } catch (e) {
             if (e instanceof Error) {
               set.status = 400;
               return e.message;
             }
-            console.log("[organizationsRouter] leave-organization", e);
+            console.log("[organizationsRouter] delete-organization-member", e);
             throw new Error("Error Occured");
           }
         },

@@ -13,7 +13,7 @@ import {
   numeric,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
-import { relations, type InferSelectModel, sql } from "drizzle-orm";
+import { relations, type InferSelectModel, sql, or } from "drizzle-orm";
 import { EncryptedMasterKeySet } from "../types/api-types/Application";
 import {
   accountRoleEnum,
@@ -177,6 +177,48 @@ export const OrganizationRelations = relations(
 export type OrganizationType = InferSelectModel<typeof Organizations>;
 export type OrganizationInsertType = typeof Organizations.$inferInsert;
 
+export const OrganizationApplications = pgTable(
+  "organization_applications",
+  {
+    id: text("organization_application_id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => Organizations.id, { onDelete: "cascade" }),
+    applicationId: text("application_id")
+      .notNull()
+      .references(() => applications.id, { onDelete: "cascade" }),
+  },
+  (t) => {
+    return {
+      organizationIdApplicationIdIndex: index(
+        "organization_id_application_id_ix"
+      ).on(t.organizationId, t.applicationId),
+    };
+  }
+);
+
+export const OrganizationApplicationRelations = relations(
+  OrganizationApplications,
+  ({ one }) => ({
+    organization: one(Organizations, {
+      fields: [OrganizationApplications.organizationId],
+      references: [Organizations.id],
+    }),
+    application: one(applications, {
+      fields: [OrganizationApplications.applicationId],
+      references: [applications.id],
+    }),
+  })
+);
+
+export type OrganizationApplicationType = InferSelectModel<
+  typeof OrganizationApplications
+>;
+export type OrganizationApplicationInsertType =
+  typeof OrganizationApplications.$inferInsert;
+
 export const OrganizationUsers = pgTable(
   "organization_users",
   {
@@ -271,6 +313,9 @@ export const RoleRelations = relations(Roles, ({ one, many }) => ({
   rolePermissions: many(RolePermissions),
   users: many(OrganizationUsers),
 }));
+
+export type RoleType = InferSelectModel<typeof Roles>;
+export type RoleInsertType = typeof Roles.$inferInsert;
 
 export const RolePermissions = pgTable(
   "role_permissions",
@@ -797,6 +842,7 @@ export const applicationsRelations = relations(
       references: [applicationsDraft.id],
     }),
     devices: many(Devices),
+    organizationApplications: many(OrganizationApplications),
   })
 );
 

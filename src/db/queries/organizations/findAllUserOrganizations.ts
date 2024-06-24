@@ -7,7 +7,18 @@ export const findAllUserOrganizations = async (userId: string) => {
     where: eq(OrganizationUsers.userId, userId),
     with: {
       role: true,
-      organization: true,
+      organization: {
+        with: {
+          owner: {
+            columns: {
+              id: true,
+              email: true,
+              firstName: true,
+              lastName: true,
+            },
+          },
+        },
+      },
     },
   });
   return organizationDb;

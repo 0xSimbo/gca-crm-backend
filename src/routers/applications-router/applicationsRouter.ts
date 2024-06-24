@@ -48,12 +48,15 @@ import { ethers } from "ethers";
 import { handleCreateWithoutPIIDocumentsAndCompleteApplication } from "./steps/gca-application-completion";
 import { db } from "../../db/db";
 import { applicationsDraft } from "../../db/schema";
-import {
-  EstimateProtocolFeeArgs,
-  estimateProtocolFees,
-} from "../../constants/protocol-fee-assumptions";
+
 import { convertKWhToMWh } from "../../utils/format/convertKWhToMWh";
-import { getSunlightHoursAndCertificates } from "../protocol-fee-router/utils/get-sunlight-hours-and-certificates";
+
+import { findFirstUserById } from "../../db/queries/users/findFirstUserById";
+import { findOrganizationMemberByUserId } from "../../db/queries/organizations/findOrganizationMemberByUserId";
+import { findAllApplicationsByOrganizationId } from "../../db/queries/applications/findAllApplicationsByOrganizationId";
+import { findOrganizationById } from "../../db/queries/organizations/findOrganizationById";
+import { PermissionsEnum } from "../../types/api-types/Permissions";
+import { createOrganizationApplication } from "../../db/mutations/organizations/createOrganizationApplication";
 
 const encryptedFileUpload = t.Object({
   publicUrl: t.String({
@@ -242,6 +245,143 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
           detail: {
             summary: "Get Application by ID",
             description: `Get Application by ID`,
+            tags: [TAG.APPLICATIONS],
+          },
+        }
+      )
+      .get(
+        "/all-applications-by-organization-id",
+        async ({ query, set, userId }) => {
+          if (!query.organizationId)
+            throw new Error("organizationId is required");
+          try {
+            const user = await findFirstUserById(userId);
+            if (!user) {
+              set.status = 400;
+
+              return "Unauthorized";
+            }
+
+            const organization = await findOrganizationById(
+              query.organizationId
+            );
+
+            const isOrganizationOwner = organization?.ownerId === userId;
+
+            const organizationMember = await findOrganizationMemberByUserId(
+              query.organizationId,
+              userId
+            );
+
+            const isAuthorized =
+              isOrganizationOwner ||
+              organizationMember?.role.rolePermissions.find(
+                (p) => p.permission.key === PermissionsEnum.ApplicationsView
+              );
+
+            if (!isAuthorized) {
+              set.status = 400;
+              return "Unauthorized";
+            }
+
+            const applications = await findAllApplicationsByOrganizationId(
+              user.id
+            );
+            return applications;
+          } catch (e) {
+            if (e instanceof Error) {
+              set.status = 400;
+              return e.message;
+            }
+            console.log(
+              "[organizationsRouter] /all-applications-by-organization-id",
+              e
+            );
+            throw new Error("Error Occured");
+          }
+        },
+        {
+          query: t.Object({
+            organizationId: t.String(),
+          }),
+          detail: {
+            summary: "Get all applications by organization ID",
+            description: `Get all applications by organization ID and check if the user is authorized to view applications`,
+            tags: [TAG.APPLICATIONS],
+          },
+        }
+      )
+      .post(
+        "/add-application-to-organization",
+        async ({ body, set, userId }) => {
+          try {
+            const user = await findFirstUserById(userId);
+            if (!user) {
+              set.status = 400;
+
+              return "Unauthorized";
+            }
+
+            const organization = await findOrganizationById(
+              body.organizationId
+            );
+
+            const isOrganizationOwner = organization?.ownerId === userId;
+
+            const organizationMember = await findOrganizationMemberByUserId(
+              body.organizationId,
+              userId
+            );
+
+            const isAuthorized =
+              isOrganizationOwner ||
+              organizationMember?.role.rolePermissions.find(
+                (p) => p.permission.key === PermissionsEnum.ApplicationsCreate
+              );
+
+            if (!isAuthorized) {
+              set.status = 400;
+              return "Unauthorized";
+            }
+
+            const application = await FindFirstApplicationById(
+              body.applicationId
+            );
+
+            if (!application) {
+              set.status = 404;
+              return "Application not found";
+            }
+
+            if (application.userId !== userId) {
+              set.status = 400;
+              return "Unauthorized";
+            }
+
+            await createOrganizationApplication(
+              body.organizationId,
+              body.applicationId
+            );
+          } catch (e) {
+            if (e instanceof Error) {
+              set.status = 400;
+              return e.message;
+            }
+            console.log(
+              "[organizationsRouter] /all-applications-by-organization-id",
+              e
+            );
+            throw new Error("Error Occured");
+          }
+        },
+        {
+          body: t.Object({
+            organizationId: t.String(),
+            applicationId: t.String(),
+          }),
+          detail: {
+            summary: "Add application to organization",
+            description: `Add application to organization and check if the user is authorized to add applications to the organization`,
             tags: [TAG.APPLICATIONS],
           },
         }
