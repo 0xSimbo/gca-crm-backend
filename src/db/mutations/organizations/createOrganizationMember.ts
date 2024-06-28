@@ -12,4 +12,5 @@ export const createOrganizationMember = async (
   if (res.length === 0) {
     throw new Error("Failed to insert organizationUser");
   }
+  return res[0].insertedId;
 };

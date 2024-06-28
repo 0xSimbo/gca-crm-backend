@@ -12,6 +12,11 @@ export const findOrganizationMemberByUserId = async (
       eq(OrganizationUsers.userId, userId)
     ),
     with: {
+      user: {
+        columns: {
+          publicEncryptionKey: true,
+        },
+      },
       role: {
         with: {
           rolePermissions: {

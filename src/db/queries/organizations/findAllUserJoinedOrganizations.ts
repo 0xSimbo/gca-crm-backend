@@ -1,20 +1,15 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "../../db";
 import { OrganizationUsers } from "../../schema";
 
-export const findAllUserOrganizations = async (userId: string) => {
+export const findAllUserJoinedOrganizations = async (userId: string) => {
   const organizationDb = await db.query.OrganizationUsers.findMany({
-    where: eq(OrganizationUsers.userId, userId),
+    where: and(
+      eq(OrganizationUsers.userId, userId),
+      eq(OrganizationUsers.isAccepted, true)
+    ),
     with: {
-      role: {
-        with: {
-          rolePermissions: {
-            with: {
-              permission: true,
-            },
-          },
-        },
-      },
+      role: true,
       organization: {
         with: {
           owner: {

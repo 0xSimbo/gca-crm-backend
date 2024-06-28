@@ -188,13 +188,12 @@ export const OrganizationApplications = pgTable(
       .references(() => Organizations.id, { onDelete: "cascade" }),
     applicationId: text("application_id")
       .notNull()
-      .references(() => applications.id, { onDelete: "cascade" }),
+      .references(() => applications.id, { onDelete: "cascade" })
+      .unique(),
   },
   (t) => {
     return {
-      organizationIdApplicationIdIndex: index(
-        "organization_id_application_id_ix"
-      ).on(t.organizationId, t.applicationId),
+      applicationIdIndex: uniqueIndex("application_id_ix").on(t.applicationId),
     };
   }
 );
@@ -238,6 +237,9 @@ export const OrganizationUsers = pgTable(
     invitedAt: timestamp("invited_at").notNull(),
     signature: varchar("signature", { length: 255 }), // Signature of the user accepting the invitation
     isAccepted: boolean("is_accepted").notNull().default(false),
+    hasDocumentsAccess: boolean("has_documents_access")
+      .notNull()
+      .default(false),
   },
   (t) => {
     return {
@@ -263,7 +265,7 @@ export const OrganizationUsersRelations = relations(
       fields: [OrganizationUsers.roleId],
       references: [Roles.id],
     }),
-    encryptedMasterKeys: many(DelegatedOrganizationEncryptedMasterKeys),
+    encryptedMasterKeys: many(DelegatedDocumentsEncryptedMasterKeys),
   })
 );
 
@@ -354,8 +356,8 @@ export const RolePermissionRelations = relations(
   })
 );
 
-export const DelegatedOrganizationEncryptedMasterKeys = pgTable(
-  "delegated_organization_encrypted_master_keys",
+export const DelegatedDocumentsEncryptedMasterKeys = pgTable(
+  "delegated_documents_encrypted_master_keys",
   {
     id: text("encrypted_master_key_id")
       .primaryKey()
@@ -363,26 +365,37 @@ export const DelegatedOrganizationEncryptedMasterKeys = pgTable(
     organizationUserId: text("organization_user_id")
       .notNull()
       .references(() => OrganizationUsers.id, { onDelete: "cascade" }),
-    encryptedMasterKeySet: json("encrypted_master_key_set").notNull(),
+    encryptedMasterKey: text("encrypted_master_key").notNull(),
+    documentId: text("document_id").notNull(),
+    organizationApplicationId: text("organization_application_id")
+      .references(() => OrganizationApplications.id, { onDelete: "cascade" })
+      .notNull(),
   },
   (t) => {
     return {
       organizationUserIdIndex: index("organization_user_id_ix").on(
         t.organizationUserId
       ),
+      documentIdIndex: index("document_id_ix").on(t.documentId),
     };
   }
 );
 
-export const EncryptedMasterKeyRelations = relations(
-  DelegatedOrganizationEncryptedMasterKeys,
+export const DelegatedDocumentsEncryptedMasterKeyRelations = relations(
+  DelegatedDocumentsEncryptedMasterKeys,
   ({ one }) => ({
     user: one(OrganizationUsers, {
-      fields: [DelegatedOrganizationEncryptedMasterKeys.organizationUserId],
+      fields: [DelegatedDocumentsEncryptedMasterKeys.organizationUserId],
       references: [OrganizationUsers.id],
     }),
   })
 );
+
+export type DelegatedDocumentsEncryptedMasterKeysType = InferSelectModel<
+  typeof DelegatedDocumentsEncryptedMasterKeys
+>;
+export type DelegatedDocumentsEncryptedMasterKeysInsertType =
+  typeof DelegatedDocumentsEncryptedMasterKeys.$inferInsert;
 
 /**
  * @dev Represents a farm in the system.
@@ -842,7 +855,10 @@ export const applicationsRelations = relations(
       references: [applicationsDraft.id],
     }),
     devices: many(Devices),
-    organizationApplications: many(OrganizationApplications),
+    organizationApplication: one(OrganizationApplications, {
+      fields: [applications.id],
+      references: [OrganizationApplications.applicationId],
+    }),
   })
 );
 

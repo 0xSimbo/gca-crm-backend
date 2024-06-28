@@ -11,6 +11,14 @@ import { findAllDocumentsByApplicationId } from "../../db/queries/documents/find
 import { findFirstDocumentById } from "../../db/queries/documents/findFirstDocumentById";
 import { updateDocumentWithAnnotation } from "../../db/mutations/documents/updateDocumentWithAnnotation";
 import { findAllDocumentsByStep } from "../../db/queries/documents/findAllDocumentsByStep";
+import { PermissionsEnum } from "../../types/api-types/Permissions";
+import { findFirstOrganizationApplicationByApplicationId } from "../../db/queries/applications/findFirstOrganizationApplicationByApplicationId";
+import { findOrganizationMemberByUserId } from "../../db/queries/organizations/findOrganizationMemberByUserId";
+import { findAllApplicationsByOrganizationId } from "../../db/queries/applications/findAllApplicationsByOrganizationId";
+import { findOrganizationById } from "../../db/queries/organizations/findOrganizationById";
+import { findAllEncryptedDocumentsByApplicationsIds } from "../../db/queries/documents/findAllEncryptedDocumentsByApplicationsIds";
+import { findFirstDelegatedEncryptedMasterKeyByDocumentIdAndOrganizationUserId } from "../../db/queries/organizations/findFirstDelegatedEncryptedMasterKeyByDocumentIdAndOrganizationUserId";
+import { findAllUserJoinedOrganizations } from "../../db/queries/organizations/findAllUserJoinedOrganizations";
 
 export const documentsRouter = new Elysia({ prefix: "/documents" })
   .use(bearerplugin())
@@ -38,8 +46,31 @@ export const documentsRouter = new Elysia({ prefix: "/documents" })
                 !account ||
                 (account.role !== "ADMIN" && account.role !== "GCA")
               ) {
-                set.status = 401;
-                return "Unauthorized";
+                const organizationApplication =
+                  await findFirstOrganizationApplicationByApplicationId(
+                    document.application.id
+                  );
+
+                if (!organizationApplication) {
+                  set.status = 400;
+                  return "Unauthorized";
+                }
+
+                const isOrganizationOwner =
+                  organizationApplication.organization.ownerId === userId;
+
+                const organizationMember = await findOrganizationMemberByUserId(
+                  organizationApplication.organization.id,
+                  userId
+                );
+
+                const isAuthorized =
+                  isOrganizationOwner || organizationMember?.hasDocumentsAccess;
+
+                if (!isAuthorized) {
+                  set.status = 400;
+                  return "Unauthorized";
+                }
               }
             }
             return document;
@@ -69,15 +100,43 @@ export const documentsRouter = new Elysia({ prefix: "/documents" })
           if (!id) throw new Error("applicationId is required");
           try {
             const application = await FindFirstApplicationById(id);
+
+            if (!application) {
+              set.status = 404;
+              return "Application not found";
+            }
+
             if (application?.userId !== userId) {
               const account = await findFirstAccountById(userId);
               if (
                 !account ||
                 (account.role !== "ADMIN" && account.role !== "GCA")
               ) {
-                set.status = 400;
+                const organizationApplication =
+                  await findFirstOrganizationApplicationByApplicationId(
+                    application.id
+                  );
 
-                return "Unauthorized";
+                if (!organizationApplication) {
+                  set.status = 400;
+                  return "Unauthorized";
+                }
+
+                const isOrganizationOwner =
+                  organizationApplication.organization.ownerId === userId;
+
+                const organizationMember = await findOrganizationMemberByUserId(
+                  organizationApplication.organization.id,
+                  userId
+                );
+
+                const isAuthorized =
+                  isOrganizationOwner || organizationMember?.hasDocumentsAccess;
+
+                if (!isAuthorized) {
+                  set.status = 400;
+                  return "Unauthorized";
+                }
               }
             }
             const documents = await findAllDocumentsByApplicationId(id);
@@ -99,6 +158,136 @@ export const documentsRouter = new Elysia({ prefix: "/documents" })
           detail: {
             summary: "Get All Documents by Application ID",
             description: `Get all documents by application, if application is not owned by user, it will throw an error if your are not an admin or GCA`,
+            tags: [TAG.DOCUMENTS],
+          },
+        }
+      )
+      .get(
+        "/all-organization-shared-encrypted-documents",
+        async ({ query: { applicationId, organizationId }, set, userId }) => {
+          if (!organizationId) throw new Error("organizationId is required");
+          try {
+            const organization = await findOrganizationById(organizationId);
+
+            if (!organization) {
+              set.status = 404;
+              return "Organization not found";
+            }
+
+            const isOrganizationOwner = organization.ownerId === userId;
+
+            const organizationMember = await findOrganizationMemberByUserId(
+              organizationId,
+              userId
+            );
+
+            const isAuthorized =
+              isOrganizationOwner || organizationMember?.hasDocumentsAccess;
+
+            if (!isAuthorized) {
+              set.status = 400;
+              return "Unauthorized";
+            }
+
+            if (applicationId) {
+              const documents =
+                await findAllEncryptedDocumentsByApplicationsIds([
+                  applicationId,
+                ]);
+
+              return documents;
+            }
+
+            const applications = await findAllApplicationsByOrganizationId(
+              organizationId
+            );
+
+            if (applications.length === 0) {
+              return [];
+            }
+
+            const documents = await findAllEncryptedDocumentsByApplicationsIds(
+              applications.map((application) => application.id)
+            );
+
+            return documents;
+          } catch (e) {
+            if (e instanceof Error) {
+              set.status = 400;
+              return e.message;
+            }
+            console.log(
+              "[documentsRouter] /all-organization-shared-encrypted-documents",
+              e
+            );
+            throw new Error("Error Occured");
+          }
+        },
+        {
+          query: t.Object({
+            organizationId: t.String(),
+            applicationId: t.Optional(t.String()),
+          }),
+          detail: {
+            summary: "Get All Organization Shared Encrypted Documents",
+            description: `Get all organization shared encrypted documents, it will throw an error if your are not the organization owner or have access to documents`,
+            tags: [TAG.DOCUMENTS],
+          },
+        }
+      )
+      .get(
+        "/organization-delegated-encrypted-key-by-document-id",
+        async ({ query: { documentId }, set, userId }) => {
+          if (!documentId) throw new Error("document id is required");
+
+          try {
+            const userOrganizations = await findAllUserJoinedOrganizations(
+              userId
+            );
+
+            if (userOrganizations.length === 0) {
+              set.status = 400;
+              return "Unauthorized";
+            }
+            //TODO: handle organization owner delegated keys ( create an organization member for the owner)
+
+            const hasDocumentsAccessOrganizations = userOrganizations.filter(
+              (organization) => organization.hasDocumentsAccess
+            );
+
+            const encryptedKeys =
+              await findFirstDelegatedEncryptedMasterKeyByDocumentIdAndOrganizationUserId(
+                hasDocumentsAccessOrganizations.map(
+                  (organization) => organization.id
+                ),
+                documentId
+              );
+
+            if (encryptedKeys.length === 0) {
+              set.status = 400;
+              return "Unauthorized";
+            }
+
+            return encryptedKeys[0].encryptedMasterKey;
+          } catch (e) {
+            if (e instanceof Error) {
+              set.status = 400;
+              return e.message;
+            }
+            console.log(
+              "[documentsRouter] /organization-delegated-encrypted-key-by-document-id",
+              e
+            );
+            throw new Error("Error Occured");
+          }
+        },
+        {
+          query: t.Object({
+            documentId: t.String(),
+          }),
+          detail: {
+            summary: "Get Organization Delegated Encrypted Key by Document ID",
+            description: `Get organization delegated encrypted key by document id, it will throw an error if your are not the organization owner or have access to documents`,
             tags: [TAG.DOCUMENTS],
           },
         }

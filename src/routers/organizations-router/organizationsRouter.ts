@@ -24,6 +24,12 @@ import { findAllPermissions } from "../../db/queries/permissions/findAllPermissi
 import { deleteOrganizationRole } from "../../db/mutations/organizations/deleteOrganizationRole";
 import { findOrganizationRoleById } from "../../db/queries/organizations/findOrganizationRoleById";
 import { updateOrganizationRolePermissions } from "../../db/mutations/organizations/updateOrganizationRolePermissions";
+import { PermissionsEnum } from "../../types/api-types/Permissions";
+import { createOrganizationMemberEncryptedDocumentsMasterKeys } from "../../db/mutations/organizations/createOrganizationMemberEncryptedDocumentsMasterKeys";
+import { findOrganizationMemberByUserId } from "../../db/queries/organizations/findOrganizationMemberByUserId";
+import { updateOrganizationMemberDocumentsAccess } from "../../db/mutations/organizations/updateOrganizationMemberDocumentsAccess";
+import { deleteAllOrganizationMemberEncryptedDocumentsMasterKeys } from "../../db/mutations/organizations/deleteAllOrganizationMemberEncryptedDocumentsMasterKeys";
+import { findAllOrganizationMembersWithDocumentsAccess } from "../../db/queries/organizations/findAllOrganizationMembersWithDocumentsAccess";
 
 export const organizationsRouter = new Elysia({ prefix: "/organizations" })
   .get(
@@ -185,6 +191,58 @@ export const organizationsRouter = new Elysia({ prefix: "/organizations" })
           },
         }
       )
+      .get(
+        "/all-organization-members-with-documents-access",
+        async ({ query, set, userId }) => {
+          try {
+            const user = await findFirstUserById(userId);
+            if (!user) {
+              set.status = 404;
+              return "User not found";
+            }
+
+            const organization = await findOrganizationById(
+              query.organizationId
+            );
+
+            if (!organization) {
+              set.status = 404;
+              return "Organization not found";
+            }
+
+            if (organization.ownerId !== userId) {
+              set.status = 401;
+              return "Unauthorized";
+            }
+
+            const organizationMembers =
+              await findAllOrganizationMembersWithDocumentsAccess(
+                query.organizationId
+              );
+            return organizationMembers;
+          } catch (e) {
+            if (e instanceof Error) {
+              set.status = 400;
+              return e.message;
+            }
+            console.log(
+              "[organizationsRouter] /all-organization-members-with-documents-access",
+              e
+            );
+            throw new Error("Error Occured");
+          }
+        },
+        {
+          query: t.Object({
+            organizationId: t.String(),
+          }),
+          detail: {
+            summary: "Get Organizations by User ID",
+            description: `Get Organizations by User ID`,
+            tags: [TAG.ORGANIZATIONS],
+          },
+        }
+      )
       .post(
         "/create",
         async ({ body, set, userId }) => {
@@ -284,8 +342,15 @@ export const organizationsRouter = new Elysia({ prefix: "/organizations" })
               return "User not found";
             }
 
+            const role = await findOrganizationRoleById(body.roleId);
+
+            if (!role) {
+              set.status = 404;
+              return "Role not found";
+            }
+
             const organization = await findOrganizationById(
-              body.organizationId
+              role.organizationId
             );
 
             if (!organization) {
@@ -298,34 +363,38 @@ export const organizationsRouter = new Elysia({ prefix: "/organizations" })
               return "Unauthorized";
             }
 
-            await updateOrganizationRolePermissions(
-              body.organizationId,
+            const roleId = await updateOrganizationRolePermissions(
+              body.roleId,
               body.permissions.map((permission) => ({
                 id: permission,
               }))
             );
+            return roleId;
           } catch (e) {
             if (e instanceof Error) {
               set.status = 400;
               return e.message;
             }
-            console.log("[organizationsRouter] update-organization-role", e);
+            console.log(
+              "[organizationsRouter] update-organization-role-permisions",
+              e
+            );
             throw new Error("Error Occured");
           }
         },
         {
           body: t.Object({
-            organizationId: t.String(),
-
+            roleId: t.String(),
             permissions: t.Array(t.String()),
           }),
           detail: {
-            summary: "Create an Organization Role",
-            description: `Create an Organization Role`,
+            summary: "Update an Organization Role Permissions",
+            description: `Update an Organization Role Permissions`,
             tags: [TAG.ORGANIZATIONS],
           },
         }
       )
+
       .post(
         "/delete-organization-role",
         async ({ body, set, userId }) => {
@@ -418,12 +487,12 @@ export const organizationsRouter = new Elysia({ prefix: "/organizations" })
               return "Invited member not found";
             }
 
-            await createOrganizationMember({
-              organizationId: body.organizationId,
-              userId: body.userId,
-              roleId: body.roleId,
-              invitedAt: new Date(),
-            });
+            const role = await findOrganizationRoleById(body.roleId);
+
+            if (!role) {
+              set.status = 404;
+              return "Role not found";
+            }
           } catch (e) {
             if (e instanceof Error) {
               set.status = 400;
@@ -446,6 +515,145 @@ export const organizationsRouter = new Elysia({ prefix: "/organizations" })
           detail: {
             summary: "Invite a Member to an Organization",
             description: `Invite a Member to an Organization`,
+            tags: [TAG.ORGANIZATIONS],
+          },
+        }
+      )
+      .post(
+        "/generate-documents-access",
+        async ({ body, set, userId }) => {
+          try {
+            const user = await findFirstUserById(userId);
+            if (!user) {
+              set.status = 404;
+              return "User not found";
+            }
+
+            const organization = await findOrganizationById(
+              body.organizationId
+            );
+
+            if (!organization) {
+              set.status = 404;
+              return "Organization not found";
+            }
+
+            if (organization.ownerId !== userId) {
+              set.status = 401;
+              return "Unauthorized";
+            }
+
+            const organizationMember = await findOrganizationMemberByUserId(
+              body.organizationId,
+              body.userId
+            );
+
+            if (!organizationMember) {
+              set.status = 404;
+              return "Organization Member not found";
+            }
+
+            await updateOrganizationMemberDocumentsAccess(
+              organizationMember.id,
+              true
+            );
+            if (body.delegatedDocumentsEncryptedMasterKeys.length > 0) {
+              await createOrganizationMemberEncryptedDocumentsMasterKeys(
+                body.delegatedDocumentsEncryptedMasterKeys.map((c) => ({
+                  organizationUserId: organizationMember.id,
+                  documentId: c.documentId,
+                  encryptedMasterKey: c.encryptedMasterKey,
+                  organizationApplicationId: c.organizationApplicationId,
+                }))
+              );
+            }
+          } catch (e) {
+            if (e instanceof Error) {
+              set.status = 400;
+              return e.message;
+            }
+            console.log("[organizationsRouter] generate-documents-access", e);
+            throw new Error("Error Occured");
+          }
+        },
+        {
+          body: t.Object({
+            organizationId: t.String(),
+            userId: t.String(),
+            delegatedDocumentsEncryptedMasterKeys: t.Array(
+              t.Object({
+                documentId: t.String(),
+                encryptedMasterKey: t.String(),
+                organizationApplicationId: t.String(),
+              })
+            ),
+          }),
+          detail: {
+            summary: "Generate Documents Access",
+            description: `Generate Documents Access, this will create encrypted documents master keys`,
+            tags: [TAG.ORGANIZATIONS],
+          },
+        }
+      )
+      .post(
+        "/revoke-documents-access",
+        async ({ body, set, userId }) => {
+          try {
+            const user = await findFirstUserById(userId);
+            if (!user) {
+              set.status = 404;
+              return "User not found";
+            }
+
+            const organization = await findOrganizationById(
+              body.organizationId
+            );
+
+            if (!organization) {
+              set.status = 404;
+              return "Organization not found";
+            }
+
+            if (organization.ownerId !== userId) {
+              set.status = 401;
+              return "Unauthorized";
+            }
+
+            const organizationMember = await findOrganizationMemberByUserId(
+              body.organizationId,
+              body.userId
+            );
+
+            if (!organizationMember) {
+              set.status = 404;
+              return "Organization Member not found";
+            }
+
+            await updateOrganizationMemberDocumentsAccess(
+              organizationMember.id,
+              false
+            );
+
+            await deleteAllOrganizationMemberEncryptedDocumentsMasterKeys(
+              organizationMember.id
+            );
+          } catch (e) {
+            if (e instanceof Error) {
+              set.status = 400;
+              return e.message;
+            }
+            console.log("[organizationsRouter] revoke-documents-access", e);
+            throw new Error("Error Occured");
+          }
+        },
+        {
+          body: t.Object({
+            organizationId: t.String(),
+            userId: t.String(),
+          }),
+          detail: {
+            summary: "Revoke Documents Access",
+            description: `Revoke Documents Access, this will delete all the encrypted documents master keys`,
             tags: [TAG.ORGANIZATIONS],
           },
         }

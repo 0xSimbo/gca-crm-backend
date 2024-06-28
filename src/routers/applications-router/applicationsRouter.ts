@@ -57,6 +57,9 @@ import { findAllApplicationsByOrganizationId } from "../../db/queries/applicatio
 import { findOrganizationById } from "../../db/queries/organizations/findOrganizationById";
 import { PermissionsEnum } from "../../types/api-types/Permissions";
 import { createOrganizationApplication } from "../../db/mutations/organizations/createOrganizationApplication";
+import { deleteOrganizationApplication } from "../../db/mutations/organizations/deleteOrganizationApplication";
+import { findFirstOrganizationApplicationByApplicationId } from "../../db/queries/applications/findFirstOrganizationApplicationByApplicationId";
+import { createOrganizationMemberEncryptedDocumentsMasterKeys } from "../../db/mutations/organizations/createOrganizationMemberEncryptedDocumentsMasterKeys";
 
 const encryptedFileUpload = t.Object({
   publicUrl: t.String({
@@ -220,12 +223,39 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
             }
             if (application.userId !== userId) {
               const account = await findFirstAccountById(userId);
+
               if (
                 !account ||
                 (account.role !== "ADMIN" && account.role !== "GCA")
               ) {
-                set.status = 401;
-                return "Unauthorized";
+                const organizationApplication =
+                  await findFirstOrganizationApplicationByApplicationId(
+                    query.id
+                  );
+
+                if (!organizationApplication) {
+                  set.status = 400;
+                  return "Unauthorized";
+                }
+
+                const isOrganizationOwner =
+                  organizationApplication.organization.ownerId === userId;
+
+                const organizationMember = await findOrganizationMemberByUserId(
+                  organizationApplication.organization.id,
+                  userId
+                );
+
+                const isAuthorized =
+                  isOrganizationOwner ||
+                  organizationMember?.role.rolePermissions.find(
+                    (p) => p.permission.key === PermissionsEnum.ApplicationsRead
+                  );
+
+                if (!isAuthorized) {
+                  set.status = 400;
+                  return "Unauthorized";
+                }
               }
             }
             return application;
@@ -276,7 +306,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
             const isAuthorized =
               isOrganizationOwner ||
               organizationMember?.role.rolePermissions.find(
-                (p) => p.permission.key === PermissionsEnum.ApplicationsView
+                (p) => p.permission.key === PermissionsEnum.ApplicationsRead
               );
 
             if (!isAuthorized) {
@@ -285,7 +315,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
             }
 
             const applications = await findAllApplicationsByOrganizationId(
-              user.id
+              query.organizationId
             );
             return applications;
           } catch (e) {
@@ -336,7 +366,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
             const isAuthorized =
               isOrganizationOwner ||
               organizationMember?.role.rolePermissions.find(
-                (p) => p.permission.key === PermissionsEnum.ApplicationsCreate
+                (p) => p.permission.key === PermissionsEnum.ApplicationsShare
               );
 
             if (!isAuthorized) {
@@ -358,7 +388,109 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               return "Unauthorized";
             }
 
+            const delegatedDocumentsEncryptedMasterKeys =
+              body.delegatedDocumentsEncryptedMasterKeysByOrganizationUserId
+                .map(
+                  ({
+                    organizationUserId,
+                    delegatedDocumentsEncryptedMasterKeys,
+                  }) =>
+                    delegatedDocumentsEncryptedMasterKeys.map((c) => ({
+                      organizationUserId,
+                      documentId: c.documentId,
+                      encryptedMasterKey: c.encryptedMasterKey,
+                    }))
+                )
+                .flat();
+
             await createOrganizationApplication(
+              body.organizationId,
+              body.applicationId,
+              delegatedDocumentsEncryptedMasterKeys
+            );
+          } catch (e) {
+            if (e instanceof Error) {
+              set.status = 400;
+              return e.message;
+            }
+            console.log(
+              "[organizationsRouter] /add-application-to-organization",
+              e
+            );
+            throw new Error("Error Occured");
+          }
+        },
+        {
+          body: t.Object({
+            organizationId: t.String(),
+            applicationId: t.String(),
+            delegatedDocumentsEncryptedMasterKeysByOrganizationUserId: t.Array(
+              t.Object({
+                organizationUserId: t.String(),
+                delegatedDocumentsEncryptedMasterKeys: t.Array(
+                  t.Object({
+                    documentId: t.String(),
+                    encryptedMasterKey: t.String(),
+                  })
+                ),
+              })
+            ),
+          }),
+          detail: {
+            summary: "Add application to organization",
+            description: `Add application to organization and check if the user is authorized to add applications to the organization`,
+            tags: [TAG.APPLICATIONS],
+          },
+        }
+      )
+      .post(
+        "/remove-application-to-organization",
+        async ({ body, set, userId }) => {
+          try {
+            const user = await findFirstUserById(userId);
+            if (!user) {
+              set.status = 400;
+
+              return "Unauthorized";
+            }
+
+            const organization = await findOrganizationById(
+              body.organizationId
+            );
+
+            const isOrganizationOwner = organization?.ownerId === userId;
+
+            const organizationMember = await findOrganizationMemberByUserId(
+              body.organizationId,
+              userId
+            );
+
+            const isAuthorized =
+              isOrganizationOwner ||
+              organizationMember?.role.rolePermissions.find(
+                (p) => p.permission.key === PermissionsEnum.ApplicationsShare
+              );
+
+            if (!isAuthorized) {
+              set.status = 400;
+              return "Unauthorized";
+            }
+
+            const application = await FindFirstApplicationById(
+              body.applicationId
+            );
+
+            if (!application) {
+              set.status = 404;
+              return "Application not found";
+            }
+
+            if (application.userId !== userId) {
+              set.status = 400;
+              return "Unauthorized";
+            }
+
+            await deleteOrganizationApplication(
               body.organizationId,
               body.applicationId
             );
@@ -368,7 +500,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               return e.message;
             }
             console.log(
-              "[organizationsRouter] /all-applications-by-organization-id",
+              "[organizationsRouter] /remove-organization-application",
               e
             );
             throw new Error("Error Occured");
@@ -737,7 +869,6 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               }
             }
             const applications = await findAllApplicationsByUserId(id);
-            // console.log(applications);
             return applications;
           } catch (e) {
             if (e instanceof Error) {

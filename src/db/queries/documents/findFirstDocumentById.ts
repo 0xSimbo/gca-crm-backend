@@ -8,6 +8,7 @@ export const findFirstDocumentById = async (id: string) => {
     with: {
       application: {
         columns: {
+          id: true,
           userId: true,
         },
       },
