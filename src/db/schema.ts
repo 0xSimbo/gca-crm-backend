@@ -190,6 +190,9 @@ export const OrganizationApplications = pgTable(
       .notNull()
       .references(() => applications.id, { onDelete: "cascade" })
       .unique(),
+    orgUserId: text("organization_user_id")
+      .notNull()
+      .references(() => OrganizationUsers.id, { onDelete: "cascade" }),
   },
   (t) => {
     return {

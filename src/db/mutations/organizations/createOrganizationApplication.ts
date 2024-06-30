@@ -7,6 +7,7 @@ import {
 } from "../../schema";
 
 export const createOrganizationApplication = async (
+  applicationOwnerOrgUserId: string,
   organizationId: string,
   applicationId: string,
   delegatedDocumentsEncryptedMasterKeys: Omit<
@@ -24,6 +25,7 @@ export const createOrganizationApplication = async (
       .values({
         organizationId,
         applicationId,
+        orgUserId: applicationOwnerOrgUserId,
       })
       .returning({ insertedId: OrganizationApplications.id });
 

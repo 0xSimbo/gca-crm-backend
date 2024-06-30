@@ -59,6 +59,7 @@ import { PermissionsEnum } from "../../types/api-types/Permissions";
 import { createOrganizationApplication } from "../../db/mutations/organizations/createOrganizationApplication";
 import { deleteOrganizationApplication } from "../../db/mutations/organizations/deleteOrganizationApplication";
 import { findFirstOrganizationApplicationByApplicationId } from "../../db/queries/applications/findFirstOrganizationApplicationByApplicationId";
+import { findAllOrganizationMembers } from "../../db/queries/organizations/findAllOrganizationMembers";
 
 const encryptedFileUpload = t.Object({
   publicUrl: t.String({
@@ -361,26 +362,23 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               return "Unauthorized";
             }
 
-            const organization = await findOrganizationById(
-              body.organizationId
-            );
-
-            const isOrganizationOwner = organization?.ownerId === userId;
-
             const organizationMember = await findOrganizationMemberByUserId(
               body.organizationId,
               userId
             );
 
-            const isAuthorized =
-              isOrganizationOwner ||
-              organizationMember?.role.rolePermissions.find(
-                (p) => p.permission.key === PermissionsEnum.ApplicationsShare
-              );
+            if (!organizationMember) {
+              set.status = 400;
+              return "User is not a member of the organization";
+            }
+
+            const isAuthorized = organizationMember?.role.rolePermissions.find(
+              (p) => p.permission.key === PermissionsEnum.ApplicationsShare
+            );
 
             if (!isAuthorized) {
               set.status = 400;
-              return "Unauthorized";
+              return "User does not have the required permissions";
             }
 
             const application = await FindFirstApplicationById(
@@ -394,7 +392,15 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
 
             if (application.userId !== userId) {
               set.status = 400;
-              return "Unauthorized";
+              return "User is not the owner of the application";
+            }
+
+            if (
+              application.organizationApplication?.organizationId ===
+              body.organizationId
+            ) {
+              set.status = 400;
+              return "Application already added to organization";
             }
 
             const delegatedDocumentsEncryptedMasterKeys =
@@ -413,6 +419,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                 .flat();
 
             await createOrganizationApplication(
+              organizationMember.id,
               body.organizationId,
               body.applicationId,
               delegatedDocumentsEncryptedMasterKeys
@@ -474,17 +481,6 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               userId
             );
 
-            const isAuthorized =
-              isOrganizationOwner ||
-              organizationMember?.role.rolePermissions.find(
-                (p) => p.permission.key === PermissionsEnum.ApplicationsShare
-              );
-
-            if (!isAuthorized) {
-              set.status = 400;
-              return "Unauthorized";
-            }
-
             const application = await FindFirstApplicationById(
               body.applicationId
             );
@@ -492,6 +488,18 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
             if (!application) {
               set.status = 404;
               return "Application not found";
+            }
+
+            const isAuthorized =
+              isOrganizationOwner ||
+              organizationMember?.role.rolePermissions.find(
+                (p) => p.permission.key === PermissionsEnum.ApplicationsShare
+              ) ||
+              application?.userId === userId;
+
+            if (!isAuthorized) {
+              set.status = 400;
+              return "Unauthorized";
             }
 
             if (application.userId !== userId) {
@@ -1241,8 +1249,34 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
             }
 
             if (application.userId !== userId) {
-              set.status = 400;
-              return "Unauthorized";
+              const organizationApplication =
+                await findFirstOrganizationApplicationByApplicationId(
+                  body.applicationId
+                );
+
+              if (!organizationApplication) {
+                set.status = 400;
+                return "Unauthorized";
+              }
+
+              const isOrganizationOwner =
+                organizationApplication.organization.ownerId === userId;
+
+              const organizationMember = await findOrganizationMemberByUserId(
+                organizationApplication.organization.id,
+                userId
+              );
+
+              const isAuthorized =
+                isOrganizationOwner ||
+                organizationMember?.role.rolePermissions.find(
+                  (p) => p.permission.key === PermissionsEnum.ProtocolFeePayment
+                );
+
+              if (!isAuthorized) {
+                set.status = 400;
+                return "Unauthorized";
+              }
             }
 
             if (
@@ -1262,8 +1296,33 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               }
 
               if (protocolFeeData.user.id !== userId) {
-                set.status = 400;
-                return "The transaction hash does not belong to the user";
+                const organizationApplication =
+                  await findFirstOrganizationApplicationByApplicationId(
+                    body.applicationId
+                  );
+
+                if (!organizationApplication) {
+                  set.status = 400;
+                  return "The transaction hash does not belong to the user";
+                }
+
+                const organizationMembers = await findAllOrganizationMembers(
+                  organizationApplication.organization.id
+                );
+
+                const allowedWallets = organizationMembers
+                  .filter((m) =>
+                    m.role.rolePermissions.find(
+                      (p) =>
+                        p.permission.key === PermissionsEnum.ProtocolFeePayment
+                    )
+                  )
+                  .map((c) => c.userId);
+
+                if (!allowedWallets.includes(protocolFeeData.user.id)) {
+                  set.status = 400;
+                  return "The transaction hash does not belong to the user or any of the organization members allowed to pay the protocol fee";
+                }
               }
 
               if (BigInt(application.finalProtocolFee) === BigInt(0)) {

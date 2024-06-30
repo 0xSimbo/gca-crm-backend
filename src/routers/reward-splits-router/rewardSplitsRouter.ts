@@ -12,9 +12,11 @@ import {
   ApplicationSteps,
 } from "../../types/api-types/Application";
 import { createSplits } from "../../db/mutations/reward-splits/createSplits";
-import { incrementApplicationStep } from "../../db/mutations/applications/incrementApplicationStep";
-import { updateApplicationStatus } from "../../db/mutations/applications/updateApplicationStatus";
+
 import { updateApplication } from "../../db/mutations/applications/updateApplication";
+import { findFirstOrganizationApplicationByApplicationId } from "../../db/queries/applications/findFirstOrganizationApplicationByApplicationId";
+import { findOrganizationMemberByUserId } from "../../db/queries/organizations/findOrganizationMemberByUserId";
+import { PermissionsEnum } from "../../types/api-types/Permissions";
 
 export const rewardSplitsRouter = new Elysia({ prefix: "/rewardsSplits" })
   .use(bearerplugin())
@@ -77,8 +79,34 @@ export const rewardSplitsRouter = new Elysia({ prefix: "/rewardsSplits" })
               return "Application not found";
             }
             if (application.userId !== userId) {
-              set.status = 400;
-              return "Unauthorized";
+              const organizationApplication =
+                await findFirstOrganizationApplicationByApplicationId(
+                  body.applicationId
+                );
+
+              if (!organizationApplication) {
+                set.status = 400;
+                return "Unauthorized";
+              }
+
+              const isOrganizationOwner =
+                organizationApplication.organization.ownerId === userId;
+
+              const organizationMember = await findOrganizationMemberByUserId(
+                organizationApplication.organization.id,
+                userId
+              );
+
+              const isAuthorized =
+                isOrganizationOwner ||
+                organizationMember?.role.rolePermissions.find(
+                  (p) => p.permission.key === PermissionsEnum.EditRewardSplit
+                );
+
+              if (!isAuthorized) {
+                set.status = 400;
+                return "Unauthorized";
+              }
             }
             if (application.status !== ApplicationStatusEnum.approved) {
               set.status = 400;

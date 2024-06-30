@@ -15,7 +15,15 @@ export const findAllOrganizationMembers = async (organizationId: string) => {
           lastName: true,
         },
       },
-      role: true,
+      role: {
+        with: {
+          rolePermissions: {
+            with: {
+              permission: true,
+            },
+          },
+        },
+      },
     },
   });
   return organizationMembersDb;

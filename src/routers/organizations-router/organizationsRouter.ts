@@ -30,6 +30,7 @@ import { findOrganizationMemberByUserId } from "../../db/queries/organizations/f
 import { updateOrganizationMemberDocumentsAccess } from "../../db/mutations/organizations/updateOrganizationMemberDocumentsAccess";
 import { deleteAllOrganizationMemberEncryptedDocumentsMasterKeys } from "../../db/mutations/organizations/deleteAllOrganizationMemberEncryptedDocumentsMasterKeys";
 import { findAllOrganizationMembersWithDocumentsAccess } from "../../db/queries/organizations/findAllOrganizationMembersWithDocumentsAccess";
+import { updateOrganizationMemberRole } from "../../db/mutations/organizations/updateOrganizationMemberRole";
 
 export const organizationsRouter = new Elysia({ prefix: "/organizations" })
   .get(
@@ -413,7 +414,6 @@ export const organizationsRouter = new Elysia({ prefix: "/organizations" })
           },
         }
       )
-
       .post(
         "/delete-organization-role",
         async ({ body, set, userId }) => {
@@ -525,6 +525,85 @@ export const organizationsRouter = new Elysia({ prefix: "/organizations" })
               return e.message;
             }
             console.log("[organizationsRouter] invite-member", e);
+            throw new Error("Error Occured");
+          }
+        },
+        {
+          body: t.Object({
+            userId: t.String({
+              example: "0x2e2771032d119fe590FD65061Ad3B366C8e9B7b9",
+              minLength: 42,
+              maxLength: 42,
+            }),
+            organizationId: t.String(),
+            roleId: t.String(),
+          }),
+          detail: {
+            summary: "Invite a Member to an Organization",
+            description: `Invite a Member to an Organization`,
+            tags: [TAG.ORGANIZATIONS],
+          },
+        }
+      )
+      .post(
+        "/update-organization-member-role",
+        async ({ body, set, userId }) => {
+          try {
+            const user = await findFirstUserById(userId);
+            if (!user) {
+              set.status = 404;
+              return "User not found";
+            }
+
+            if (body.userId === userId) {
+              set.status = 400;
+              return "You cannot update your own role";
+            }
+
+            const organization = await findOrganizationById(
+              body.organizationId
+            );
+
+            if (!organization) {
+              set.status = 404;
+              return "Organization not found";
+            }
+
+            if (organization.ownerId !== userId) {
+              set.status = 401;
+              return "Only the owner can update roles";
+            }
+
+            const organizationUser = await findOrganizationMemberByUserId(
+              body.organizationId,
+              body.userId
+            );
+
+            if (!organizationUser) {
+              set.status = 404;
+              return "Organization Member not found";
+            }
+
+            const role = await findOrganizationRoleById(body.roleId);
+
+            if (!role) {
+              set.status = 404;
+              return "Role not found";
+            }
+
+            await updateOrganizationMemberRole(
+              organizationUser.id,
+              body.roleId
+            );
+          } catch (e) {
+            if (e instanceof Error) {
+              set.status = 400;
+              return e.message;
+            }
+            console.log(
+              "[organizationsRouter] update-organization-member-role",
+              e
+            );
             throw new Error("Error Occured");
           }
         },

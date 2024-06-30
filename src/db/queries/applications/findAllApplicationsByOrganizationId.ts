@@ -28,6 +28,7 @@ export const findAllApplicationsByOrganizationId = async (
         with: {
           user: {
             columns: {
+              id: true,
               contactType: true,
               contactValue: true,
             },
