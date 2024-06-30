@@ -215,7 +215,7 @@ export const farmUpdatesHistory = pgTable(
     farmId: varchar("farm_id", { length: 66 })
       .notNull()
       .references(() => farms.id, { onDelete: "cascade" }),
-    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull(),
     updatedBy: varchar("updated_by", { length: 42 }).notNull(), // the wallet address of the user that made the update
     update: json("update").$type<FarmUpdate>().notNull(),
   },
@@ -291,7 +291,7 @@ export const FarmRewardsRelations = relations(farmRewards, ({ one }) => ({
 export const Accounts = pgTable("accounts", {
   id: varchar("wallet_id", { length: 42 }).primaryKey().notNull(),
   role: accountRoleEnum("role"),
-  createdAt: timestamp("createdAt").notNull().defaultNow(),
+  createdAt: timestamp("createdAt").notNull(),
   siweNonce: varchar("nonce", { length: 64 }).notNull(),
   salt: varchar("salt", { length: 255 }).notNull(),
 });
@@ -329,7 +329,7 @@ export const users = pgTable("users", {
     .primaryKey()
     .notNull()
     .references(() => Accounts.id, { onDelete: "cascade" }),
-  createdAt: timestamp("createdAt").notNull().defaultNow(),
+  createdAt: timestamp("createdAt").notNull(),
   firstName: varchar("first_name", { length: 255 }).notNull(),
   lastName: varchar("last_name", { length: 255 }).notNull(),
   email: varchar("email", { length: 255 }).unique().notNull(),
@@ -380,7 +380,7 @@ export const Gcas = pgTable("gcas", {
     .notNull()
     .references(() => Accounts.id, { onDelete: "cascade" }),
   email: varchar("email", { length: 255 }).unique().notNull(),
-  createdAt: timestamp("createdAt").notNull().defaultNow(),
+  createdAt: timestamp("createdAt").notNull(),
   publicEncryptionKey: text("public_encryption_key").notNull(),
   // stored encrypted in db and decrypted in the front end using the salt + user signature
   encryptedPrivateEncryptionKey: text(
@@ -442,7 +442,7 @@ export const applications = pgTable("applications", {
   userId: varchar("user_id", { length: 42 }).notNull(),
   // after application is "completed", a farm is created using the hexlified farm pub key
   farmId: varchar("farm_id", { length: 66 }).unique(),
-  createdAt: timestamp("createdAt").notNull().defaultNow(),
+  createdAt: timestamp("createdAt").notNull(),
   currentStep: integer("current_step").notNull(),
   roundRobinStatus: roundRobinStatusEnum("round_robin_status").notNull(),
   status: applicationStatusEnum("application_status").notNull(),
@@ -594,7 +594,7 @@ export const deferments = pgTable("deferments", {
   reason: varchar("reason", { length: 255 }),
   fromGca: varchar("from_gca", { length: 42 }).notNull(),
   toGca: varchar("to_gca", { length: 42 }).notNull(),
-  timestamp: timestamp("timestamp").notNull().defaultNow(),
+  timestamp: timestamp("timestamp").notNull(),
   defermentSignature: varchar("deferment_signature", { length: 255 }),
 });
 
@@ -636,7 +636,7 @@ export const Documents = pgTable("documents", {
   name: varchar("name", { length: 255 }).notNull(),
   url: varchar("url", { length: 255 }).notNull(), // bytes of the encrypted document are stored on r2
   type: varchar("type", { length: 255 }).notNull(),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
+  createdAt: timestamp("created_at").notNull(),
   encryptedMasterKeys: json("encrypted_master_keys")
     .$type<EncryptedMasterKeySet>()
     .notNull()
@@ -774,7 +774,7 @@ export const ApplicationStepApprovals = pgTable("applicationStepApprovals", {
   applicationId: varchar("application_id", { length: 66 })
     .notNull()
     .references(() => applications.id, { onDelete: "cascade" }),
-  approvedAt: timestamp("approved_at").notNull().defaultNow(),
+  approvedAt: timestamp("approved_at").notNull(),
   gcaAddress: varchar("gca_address", { length: 42 }).notNull(),
   signature: varchar("signature", { length: 255 }).notNull(),
   annotation: text("annotation"), // optional annotation

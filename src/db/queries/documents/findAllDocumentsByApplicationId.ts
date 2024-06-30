@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { db } from "../../db";
 import { Documents } from "../../schema";
 
@@ -17,6 +17,7 @@ export const findAllDocumentsByApplicationId = async (
       name: true,
       step: true,
     },
+    orderBy: asc(Documents.id),
   });
   return documentsDb;
 };

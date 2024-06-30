@@ -36,6 +36,8 @@ import { handleCreateOrUpdatePreIntallDocuments } from "./steps/pre-install";
 import { updateApplicationPreInstallVisitDates } from "../../db/mutations/applications/updateApplicationPreInstallVisitDates";
 import { updateApplicationAfterInstallVisitDates } from "../../db/mutations/applications/updateApplicationAfterInstallVisitDates";
 import { handleCreateOrUpdateInspectionAndPto } from "./steps/inspection-and-pto";
+import { updateApplication } from "../../db/mutations/applications/updateApplicationS";
+import { roundRobinAssignement } from "../../db/queries/gcas/roundRobinAssignement";
 
 export const EnquiryQueryBody = t.Object({
   applicationId: t.Nullable(t.String()),
@@ -624,6 +626,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               );
               return body.applicationId;
             }
+            const gcaAddress = await roundRobinAssignement();
             const insertedId = await createApplication(
               body.latestUtilityBillPresignedUrl,
               {
@@ -642,7 +645,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                 currentStep: 1,
                 //TODO remove when @0xSimbo finished roundRobin implementation
                 gcaAssignedTimestamp: new Date(),
-                gcaAddress: "0x18a0bA01Bbec4aa358650d297Ba7bB330a78B073",
+                gcaAddress,
                 roundRobinStatus: RoundRobinStatusEnum.waitingToBeAccepted,
                 // roundRobinStatus: RoundRobinStatusEnum.waitingToBeAssigned,
                 status: ApplicationStatusEnum.waitingForApproval,
@@ -904,7 +907,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               set.status = 400;
               return e.message;
             }
-            console.log("[applicationsRouter] create-application", e);
+            console.log("[applicationsRouter] next-step", e);
             throw new Error("Error Occured");
           }
         },
@@ -915,6 +918,56 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
           detail: {
             summary: "Increment the application step",
             description: `Increment the application step after user read the annotation left by the gca on the documents`,
+            tags: [TAG.APPLICATIONS],
+          },
+        }
+      )
+      .post(
+        "/reject-quote",
+        async ({ query, set, userId }) => {
+          try {
+            const application = await FindFirstApplicationById(
+              query.applicationId
+            );
+            if (!application) {
+              set.status = 404;
+              return "Application not found";
+            }
+            if (application.userId !== userId) {
+              set.status = 403;
+              return "Unauthorized";
+            }
+            if (application.status !== ApplicationStatusEnum.approved) {
+              set.status = 403;
+              return "Application is not Approved";
+            }
+            if (
+              application.currentStep !== ApplicationSteps.preInstallDocuments
+            ) {
+              set.status = 403;
+              return "Action not authorized";
+            }
+
+            await updateApplicationStatus(
+              query.applicationId,
+              ApplicationStatusEnum.quoteRejected
+            );
+          } catch (e) {
+            if (e instanceof Error) {
+              set.status = 400;
+              return e.message;
+            }
+            console.log("[applicationsRouter] reject-quote", e);
+            throw new Error("Error Occured");
+          }
+        },
+        {
+          query: t.Object({
+            applicationId: t.String(),
+          }),
+          detail: {
+            summary: "Reject Final Quote Per Watt",
+            description: `Update application status to quoteRejected after user rejected the final quote per watt`,
             tags: [TAG.APPLICATIONS],
           },
         }
@@ -999,10 +1052,11 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                 }
               );
             } else {
-              await updateApplicationStatus(
-                body.applicationId,
-                ApplicationStatusEnum.changesRequired
-              );
+              await updateApplication(body.applicationId, {
+                status: ApplicationStatusEnum.changesRequired,
+                preInstallVisitDateFrom: null,
+                preInstallVisitDateTo: null,
+              });
             }
           } catch (e) {
             if (e instanceof Error) {
@@ -1129,10 +1183,11 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                 }
               );
             } else {
-              await updateApplicationStatus(
-                body.applicationId,
-                ApplicationStatusEnum.changesRequired
-              );
+              await updateApplication(body.applicationId, {
+                status: ApplicationStatusEnum.changesRequired,
+                afterInstallVisitDateFrom: null,
+                afterInstallVisitDateTo: null,
+              });
             }
           } catch (e) {
             if (e instanceof Error) {
