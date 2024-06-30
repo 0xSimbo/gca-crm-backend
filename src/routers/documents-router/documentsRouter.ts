@@ -182,26 +182,31 @@ export const documentsRouter = new Elysia({ prefix: "/documents" })
             );
 
             const isAuthorized =
-              isOrganizationOwner || organizationMember?.hasDocumentsAccess;
+              isOrganizationOwner ||
+              organizationMember?.hasDocumentsAccess ||
+              organizationMember?.role?.rolePermissions.some(
+                ({ permission }) =>
+                  permission.key === PermissionsEnum.ApplicationsShare
+              );
 
             if (!isAuthorized) {
               set.status = 400;
               return "Unauthorized";
             }
-
-            if (applicationId) {
+            console.log("applicationId", applicationId);
+            if (applicationId && applicationId !== "undefined") {
               const documents =
                 await findAllEncryptedDocumentsByApplicationsIds([
                   applicationId,
                 ]);
-
+              console.log({ documents });
               return documents;
             }
 
             const applications = await findAllApplicationsByOrganizationId(
               organizationId
             );
-
+            console.log({ applications });
             if (applications.length === 0) {
               return [];
             }

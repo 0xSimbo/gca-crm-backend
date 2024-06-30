@@ -24,7 +24,6 @@ export const approveApplicationStep = async (
       .where(and(eq(applications.id, applicationId)))
       .returning({ status: applications.status });
 
-    console.log(res);
     if (
       !res.every(
         ({ status }) =>

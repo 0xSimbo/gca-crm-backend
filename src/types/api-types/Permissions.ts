@@ -6,6 +6,11 @@ export const permissions: PermissionInsertType[] = [
     description: "View applications and their status and details.",
     key: "applications-read",
   },
+  // {
+  //   name: "Applications Edit",
+  //   description: "Edit applications and their details.",
+  //   key: "applications-edit",
+  // },
   {
     name: "Applications Share",
     description: "Share applications with the organization.",
@@ -25,7 +30,7 @@ export const permissions: PermissionInsertType[] = [
 
 export const PermissionsEnum = {
   ApplicationsRead: "applications-read",
-  ApplicationsEdit: "applications-edit",
+  // ApplicationsEdit: "applications-edit",
   ApplicationsShare: "applications-share",
   ProtocolFeePayment: "protocol-fee-payment",
   EditRewardSplit: "edit-reward-split",

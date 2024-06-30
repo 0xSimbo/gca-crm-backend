@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { db } from "../../db";
-import { ApplicationType, applications } from "../../schema";
+import { applications } from "../../schema";
 import { formatUnits } from "viem";
 
 export const FindFirstApplicationById = async (id: string) => {
@@ -16,6 +16,12 @@ export const FindFirstApplicationById = async (id: string) => {
           lastName: true,
           contactType: true,
           contactValue: true,
+        },
+      },
+      organizationApplication: {
+        columns: {
+          organizationId: true,
+          id: true,
         },
       },
       documentsMissingWithReason: true,

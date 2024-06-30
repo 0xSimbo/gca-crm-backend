@@ -59,7 +59,6 @@ import { PermissionsEnum } from "../../types/api-types/Permissions";
 import { createOrganizationApplication } from "../../db/mutations/organizations/createOrganizationApplication";
 import { deleteOrganizationApplication } from "../../db/mutations/organizations/deleteOrganizationApplication";
 import { findFirstOrganizationApplicationByApplicationId } from "../../db/queries/applications/findFirstOrganizationApplicationByApplicationId";
-import { createOrganizationMemberEncryptedDocumentsMasterKeys } from "../../db/mutations/organizations/createOrganizationMemberEncryptedDocumentsMasterKeys";
 
 const encryptedFileUpload = t.Object({
   publicUrl: t.String({
@@ -72,11 +71,21 @@ const encryptedFileUpload = t.Object({
       encryptedMasterKey: t.String(),
     })
   ),
+  orgMembersMasterkeys: t.Array(
+    t.Object({
+      orgUserId: t.String(),
+      encryptedMasterKey: t.String(),
+    })
+  ),
 });
 
 export type EncryptedFileUploadType = {
   publicUrl: string;
   keysSet: EncryptedMasterKeySet[];
+  orgMembersMasterkeys: {
+    orgUserId: string;
+    encryptedMasterKey: string;
+  }[];
 };
 
 export const EnquiryQueryBody = t.Object({
@@ -650,7 +659,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                 parseFloat(convertKWhToMWh(body.revisedKwhGeneratedPerYear)) *
                 1e6;
 
-              console.log("protocolFees", protocolFees);
+              // console.log("protocolFees", protocolFees);
 
               await approveApplicationStep(
                 body.applicationId,
@@ -733,10 +742,6 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                 body.signature,
                 gcaId
               );
-              console.log("recoveredAddress", {
-                recoveredAddress,
-                acceptedValues,
-              });
             } else {
               if (!body.to) {
                 set.status = 400;
@@ -979,8 +984,8 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               const { applicationId, ...updateObject } = body;
               await updateApplicationEnquiry(
                 existingApplication.id,
-                body.latestUtilityBill.publicUrl,
-                body.latestUtilityBill.keysSet,
+                existingApplication.organizationApplication?.id,
+                body.latestUtilityBill,
                 {
                   ...updateObject,
                   estimatedCostOfPowerPerKWh:
@@ -1041,6 +1046,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
             if (body.plansetsNotAvailableReason && body.plansets === null) {
               await handleCreateOrUpdatePreIntallDocuments(
                 application,
+                application.organizationApplication?.id,
                 ApplicationSteps.preInstallDocuments,
                 {
                   ...body,
@@ -1054,6 +1060,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
             ) {
               await handleCreateOrUpdatePreIntallDocuments(
                 application,
+                application.organizationApplication?.id,
                 ApplicationSteps.preInstallDocuments,
                 {
                   ...body,
@@ -1182,20 +1189,24 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               return "Every miscDocuments name should include the word 'misc'";
             }
 
-            await handleCreateOrUpdateAfterInstallDocuments(application, {
-              inspectionNotAvailableReason: body.inspectionNotAvailableReason,
-              inspection: body.inspection,
-              ptoNotAvailableReason: body.ptoNotAvailableReason,
-              pto: body.pto,
-              installFinishedDate: body.installFinishedDate,
-              miscDocuments: body.miscDocuments,
-              cityPermit: body.cityPermit,
-              cityPermitNotAvailableReason: body.cityPermitNotAvailableReason,
-              mortgageStatement: body.mortgageStatement,
-              propertyDeed: body.propertyDeed,
-              firstUtilityBill: body.firstUtilityBill,
-              secondUtilityBill: body.secondUtilityBill,
-            });
+            await handleCreateOrUpdateAfterInstallDocuments(
+              application,
+              application.organizationApplication?.id,
+              {
+                inspectionNotAvailableReason: body.inspectionNotAvailableReason,
+                inspection: body.inspection,
+                ptoNotAvailableReason: body.ptoNotAvailableReason,
+                pto: body.pto,
+                installFinishedDate: body.installFinishedDate,
+                miscDocuments: body.miscDocuments,
+                cityPermit: body.cityPermit,
+                cityPermitNotAvailableReason: body.cityPermitNotAvailableReason,
+                mortgageStatement: body.mortgageStatement,
+                propertyDeed: body.propertyDeed,
+                firstUtilityBill: body.firstUtilityBill,
+                secondUtilityBill: body.secondUtilityBill,
+              }
+            );
             return body.applicationId;
           } catch (e) {
             console.error("error", e);

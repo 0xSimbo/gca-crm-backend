@@ -6,6 +6,7 @@ import {
 import { db } from "../../db";
 import {
   ApplicationInsertType,
+  DelegatedDocumentsEncryptedMasterKeys,
   Documents,
   DocumentsInsertType,
   applications,
@@ -14,6 +15,7 @@ import {
 export const createApplication = async (
   latestUtilityBillPublicUrl: string,
   keysSet: EncryptedMasterKeySet[],
+
   application: ApplicationInsertType
 ) => {
   const insertedId = await db.transaction(async (tx) => {

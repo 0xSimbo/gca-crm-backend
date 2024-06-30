@@ -1,8 +1,11 @@
+import { findFirstOrganizationApplicationByApplicationId } from "../../db/queries/applications/findFirstOrganizationApplicationByApplicationId";
+import { findOrganizationMemberByUserId } from "../../db/queries/organizations/findOrganizationMemberByUserId";
 import { ApplicationType } from "../../db/schema";
 import {
   ApplicationStatusEnum,
   ApplicationSteps,
 } from "../../types/api-types/Application";
+import { PermissionsEnum } from "../../types/api-types/Permissions";
 
 export const fillApplicationStepCheckHandler = async (
   userId: string,
@@ -10,10 +13,37 @@ export const fillApplicationStepCheckHandler = async (
   applicationStep: ApplicationSteps
 ): Promise<{ errorCode: number; errorMessage: string } | null> => {
   if (application.userId !== userId) {
+    //TODO: Uncomment this after figuring out edit application encryption
+    // const organizationApplication =
+    //   await findFirstOrganizationApplicationByApplicationId(application.id);
+    // if (!organizationApplication) {
     return {
       errorCode: 403,
       errorMessage: "Only the application owner can perform this action",
     };
+    // }
+    // const organizationMember = await findOrganizationMemberByUserId(
+    //   organizationApplication.organization.id,
+    //   userId
+    // );
+    // if (!organizationMember) {
+    //   return {
+    //     errorCode: 403,
+    //     errorMessage:
+    //       "Only the application owner or organization member can perform this action",
+    //   };
+    // }
+
+    // if (
+    //   !organizationMember.role.rolePermissions.find(
+    //     (p) => p.permission.key === PermissionsEnum.ApplicationsEdit
+    //   )
+    // ) {
+    //   return {
+    //     errorCode: 403,
+    //     errorMessage: "User does not have the required permissions",
+    //   };
+    // }
   }
 
   if (

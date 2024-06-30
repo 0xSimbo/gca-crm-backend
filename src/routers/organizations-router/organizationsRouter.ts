@@ -167,13 +167,9 @@ export const organizationsRouter = new Elysia({ prefix: "/organizations" })
               return "Unauthorized";
             }
 
-            const ownedOrganizations = await findAllOwnedOrganizations(userId);
-            const memberOrganizations = await findAllUserOrganizations(userId);
+            const userOrganizations = await findAllUserOrganizations(userId);
 
-            return {
-              ownedOrganizations,
-              memberOrganizations,
-            };
+            return userOrganizations;
           } catch (e) {
             if (e instanceof Error) {
               set.status = 400;
@@ -208,11 +204,6 @@ export const organizationsRouter = new Elysia({ prefix: "/organizations" })
             if (!organization) {
               set.status = 404;
               return "Organization not found";
-            }
-
-            if (organization.ownerId !== userId) {
-              set.status = 401;
-              return "Unauthorized";
             }
 
             const organizationMembers =
@@ -253,11 +244,32 @@ export const organizationsRouter = new Elysia({ prefix: "/organizations" })
               return "User not found";
             }
 
-            const organizationId = await createOrganization({
-              name: body.organizationName,
-              ownerId: userId,
-              createdAt: new Date(),
-            });
+            const approvedValues = {
+              organizationId: "create",
+              deadline: body.deadline,
+              // nonce is fetched from user account. nonce is updated for every new next-auth session
+            };
+
+            const recoveredAddress = await recoverAddressHandler(
+              organizationInvitationAcceptedTypes,
+              approvedValues,
+              body.signature,
+              userId
+            );
+
+            if (recoveredAddress.toLowerCase() !== user.id.toLowerCase()) {
+              set.status = 400;
+              return "Invalid Signature";
+            }
+
+            const organizationId = await createOrganization(
+              {
+                name: body.organizationName,
+                ownerId: userId,
+                createdAt: new Date(),
+              },
+              body.signature
+            );
 
             return organizationId;
           } catch (e) {
@@ -272,6 +284,8 @@ export const organizationsRouter = new Elysia({ prefix: "/organizations" })
         {
           body: t.Object({
             organizationName: t.String(),
+            signature: t.String(),
+            deadline: t.Number(),
           }),
           detail: {
             summary: "Create an Organization",
@@ -349,6 +363,11 @@ export const organizationsRouter = new Elysia({ prefix: "/organizations" })
               return "Role not found";
             }
 
+            if (role.isReadOnly) {
+              set.status = 400;
+              return "Cannot update Admin role";
+            }
+
             const organization = await findOrganizationById(
               role.organizationId
             );
@@ -412,7 +431,7 @@ export const organizationsRouter = new Elysia({ prefix: "/organizations" })
               return "Role not found";
             }
 
-            if (role.name === "Admin") {
+            if (role.isReadOnly) {
               set.status = 400;
               return "Cannot delete Admin role";
             }
@@ -493,6 +512,13 @@ export const organizationsRouter = new Elysia({ prefix: "/organizations" })
               set.status = 404;
               return "Role not found";
             }
+
+            await createOrganizationMember({
+              organizationId: body.organizationId,
+              userId: body.userId,
+              roleId: body.roleId,
+              invitedAt: new Date(),
+            });
           } catch (e) {
             if (e instanceof Error) {
               set.status = 400;
@@ -629,6 +655,11 @@ export const organizationsRouter = new Elysia({ prefix: "/organizations" })
               return "Organization Member not found";
             }
 
+            if (organizationMember.isOwner) {
+              set.status = 400;
+              return "Cannot revoke access of owner";
+            }
+
             await updateOrganizationMemberDocumentsAccess(
               organizationMember.id,
               false
@@ -736,6 +767,11 @@ export const organizationsRouter = new Elysia({ prefix: "/organizations" })
             if (!organizationUser) {
               set.status = 404;
               return "Invitation not found";
+            }
+
+            if (organizationUser.isOwner) {
+              set.status = 400;
+              return "Cannot delete owner";
             }
 
             const organization = await findOrganizationById(

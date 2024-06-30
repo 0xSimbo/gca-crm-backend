@@ -2,6 +2,8 @@ import { eq } from "drizzle-orm";
 import { db } from "../../db";
 import {
   ApplicationUpdateEnquiryType,
+  DelegatedDocumentsEncryptedMasterKeys,
+  DelegatedDocumentsEncryptedMasterKeysInsertType,
   Documents,
   DocumentsInsertType,
   applications,
@@ -12,14 +14,17 @@ import {
   EncryptedMasterKeySet,
   RequiredDocumentsNamesEnum,
 } from "../../../types/api-types/Application";
+import { EncryptedFileUploadType } from "../../../routers/applications-router/applicationsRouter";
+import { DocumentsInsertTypeExtended } from "./fillApplicationStepWithDocuments";
 
 export const updateApplicationEnquiry = async (
   applicationId: string,
-  latestUtilityBillPublicUrl: string,
-  keysSet: EncryptedMasterKeySet[],
+  organizationApplicationId: string | undefined,
+  latestUtilityBill: EncryptedFileUploadType,
   insertValues: ApplicationUpdateEnquiryType
 ) => {
-  return await db.transaction(async (tx) => {
+  let documentId: string = "";
+  await db.transaction(async (tx) => {
     const updateRes = await db
       .update(applications)
       .set({
@@ -33,19 +38,20 @@ export const updateApplicationEnquiry = async (
       tx.rollback();
     }
 
-    console.log("updateRes", updateRes);
+    // console.log("updateRes", updateRes);
 
-    const documents: DocumentsInsertType[] = [
+    const documents: DocumentsInsertTypeExtended[] = [
       {
         name: RequiredDocumentsNamesEnum.latestUtilityBill,
         applicationId,
-        url: latestUtilityBillPublicUrl,
+        url: latestUtilityBill.publicUrl,
         type: "enc",
         annotation: null,
         isEncrypted: true,
         step: ApplicationSteps.enquiry,
-        encryptedMasterKeys: keysSet,
+        encryptedMasterKeys: latestUtilityBill.keysSet,
         createdAt: new Date(),
+        orgMembersMasterkeys: latestUtilityBill.orgMembersMasterkeys,
       },
     ];
 
@@ -53,7 +59,7 @@ export const updateApplicationEnquiry = async (
       .delete(Documents)
       .where(eq(Documents.applicationId, applicationId))
       .returning({ id: Documents.id });
-    console.log(deleteAllDocuments);
+
     if (deleteAllDocuments.length === 0) {
       tx.rollback();
     }
@@ -62,9 +68,30 @@ export const updateApplicationEnquiry = async (
       .insert(Documents)
       .values(documents)
       .returning({ id: Documents.id });
-    console.log(documentInsert);
+
     if (documentInsert.length !== documents.length) {
       tx.rollback();
     }
+
+    documentId = documentInsert[0].id;
   });
+
+  if (documentId && organizationApplicationId) {
+    const delegatedDocumentsEncryptedMasterKeys: DelegatedDocumentsEncryptedMasterKeysInsertType[] =
+      latestUtilityBill.orgMembersMasterkeys.map(
+        ({ orgUserId, encryptedMasterKey }) => ({
+          organizationUserId: orgUserId,
+          documentId,
+          encryptedMasterKey,
+          organizationApplicationId,
+        })
+      );
+    // console.log(delegatedDocumentsEncryptedMasterKeys);
+
+    if (delegatedDocumentsEncryptedMasterKeys.length > 0) {
+      await db
+        .insert(DelegatedDocumentsEncryptedMasterKeys)
+        .values(delegatedDocumentsEncryptedMasterKeys);
+    }
+  }
 };

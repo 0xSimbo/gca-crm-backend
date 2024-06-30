@@ -240,6 +240,7 @@ export const OrganizationUsers = pgTable(
     hasDocumentsAccess: boolean("has_documents_access")
       .notNull()
       .default(false),
+    isOwner: boolean("is_owner").notNull().default(false),
   },
   (t) => {
     return {
@@ -299,6 +300,7 @@ export const Roles = pgTable(
       .references(() => Organizations.id, { onDelete: "cascade" }),
     name: varchar("name", { length: 255 }).notNull(),
     createdAt: timestamp("created_at").notNull().defaultNow(),
+    isReadOnly: boolean("is_read_only").notNull().default(false),
   },
   (t) => {
     return {
@@ -366,7 +368,9 @@ export const DelegatedDocumentsEncryptedMasterKeys = pgTable(
       .notNull()
       .references(() => OrganizationUsers.id, { onDelete: "cascade" }),
     encryptedMasterKey: text("encrypted_master_key").notNull(),
-    documentId: text("document_id").notNull(),
+    documentId: text("document_id")
+      .notNull()
+      .references(() => Documents.id, { onDelete: "cascade" }),
     organizationApplicationId: text("organization_application_id")
       .references(() => OrganizationApplications.id, { onDelete: "cascade" })
       .notNull(),
@@ -387,6 +391,14 @@ export const DelegatedDocumentsEncryptedMasterKeyRelations = relations(
     user: one(OrganizationUsers, {
       fields: [DelegatedDocumentsEncryptedMasterKeys.organizationUserId],
       references: [OrganizationUsers.id],
+    }),
+    document: one(Documents, {
+      fields: [DelegatedDocumentsEncryptedMasterKeys.documentId],
+      references: [Documents.id],
+    }),
+    organizationApplication: one(OrganizationApplications, {
+      fields: [DelegatedDocumentsEncryptedMasterKeys.organizationApplicationId],
+      references: [OrganizationApplications.id],
     }),
   })
 );

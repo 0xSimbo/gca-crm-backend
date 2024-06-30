@@ -1,7 +1,9 @@
-import { fillApplicationStepWithDocuments } from "../../../db/mutations/applications/fillApplicationStepWithDocuments";
+import {
+  DocumentsInsertTypeExtended,
+  fillApplicationStepWithDocuments,
+} from "../../../db/mutations/applications/fillApplicationStepWithDocuments";
 import {
   ApplicationType,
-  DocumentsInsertType,
   DocumentsMissingWithReasonInsertType,
 } from "../../../db/schema";
 import {
@@ -31,12 +33,13 @@ type UpdatePreInstallDocumentsWithPlansetsAvailableType =
 
 export const handleCreateOrUpdatePreIntallDocuments = async (
   application: ApplicationType,
+  organizationApplicationId: string | undefined,
   step: ApplicationSteps,
   args:
     | UpdatePreInstallDocumentsWithPlansetsNotAvailableType
     | UpdatePreInstallDocumentsWithPlansetsAvailableType
 ) => {
-  const documents: DocumentsInsertType[] = [
+  const documents: DocumentsInsertTypeExtended[] = [
     {
       name: RequiredDocumentsNamesEnum.contractAgreement,
       applicationId: application.id,
@@ -47,6 +50,7 @@ export const handleCreateOrUpdatePreIntallDocuments = async (
       step,
       encryptedMasterKeys: args.contractAgreement.keysSet,
       createdAt: new Date(),
+      orgMembersMasterkeys: args.contractAgreement.orgMembersMasterkeys,
     },
     {
       name: RequiredDocumentsNamesEnum.declarationOfIntention,
@@ -58,6 +62,7 @@ export const handleCreateOrUpdatePreIntallDocuments = async (
       step,
       encryptedMasterKeys: args.declarationOfIntention.keysSet,
       createdAt: new Date(),
+      orgMembersMasterkeys: args.declarationOfIntention.orgMembersMasterkeys,
     },
   ];
 
@@ -72,6 +77,7 @@ export const handleCreateOrUpdatePreIntallDocuments = async (
       step,
       encryptedMasterKeys: args.plansets.keysSet,
       createdAt: new Date(),
+      orgMembersMasterkeys: args.plansets.orgMembersMasterkeys,
     });
   }
   const documentsMissingWithReason: DocumentsMissingWithReasonInsertType[] = [];
@@ -86,6 +92,7 @@ export const handleCreateOrUpdatePreIntallDocuments = async (
   }
 
   return await fillApplicationStepWithDocuments(
+    organizationApplicationId,
     application.id,
     application.status,
     application.currentStep,

@@ -6,6 +6,7 @@ export const handleCreateOrUpdatePermitDocumentation = async (
   args: { estimatedInstallDate: Date }
 ) => {
   return await fillApplicationStepWithDocuments(
+    undefined,
     application.id,
     application.status,
     application.currentStep,

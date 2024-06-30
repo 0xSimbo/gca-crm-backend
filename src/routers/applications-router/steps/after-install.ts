@@ -1,4 +1,8 @@
-import { fillApplicationStepWithDocuments } from "../../../db/mutations/applications/fillApplicationStepWithDocuments";
+import { db } from "../../../db/db";
+import {
+  DocumentsInsertTypeExtended,
+  fillApplicationStepWithDocuments,
+} from "../../../db/mutations/applications/fillApplicationStepWithDocuments";
 import {
   ApplicationType,
   DocumentsInsertType,
@@ -33,10 +37,11 @@ type UpdateInspectionAndPtoType = {
 
 export const handleCreateOrUpdateAfterInstallDocuments = async (
   application: ApplicationType,
+  organizationApplicationId: string | undefined,
   args: UpdateInspectionAndPtoType
 ) => {
   const step = ApplicationSteps.inspectionAndPtoDocuments;
-  const documents: DocumentsInsertType[] = [
+  const documents: DocumentsInsertTypeExtended[] = [
     {
       name: RequiredDocumentsNamesEnum.firstUtilityBill,
       applicationId: application.id,
@@ -47,6 +52,7 @@ export const handleCreateOrUpdateAfterInstallDocuments = async (
       step,
       encryptedMasterKeys: args.firstUtilityBill.keysSet,
       createdAt: new Date(),
+      orgMembersMasterkeys: args.firstUtilityBill.orgMembersMasterkeys,
     },
     {
       name: RequiredDocumentsNamesEnum.secondUtilityBill,
@@ -58,6 +64,7 @@ export const handleCreateOrUpdateAfterInstallDocuments = async (
       step,
       encryptedMasterKeys: args.secondUtilityBill.keysSet,
       createdAt: new Date(),
+      orgMembersMasterkeys: args.secondUtilityBill.orgMembersMasterkeys,
     },
   ];
 
@@ -72,6 +79,7 @@ export const handleCreateOrUpdateAfterInstallDocuments = async (
       step,
       encryptedMasterKeys: args.mortgageStatement.keysSet,
       createdAt: new Date(),
+      orgMembersMasterkeys: args.mortgageStatement.orgMembersMasterkeys,
     });
   }
 
@@ -86,6 +94,7 @@ export const handleCreateOrUpdateAfterInstallDocuments = async (
       step,
       encryptedMasterKeys: args.propertyDeed.keysSet,
       createdAt: new Date(),
+      orgMembersMasterkeys: args.propertyDeed.orgMembersMasterkeys,
     });
   }
 
@@ -100,6 +109,7 @@ export const handleCreateOrUpdateAfterInstallDocuments = async (
       isEncrypted: true,
       encryptedMasterKeys: args.inspection.keysSet,
       createdAt: new Date(),
+      orgMembersMasterkeys: args.inspection.orgMembersMasterkeys,
     });
   }
 
@@ -114,6 +124,7 @@ export const handleCreateOrUpdateAfterInstallDocuments = async (
       isEncrypted: true,
       encryptedMasterKeys: args.pto.keysSet,
       createdAt: new Date(),
+      orgMembersMasterkeys: args.pto.orgMembersMasterkeys,
     });
   }
 
@@ -128,6 +139,7 @@ export const handleCreateOrUpdateAfterInstallDocuments = async (
       isEncrypted: true,
       encryptedMasterKeys: args.cityPermit.keysSet,
       createdAt: new Date(),
+      orgMembersMasterkeys: args.cityPermit.orgMembersMasterkeys,
     });
   }
 
@@ -141,8 +153,8 @@ export const handleCreateOrUpdateAfterInstallDocuments = async (
     isEncrypted: true,
     encryptedMasterKeys: misc.encryptedFileUpload.keysSet,
     createdAt: new Date(),
+    orgMembersMasterkeys: misc.encryptedFileUpload.orgMembersMasterkeys,
   }));
-  console.log(miscDocuments);
 
   if (miscDocuments.length > 0) {
     documents.push(...miscDocuments);
@@ -178,6 +190,7 @@ export const handleCreateOrUpdateAfterInstallDocuments = async (
   }
 
   return await fillApplicationStepWithDocuments(
+    organizationApplicationId,
     application.id,
     application.status,
     application.currentStep,
