@@ -256,11 +256,18 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                   userId
                 );
 
+                // isOwner or has permission to read applications or has permission to pay protocol fees and application is waiting for payment
                 const isAuthorized =
                   isOrganizationOwner ||
                   organizationMember?.role.rolePermissions.find(
                     (p) => p.permission.key === PermissionsEnum.ApplicationsRead
-                  );
+                  ) ||
+                  (organizationMember?.role.rolePermissions.find(
+                    (p) =>
+                      p.permission.key === PermissionsEnum.ProtocolFeePayment
+                  ) &&
+                    application.status ===
+                      ApplicationStatusEnum.waitingForPayment);
 
                 if (!isAuthorized) {
                   set.status = 400;
@@ -316,17 +323,20 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
             const isAuthorized =
               isOrganizationOwner ||
               organizationMember?.role.rolePermissions.find(
-                (p) => p.permission.key === PermissionsEnum.ApplicationsRead
+                (p) =>
+                  p.permission.key === PermissionsEnum.ApplicationsRead ||
+                  p.permission.key === PermissionsEnum.ProtocolFeePayment
               );
-
-            if (!isAuthorized) {
-              set.status = 400;
-              return "Unauthorized";
-            }
 
             const applications = await findAllApplicationsByOrganizationId(
               query.organizationId
             );
+
+            if (!isAuthorized) {
+              // return only applications owned by the user
+              return applications.filter((c) => c.user.id === userId);
+            }
+
             return applications;
           } catch (e) {
             if (e instanceof Error) {

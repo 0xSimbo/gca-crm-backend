@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { db } from "../../db";
 import { OrganizationApplications, applications } from "../../schema";
+import { formatUnits } from "viem";
 
 export const findAllApplicationsByOrganizationId = async (
   organizationId: string
@@ -24,6 +25,7 @@ export const findAllApplicationsByOrganizationId = async (
           installerPhone: true,
           installerName: true,
           farmOwnerName: true,
+          finalProtocolFee: true,
         },
         with: {
           user: {
@@ -37,5 +39,11 @@ export const findAllApplicationsByOrganizationId = async (
       },
     },
   });
-  return applicationsDb.map((application) => application.application);
+  return applicationsDb.map(({ application }) => ({
+    ...application,
+    finalProtocolFee: formatUnits(
+      (application.finalProtocolFee || BigInt(0)) as bigint,
+      6
+    ),
+  }));
 };
