@@ -24,6 +24,7 @@ import { organizationsRouter } from "./routers/organizations-router/organization
 import { permissions } from "./types/api-types/Permissions";
 import { findAllPermissions } from "./db/queries/permissions/findAllPermissions";
 import { createPermission } from "./db/mutations/permissions/createPermission";
+import { legacyFarms } from "./legacy/farms";
 
 const PORT = process.env.PORT || 3005;
 const app = new Elysia()
@@ -104,6 +105,9 @@ const app = new Elysia()
       console.error("Error updating rewards", error);
       return { message: "error" };
     }
+  })
+  .get("/legacyFarms", async ({ params }) => {
+    return legacyFarms;
   })
   .get("/update-rewards-for-all-weeks", async () => {
     const lastWeek = getProtocolWeek() - 2;
