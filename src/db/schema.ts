@@ -170,7 +170,7 @@ export const OrganizationRelations = relations(
       references: [users.id],
     }),
     users: many(OrganizationUsers),
-    role: one(Roles),
+    roles: many(Roles),
   })
 );
 

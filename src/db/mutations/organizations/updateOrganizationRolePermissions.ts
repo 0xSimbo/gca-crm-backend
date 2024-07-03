@@ -6,11 +6,13 @@ export const updateOrganizationRolePermissions = async (
   roleId: string,
   permissions: { id: string }[]
 ) => {
-  await db.delete(RolePermissions).where(eq(RolePermissions.roleId, roleId));
-  await db.insert(RolePermissions).values(
-    permissions.map((permission) => ({
-      roleId,
-      permissionId: permission.id,
-    }))
-  );
+  db.transaction(async (tx) => {
+    await tx.delete(RolePermissions).where(eq(RolePermissions.roleId, roleId));
+    await tx.insert(RolePermissions).values(
+      permissions.map((permission) => ({
+        roleId,
+        permissionId: permission.id,
+      }))
+    );
+  });
 };
