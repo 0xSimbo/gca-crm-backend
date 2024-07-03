@@ -978,6 +978,7 @@ export const Documents = pgTable("documents", {
     .notNull()
     .array()
     .notNull(),
+  isOverWritten: boolean("over_written").notNull().default(false),
 });
 
 export type DocumentsType = InferSelectModel<typeof Documents>;

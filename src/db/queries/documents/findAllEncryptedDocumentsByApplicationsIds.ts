@@ -20,6 +20,7 @@ export const findAllEncryptedDocumentsByApplicationsIds = async (
       name: true,
       step: true,
       isEncrypted: true,
+      isOverWritten: true,
       encryptedMasterKeys: true,
     },
     with: {

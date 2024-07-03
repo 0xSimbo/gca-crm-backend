@@ -65,7 +65,7 @@ export const protocolFeeRouter = new Elysia({ prefix: "/protocolFees" })
   )
   .get(
     "/estimateFees",
-    async ({ query }) => {
+    async ({ query, set }) => {
       const parsedQuery = {
         powerOutputMWH: parseFloat(query.powerOutputMWH),
         electricityPricePerKWH: parseFloat(query.electricityPricePerKWH),
@@ -79,37 +79,47 @@ export const protocolFeeRouter = new Elysia({ prefix: "/protocolFees" })
           : undefined,
       };
 
-      const { average_carbon_certificates, average_sunlight } =
-        await getSunlightHoursAndCertificates({
+      try {
+        const { average_carbon_certificates, average_sunlight } =
+          await getSunlightHoursAndCertificates({
+            latitude: parsedQuery.latitude,
+            longitude: parsedQuery.longitude,
+          });
+
+        const args: EstimateProtocolFeeArgs = {
+          powerOutputMWH: parsedQuery.powerOutputMWH,
+          hoursOfSunlightPerDay: average_sunlight,
+          electricityPricePerKWH: parsedQuery.electricityPricePerKWH,
+          cashflowDiscount: parsedQuery.cashflowDiscount,
           latitude: parsedQuery.latitude,
           longitude: parsedQuery.longitude,
-        });
+          escalatorReference: parsedQuery.escalatorReference,
+        };
 
-      const args: EstimateProtocolFeeArgs = {
-        powerOutputMWH: parsedQuery.powerOutputMWH,
-        hoursOfSunlightPerDay: average_sunlight,
-        electricityPricePerKWH: parsedQuery.electricityPricePerKWH,
-        cashflowDiscount: parsedQuery.cashflowDiscount,
-        latitude: parsedQuery.latitude,
-        longitude: parsedQuery.longitude,
-        escalatorReference: parsedQuery.escalatorReference,
-      };
+        const estimatedProtocolFees = estimateProtocolFees(args);
 
-      const estimatedProtocolFees = estimateProtocolFees(args);
+        const costPerWatt =
+          estimatedProtocolFees.protocolFees / args.powerOutputMWH / 1e6; // 1e6 to convert from MWH to WH
 
-      const costPerWatt =
-        estimatedProtocolFees.protocolFees / args.powerOutputMWH / 1e6; // 1e6 to convert from MWH to WH
-
-      return {
-        ...estimatedProtocolFees,
-        protocolFeeAssumptions,
-        costPerWatt,
-        cashflowDiscount: parsedQuery.cashflowDiscount,
-        referenceData: {
-          averageCarbonCertificates: average_carbon_certificates,
-          averageSunlight: average_sunlight,
-        },
-      };
+        return {
+          ...estimatedProtocolFees,
+          protocolFeeAssumptions,
+          costPerWatt,
+          cashflowDiscount: parsedQuery.cashflowDiscount,
+          referenceData: {
+            averageCarbonCertificates: average_carbon_certificates,
+            averageSunlight: average_sunlight,
+          },
+        };
+      } catch (e) {
+        if (e instanceof Error) {
+          console.error("[applicationsRouter] estimateFees", e);
+          set.status = 400;
+          return e.message;
+        }
+        console.error("[applicationsRouter] estimateFees", e);
+        throw new Error("Error Occured");
+      }
     },
     {
       query: EstimateProtocolFeeArgsSchema,

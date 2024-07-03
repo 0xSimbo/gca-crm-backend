@@ -22,6 +22,7 @@ export const findAllDocumentsByStep = async (
       name: true,
       step: true,
       isEncrypted: true,
+      isOverWritten: true,
       encryptedMasterKeys: true,
     },
     orderBy: desc(Documents.id),

@@ -77,8 +77,11 @@ export function estimateProtocolFees(args: EstimateProtocolFeeArgs) {
 
   const escalatorReference =
     args.escalatorReference ||
-    statesWithEscalatorFees.find((state) => {
-      return state.state.trim() == foundState.trim();
+    statesWithEscalatorFees.find(({ state }) => {
+      return (
+        state.replaceAll(" ", "").toLowerCase() ==
+        foundState.replaceAll(" ", "").toLowerCase()
+      );
     })?.percent;
 
   if (!escalatorReference) {
