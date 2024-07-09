@@ -150,8 +150,6 @@ const encryptedUploadedUrlExample =
 export const PreInstallDocumentsQueryBody = t.Object({
   applicationId: t.String(),
   contractAgreement: encryptedFileUpload,
-  plansets: t.Nullable(encryptedFileUpload),
-  plansetsNotAvailableReason: t.Nullable(t.String()),
   declarationOfIntention: encryptedFileUpload,
 });
 
@@ -162,6 +160,8 @@ export const PermitDocumentationQueryBody = t.Object({
 
 export const InspectionAndPTOQueryBody = t.Object({
   applicationId: t.String(),
+  plansets: t.Nullable(encryptedFileUpload),
+  plansetsNotAvailableReason: t.Nullable(t.String()),
   cityPermit: t.Nullable(encryptedFileUpload),
   cityPermitNotAvailableReason: t.Nullable(t.String()),
   inspection: t.Nullable(encryptedFileUpload),
@@ -1061,35 +1061,15 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               return errorChecks.errorMessage;
             }
 
-            if (body.plansetsNotAvailableReason && body.plansets === null) {
-              await handleCreateOrUpdatePreIntallDocuments(
-                application,
-                application.organizationApplication?.id,
-                ApplicationSteps.preInstallDocuments,
-                {
-                  ...body,
-                  plansets: null,
-                  plansetsNotAvailableReason: body.plansetsNotAvailableReason,
-                }
-              );
-            } else if (
-              body.plansetsNotAvailableReason === null &&
-              body.plansets
-            ) {
-              await handleCreateOrUpdatePreIntallDocuments(
-                application,
-                application.organizationApplication?.id,
-                ApplicationSteps.preInstallDocuments,
-                {
-                  ...body,
-                  plansets: body.plansets,
-                  plansetsNotAvailableReason: null,
-                }
-              );
-            } else {
-              set.status = 400;
-              return "Either plansets file or plansetsNotAvailableReason is required";
-            }
+            await handleCreateOrUpdatePreIntallDocuments(
+              application,
+              application.organizationApplication?.id,
+              ApplicationSteps.preInstallDocuments,
+              {
+                ...body,
+              }
+            );
+
             return body.applicationId;
           } catch (e) {
             console.error("error", e);
@@ -1105,7 +1085,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
           body: PreInstallDocumentsQueryBody,
           detail: {
             summary: "Create or Update the pre-install documents",
-            description: `insert the pre-install documents in db + insert documentsMissingWithReason if plansets missing and update the application status to waitingForApproval`,
+            description: `insert the pre-install documents in db and update the application status to waitingForApproval`,
             tags: [TAG.APPLICATIONS],
           },
         }
@@ -1211,18 +1191,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               application,
               application.organizationApplication?.id,
               {
-                inspectionNotAvailableReason: body.inspectionNotAvailableReason,
-                inspection: body.inspection,
-                ptoNotAvailableReason: body.ptoNotAvailableReason,
-                pto: body.pto,
-                installFinishedDate: body.installFinishedDate,
-                miscDocuments: body.miscDocuments,
-                cityPermit: body.cityPermit,
-                cityPermitNotAvailableReason: body.cityPermitNotAvailableReason,
-                mortgageStatement: body.mortgageStatement,
-                propertyDeed: body.propertyDeed,
-                firstUtilityBill: body.firstUtilityBill,
-                secondUtilityBill: body.secondUtilityBill,
+                ...body,
               }
             );
             return body.applicationId;

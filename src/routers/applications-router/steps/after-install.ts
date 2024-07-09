@@ -21,6 +21,8 @@ type UpdateInspectionAndPtoType = {
   inspection: EncryptedFileUploadType | null;
   pto: EncryptedFileUploadType | null;
   cityPermit: EncryptedFileUploadType | null;
+  plansets: EncryptedFileUploadType | null;
+  plansetsNotAvailableReason: string | null;
   cityPermitNotAvailableReason: string | null;
   inspectionNotAvailableReason: string | null;
   firstUtilityBill: EncryptedFileUploadType;
@@ -142,6 +144,20 @@ export const handleCreateOrUpdateAfterInstallDocuments = async (
       orgMembersMasterkeys: args.cityPermit.orgMembersMasterkeys,
     });
   }
+  if (args.plansets) {
+    documents.push({
+      name: OptionalDocumentsNamesEnum.plansets,
+      applicationId: application.id,
+      url: args.plansets.publicUrl,
+      type: "pdf",
+      isEncrypted: true,
+      annotation: null,
+      step,
+      encryptedMasterKeys: args.plansets.keysSet,
+      createdAt: new Date(),
+      orgMembersMasterkeys: args.plansets.orgMembersMasterkeys,
+    });
+  }
 
   const miscDocuments = args.miscDocuments.map((misc) => ({
     name: misc.name,
@@ -186,6 +202,15 @@ export const handleCreateOrUpdateAfterInstallDocuments = async (
       documentName: OptionalDocumentsEnum.cityPermit,
       reason: args.cityPermitNotAvailableReason,
       step: step,
+    });
+  }
+
+  if (args.plansetsNotAvailableReason) {
+    documentsMissingWithReason.push({
+      applicationId: application.id,
+      documentName: OptionalDocumentsEnum.plansets,
+      reason: args.plansetsNotAvailableReason,
+      step,
     });
   }
 

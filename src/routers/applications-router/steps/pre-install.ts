@@ -19,25 +19,11 @@ type UpdatePreInstallDocumentsRequiredType = {
   declarationOfIntention: EncryptedFileUploadType;
 };
 
-type UpdatePreInstallDocumentsWithPlansetsNotAvailableType =
-  UpdatePreInstallDocumentsRequiredType & {
-    plansets: null;
-    plansetsNotAvailableReason: string;
-  };
-
-type UpdatePreInstallDocumentsWithPlansetsAvailableType =
-  UpdatePreInstallDocumentsRequiredType & {
-    plansets: EncryptedFileUploadType;
-    plansetsNotAvailableReason: null;
-  };
-
 export const handleCreateOrUpdatePreIntallDocuments = async (
   application: ApplicationType,
   organizationApplicationId: string | undefined,
   step: ApplicationSteps,
-  args:
-    | UpdatePreInstallDocumentsWithPlansetsNotAvailableType
-    | UpdatePreInstallDocumentsWithPlansetsAvailableType
+  args: UpdatePreInstallDocumentsRequiredType
 ) => {
   const documents: DocumentsInsertTypeExtended[] = [
     {
@@ -66,37 +52,12 @@ export const handleCreateOrUpdatePreIntallDocuments = async (
     },
   ];
 
-  if (args.plansets) {
-    documents.push({
-      name: OptionalDocumentsNamesEnum.plansets,
-      applicationId: application.id,
-      url: args.plansets.publicUrl,
-      type: "pdf",
-      isEncrypted: true,
-      annotation: null,
-      step,
-      encryptedMasterKeys: args.plansets.keysSet,
-      createdAt: new Date(),
-      orgMembersMasterkeys: args.plansets.orgMembersMasterkeys,
-    });
-  }
-  const documentsMissingWithReason: DocumentsMissingWithReasonInsertType[] = [];
-
-  if (args.plansetsNotAvailableReason) {
-    documentsMissingWithReason.push({
-      applicationId: application.id,
-      documentName: OptionalDocumentsEnum.plansets,
-      reason: args.plansetsNotAvailableReason,
-      step,
-    });
-  }
-
   return await fillApplicationStepWithDocuments(
     organizationApplicationId,
     application.id,
     application.status,
     application.currentStep,
     documents,
-    documentsMissingWithReason
+    []
   );
 };

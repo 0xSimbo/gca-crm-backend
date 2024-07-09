@@ -9,6 +9,7 @@ export const applicationStatus = [
   "changes-required",
   "waiting-for-approval",
   "completed",
+  // "canceled",
   "quote-rejected",
   "waiting-for-information",
   "waiting-for-visit",
