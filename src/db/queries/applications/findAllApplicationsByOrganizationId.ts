@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "../../db";
 import { OrganizationApplications, applications } from "../../schema";
 import { formatUnits } from "viem";
@@ -7,7 +7,10 @@ export const findAllApplicationsByOrganizationId = async (
   organizationId: string
 ) => {
   const applicationsDb = await db.query.OrganizationApplications.findMany({
-    where: eq(OrganizationApplications.organizationId, organizationId),
+    where: and(
+      eq(OrganizationApplications.organizationId, organizationId),
+      eq(applications.isCancelled, false)
+    ),
     columns: {},
     with: {
       application: {
@@ -25,6 +28,7 @@ export const findAllApplicationsByOrganizationId = async (
           installerPhone: true,
           installerName: true,
           farmOwnerName: true,
+          isCancelled: true,
           finalProtocolFee: true,
         },
         with: {

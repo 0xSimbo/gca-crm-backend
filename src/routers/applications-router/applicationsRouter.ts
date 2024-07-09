@@ -470,6 +470,54 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
         }
       )
       .post(
+        "/cancel-or-resume-application",
+        async ({ body, set, userId }) => {
+          try {
+            const user = await findFirstUserById(userId);
+            if (!user) {
+              set.status = 400;
+              return "Unauthorized";
+            }
+
+            const application = await FindFirstApplicationById(
+              body.applicationId
+            );
+
+            if (!application) {
+              set.status = 404;
+              return "Application not found";
+            }
+
+            if (application.userId !== userId) {
+              set.status = 400;
+              return "User is not the owner of the application";
+            }
+
+            await updateApplication(application.id, {
+              isCancelled: body.cancel,
+            });
+          } catch (e) {
+            if (e instanceof Error) {
+              set.status = 400;
+              return e.message;
+            }
+            console.log("[organizationsRouter] /cancel-application", e);
+            throw new Error("Error Occured");
+          }
+        },
+        {
+          body: t.Object({
+            cancel: t.Boolean(),
+            applicationId: t.String(),
+          }),
+          detail: {
+            summary: "Cancel or Resume Application",
+            description: `Cancel or Resume Application and check if the user is authorized to cancel the application`,
+            tags: [TAG.APPLICATIONS],
+          },
+        }
+      )
+      .post(
         "/remove-application-to-organization",
         async ({ body, set, userId }) => {
           try {
