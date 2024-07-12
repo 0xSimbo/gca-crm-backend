@@ -797,6 +797,10 @@ export const applications = pgTable("applications", {
     precision: 10,
     scale: 2,
   }),
+  revisedCostOfPowerPerKWh: numeric("revised_cost_of_power_per_kwh", {
+    precision: 10,
+    scale: 2,
+  }),
   revisedEstimatedProtocolFees: numeric("revised_estimated_protocol_fees", {
     precision: 10,
     scale: 2,

@@ -738,6 +738,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                   finalQuotePerWatt: body.finalQuotePerWatt,
                   revisedEstimatedProtocolFees: protocolFees.toString(),
                   revisedKwhGeneratedPerYear: body.revisedKwhGeneratedPerYear,
+                  revisedCostOfPowerPerKWh: body.revisedCostOfPowerPerKWh,
                 }
               );
             } else {
@@ -760,6 +761,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
             ...ApproveOrAskForChangesQueryBody,
             finalQuotePerWatt: t.Nullable(t.String()),
             revisedKwhGeneratedPerYear: t.Nullable(t.String()),
+            revisedCostOfPowerPerKWh: t.Nullable(t.String()),
           }),
           detail: {
             summary: "Gca Approve or Ask for Changes after step submission",
