@@ -1,6 +1,6 @@
 {
   "name": "@glowlabs-org/crm-bindings",
-  "version": "0.1.0-alpha.11",
+  "version": "0.1.0-alpha.12",
   "description": "A library containing all API bindings for the Elysia App",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
