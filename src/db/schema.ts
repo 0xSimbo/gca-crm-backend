@@ -412,6 +412,86 @@ export type DelegatedDocumentsEncryptedMasterKeysType = InferSelectModel<
 export type DelegatedDocumentsEncryptedMasterKeysInsertType =
   typeof DelegatedDocumentsEncryptedMasterKeys.$inferInsert;
 
+export const GcaDelegatedUsers = pgTable(
+  "gca_delegated_users",
+  {
+    id: text("gca_delegated_user_id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    userId: varchar("user_id", { length: 42 })
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" })
+      .unique(),
+    gcaId: text("gca_id")
+      .notNull()
+      .references(() => Gcas.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at").notNull(),
+  },
+  (t) => {
+    return {
+      userIdIndex: index("user_id_ix").on(t.userId),
+      gcaIdIndex: index("gca_id_ix").on(t.gcaId),
+    };
+  }
+);
+
+export const GcaDelegatedUsersRelations = relations(
+  GcaDelegatedUsers,
+  ({ one, many }) => ({
+    user: one(users, {
+      fields: [GcaDelegatedUsers.userId],
+      references: [users.id],
+    }),
+    gca: one(Gcas, {
+      fields: [GcaDelegatedUsers.gcaId],
+      references: [Gcas.id],
+    }),
+    encryptedMasterKeys: many(DelegatedDocumentsEncryptedMasterKeysByGca),
+  })
+);
+
+export type GcaDelegatedUsersType = InferSelectModel<typeof GcaDelegatedUsers>;
+export type GcaDelegatedUsersInsertType = typeof GcaDelegatedUsers.$inferInsert;
+
+export const DelegatedDocumentsEncryptedMasterKeysByGca = pgTable(
+  "delegated_documents_encrypted_master_keys_by_gca",
+  {
+    id: text("encrypted_master_key_id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    gcaDelegatedUserId: text("gca_delegated_user_id")
+      .notNull()
+      .references(() => GcaDelegatedUsers.id, { onDelete: "cascade" }),
+    encryptedMasterKey: text("encrypted_master_key").notNull(),
+    documentId: text("document_id")
+      .notNull()
+      .references(() => Documents.id, { onDelete: "cascade" }),
+    applicationId: text("application_id")
+      .notNull()
+      .references(() => applications.id, { onDelete: "cascade" }),
+  }
+);
+
+export const DelegatedDocumentsEncryptedMasterKeysByGcaRelations = relations(
+  DelegatedDocumentsEncryptedMasterKeysByGca,
+  ({ one }) => ({
+    document: one(Documents, {
+      fields: [DelegatedDocumentsEncryptedMasterKeysByGca.documentId],
+      references: [Documents.id],
+    }),
+    gcaDelegatedUser: one(GcaDelegatedUsers, {
+      fields: [DelegatedDocumentsEncryptedMasterKeysByGca.gcaDelegatedUserId],
+      references: [GcaDelegatedUsers.id],
+    }),
+  })
+);
+
+export type DelegatedDocumentsEncryptedMasterKeysByGcaType = InferSelectModel<
+  typeof DelegatedDocumentsEncryptedMasterKeysByGca
+>;
+export type DelegatedDocumentsEncryptedMasterKeysByGcaInsertType =
+  typeof DelegatedDocumentsEncryptedMasterKeysByGca.$inferInsert;
+
 /**
  * @dev Represents a farm in the system.
  * @param {string} id - The hexlified farm public key.
@@ -648,6 +728,10 @@ export const usersRelations = relations(users, ({ many, one }) => ({
   }),
   applications: many(applications),
   applicationsDraft: many(applicationsDraft),
+  gcaDelegatedUser: one(GcaDelegatedUsers, {
+    fields: [users.id],
+    references: [GcaDelegatedUsers.userId],
+  }),
 }));
 
 /**

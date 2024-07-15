@@ -5,10 +5,8 @@ import {
   publicEncryptionKeyExample,
 } from "../../examples/encryptionKeys";
 import { updateRole } from "../../db/mutations/accounts/updateRole";
-
-import { GetEntityByIdQueryParamsSchema } from "../../schemas/shared/getEntityByIdParamSchema";
 import { findFirstAccountById } from "../../db/queries/accounts/findFirstAccountById";
-import { Wallet, ethers } from "ethers";
+import { ethers } from "ethers";
 import {
   MinerPoolAndGCA__factory,
   addresses,
@@ -21,6 +19,12 @@ import { jwtHandler } from "../../handlers/jwtHandler";
 import { findAllGcas } from "../../db/queries/gcas/findAllGcas";
 import { updateServers } from "../../db/mutations/gcas/updateServers";
 import { db } from "../../db/db";
+import { createEncryptedDocumentsMasterKeysByGca } from "../../db/mutations/gcas/createEncryptedDocumentsMasterKeysByGca";
+import { deleteGcaDelegatedUserById } from "../../db/mutations/gcaDelegatedUsers/deleteGcaDelegatedUserById";
+import { createGcaDelegatedUser } from "../../db/mutations/gcaDelegatedUsers/createGcaDelegatedUser";
+import { findFirstDelegatedUserByUserId } from "../../db/queries/gcaDelegatedUsers/findFirstDelegatedUserByUserId";
+import { findFirstUserById } from "../../db/queries/users/findFirstUserById";
+import { findAllGcaDelegatedUsers } from "../../db/queries/gcaDelegatedUsers/findAllGcaDelegatedUsers";
 
 export const CreateGCAQueryBody = t.Object({
   publicEncryptionKey: t.String({
@@ -96,7 +100,7 @@ export const gcasRouter = new Elysia({ prefix: "/gcas" })
               set.status = 400;
               return e.message;
             }
-            console.log("[documentsRouter] /all-by-application-id", e);
+            console.log("[gcasRouter] /all-by-application-id", e);
             throw new Error("Error Occured");
           }
         },
@@ -137,6 +141,37 @@ export const gcasRouter = new Elysia({ prefix: "/gcas" })
           detail: {
             summary: "Get GCA by ID",
             description: `Get GCA by ID and return the GCA object. If the GCA is not found, it will throw an error.`,
+            tags: [TAG.GCAS],
+          },
+        }
+      )
+      .get(
+        "/delegated-users",
+        async ({ set, userId }) => {
+          try {
+            console.log("userId", userId);
+            const gca = await FindFirstGcaById(userId);
+
+            if (!gca) {
+              set.status = 404;
+              return "GCA not found";
+            }
+
+            const delegatedUsers = await findAllGcaDelegatedUsers(userId);
+            return delegatedUsers;
+          } catch (e) {
+            if (e instanceof Error) {
+              set.status = 400;
+              return e.message;
+            }
+            console.log("[gcasRouter] /delegated-users", e);
+            throw new Error("Error Occured");
+          }
+        },
+        {
+          detail: {
+            summary: "Get All Delegated Users",
+            description: `Get all delegated users of a GCA and return an array of delegated user objects. If no delegated users are found, it will return an empty array`,
             tags: [TAG.GCAS],
           },
         }
@@ -238,6 +273,115 @@ export const gcasRouter = new Elysia({ prefix: "/gcas" })
           detail: {
             summary: "Create ",
             description: `Create `,
+            tags: [TAG.GCAS],
+          },
+        }
+      )
+      .post(
+        "/delegate-user",
+        async ({ body, set, userId: gcaId }) => {
+          try {
+            const gca = await FindFirstGcaById(gcaId);
+
+            if (!gca) {
+              set.status = 404;
+              return "GCA not found";
+            }
+
+            const user = await findFirstUserById(body.userId);
+
+            if (!user) {
+              set.status = 404;
+              return "User not found";
+            }
+
+            const delegatedUser = await findFirstDelegatedUserByUserId(
+              body.userId
+            );
+            if (delegatedUser) {
+              set.status = 409;
+              return "User already delegated";
+            }
+
+            const gcaDelegatedUserId = await createGcaDelegatedUser({
+              gcaId,
+              userId: body.userId,
+              createdAt: new Date(),
+            });
+
+            if (body.delegatedDocumentsEncryptedMasterKeysByGca.length > 0) {
+              await createEncryptedDocumentsMasterKeysByGca(
+                body.delegatedDocumentsEncryptedMasterKeysByGca.map((c) => ({
+                  gcaDelegatedUserId,
+                  documentId: c.documentId,
+                  encryptedMasterKey: c.encryptedMasterKey,
+                  applicationId: c.applicationId,
+                }))
+              );
+            }
+          } catch (e) {
+            if (e instanceof Error) {
+              set.status = 400;
+              return e.message;
+            }
+            console.log("[gcasRouter] delegate-user", e);
+            throw new Error("Error Occured");
+          }
+        },
+        {
+          body: t.Object({
+            userId: t.String(),
+            delegatedDocumentsEncryptedMasterKeysByGca: t.Array(
+              t.Object({
+                documentId: t.String(),
+                encryptedMasterKey: t.String(),
+                applicationId: t.String(),
+              })
+            ),
+          }),
+          detail: {
+            summary: "",
+            description: ``,
+            tags: [TAG.GCAS],
+          },
+        }
+      )
+      .post(
+        "/delete-delegated-user",
+        async ({ body, set, userId: gcaId }) => {
+          try {
+            const gca = await FindFirstGcaById(gcaId);
+
+            if (!gca) {
+              set.status = 404;
+              return "GCA not found";
+            }
+
+            const gcaDelegatedUser = await findFirstDelegatedUserByUserId(
+              body.userId
+            );
+            if (!gcaDelegatedUser) {
+              set.status = 404;
+              return "Delegated user not found";
+            }
+
+            await deleteGcaDelegatedUserById(gcaDelegatedUser.id);
+          } catch (e) {
+            if (e instanceof Error) {
+              set.status = 400;
+              return e.message;
+            }
+            console.log("[gcasRouter] delete-delegated-user", e);
+            throw new Error("Error Occured");
+          }
+        },
+        {
+          body: t.Object({
+            userId: t.String(),
+          }),
+          detail: {
+            summary: "Delete Delegated User",
+            description: `Delete Delegated User and all associated delegated Encrypted Documents Master Keys`,
             tags: [TAG.GCAS],
           },
         }

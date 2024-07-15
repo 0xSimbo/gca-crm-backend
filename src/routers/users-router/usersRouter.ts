@@ -22,6 +22,7 @@ import { getWalletRewards } from "../../db/queries/wallets/getWalletRewards";
 import { updateInstaller } from "../../db/mutations/installers/updateInstaller";
 import { findFirstInstallerById } from "../../db/queries/installers/findFirstInstallerById";
 import { updateUser } from "../../db/mutations/users/updateUser";
+import { findFirstDelegatedUserByUserId } from "../../db/queries/gcaDelegatedUsers/findFirstDelegatedUserByUserId";
 
 export const CreateUserQueryBody = t.Object({
   encryptedPrivateEncryptionKey: t.String({
@@ -347,6 +348,31 @@ export const usersRouter = new Elysia({ prefix: "/users" })
           detail: {
             summary: "Get User by ID",
             description: `Get a User by ID. If the user does not exist, it will throw an error.`,
+            tags: [TAG.USERS],
+          },
+        }
+      )
+      .get(
+        "/gca-delegated-user",
+        async ({ set, userId }) => {
+          try {
+            const gcaDelegatedUser = await findFirstDelegatedUserByUserId(
+              userId
+            );
+            return gcaDelegatedUser;
+          } catch (e) {
+            if (e instanceof Error) {
+              set.status = 400;
+              return e.message;
+            }
+            console.log("[UsersRouter] gca-delegated-user", e);
+            throw new Error("Error Occured");
+          }
+        },
+        {
+          detail: {
+            summary: "Get GCA Delegated User",
+            description: `Get GCA Delegated User. If the user does not exist, it will throw an error.`,
             tags: [TAG.USERS],
           },
         }

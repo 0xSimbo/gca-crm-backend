@@ -7,6 +7,7 @@ export const findFirstUserById = async (id: string) => {
     where: eq(users.id, id),
     with: {
       installer: true,
+      gcaDelegatedUser: true,
     },
   });
   return user;

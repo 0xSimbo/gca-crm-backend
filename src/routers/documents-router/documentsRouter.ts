@@ -19,6 +19,11 @@ import { findOrganizationById } from "../../db/queries/organizations/findOrganiz
 import { findAllEncryptedDocumentsByApplicationsIds } from "../../db/queries/documents/findAllEncryptedDocumentsByApplicationsIds";
 import { findFirstDelegatedEncryptedMasterKeyByDocumentIdAndOrganizationUserId } from "../../db/queries/organizations/findFirstDelegatedEncryptedMasterKeyByDocumentIdAndOrganizationUserId";
 import { findAllUserJoinedOrganizations } from "../../db/queries/organizations/findAllUserJoinedOrganizations";
+import { findFirstDelegatedUserByUserId } from "../../db/queries/gcaDelegatedUsers/findFirstDelegatedUserByUserId";
+import { FindFirstGcaById } from "../../db/queries/gcas/findFirsGcaById";
+import { findAllEncryptedDocuments } from "../../db/queries/documents/findAllEncryptedDocuments";
+import { findAllApplicationsAssignedToGca } from "../../db/queries/applications/findAllApplicationsAssignedToGca";
+import { findFirstDelegatedEncryptedMasterKeyByDocumentId } from "../../db/queries/organizations/findFirstDelegatedEncryptedMasterKeyByDocumentId";
 
 export const documentsRouter = new Elysia({ prefix: "/documents" })
   .use(bearerplugin())
@@ -118,24 +123,32 @@ export const documentsRouter = new Elysia({ prefix: "/documents" })
                   );
 
                 if (!organizationApplication) {
-                  set.status = 400;
-                  return "Unauthorized";
-                }
+                  const gcaDelegatedUser = await findFirstDelegatedUserByUserId(
+                    userId
+                  );
 
-                const isOrganizationOwner =
-                  organizationApplication.organization.ownerId === userId;
+                  if (!gcaDelegatedUser) {
+                    set.status = 400;
+                    return "Unauthorized";
+                  }
+                } else {
+                  const isOrganizationOwner =
+                    organizationApplication.organization.ownerId === userId;
 
-                const organizationMember = await findOrganizationMemberByUserId(
-                  organizationApplication.organization.id,
-                  userId
-                );
+                  const organizationMember =
+                    await findOrganizationMemberByUserId(
+                      organizationApplication.organization.id,
+                      userId
+                    );
 
-                const isAuthorized =
-                  isOrganizationOwner || organizationMember?.hasDocumentsAccess;
+                  const isAuthorized =
+                    isOrganizationOwner ||
+                    organizationMember?.hasDocumentsAccess;
 
-                if (!isAuthorized) {
-                  set.status = 400;
-                  return "Unauthorized";
+                  if (!isAuthorized) {
+                    set.status = 400;
+                    return "Unauthorized";
+                  }
                 }
               }
             }
@@ -206,7 +219,7 @@ export const documentsRouter = new Elysia({ prefix: "/documents" })
             const applications = await findAllApplicationsByOrganizationId(
               organizationId
             );
-            console.log({ applications });
+
             if (applications.length === 0) {
               return [];
             }
@@ -241,6 +254,45 @@ export const documentsRouter = new Elysia({ prefix: "/documents" })
         }
       )
       .get(
+        "/all-encrypted-documents",
+        async ({ set, userId: gcaId }) => {
+          const gca = await FindFirstGcaById(gcaId);
+
+          if (!gca) {
+            set.status = 404;
+            return "GCA not found";
+          }
+
+          try {
+            const applications = await findAllApplicationsAssignedToGca(gcaId);
+
+            if (applications.length === 0) {
+              return [];
+            }
+
+            const documents = await findAllEncryptedDocumentsByApplicationsIds(
+              applications.map((application) => application.id)
+            );
+
+            return documents;
+          } catch (e) {
+            if (e instanceof Error) {
+              set.status = 400;
+              return e.message;
+            }
+            console.log("[documentsRouter] /all-encrypted-documents", e);
+            throw new Error("Error Occured");
+          }
+        },
+        {
+          detail: {
+            summary: "Get All Encrypted Documents",
+            description: `Get all encrypted documents, it will throw an error if your are not a gca`,
+            tags: [TAG.DOCUMENTS],
+          },
+        }
+      )
+      .get(
         "/organization-delegated-encrypted-key-by-document-id",
         async ({ query: { documentId }, set, userId }) => {
           if (!documentId) throw new Error("document id is required");
@@ -254,8 +306,6 @@ export const documentsRouter = new Elysia({ prefix: "/documents" })
               set.status = 400;
               return "Unauthorized";
             }
-            //TODO: handle organization owner delegated keys ( create an organization member for the owner)
-
             const hasDocumentsAccessOrganizations = userOrganizations.filter(
               (organization) => organization.hasDocumentsAccess
             );
@@ -293,6 +343,56 @@ export const documentsRouter = new Elysia({ prefix: "/documents" })
           detail: {
             summary: "Get Organization Delegated Encrypted Key by Document ID",
             description: `Get organization delegated encrypted key by document id, it will throw an error if your are not the organization owner or have access to documents`,
+            tags: [TAG.DOCUMENTS],
+          },
+        }
+      )
+      .get(
+        "/gca-delegated-user-encrypted-key-by-document-id",
+        async ({ query: { documentId }, set, userId }) => {
+          if (!documentId) throw new Error("document id is required");
+
+          try {
+            const gcaDelegatedUser = await findFirstDelegatedUserByUserId(
+              userId
+            );
+
+            if (!gcaDelegatedUser) {
+              set.status = 400;
+              return "Unauthorized";
+            }
+
+            const encryptedKeys =
+              await findFirstDelegatedEncryptedMasterKeyByDocumentId(
+                gcaDelegatedUser.id,
+                documentId
+              );
+
+            if (encryptedKeys.length === 0) {
+              set.status = 400;
+              return "Unauthorized";
+            }
+
+            return encryptedKeys[0].encryptedMasterKey;
+          } catch (e) {
+            if (e instanceof Error) {
+              set.status = 400;
+              return e.message;
+            }
+            console.log(
+              "[documentsRouter] /gca-delegated-user-encrypted-key-by-document-id",
+              e
+            );
+            throw new Error("Error Occured");
+          }
+        },
+        {
+          query: t.Object({
+            documentId: t.String(),
+          }),
+          detail: {
+            summary: "Get GCA Delegated User Encrypted Key by Document ID",
+            description: `Get GCA delegated user encrypted key by document id, it will throw an error if your are not a gca`,
             tags: [TAG.DOCUMENTS],
           },
         }

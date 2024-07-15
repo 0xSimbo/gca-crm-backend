@@ -1,15 +1,12 @@
 import { Elysia, t } from "elysia";
 import { TAG } from "../../constants";
-import { GetEntityByIdQueryParamsSchema } from "../../schemas/shared/getEntityByIdParamSchema";
 import { findOrganizationById } from "../../db/queries/organizations/findOrganizationById";
 import { bearer as bearerplugin } from "@elysiajs/bearer";
 import { bearerGuard } from "../../guards/bearerGuard";
 import { jwtHandler } from "../../handlers/jwtHandler";
-import { findAllOwnedOrganizations } from "../../db/queries/organizations/findAllOwnedOrganizations";
 import { findFirstAccountById } from "../../db/queries/accounts/findFirstAccountById";
 import { findAllUserOrganizations } from "../../db/queries/organizations/findAllUserOrganizations";
 import { createOrganization } from "../../db/mutations/organizations/createOrganization";
-import { findFirstUserById } from "../../db/queries/users/findFirstUserById";
 import { findAllOrganizationMembers } from "../../db/queries/organizations/findAllOrganizationMembers";
 import { findAllOrganizationRoles } from "../../db/queries/organizations/findAllOrganizationRoles";
 import { deleteOrganization } from "../../db/mutations/organizations/deleteOrganization";
@@ -24,13 +21,13 @@ import { findAllPermissions } from "../../db/queries/permissions/findAllPermissi
 import { deleteOrganizationRole } from "../../db/mutations/organizations/deleteOrganizationRole";
 import { findOrganizationRoleById } from "../../db/queries/organizations/findOrganizationRoleById";
 import { updateOrganizationRolePermissions } from "../../db/mutations/organizations/updateOrganizationRolePermissions";
-import { PermissionsEnum } from "../../types/api-types/Permissions";
 import { createOrganizationMemberEncryptedDocumentsMasterKeys } from "../../db/mutations/organizations/createOrganizationMemberEncryptedDocumentsMasterKeys";
 import { findOrganizationMemberByUserId } from "../../db/queries/organizations/findOrganizationMemberByUserId";
 import { updateOrganizationMemberDocumentsAccess } from "../../db/mutations/organizations/updateOrganizationMemberDocumentsAccess";
 import { deleteAllOrganizationMemberEncryptedDocumentsMasterKeys } from "../../db/mutations/organizations/deleteAllOrganizationMemberEncryptedDocumentsMasterKeys";
 import { findAllOrganizationMembersWithDocumentsAccess } from "../../db/queries/organizations/findAllOrganizationMembersWithDocumentsAccess";
 import { updateOrganizationMemberRole } from "../../db/mutations/organizations/updateOrganizationMemberRole";
+import { findFirstUserById } from "../../db/queries/users/findFirstUserById";
 
 export const organizationsRouter = new Elysia({ prefix: "/organizations" })
   .get(

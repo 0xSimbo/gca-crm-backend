@@ -1,15 +1,10 @@
-import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { db } from "../../db";
 import { Documents } from "../../schema";
 
-export const findAllEncryptedDocumentsByApplicationsIds = async (
-  applicationIds: string[]
-) => {
+export const findAllEncryptedDocuments = async () => {
   const documentsDb = await db.query.Documents.findMany({
-    where: and(
-      inArray(Documents.applicationId, applicationIds),
-      eq(Documents.isEncrypted, true)
-    ),
+    where: and(eq(Documents.isEncrypted, true)),
     columns: {
       id: true,
       type: true,

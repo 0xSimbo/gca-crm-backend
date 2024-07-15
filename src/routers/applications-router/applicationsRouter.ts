@@ -50,7 +50,6 @@ import { db } from "../../db/db";
 import { applicationsDraft } from "../../db/schema";
 
 import { convertKWhToMWh } from "../../utils/format/convertKWhToMWh";
-
 import { findFirstUserById } from "../../db/queries/users/findFirstUserById";
 import { findOrganizationMemberByUserId } from "../../db/queries/organizations/findOrganizationMemberByUserId";
 import { findAllApplicationsByOrganizationId } from "../../db/queries/applications/findAllApplicationsByOrganizationId";
@@ -60,6 +59,7 @@ import { createOrganizationApplication } from "../../db/mutations/organizations/
 import { deleteOrganizationApplication } from "../../db/mutations/organizations/deleteOrganizationApplication";
 import { findFirstOrganizationApplicationByApplicationId } from "../../db/queries/applications/findFirstOrganizationApplicationByApplicationId";
 import { findAllOrganizationMembers } from "../../db/queries/organizations/findAllOrganizationMembers";
+import { findFirstDelegatedUserByUserId } from "../../db/queries/gcaDelegatedUsers/findFirstDelegatedUserByUserId";
 
 const encryptedFileUpload = t.Object({
   publicUrl: t.String({
@@ -244,34 +244,42 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                   );
 
                 if (!organizationApplication) {
-                  set.status = 400;
-                  return "Unauthorized";
-                }
+                  const gcaDelegatedUser = await findFirstDelegatedUserByUserId(
+                    userId
+                  );
 
-                const isOrganizationOwner =
-                  organizationApplication.organization.ownerId === userId;
+                  if (!gcaDelegatedUser) {
+                    set.status = 400;
+                    return "Unauthorized";
+                  }
+                } else {
+                  const isOrganizationOwner =
+                    organizationApplication.organization.ownerId === userId;
 
-                const organizationMember = await findOrganizationMemberByUserId(
-                  organizationApplication.organization.id,
-                  userId
-                );
+                  const organizationMember =
+                    await findOrganizationMemberByUserId(
+                      organizationApplication.organization.id,
+                      userId
+                    );
 
-                // isOwner or has permission to read applications or has permission to pay protocol fees and application is waiting for payment
-                const isAuthorized =
-                  isOrganizationOwner ||
-                  organizationMember?.role.rolePermissions.find(
-                    (p) => p.permission.key === PermissionsEnum.ApplicationsRead
-                  ) ||
-                  (organizationMember?.role.rolePermissions.find(
-                    (p) =>
-                      p.permission.key === PermissionsEnum.ProtocolFeePayment
-                  ) &&
-                    application.status ===
-                      ApplicationStatusEnum.waitingForPayment);
+                  // isOwner or has permission to read applications or has permission to pay protocol fees and application is waiting for payment
+                  const isAuthorized =
+                    isOrganizationOwner ||
+                    organizationMember?.role.rolePermissions.find(
+                      (p) =>
+                        p.permission.key === PermissionsEnum.ApplicationsRead
+                    ) ||
+                    (organizationMember?.role.rolePermissions.find(
+                      (p) =>
+                        p.permission.key === PermissionsEnum.ProtocolFeePayment
+                    ) &&
+                      application.status ===
+                        ApplicationStatusEnum.waitingForPayment);
 
-                if (!isAuthorized) {
-                  set.status = 400;
-                  return "Unauthorized";
+                  if (!isAuthorized) {
+                    set.status = 400;
+                    return "Unauthorized";
+                  }
                 }
               }
             }
@@ -940,6 +948,13 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
 
                 return "Unauthorized";
               }
+            }
+            const gcaDelegatedUsers = await findFirstDelegatedUserByUserId(id);
+            if (gcaDelegatedUsers) {
+              const applications = await findAllApplicationsAssignedToGca(
+                gcaDelegatedUsers.gcaId
+              );
+              return applications;
             }
             const applications = await findAllApplicationsByUserId(id);
             return applications;
