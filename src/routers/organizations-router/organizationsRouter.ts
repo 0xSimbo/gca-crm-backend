@@ -26,6 +26,8 @@ import { updateOrganizationMemberDocumentsAccess } from "../../db/mutations/orga
 import { findAllOrganizationMembersWithDocumentsAccess } from "../../db/queries/organizations/findAllOrganizationMembersWithDocumentsAccess";
 import { updateOrganizationMemberRole } from "../../db/mutations/organizations/updateOrganizationMemberRole";
 import { findFirstUserById } from "../../db/queries/users/findFirstUserById";
+import { createApplicationEncryptedMasterKeysForUsers } from "../../db/mutations/applications/createApplicationEncryptedMasterKeysForUsers";
+import { deleteAllOrganizationMemberEncryptedApplicationsMasterKeys } from "../../db/mutations/organizations/deleteAllOrganizationMemberEncryptedApplicationsMasterKeys";
 
 export const organizationsRouter = new Elysia({ prefix: "/organizations" })
   .get(
@@ -206,7 +208,8 @@ export const organizationsRouter = new Elysia({ prefix: "/organizations" })
               await findAllOrganizationMembersWithDocumentsAccess(
                 query.organizationId
               );
-            return organizationMembers;
+            // Filter out the user from the list
+            return organizationMembers.filter((c) => c.userId !== userId);
           } catch (e) {
             if (e instanceof Error) {
               set.status = 400;
@@ -652,22 +655,15 @@ export const organizationsRouter = new Elysia({ prefix: "/organizations" })
               set.status = 404;
               return "Organization Member not found";
             }
-
+            console.log("organizationMemberId", organizationMember.id);
             await updateOrganizationMemberDocumentsAccess(
               organizationMember.id,
               true
             );
-            if (body.delegatedApplicationsEncryptedMasterKeys.length > 0) {
-              // await createOrganizationMemberEncryptedDocumentsMasterKeys(
-              //   body.delegatedDocumentsEncryptedMasterKeys.map((c) => ({
-              //     organizationUserId: organizationMember.id,
-              //     documentId: c.documentId,
-              //     encryptedMasterKey: c.encryptedMasterKey,
-              //     organizationApplicationId: c.organizationApplicationId,
-              //   }))
-              // );
-              //TODO: create all encrypted applications master keys
-            }
+
+            await createApplicationEncryptedMasterKeysForUsers(
+              body.delegatedApplicationsEncryptedMasterKeys
+            );
           } catch (e) {
             if (e instanceof Error) {
               set.status = 400;
@@ -683,8 +679,10 @@ export const organizationsRouter = new Elysia({ prefix: "/organizations" })
             userId: t.String(),
             delegatedApplicationsEncryptedMasterKeys: t.Array(
               t.Object({
+                userId: t.String(),
                 encryptedMasterKey: t.String(),
-                organizationApplicationId: t.String(),
+                applicationId: t.String(),
+                organizationUserId: t.String(),
               })
             ),
           }),
@@ -739,10 +737,9 @@ export const organizationsRouter = new Elysia({ prefix: "/organizations" })
               false
             );
 
-            // await deleteAllOrganizationMemberEncryptedDocumentsMasterKeys(
-            //   organizationMember.id
-            // );
-            //TODO: delete all encrypted applications master keys
+            await deleteAllOrganizationMemberEncryptedApplicationsMasterKeys(
+              organizationMember.id
+            );
           } catch (e) {
             if (e instanceof Error) {
               set.status = 400;

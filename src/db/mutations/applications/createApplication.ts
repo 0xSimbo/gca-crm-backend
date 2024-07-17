@@ -93,9 +93,6 @@ export const createApplication = async (
     throw new Error("Not all users and gcas have encrypted master key");
   }
 
-  console.log("usersWithEncryptedMasterKey", usersWithEncryptedMasterKey);
-  console.log("gcasWithEncryptedMasterKey", gcasWithEncryptedMasterKey);
-
   return await db.transaction(async (tx) => {
     const res = await db
       .insert(applications)

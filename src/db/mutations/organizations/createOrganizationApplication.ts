@@ -1,17 +1,25 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "../../db";
-import { OrganizationApplications } from "../../schema";
+import {
+  ApplicationsEncryptedMasterKeys,
+  ApplicationsEncryptedMasterKeysInsertType,
+  OrganizationApplications,
+} from "../../schema";
+import { deleteOrganizationApplication } from "./deleteOrganizationApplication";
 
 export const createOrganizationApplication = async (
-  applicationOwnerOrgUserId: string,
+  applicationOwnerOrgUserId: string, // this is not user.userId, it is orgUser.id
   organizationId: string,
   applicationId: string,
-  delegatedApplicationsEncryptedMasterKeys: any[]
+  applicationsEncryptedMasterKeysInsert: ApplicationsEncryptedMasterKeysInsertType[],
+  applicationOwnerId: string
 ) => {
   await db.transaction(async (tx) => {
-    await tx
-      .delete(OrganizationApplications)
-      .where(and(eq(OrganizationApplications.applicationId, applicationId)));
+    await deleteOrganizationApplication(
+      organizationId,
+      applicationId,
+      applicationOwnerId
+    );
 
     const res = await tx
       .insert(OrganizationApplications)
@@ -25,22 +33,18 @@ export const createOrganizationApplication = async (
     if (res.length === 0) {
       tx.rollback();
     }
-    if (delegatedApplicationsEncryptedMasterKeys.length > 0) {
-      // const insertKeysRes = await tx
-      //   .insert(DelegatedDocumentsEncryptedMasterKeys)
-      //   .values(
-      //     delegatedDocumentsEncryptedMasterKeys.map((key) => ({
-      //       ...key,
-      //       organizationApplicationId: res[0].insertedId,
-      //     }))
-      //   )
-      //   .returning({ insertedId: DelegatedDocumentsEncryptedMasterKeys.id });
-      // if (
-      //   insertKeysRes.length !== delegatedDocumentsEncryptedMasterKeys.length
-      // ) {
-      //   tx.rollback();
-      // }
-      //TODO: Implement this with new applications schema
+    if (applicationsEncryptedMasterKeysInsert.length > 0) {
+      const applicationsEncryptedMasterKeysInsertRes = await db
+        .insert(ApplicationsEncryptedMasterKeys)
+        .values(applicationsEncryptedMasterKeysInsert)
+        .returning({ id: ApplicationsEncryptedMasterKeys.id });
+
+      if (
+        applicationsEncryptedMasterKeysInsertRes.length !==
+        applicationsEncryptedMasterKeysInsert.length
+      ) {
+        tx.rollback();
+      }
     }
   });
 };

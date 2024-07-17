@@ -7,10 +7,7 @@ export const findAllApplicationsByOrganizationId = async (
   organizationId: string
 ) => {
   const applicationsDb = await db.query.OrganizationApplications.findMany({
-    where: and(
-      eq(OrganizationApplications.organizationId, organizationId),
-      eq(applications.isCancelled, false)
-    ),
+    where: and(eq(OrganizationApplications.organizationId, organizationId)),
     columns: {},
     with: {
       application: {

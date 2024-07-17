@@ -65,6 +65,7 @@ import { findFirstDelegatedEncryptedMasterKeyByApplicationIdAndOrganizationUserI
 import { findFirstDelegatedEncryptedMasterKeyByApplicationId } from "../../db/queries/organizations/findFirstDelegatedEncryptedMasterKeyByApplicationId";
 import { FindFirstGcaById } from "../../db/queries/gcas/findFirsGcaById";
 import { findFirstApplicationMasterKeyByApplicationIdAndUserId } from "../../db/queries/applications/findFirstApplicationMasterKeyByApplicationIdAndUserId";
+import { findAllCompletedApplications } from "../../db/queries/applications/findAllCompletedApplications";
 
 const encryptedFileUpload = t.Object({
   publicUrl: t.String({
@@ -229,6 +230,30 @@ export const ApproveOrAskForChangesQueryBody = {
 
 export const applicationsRouter = new Elysia({ prefix: "/applications" })
   .use(bearerplugin())
+  .get(
+    "/completed",
+    async ({ set }) => {
+      try {
+        const applications = await findAllCompletedApplications();
+
+        return applications;
+      } catch (e) {
+        if (e instanceof Error) {
+          set.status = 400;
+          return e.message;
+        }
+        console.log("[applicationsRouter] /completed", e);
+        throw new Error("Error Occured");
+      }
+    },
+    {
+      detail: {
+        summary: "Get all completed applications ",
+        description: `Get all completed applications `,
+        tags: [TAG.APPLICATIONS],
+      },
+    }
+  )
   .guard(bearerGuard, (app) =>
     app
       .resolve(({ headers: { authorization } }) => {
@@ -437,28 +462,13 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               return "Application already added to organization";
             }
 
-            const delegatedDocumentsEncryptedMasterKeys =
-              body.delegatedDocumentsEncryptedMasterKeysByOrganizationUserId
-                .map(
-                  ({
-                    organizationUserId,
-                    delegatedDocumentsEncryptedMasterKeys,
-                  }) =>
-                    delegatedDocumentsEncryptedMasterKeys.map((c) => ({
-                      organizationUserId,
-                      documentId: c.documentId,
-                      encryptedMasterKey: c.encryptedMasterKey,
-                    }))
-                )
-                .flat();
-
-            // await createOrganizationApplication(
-            //   organizationMember.id,
-            //   body.organizationId,
-            //   body.applicationId,
-            //   delegatedDocumentsEncryptedMasterKeys
-            // );
-            //TODO: Implement this with new applications schema
+            await createOrganizationApplication(
+              organizationMember.id,
+              body.organizationId,
+              body.applicationId,
+              body.delegatedApplicationsEncryptedMasterKeys,
+              application.userId
+            );
           } catch (e) {
             if (e instanceof Error) {
               set.status = 400;
@@ -475,15 +485,12 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
           body: t.Object({
             organizationId: t.String(),
             applicationId: t.String(),
-            delegatedDocumentsEncryptedMasterKeysByOrganizationUserId: t.Array(
+            delegatedApplicationsEncryptedMasterKeys: t.Array(
               t.Object({
+                userId: t.String(),
+                encryptedMasterKey: t.String(),
+                applicationId: t.String(),
                 organizationUserId: t.String(),
-                delegatedDocumentsEncryptedMasterKeys: t.Array(
-                  t.Object({
-                    documentId: t.String(),
-                    encryptedMasterKey: t.String(),
-                  })
-                ),
               })
             ),
           }),
@@ -592,7 +599,8 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
 
             await deleteOrganizationApplication(
               body.organizationId,
-              body.applicationId
+              body.applicationId,
+              application.userId
             );
           } catch (e) {
             if (e instanceof Error) {
@@ -1049,17 +1057,28 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
 
             if (application?.userId !== userId) {
               const gca = await FindFirstGcaById(userId);
+
               if (!gca) {
-                set.status = 400;
-                return "Unauthorized";
-              }
-              const res =
-                await findFirstApplicationMasterKeyByApplicationIdAndUserId(
-                  gca.id,
-                  applicationId
+                const organizationMember = await findOrganizationMemberByUserId(
+                  application.organizationApplication.organizationId,
+                  userId
                 );
-              return res?.encryptedMasterKey;
+
+                const isAuthorized = organizationMember?.hasDocumentsAccess;
+                if (!isAuthorized) {
+                  set.status = 400;
+                  return "Unauthorized";
+                }
+              } else {
+                const res =
+                  await findFirstApplicationMasterKeyByApplicationIdAndUserId(
+                    gca.id,
+                    applicationId
+                  );
+                return res?.encryptedMasterKey;
+              }
             }
+            console.log(userId, applicationId);
 
             const res =
               await findFirstApplicationMasterKeyByApplicationIdAndUserId(
