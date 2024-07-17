@@ -60,6 +60,7 @@ import { createOrganizationApplication } from "../../db/mutations/organizations/
 import { deleteOrganizationApplication } from "../../db/mutations/organizations/deleteOrganizationApplication";
 import { findFirstOrganizationApplicationByApplicationId } from "../../db/queries/applications/findFirstOrganizationApplicationByApplicationId";
 import { findAllOrganizationMembers } from "../../db/queries/organizations/findAllOrganizationMembers";
+import { findAllCompletedApplications } from "../../db/queries/applications/findAllCompletedApplications";
 
 const encryptedFileUpload = t.Object({
   publicUrl: t.String({
@@ -213,6 +214,30 @@ export const ApproveOrAskForChangesQueryBody = {
 
 export const applicationsRouter = new Elysia({ prefix: "/applications" })
   .use(bearerplugin())
+  .get(
+    "/completed",
+    async ({ set }) => {
+      try {
+        const applications = await findAllCompletedApplications();
+
+        return applications;
+      } catch (e) {
+        if (e instanceof Error) {
+          set.status = 400;
+          return e.message;
+        }
+        console.log("[applicationsRouter] /completed", e);
+        throw new Error("Error Occured");
+      }
+    },
+    {
+      detail: {
+        summary: "Get all completed applications ",
+        description: `Get all completed applications `,
+        tags: [TAG.APPLICATIONS],
+      },
+    }
+  )
   .guard(bearerGuard, (app) =>
     app
       .resolve(({ headers: { authorization } }) => {
