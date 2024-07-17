@@ -209,7 +209,9 @@ export const organizationsRouter = new Elysia({ prefix: "/organizations" })
                 query.organizationId
               );
             // Filter out the user from the list
-            return organizationMembers.filter((c) => c.userId !== userId);
+            return organizationMembers.filter(
+              (c) => c.userId.toUpperCase() !== userId.toLowerCase()
+            );
           } catch (e) {
             if (e instanceof Error) {
               set.status = 400;

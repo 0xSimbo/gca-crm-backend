@@ -22,6 +22,10 @@ export const deleteOrganizationApplication = async (
         id: true,
       },
     });
+  const orgMembersWithDocumentsAccessWithoutOwner =
+    orgMembersWithDocumentsAccess.filter(
+      (u) => u.userId !== applicationOwnerId
+    );
 
   await db.transaction(async (tx) => {
     await tx
@@ -32,15 +36,13 @@ export const deleteOrganizationApplication = async (
           eq(OrganizationApplications.applicationId, applicationId)
         )
       );
-    if (orgMembersWithDocumentsAccess.length > 0) {
+    if (orgMembersWithDocumentsAccessWithoutOwner.length > 0) {
       await tx.delete(ApplicationsEncryptedMasterKeys).where(
         and(
           eq(ApplicationsEncryptedMasterKeys.applicationId, applicationId),
           inArray(
             ApplicationsEncryptedMasterKeys.organizationUserId,
-            orgMembersWithDocumentsAccess
-              .filter((u) => u.userId !== applicationOwnerId)
-              .map((member) => member.id)
+            orgMembersWithDocumentsAccessWithoutOwner.map((member) => member.id)
           )
         )
       );
