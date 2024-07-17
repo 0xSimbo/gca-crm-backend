@@ -1383,7 +1383,13 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                 }
               }
 
-              if (BigInt(application.finalProtocolFee) === BigInt(0)) {
+              if (
+                BigInt(
+                  ethers.utils
+                    .parseUnits(application.finalProtocolFee, 6)
+                    .toString()
+                ) === BigInt(0)
+              ) {
                 set.status = 400;
                 return "Final Protocol Fee is not set";
               }
@@ -1391,7 +1397,11 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               /// TODO: If it's greater, need to check with david what to do on that. For now, let's not change anything
               if (
                 BigInt(protocolFeeData.amount) <
-                BigInt(application.finalProtocolFee)
+                BigInt(
+                  ethers.utils
+                    .parseUnits(application.finalProtocolFee, 6)
+                    .toString()
+                )
               ) {
                 set.status = 400;
                 return "Invalid Amount";
@@ -1417,8 +1427,8 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
             txHash: t.String(),
           }),
           detail: {
-            summary: "Increment the application step",
-            description: `Increment the application step after user read the annotation left by the gca on the documents`,
+            summary: "Verify Payment",
+            description: `Verify Payment and update the application status to paymentConfirmed`,
             tags: [TAG.APPLICATIONS],
           },
         }
