@@ -1,3 +1,4 @@
+import { ethers } from "ethers";
 import { completeApplicationWithDocumentsAndCreateFarmWithDevices } from "../../../db/mutations/applications/completeApplicationWithDocumentsAndCreateFarm";
 import { ApplicationType, DocumentsInsertType } from "../../../db/schema";
 import {
@@ -184,7 +185,7 @@ export const handleCreateWithoutPIIDocumentsAndCompleteApplication = async (
     signature,
     documents,
     args.devices,
-    BigInt(application.finalProtocolFee),
+    BigInt(ethers.utils.parseUnits(application.finalProtocolFee, 6).toString()),
     application.paymentTxHash
   );
 };
