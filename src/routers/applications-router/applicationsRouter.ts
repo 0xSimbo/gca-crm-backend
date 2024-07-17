@@ -1371,9 +1371,13 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                         p.permission.key === PermissionsEnum.ProtocolFeePayment
                     )
                   )
-                  .map((c) => c.userId);
+                  .map((c) => c.userId.toLowerCase());
 
-                if (!allowedWallets.includes(protocolFeeData.user.id)) {
+                if (
+                  !allowedWallets.includes(
+                    protocolFeeData.user.id.toLowerCase()
+                  )
+                ) {
                   set.status = 400;
                   return "The transaction hash does not belong to the user or any of the organization members allowed to pay the protocol fee";
                 }
