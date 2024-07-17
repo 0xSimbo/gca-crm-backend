@@ -5,26 +5,17 @@ import {
   OrganizationApplications,
   OrganizationUsers,
 } from "../../schema";
+import { findAllOrgMembersWithDocumentsAccessWithoutOwner } from "../../queries/organizations/findAllOrgMembersWithDocumentsAccessWithoutOwner";
 
 export const deleteOrganizationApplication = async (
   organizationId: string,
   applicationId: string,
   applicationOwnerId: string
 ) => {
-  const orgMembersWithDocumentsAccess =
-    await db.query.OrganizationUsers.findMany({
-      where: and(
-        eq(OrganizationUsers.organizationId, organizationId),
-        eq(OrganizationUsers.hasDocumentsAccess, true)
-      ),
-      columns: {
-        userId: true,
-        id: true,
-      },
-    });
   const orgMembersWithDocumentsAccessWithoutOwner =
-    orgMembersWithDocumentsAccess.filter(
-      (u) => u.userId !== applicationOwnerId
+    await findAllOrgMembersWithDocumentsAccessWithoutOwner(
+      applicationOwnerId,
+      organizationId
     );
 
   await db.transaction(async (tx) => {

@@ -5,7 +5,7 @@ import {
   ApplicationsEncryptedMasterKeysInsertType,
   OrganizationApplications,
 } from "../../schema";
-import { deleteOrganizationApplication } from "./deleteOrganizationApplication";
+import { findAllOrgMembersWithDocumentsAccessWithoutOwner } from "../../queries/organizations/findAllOrgMembersWithDocumentsAccessWithoutOwner";
 
 export const createOrganizationApplication = async (
   applicationOwnerOrgUserId: string, // this is not user.userId, it is orgUser.id
@@ -14,12 +14,16 @@ export const createOrganizationApplication = async (
   applicationsEncryptedMasterKeysInsert: ApplicationsEncryptedMasterKeysInsertType[],
   applicationOwnerId: string
 ) => {
-  await db.transaction(async (tx) => {
-    await deleteOrganizationApplication(
-      organizationId,
-      applicationId,
-      applicationOwnerId
+  //TODO: finish impl here
+  const orgMembersWithDocumentsAccessWithoutOwner =
+    await findAllOrgMembersWithDocumentsAccessWithoutOwner(
+      applicationOwnerId,
+      organizationId
     );
+  await db.transaction(async (tx) => {
+    await tx
+      .delete(OrganizationApplications)
+      .where(and(eq(OrganizationApplications.applicationId, applicationId)));
 
     const res = await tx
       .insert(OrganizationApplications)
