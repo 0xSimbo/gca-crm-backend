@@ -1349,7 +1349,9 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                 return "Invalid Transaction Hash";
               }
 
-              if (protocolFeeData.user.id !== userId) {
+              if (
+                protocolFeeData.user.id.toLowerCase() !== userId.toLowerCase()
+              ) {
                 const organizationApplication =
                   await findFirstOrganizationApplicationByApplicationId(
                     body.applicationId
