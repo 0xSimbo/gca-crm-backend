@@ -45,15 +45,6 @@ export const findAllCompletedApplications = async () => {
           shortId: true,
         },
       },
-      documents: {
-        where: eq(Documents.isEncrypted, false),
-        columns: {
-          id: true,
-          annotation: true,
-          name: true,
-          url: true,
-        },
-      },
     },
   });
   return applicationsDb.map((application) => ({
