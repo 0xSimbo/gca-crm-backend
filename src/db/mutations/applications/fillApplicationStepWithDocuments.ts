@@ -2,8 +2,6 @@ import { and, count, eq } from "drizzle-orm";
 import { db } from "../../db";
 import {
   ApplicationInsertType,
-  DelegatedDocumentsEncryptedMasterKeys,
-  DelegatedDocumentsEncryptedMasterKeysInsertType,
   Documents,
   DocumentsInsertType,
   DocumentsMissingWithReason,
@@ -16,12 +14,7 @@ import {
   ApplicationSteps,
 } from "../../../types/api-types/Application";
 
-export type DocumentsInsertTypeExtended = DocumentsInsertType & {
-  orgMembersMasterkeys: {
-    orgUserId: string;
-    encryptedMasterKey: string;
-  }[];
-};
+export type DocumentsInsertTypeExtended = DocumentsInsertType;
 
 /**
  * Fills an application step with documents atomically.
@@ -145,30 +138,4 @@ export const fillApplicationStepWithDocuments = async (
       tx.rollback();
     }
   });
-
-  if (documents.length > 0 && organizationApplicationId) {
-    for (let i = 0; i < documents.length; i++) {
-      const document = documents[i];
-      if (!document.orgMembersMasterkeys) {
-        continue;
-      }
-      // console.log(document.orgMembersMasterkeys);
-      const documentId = documentsInsert[i].id;
-      const delegatedDocumentsEncryptedMasterKeys: DelegatedDocumentsEncryptedMasterKeysInsertType[] =
-        document.orgMembersMasterkeys.map(
-          ({ orgUserId, encryptedMasterKey }) => ({
-            organizationUserId: orgUserId,
-            documentId,
-            encryptedMasterKey,
-            organizationApplicationId,
-          })
-        );
-      // console.log(delegatedDocumentsEncryptedMasterKeys);
-      if (delegatedDocumentsEncryptedMasterKeys.length > 0) {
-        await db
-          .insert(DelegatedDocumentsEncryptedMasterKeys)
-          .values(delegatedDocumentsEncryptedMasterKeys);
-      }
-    }
-  }
 };

@@ -1,19 +1,12 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "../../db";
-import {
-  DelegatedDocumentsEncryptedMasterKeys,
-  DelegatedDocumentsEncryptedMasterKeysInsertType,
-  OrganizationApplications,
-} from "../../schema";
+import { OrganizationApplications } from "../../schema";
 
 export const createOrganizationApplication = async (
   applicationOwnerOrgUserId: string,
   organizationId: string,
   applicationId: string,
-  delegatedDocumentsEncryptedMasterKeys: Omit<
-    DelegatedDocumentsEncryptedMasterKeysInsertType,
-    "organizationApplicationId"
-  >[]
+  delegatedApplicationsEncryptedMasterKeys: any[]
 ) => {
   await db.transaction(async (tx) => {
     await tx
@@ -32,22 +25,22 @@ export const createOrganizationApplication = async (
     if (res.length === 0) {
       tx.rollback();
     }
-    if (delegatedDocumentsEncryptedMasterKeys.length > 0) {
-      const insertKeysRes = await tx
-        .insert(DelegatedDocumentsEncryptedMasterKeys)
-        .values(
-          delegatedDocumentsEncryptedMasterKeys.map((key) => ({
-            ...key,
-            organizationApplicationId: res[0].insertedId,
-          }))
-        )
-        .returning({ insertedId: DelegatedDocumentsEncryptedMasterKeys.id });
-
-      if (
-        insertKeysRes.length !== delegatedDocumentsEncryptedMasterKeys.length
-      ) {
-        tx.rollback();
-      }
+    if (delegatedApplicationsEncryptedMasterKeys.length > 0) {
+      // const insertKeysRes = await tx
+      //   .insert(DelegatedDocumentsEncryptedMasterKeys)
+      //   .values(
+      //     delegatedDocumentsEncryptedMasterKeys.map((key) => ({
+      //       ...key,
+      //       organizationApplicationId: res[0].insertedId,
+      //     }))
+      //   )
+      //   .returning({ insertedId: DelegatedDocumentsEncryptedMasterKeys.id });
+      // if (
+      //   insertKeysRes.length !== delegatedDocumentsEncryptedMasterKeys.length
+      // ) {
+      //   tx.rollback();
+      // }
+      //TODO: Implement this with new applications schema
     }
   });
 };

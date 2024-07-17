@@ -2,16 +2,12 @@ import { eq } from "drizzle-orm";
 import { db } from "../../db";
 import {
   ApplicationUpdateEnquiryType,
-  DelegatedDocumentsEncryptedMasterKeys,
-  DelegatedDocumentsEncryptedMasterKeysInsertType,
   Documents,
-  DocumentsInsertType,
   applications,
 } from "../../schema";
 import {
   ApplicationStatusEnum,
   ApplicationSteps,
-  EncryptedMasterKeySet,
   RequiredDocumentsNamesEnum,
 } from "../../../types/api-types/Application";
 import { EncryptedFileUploadType } from "../../../routers/applications-router/applicationsRouter";
@@ -49,9 +45,8 @@ export const updateApplicationEnquiry = async (
         annotation: null,
         isEncrypted: true,
         step: ApplicationSteps.enquiry,
-        encryptedMasterKeys: latestUtilityBill.keysSet,
+        encryptedMasterKeys: [],
         createdAt: new Date(),
-        orgMembersMasterkeys: latestUtilityBill.orgMembersMasterkeys,
       },
     ];
 
@@ -75,23 +70,4 @@ export const updateApplicationEnquiry = async (
 
     documentId = documentInsert[0].id;
   });
-
-  if (documentId && organizationApplicationId) {
-    const delegatedDocumentsEncryptedMasterKeys: DelegatedDocumentsEncryptedMasterKeysInsertType[] =
-      latestUtilityBill.orgMembersMasterkeys.map(
-        ({ orgUserId, encryptedMasterKey }) => ({
-          organizationUserId: orgUserId,
-          documentId,
-          encryptedMasterKey,
-          organizationApplicationId,
-        })
-      );
-    // console.log(delegatedDocumentsEncryptedMasterKeys);
-
-    if (delegatedDocumentsEncryptedMasterKeys.length > 0) {
-      await db
-        .insert(DelegatedDocumentsEncryptedMasterKeys)
-        .values(delegatedDocumentsEncryptedMasterKeys);
-    }
-  }
 };

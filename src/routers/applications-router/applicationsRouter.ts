@@ -60,38 +60,54 @@ import { deleteOrganizationApplication } from "../../db/mutations/organizations/
 import { findFirstOrganizationApplicationByApplicationId } from "../../db/queries/applications/findFirstOrganizationApplicationByApplicationId";
 import { findAllOrganizationMembers } from "../../db/queries/organizations/findAllOrganizationMembers";
 import { findFirstDelegatedUserByUserId } from "../../db/queries/gcaDelegatedUsers/findFirstDelegatedUserByUserId";
+import { findAllUserJoinedOrganizations } from "../../db/queries/organizations/findAllUserJoinedOrganizations";
+import { findFirstDelegatedEncryptedMasterKeyByApplicationIdAndOrganizationUserId } from "../../db/queries/organizations/findFirstDelegatedEncryptedMasterKeyByApplicationIdAndOrganizationUserId";
+import { findFirstDelegatedEncryptedMasterKeyByApplicationId } from "../../db/queries/organizations/findFirstDelegatedEncryptedMasterKeyByApplicationId";
+import { FindFirstGcaById } from "../../db/queries/gcas/findFirsGcaById";
+import { findFirstApplicationMasterKeyByApplicationIdAndUserId } from "../../db/queries/applications/findFirstApplicationMasterKeyByApplicationIdAndUserId";
 
 const encryptedFileUpload = t.Object({
   publicUrl: t.String({
     example:
       "https://pub-7e0365747f054c9e85051df5f20fa815.r2.dev/0x18a0ba01bbec4aa358650d297ba7bb330a78b073/utility-bill.enc",
   }),
-  keysSet: t.Array(
-    t.Object({
-      publicKey: t.String(),
-      encryptedMasterKey: t.String(),
-    })
-  ),
-  orgMembersMasterkeys: t.Array(
-    t.Object({
-      orgUserId: t.String(),
-      encryptedMasterKey: t.String(),
-    })
-  ),
+  // keysSet: t.Array(
+  //   t.Object({
+  //     publicKey: t.String(),
+  //     encryptedMasterKey: t.String(),
+  //   })
+  // ),
+  // orgMembersMasterkeys: t.Array(
+  //   t.Object({
+  //     orgUserId: t.String(),
+  //     encryptedMasterKey: t.String(),
+  //   })
+  // ),
 });
 
 export type EncryptedFileUploadType = {
   publicUrl: string;
-  keysSet: EncryptedMasterKeySet[];
-  orgMembersMasterkeys: {
-    orgUserId: string;
-    encryptedMasterKey: string;
-  }[];
+  // keysSet: EncryptedMasterKeySet[];
+  // orgMembersMasterkeys: {
+  //   orgUserId: string;
+  //   encryptedMasterKey: string;
+  // }[];
+};
+
+export type ApplicationEncryptedMasterKeysType = {
+  userId: string;
+  encryptedMasterKey: string;
 };
 
 export const EnquiryQueryBody = t.Object({
   applicationId: t.String(),
   latestUtilityBill: encryptedFileUpload,
+  applicationEncryptedMasterKeys: t.Array(
+    t.Object({
+      userId: t.String(),
+      encryptedMasterKey: t.String(),
+    })
+  ),
   estimatedCostOfPowerPerKWh: t.Numeric({
     example: 0.12,
     minimum: 0,
@@ -436,12 +452,13 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                 )
                 .flat();
 
-            await createOrganizationApplication(
-              organizationMember.id,
-              body.organizationId,
-              body.applicationId,
-              delegatedDocumentsEncryptedMasterKeys
-            );
+            // await createOrganizationApplication(
+            //   organizationMember.id,
+            //   body.organizationId,
+            //   body.applicationId,
+            //   delegatedDocumentsEncryptedMasterKeys
+            // );
+            //TODO: Implement this with new applications schema
           } catch (e) {
             if (e instanceof Error) {
               set.status = 400;
@@ -1017,6 +1034,159 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
           },
         }
       )
+      .get(
+        "/user-encrypted-key-by-application-id",
+        async ({ query: { applicationId }, set, userId }) => {
+          if (!applicationId) throw new Error("application id is required");
+
+          try {
+            const application = await FindFirstApplicationById(applicationId);
+
+            if (!application) {
+              set.status = 400;
+              return "Application not found";
+            }
+
+            if (application?.userId !== userId) {
+              const gca = await FindFirstGcaById(userId);
+              if (!gca) {
+                set.status = 400;
+                return "Unauthorized";
+              }
+              const res =
+                await findFirstApplicationMasterKeyByApplicationIdAndUserId(
+                  gca.id,
+                  applicationId
+                );
+              return res?.encryptedMasterKey;
+            }
+
+            const res =
+              await findFirstApplicationMasterKeyByApplicationIdAndUserId(
+                userId,
+                applicationId
+              );
+            return res?.encryptedMasterKey;
+          } catch (e) {
+            if (e instanceof Error) {
+              set.status = 400;
+              return e.message;
+            }
+            console.log(
+              "[documentsRouter] /organization-delegated-encrypted-key-by-application-id",
+              e
+            );
+            throw new Error("Error Occured");
+          }
+        },
+        {
+          query: t.Object({
+            applicationId: t.String(),
+          }),
+          detail: {
+            summary:
+              "Get Organization Delegated Encrypted Key by Application ID",
+            description: `Get organization delegated encrypted key by application id, it will throw an error if your are not a member of an organization with documents access`,
+            tags: [TAG.APPLICATIONS],
+          },
+        }
+      )
+      .get(
+        "/organization-delegated-encrypted-key-by-application-id",
+        async ({ query: { applicationId }, set, userId }) => {
+          if (!applicationId) throw new Error("application id is required");
+
+          try {
+            const userOrganizations = await findAllUserJoinedOrganizations(
+              userId
+            );
+
+            if (userOrganizations.length === 0) {
+              set.status = 400;
+              return "Unauthorized";
+            }
+            const hasDocumentsAccessOrganizations = userOrganizations.filter(
+              (organization) => organization.hasDocumentsAccess
+            );
+
+            const res =
+              await findFirstDelegatedEncryptedMasterKeyByApplicationIdAndOrganizationUserId(
+                hasDocumentsAccessOrganizations.map(
+                  (organization) => organization.id
+                ),
+                applicationId
+              );
+
+            return res?.encryptedMasterKey;
+          } catch (e) {
+            if (e instanceof Error) {
+              set.status = 400;
+              return e.message;
+            }
+            console.log(
+              "[documentsRouter] /organization-delegated-encrypted-key-by-application-id",
+              e
+            );
+            throw new Error("Error Occured");
+          }
+        },
+        {
+          query: t.Object({
+            applicationId: t.String(),
+          }),
+          detail: {
+            summary:
+              "Get Organization Delegated Encrypted Key by Application ID",
+            description: `Get organization delegated encrypted key by application id, it will throw an error if your are not a member of an organization with documents access`,
+            tags: [TAG.APPLICATIONS],
+          },
+        }
+      )
+      .get(
+        "/gca-delegated-user-encrypted-key-by-application-id",
+        async ({ query: { applicationId }, set, userId }) => {
+          if (!applicationId) throw new Error("application id is required");
+
+          try {
+            const gcaDelegatedUser = await findFirstDelegatedUserByUserId(
+              userId
+            );
+
+            if (!gcaDelegatedUser) {
+              set.status = 400;
+              return "Unauthorized";
+            }
+
+            const res =
+              await findFirstDelegatedEncryptedMasterKeyByApplicationId(
+                gcaDelegatedUser.id,
+                applicationId
+              );
+
+            return res?.encryptedMasterKey;
+          } catch (e) {
+            if (e instanceof Error) {
+              set.status = 400;
+              return e.message;
+            }
+            console.log(
+              "[documentsRouter] /gca-delegated-user-encrypted-key-by-application-id",
+              e
+            );
+            throw new Error("Error Occured");
+          }
+        },
+        {
+          query: t.Object({
+            applicationId: t.String(),
+          }),
+          detail: {
+            summary: "Get GCA Delegated User Encrypted Key by Application ID",
+            description: `Get GCA delegated user encrypted key by application id, it will throw an error if your are not a GCA delegated user`,
+            tags: [TAG.APPLICATIONS],
+          },
+        }
+      )
       .post(
         "/enquiry",
         async ({ body, set, userId }) => {
@@ -1025,12 +1195,11 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               body.applicationId
             );
 
-            console.log("existingApplication", existingApplication?.id);
             if (!existingApplication) {
               const gcaAddress = await roundRobinAssignement();
               await createApplication(
                 body.latestUtilityBill.publicUrl,
-                body.latestUtilityBill.keysSet,
+                body.applicationEncryptedMasterKeys,
                 {
                   id: body.applicationId,
                   userId,

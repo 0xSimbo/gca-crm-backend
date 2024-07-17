@@ -2,14 +2,9 @@ import {
   DocumentsInsertTypeExtended,
   fillApplicationStepWithDocuments,
 } from "../../../db/mutations/applications/fillApplicationStepWithDocuments";
-import {
-  ApplicationType,
-  DocumentsMissingWithReasonInsertType,
-} from "../../../db/schema";
+import { ApplicationType } from "../../../db/schema";
 import {
   ApplicationSteps,
-  OptionalDocumentsEnum,
-  OptionalDocumentsNamesEnum,
   RequiredDocumentsNamesEnum,
 } from "../../../types/api-types/Application";
 import { EncryptedFileUploadType } from "../applicationsRouter";
@@ -34,9 +29,8 @@ export const handleCreateOrUpdatePreIntallDocuments = async (
       isEncrypted: true,
       annotation: null,
       step,
-      encryptedMasterKeys: args.contractAgreement.keysSet,
+      encryptedMasterKeys: [],
       createdAt: new Date(),
-      orgMembersMasterkeys: args.contractAgreement.orgMembersMasterkeys,
     },
     {
       name: RequiredDocumentsNamesEnum.declarationOfIntention,
@@ -46,9 +40,8 @@ export const handleCreateOrUpdatePreIntallDocuments = async (
       isEncrypted: true,
       annotation: null,
       step,
-      encryptedMasterKeys: args.declarationOfIntention.keysSet,
+      encryptedMasterKeys: [],
       createdAt: new Date(),
-      orgMembersMasterkeys: args.declarationOfIntention.orgMembersMasterkeys,
     },
   ];
 

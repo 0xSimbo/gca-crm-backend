@@ -52,9 +52,8 @@ export const handleCreateOrUpdateAfterInstallDocuments = async (
       isEncrypted: true,
       annotation: null,
       step,
-      encryptedMasterKeys: args.firstUtilityBill.keysSet,
+      encryptedMasterKeys: [],
       createdAt: new Date(),
-      orgMembersMasterkeys: args.firstUtilityBill.orgMembersMasterkeys,
     },
     {
       name: RequiredDocumentsNamesEnum.secondUtilityBill,
@@ -64,9 +63,8 @@ export const handleCreateOrUpdateAfterInstallDocuments = async (
       isEncrypted: true,
       annotation: null,
       step,
-      encryptedMasterKeys: args.secondUtilityBill.keysSet,
+      encryptedMasterKeys: [],
       createdAt: new Date(),
-      orgMembersMasterkeys: args.secondUtilityBill.orgMembersMasterkeys,
     },
   ];
 
@@ -79,9 +77,8 @@ export const handleCreateOrUpdateAfterInstallDocuments = async (
       isEncrypted: true,
       annotation: null,
       step,
-      encryptedMasterKeys: args.mortgageStatement.keysSet,
+      encryptedMasterKeys: [],
       createdAt: new Date(),
-      orgMembersMasterkeys: args.mortgageStatement.orgMembersMasterkeys,
     });
   }
 
@@ -94,9 +91,8 @@ export const handleCreateOrUpdateAfterInstallDocuments = async (
       isEncrypted: true,
       annotation: null,
       step,
-      encryptedMasterKeys: args.propertyDeed.keysSet,
+      encryptedMasterKeys: [],
       createdAt: new Date(),
-      orgMembersMasterkeys: args.propertyDeed.orgMembersMasterkeys,
     });
   }
 
@@ -109,9 +105,8 @@ export const handleCreateOrUpdateAfterInstallDocuments = async (
       annotation: null,
       step: step,
       isEncrypted: true,
-      encryptedMasterKeys: args.inspection.keysSet,
+      encryptedMasterKeys: [],
       createdAt: new Date(),
-      orgMembersMasterkeys: args.inspection.orgMembersMasterkeys,
     });
   }
 
@@ -124,9 +119,8 @@ export const handleCreateOrUpdateAfterInstallDocuments = async (
       annotation: null,
       step: step,
       isEncrypted: true,
-      encryptedMasterKeys: args.pto.keysSet,
+      encryptedMasterKeys: [],
       createdAt: new Date(),
-      orgMembersMasterkeys: args.pto.orgMembersMasterkeys,
     });
   }
 
@@ -139,9 +133,8 @@ export const handleCreateOrUpdateAfterInstallDocuments = async (
       annotation: null,
       step: step,
       isEncrypted: true,
-      encryptedMasterKeys: args.cityPermit.keysSet,
+      encryptedMasterKeys: [],
       createdAt: new Date(),
-      orgMembersMasterkeys: args.cityPermit.orgMembersMasterkeys,
     });
   }
   if (args.plansets) {
@@ -153,9 +146,8 @@ export const handleCreateOrUpdateAfterInstallDocuments = async (
       isEncrypted: true,
       annotation: null,
       step,
-      encryptedMasterKeys: args.plansets.keysSet,
+      encryptedMasterKeys: [],
       createdAt: new Date(),
-      orgMembersMasterkeys: args.plansets.orgMembersMasterkeys,
     });
   }
 
@@ -167,9 +159,8 @@ export const handleCreateOrUpdateAfterInstallDocuments = async (
     annotation: null,
     step: step,
     isEncrypted: true,
-    encryptedMasterKeys: misc.encryptedFileUpload.keysSet,
+    encryptedMasterKeys: [],
     createdAt: new Date(),
-    orgMembersMasterkeys: misc.encryptedFileUpload.orgMembersMasterkeys,
   }));
 
   if (miscDocuments.length > 0) {

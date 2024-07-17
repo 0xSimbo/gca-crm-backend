@@ -19,7 +19,6 @@ import { jwtHandler } from "../../handlers/jwtHandler";
 import { findAllGcas } from "../../db/queries/gcas/findAllGcas";
 import { updateServers } from "../../db/mutations/gcas/updateServers";
 import { db } from "../../db/db";
-import { createEncryptedDocumentsMasterKeysByGca } from "../../db/mutations/gcas/createEncryptedDocumentsMasterKeysByGca";
 import { deleteGcaDelegatedUserById } from "../../db/mutations/gcaDelegatedUsers/deleteGcaDelegatedUserById";
 import { createGcaDelegatedUser } from "../../db/mutations/gcaDelegatedUsers/createGcaDelegatedUser";
 import { findFirstDelegatedUserByUserId } from "../../db/queries/gcaDelegatedUsers/findFirstDelegatedUserByUserId";
@@ -309,15 +308,16 @@ export const gcasRouter = new Elysia({ prefix: "/gcas" })
               createdAt: new Date(),
             });
 
-            if (body.delegatedDocumentsEncryptedMasterKeysByGca.length > 0) {
-              await createEncryptedDocumentsMasterKeysByGca(
-                body.delegatedDocumentsEncryptedMasterKeysByGca.map((c) => ({
-                  gcaDelegatedUserId,
-                  documentId: c.documentId,
-                  encryptedMasterKey: c.encryptedMasterKey,
-                  applicationId: c.applicationId,
-                }))
-              );
+            if (body.delegatedApplicationsEncryptedMasterKeysByGca.length > 0) {
+              // await createEncryptedDocumentsMasterKeysByGca(
+              //   body.delegatedDocumentsEncryptedMasterKeysByGca.map((c) => ({
+              //     gcaDelegatedUserId,
+              //     documentId: c.documentId,
+              //     encryptedMasterKey: c.encryptedMasterKey,
+              //     applicationId: c.applicationId,
+              //   }))
+              // );
+              //TODO: create applicationEncryptedMasterKeys here
             }
           } catch (e) {
             if (e instanceof Error) {
@@ -331,9 +331,8 @@ export const gcasRouter = new Elysia({ prefix: "/gcas" })
         {
           body: t.Object({
             userId: t.String(),
-            delegatedDocumentsEncryptedMasterKeysByGca: t.Array(
+            delegatedApplicationsEncryptedMasterKeysByGca: t.Array(
               t.Object({
-                documentId: t.String(),
                 encryptedMasterKey: t.String(),
                 applicationId: t.String(),
               })

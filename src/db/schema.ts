@@ -269,7 +269,7 @@ export const OrganizationUsersRelations = relations(
       fields: [OrganizationUsers.roleId],
       references: [Roles.id],
     }),
-    encryptedMasterKeys: many(DelegatedDocumentsEncryptedMasterKeys),
+    applicationsEncryptedMasterKeys: many(ApplicationsEncryptedMasterKeys),
   })
 );
 
@@ -361,57 +361,6 @@ export const RolePermissionRelations = relations(
   })
 );
 
-export const DelegatedDocumentsEncryptedMasterKeys = pgTable(
-  "delegated_documents_encrypted_master_keys",
-  {
-    id: text("encrypted_master_key_id")
-      .primaryKey()
-      .$defaultFn(() => crypto.randomUUID()),
-    organizationUserId: text("organization_user_id")
-      .notNull()
-      .references(() => OrganizationUsers.id, { onDelete: "cascade" }),
-    encryptedMasterKey: text("encrypted_master_key").notNull(),
-    documentId: text("document_id")
-      .notNull()
-      .references(() => Documents.id, { onDelete: "cascade" }),
-    organizationApplicationId: text("organization_application_id")
-      .references(() => OrganizationApplications.id, { onDelete: "cascade" })
-      .notNull(),
-  },
-  (t) => {
-    return {
-      organizationUserIdIndex: index("organization_user_id_ix").on(
-        t.organizationUserId
-      ),
-      documentIdIndex: index("document_id_ix").on(t.documentId),
-    };
-  }
-);
-
-export const DelegatedDocumentsEncryptedMasterKeyRelations = relations(
-  DelegatedDocumentsEncryptedMasterKeys,
-  ({ one }) => ({
-    user: one(OrganizationUsers, {
-      fields: [DelegatedDocumentsEncryptedMasterKeys.organizationUserId],
-      references: [OrganizationUsers.id],
-    }),
-    document: one(Documents, {
-      fields: [DelegatedDocumentsEncryptedMasterKeys.documentId],
-      references: [Documents.id],
-    }),
-    organizationApplication: one(OrganizationApplications, {
-      fields: [DelegatedDocumentsEncryptedMasterKeys.organizationApplicationId],
-      references: [OrganizationApplications.id],
-    }),
-  })
-);
-
-export type DelegatedDocumentsEncryptedMasterKeysType = InferSelectModel<
-  typeof DelegatedDocumentsEncryptedMasterKeys
->;
-export type DelegatedDocumentsEncryptedMasterKeysInsertType =
-  typeof DelegatedDocumentsEncryptedMasterKeys.$inferInsert;
-
 export const GcaDelegatedUsers = pgTable(
   "gca_delegated_users",
   {
@@ -446,51 +395,12 @@ export const GcaDelegatedUsersRelations = relations(
       fields: [GcaDelegatedUsers.gcaId],
       references: [Gcas.id],
     }),
-    encryptedMasterKeys: many(DelegatedDocumentsEncryptedMasterKeysByGca),
+    applicationsEncryptedMasterKeys: many(ApplicationsEncryptedMasterKeys),
   })
 );
 
 export type GcaDelegatedUsersType = InferSelectModel<typeof GcaDelegatedUsers>;
 export type GcaDelegatedUsersInsertType = typeof GcaDelegatedUsers.$inferInsert;
-
-export const DelegatedDocumentsEncryptedMasterKeysByGca = pgTable(
-  "delegated_documents_encrypted_master_keys_by_gca",
-  {
-    id: text("encrypted_master_key_id")
-      .primaryKey()
-      .$defaultFn(() => crypto.randomUUID()),
-    gcaDelegatedUserId: text("gca_delegated_user_id")
-      .notNull()
-      .references(() => GcaDelegatedUsers.id, { onDelete: "cascade" }),
-    encryptedMasterKey: text("encrypted_master_key").notNull(),
-    documentId: text("document_id")
-      .notNull()
-      .references(() => Documents.id, { onDelete: "cascade" }),
-    applicationId: text("application_id")
-      .notNull()
-      .references(() => applications.id, { onDelete: "cascade" }),
-  }
-);
-
-export const DelegatedDocumentsEncryptedMasterKeysByGcaRelations = relations(
-  DelegatedDocumentsEncryptedMasterKeysByGca,
-  ({ one }) => ({
-    document: one(Documents, {
-      fields: [DelegatedDocumentsEncryptedMasterKeysByGca.documentId],
-      references: [Documents.id],
-    }),
-    gcaDelegatedUser: one(GcaDelegatedUsers, {
-      fields: [DelegatedDocumentsEncryptedMasterKeysByGca.gcaDelegatedUserId],
-      references: [GcaDelegatedUsers.id],
-    }),
-  })
-);
-
-export type DelegatedDocumentsEncryptedMasterKeysByGcaType = InferSelectModel<
-  typeof DelegatedDocumentsEncryptedMasterKeysByGca
->;
-export type DelegatedDocumentsEncryptedMasterKeysByGcaInsertType =
-  typeof DelegatedDocumentsEncryptedMasterKeysByGca.$inferInsert;
 
 /**
  * @dev Represents a farm in the system.
@@ -728,6 +638,10 @@ export const usersRelations = relations(users, ({ many, one }) => ({
   }),
   applications: many(applications),
   applicationsDraft: many(applicationsDraft),
+  organizationUser: one(OrganizationUsers, {
+    fields: [users.id],
+    references: [OrganizationUsers.userId],
+  }),
   gcaDelegatedUser: one(GcaDelegatedUsers, {
     fields: [users.id],
     references: [GcaDelegatedUsers.userId],
@@ -963,8 +877,66 @@ export const applicationsRelations = relations(
       fields: [applications.id],
       references: [OrganizationApplications.applicationId],
     }),
+    applicationsEncryptedMasterKeys: many(ApplicationsEncryptedMasterKeys),
   })
 );
+
+export const ApplicationsEncryptedMasterKeys = pgTable(
+  "applications_encrypted_master_keys",
+  {
+    id: text("encrypted_master_key_id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    userId: text("user_id").notNull(),
+    encryptedMasterKey: text("encrypted_master_key").notNull(),
+    applicationId: text("application_id")
+      .references(() => applications.id, { onDelete: "cascade" })
+      .notNull(),
+    organizationUserId: text("organization_user_id").references(
+      () => OrganizationUsers.id,
+      { onDelete: "cascade" }
+    ),
+    gcaDelegatedUserId: text("gca_delegated_user_id").references(
+      () => GcaDelegatedUsers.id,
+      { onDelete: "cascade" }
+    ),
+  }
+);
+
+export const ApplicationsEncryptedMasterKeyRelations = relations(
+  ApplicationsEncryptedMasterKeys,
+  ({ one }) => ({
+    user: one(users, {
+      fields: [ApplicationsEncryptedMasterKeys.userId],
+      references: [users.id],
+      relationName: "user",
+    }),
+    gca: one(Gcas, {
+      fields: [ApplicationsEncryptedMasterKeys.userId],
+      references: [Gcas.id],
+      relationName: "user",
+    }),
+    application: one(applications, {
+      fields: [ApplicationsEncryptedMasterKeys.applicationId],
+      references: [applications.id],
+    }),
+    organizationUser: one(OrganizationUsers, {
+      fields: [ApplicationsEncryptedMasterKeys.organizationUserId],
+      references: [OrganizationUsers.id],
+    }),
+    gcaDelegatedUser: one(GcaDelegatedUsers, {
+      fields: [ApplicationsEncryptedMasterKeys.gcaDelegatedUserId],
+      references: [GcaDelegatedUsers.id],
+    }),
+  })
+);
+
+export type ApplicationsEncryptedMasterKeysType = InferSelectModel<
+  typeof ApplicationsEncryptedMasterKeys
+>;
+
+export type ApplicationsEncryptedMasterKeysInsertType =
+  typeof ApplicationsEncryptedMasterKeys.$inferInsert;
 
 /**
  * @dev Represents an installer in the system.
@@ -1064,9 +1036,7 @@ export const Documents = pgTable("documents", {
   updatedAt: timestamp("updated_at"),
   encryptedMasterKeys: json("encrypted_master_keys")
     .$type<EncryptedMasterKeySet>()
-    .notNull()
-    .array()
-    .notNull(),
+    .array(),
   isOverWritten: boolean("over_written").notNull().default(false),
 });
 
