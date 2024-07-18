@@ -41,7 +41,6 @@ export const createApplication = async (
       acc: {
         userId: string;
         gcaDelegatedUserId: string | null;
-        organizationUserId: string | null;
         encryptedMasterKey: string;
       }[],
       user
@@ -55,7 +54,6 @@ export const createApplication = async (
       acc.push({
         userId: user.id,
         gcaDelegatedUserId: user.gcaDelegatedUser?.id,
-        organizationUserId: user.organizationUser?.id,
         encryptedMasterKey: userEncryptedMasterKey.encryptedMasterKey,
       });
       return acc;

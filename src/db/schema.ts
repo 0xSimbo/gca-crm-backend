@@ -892,6 +892,10 @@ export const ApplicationsEncryptedMasterKeys = pgTable(
     applicationId: text("application_id")
       .references(() => applications.id, { onDelete: "cascade" })
       .notNull(),
+    organizationApplicationId: text("organization_application_id").references(
+      () => OrganizationApplications.id,
+      { onDelete: "cascade" }
+    ),
     organizationUserId: text("organization_user_id").references(
       () => OrganizationUsers.id,
       { onDelete: "cascade" }
@@ -927,6 +931,10 @@ export const ApplicationsEncryptedMasterKeyRelations = relations(
     gcaDelegatedUser: one(GcaDelegatedUsers, {
       fields: [ApplicationsEncryptedMasterKeys.gcaDelegatedUserId],
       references: [GcaDelegatedUsers.id],
+    }),
+    organizationApplication: one(OrganizationApplications, {
+      fields: [ApplicationsEncryptedMasterKeys.organizationApplicationId],
+      references: [OrganizationApplications.id],
     }),
   })
 );

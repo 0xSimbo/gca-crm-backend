@@ -208,9 +208,10 @@ export const organizationsRouter = new Elysia({ prefix: "/organizations" })
               await findAllOrganizationMembersWithDocumentsAccess(
                 query.organizationId
               );
+            console;
             // Filter out the user from the list
             return organizationMembers.filter(
-              (c) => c.userId.toUpperCase() !== userId.toLowerCase()
+              (c) => c.userId.toLowerCase() !== userId.toLowerCase()
             );
           } catch (e) {
             if (e instanceof Error) {
@@ -685,6 +686,7 @@ export const organizationsRouter = new Elysia({ prefix: "/organizations" })
                 encryptedMasterKey: t.String(),
                 applicationId: t.String(),
                 organizationUserId: t.String(),
+                organizationApplicationId: t.String(),
               })
             ),
           }),

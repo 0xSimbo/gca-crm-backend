@@ -8,7 +8,9 @@ export const findAllApplicationsByOrganizationId = async (
 ) => {
   const applicationsDb = await db.query.OrganizationApplications.findMany({
     where: and(eq(OrganizationApplications.organizationId, organizationId)),
-    columns: {},
+    columns: {
+      id: true,
+    },
     with: {
       application: {
         columns: {
@@ -40,8 +42,9 @@ export const findAllApplicationsByOrganizationId = async (
       },
     },
   });
-  return applicationsDb.map(({ application }) => ({
+  return applicationsDb.map(({ id, application }) => ({
     ...application,
+    organizationApplicationId: id,
     finalProtocolFee: formatUnits(
       (application.finalProtocolFee || BigInt(0)) as bigint,
       6

@@ -5,22 +5,15 @@ import {
   ApplicationsEncryptedMasterKeysInsertType,
   OrganizationApplications,
 } from "../../schema";
-import { findAllOrgMembersWithDocumentsAccessWithoutOwner } from "../../queries/organizations/findAllOrgMembersWithDocumentsAccessWithoutOwner";
 
 export const createOrganizationApplication = async (
   applicationOwnerOrgUserId: string, // this is not user.userId, it is orgUser.id
   organizationId: string,
   applicationId: string,
-  applicationsEncryptedMasterKeysInsert: ApplicationsEncryptedMasterKeysInsertType[],
-  applicationOwnerId: string
+  applicationsEncryptedMasterKeysInsert: ApplicationsEncryptedMasterKeysInsertType[]
 ) => {
-  //TODO: finish impl here
-  const orgMembersWithDocumentsAccessWithoutOwner =
-    await findAllOrgMembersWithDocumentsAccessWithoutOwner(
-      applicationOwnerId,
-      organizationId
-    );
   await db.transaction(async (tx) => {
+    // if application is already shared with the organization, delete the existing shared application + all the encrypted master keys for the org members
     await tx
       .delete(OrganizationApplications)
       .where(and(eq(OrganizationApplications.applicationId, applicationId)));
@@ -37,10 +30,16 @@ export const createOrganizationApplication = async (
     if (res.length === 0) {
       tx.rollback();
     }
+
     if (applicationsEncryptedMasterKeysInsert.length > 0) {
-      const applicationsEncryptedMasterKeysInsertRes = await db
+      const applicationsEncryptedMasterKeysInsertRes = await tx
         .insert(ApplicationsEncryptedMasterKeys)
-        .values(applicationsEncryptedMasterKeysInsert)
+        .values(
+          applicationsEncryptedMasterKeysInsert.map((item) => ({
+            ...item,
+            organizationApplicationId: res[0].insertedId,
+          }))
+        )
         .returning({ id: ApplicationsEncryptedMasterKeys.id });
 
       if (

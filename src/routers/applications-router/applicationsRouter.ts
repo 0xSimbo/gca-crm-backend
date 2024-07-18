@@ -466,8 +466,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               organizationMember.id,
               body.organizationId,
               body.applicationId,
-              body.delegatedApplicationsEncryptedMasterKeys,
-              application.userId
+              body.delegatedApplicationsEncryptedMasterKeys
             );
           } catch (e) {
             if (e instanceof Error) {
@@ -599,8 +598,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
 
             await deleteOrganizationApplication(
               body.organizationId,
-              body.applicationId,
-              application.userId
+              body.applicationId
             );
           } catch (e) {
             if (e instanceof Error) {
