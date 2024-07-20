@@ -7,6 +7,21 @@ export const findAllGcas = async () => {
       email: true,
       publicEncryptionKey: true,
     },
+    with: {
+      delegatedUsers: {
+        columns: {
+          id: true,
+          userId: true,
+        },
+        with: {
+          user: {
+            columns: {
+              publicEncryptionKey: true,
+            },
+          },
+        },
+      },
+    },
   });
   return gcas;
 };

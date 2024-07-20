@@ -66,6 +66,13 @@ import { findFirstDelegatedEncryptedMasterKeyByApplicationId } from "../../db/qu
 import { FindFirstGcaById } from "../../db/queries/gcas/findFirsGcaById";
 import { findFirstApplicationMasterKeyByApplicationIdAndUserId } from "../../db/queries/applications/findFirstApplicationMasterKeyByApplicationIdAndUserId";
 import { findAllCompletedApplications } from "../../db/queries/applications/findAllCompletedApplications";
+import { findAllApplicationsWithoutMasterKey } from "../../db/queries/applications/findAllApplicationsWithoutMasterKey";
+import { createApplicationEncryptedMasterKeysForUsers } from "../../db/mutations/applications/createApplicationEncryptedMasterKeysForUsers";
+import { findAllApplications } from "../../db/queries/applications/findAllApplications";
+import {
+  GetProtocolFeePaymentFromTxHashReceipt,
+  getProtocolFeePaymentFromTxHashReceipt,
+} from "../../utils/getProtocolFeePaymentFromTxHashReceipt";
 
 const encryptedFileUpload = t.Object({
   publicUrl: t.String({
@@ -687,7 +694,10 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               set.status = 400;
               return e.message;
             }
-            console.log("[applicationsRouter] gca-assigned-applications", e);
+            console.log(
+              "[applicationsRouter] enquiry-approve-or-ask-for-changes",
+              e
+            );
             throw new Error("Error Occured");
           }
         },
@@ -783,7 +793,10 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               set.status = 400;
               return e.message;
             }
-            console.log("[applicationsRouter] gca-assigned-applications", e);
+            console.log(
+              "[applicationsRouter] pre-install-documents-approve-or-ask-for-changes",
+              e
+            );
             throw new Error("Error Occured");
           }
         },
@@ -907,7 +920,10 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               set.status = 400;
               return e.message;
             }
-            console.log("[applicationsRouter] gca-assigned-applications", e);
+            console.log(
+              "[applicationsRouter] gca-accept-or-defer-application-assignement",
+              e
+            );
             throw new Error("Error Occured");
           }
         },
@@ -952,6 +968,81 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
           detail: {
             summary: "Get Applications assigned to GCA",
             description: `Get Applications assigned to GCA. If the user is not a GCA, it will throw an error.`,
+            tags: [TAG.APPLICATIONS],
+          },
+        }
+      )
+      .get(
+        "/all-applications",
+        async ({ set, userId: gcaId }) => {
+          try {
+            const account = await findFirstAccountById(gcaId);
+
+            if (!account) {
+              set.status = 404;
+              return "Account not found";
+            }
+
+            if (account.role !== "GCA") {
+              set.status = 400;
+              return "Unauthorized";
+            }
+
+            const applications = await findAllApplications();
+
+            return applications;
+          } catch (e) {
+            if (e instanceof Error) {
+              set.status = 400;
+              return e.message;
+            }
+            console.log("[applicationsRouter] all-applications", e);
+            throw new Error("Error Occured");
+          }
+        },
+        {
+          detail: {
+            summary: "Get All Applications",
+            description: `Get All Applications. If the user is not a GCA, it will throw an error.`,
+            tags: [TAG.APPLICATIONS],
+          },
+        }
+      )
+      .get(
+        "/applications-without-master-key",
+        async ({ set, userId: gcaId }) => {
+          try {
+            const account = await findFirstAccountById(gcaId);
+
+            if (!account) {
+              set.status = 404;
+              return "Account not found";
+            }
+
+            if (account.role !== "GCA") {
+              set.status = 400;
+              return "Unauthorized";
+            }
+
+            const applications = await findAllApplicationsWithoutMasterKey();
+
+            return applications;
+          } catch (e) {
+            if (e instanceof Error) {
+              set.status = 400;
+              return e.message;
+            }
+            console.log(
+              "[applicationsRouter] applications-without-master-key",
+              e
+            );
+            throw new Error("Error Occured");
+          }
+        },
+        {
+          detail: {
+            summary: "Get Applications assigned to GCA without master key",
+            description: `Get Applications assigned to GCA without master key. If the user is not a GCA, it will throw an error.`,
             tags: [TAG.APPLICATIONS],
           },
         }
@@ -1057,12 +1148,16 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               const gca = await FindFirstGcaById(userId);
 
               if (!gca) {
-                const organizationMember = await findOrganizationMemberByUserId(
-                  application.organizationApplication.organizationId,
-                  userId
-                );
+                const user = await findFirstUserById(userId);
+                if (!user) {
+                  set.status = 400;
+                  return "Unauthorized";
+                }
 
-                const isAuthorized = organizationMember?.hasDocumentsAccess;
+                const isAuthorized =
+                  user.organizationUser?.hasDocumentsAccess ||
+                  user.gcaDelegatedUser;
+
                 if (!isAuthorized) {
                   set.status = 400;
                   return "Unauthorized";
@@ -1517,13 +1612,8 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
             }
 
             if (process.env.NODE_ENV === "production") {
-              const protocolFeeData: GetProtocolFeePaymentFromTransactionHashSubgraphResponseIndividual | null =
-                await getProtocolFeePaymentFromTransactionHash(body.txHash);
-
-              if (!protocolFeeData) {
-                set.status = 400;
-                return "Invalid Transaction Hash";
-              }
+              const protocolFeeData: GetProtocolFeePaymentFromTxHashReceipt =
+                await getProtocolFeePaymentFromTxHashReceipt(body.txHash);
 
               if (
                 protocolFeeData.user.id.toLowerCase() !== userId.toLowerCase()
@@ -2100,7 +2190,10 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               set.status = 400;
               return e.message;
             }
-            console.log("[applicationsRouter] gca-assigned-applications", e);
+            console.log(
+              "[applicationsRouter] inspection-and-pto-approve-or-ask-for-changes",
+              e
+            );
             throw new Error("Error Occured");
           }
         },
@@ -2292,6 +2385,59 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
           detail: {
             summary: "GCA After Install Visit",
             description: `Set the after install visit dates. If confirmed is true, it will set the confirmed timestamp`,
+            tags: [TAG.APPLICATIONS],
+          },
+        }
+      )
+      .post(
+        "/create-application-encrypted-master-keys",
+        async ({ body, set, userId: gcaId }) => {
+          const account = await findFirstAccountById(gcaId);
+          if (!account) {
+            return { errorCode: 404, errorMessage: "Account not found" };
+          }
+          try {
+            const application = await FindFirstApplicationById(
+              body.applicationId
+            );
+
+            if (!application) {
+              set.status = 404;
+              return "Application not found";
+            }
+
+            await createApplicationEncryptedMasterKeysForUsers(
+              body.applicationEncryptedMasterKeys.map((key) => ({
+                ...key,
+                applicationId: body.applicationId,
+              }))
+            );
+          } catch (e) {
+            if (e instanceof Error) {
+              set.status = 400;
+              return e.message;
+            }
+            console.log(
+              "[applicationsRouter] create-application-encrypted-master-keys",
+              e
+            );
+            throw new Error("Error Occured");
+          }
+        },
+        {
+          body: t.Object({
+            applicationId: t.String(),
+            applicationEncryptedMasterKeys: t.Array(
+              t.Object({
+                publicKey: t.Optional(t.String()),
+                userId: t.String(),
+                encryptedMasterKey: t.String(),
+              })
+            ),
+          }),
+          detail: {
+            summary: "Create Application Encrypted Master Keys",
+            description: `Create Application Encrypted Master Keys. If the user is not a GCA, it will throw an error.`,
             tags: [TAG.APPLICATIONS],
           },
         }

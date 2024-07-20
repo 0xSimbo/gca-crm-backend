@@ -18,10 +18,104 @@ import { findFirstFarmById } from "../../db/queries/farms/findFirstFarmByShortId
 import { findAllDevicesByFarmId } from "../../db/queries/devices/findAllDevicesByFarmId";
 import { getPubkeysAndShortIds } from "./get-pubkeys-and-short-ids";
 import { db } from "../../db/db";
-import { inArray } from "drizzle-orm";
-import { Devices } from "../../db/schema";
+import { eq, inArray } from "drizzle-orm";
+import { DeviceInsertType, Devices } from "../../db/schema";
 
 export const devicesRouter = new Elysia({ prefix: "/devices" })
+  .post(
+    "/create",
+    async ({ body, set, headers }) => {
+      const apiKey = headers["x-api-key"];
+      if (!apiKey) {
+        set.status = 401;
+        return "API Key is required";
+      }
+      if (apiKey !== process.env.API_KEY) {
+        set.status = 401;
+        return "API Key is invalid";
+      }
+      try {
+        const device: DeviceInsertType = {
+          publicKey: body.publicKey,
+          shortId: body.shortId,
+          farmId: body.farmId,
+        };
+
+        const insertRes = await db.insert(Devices).values(device).returning({
+          id: Devices.id,
+        });
+        return insertRes[0].id;
+      } catch (e) {
+        if (e instanceof Error) {
+          set.status = 400;
+          return e.message;
+        }
+        console.log("[devicesRouter] /create", e);
+        throw new Error("Error Occured");
+      }
+    },
+    {
+      body: t.Object({
+        publicKey: t.String(),
+        shortId: t.String(),
+        farmId: t.String(),
+        isEnabled: t.Boolean(),
+        enabledAt: t.String(),
+        disabled_at: t.String(),
+      }),
+      detail: {
+        summary: "Create a device",
+        description: `Create a device with the given name, public key, short id and farm id`,
+        tags: [TAG.DEVICES],
+      },
+    }
+  )
+  .post(
+    "/toggle-device",
+    async ({ body, set, headers }) => {
+      const apiKey = headers["x-api-key"];
+      if (!apiKey) {
+        set.status = 401;
+        return "API Key is required";
+      }
+      if (apiKey !== process.env.API_KEY) {
+        set.status = 401;
+        return "API Key is invalid";
+      }
+      try {
+        await db
+          .update(Devices)
+          .set({
+            isEnabled: body.isEnabled,
+            enabledAt: body.enabledAt ? new Date(body.enabledAt) : null,
+            disabledAt: body.disabledAt ? new Date(body.disabledAt) : null,
+          })
+          .where(eq(Devices.publicKey, body.publicKey));
+
+        return { success: true };
+      } catch (e) {
+        if (e instanceof Error) {
+          set.status = 400;
+          return e.message;
+        }
+        console.log("[devicesRouter] /toggle-device", e);
+        throw new Error("Error Occured");
+      }
+    },
+    {
+      body: t.Object({
+        publicKey: t.String(),
+        isEnabled: t.Boolean(),
+        enabledAt: t.Nullable(t.String()),
+        disabledAt: t.Nullable(t.String()),
+      }),
+      detail: {
+        summary: "Toggle Device status by public key",
+        description: `Toggle Device status by public key, update isEnabled, enabledAt and disabledAt`,
+        tags: [TAG.DEVICES],
+      },
+    }
+  )
   .use(bearerplugin())
   .guard(bearerGuard, (app) =>
     app

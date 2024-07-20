@@ -8,6 +8,13 @@ export const findFirstUserById = async (id: string) => {
     with: {
       installer: true,
       gcaDelegatedUser: true,
+      organizationUser: {
+        columns: {
+          id: true,
+          hasDocumentsAccess: true,
+          organizationId: true,
+        },
+      },
     },
   });
   return user;

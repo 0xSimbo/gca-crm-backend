@@ -24,6 +24,7 @@ import { createGcaDelegatedUser } from "../../db/mutations/gcaDelegatedUsers/cre
 import { findFirstDelegatedUserByUserId } from "../../db/queries/gcaDelegatedUsers/findFirstDelegatedUserByUserId";
 import { findFirstUserById } from "../../db/queries/users/findFirstUserById";
 import { findAllGcaDelegatedUsers } from "../../db/queries/gcaDelegatedUsers/findAllGcaDelegatedUsers";
+import { createApplicationEncryptedMasterKeysForUsers } from "../../db/mutations/applications/createApplicationEncryptedMasterKeysForUsers";
 
 export const CreateGCAQueryBody = t.Object({
   publicEncryptionKey: t.String({
@@ -309,15 +310,12 @@ export const gcasRouter = new Elysia({ prefix: "/gcas" })
             });
 
             if (body.delegatedApplicationsEncryptedMasterKeysByGca.length > 0) {
-              // await createEncryptedDocumentsMasterKeysByGca(
-              //   body.delegatedDocumentsEncryptedMasterKeysByGca.map((c) => ({
-              //     gcaDelegatedUserId,
-              //     documentId: c.documentId,
-              //     encryptedMasterKey: c.encryptedMasterKey,
-              //     applicationId: c.applicationId,
-              //   }))
-              // );
-              //TODO: create applicationEncryptedMasterKeys here
+              await createApplicationEncryptedMasterKeysForUsers(
+                body.delegatedApplicationsEncryptedMasterKeysByGca.map((u) => ({
+                  ...u,
+                  gcaDelegatedUserId,
+                }))
+              );
             }
           } catch (e) {
             if (e instanceof Error) {
@@ -335,6 +333,7 @@ export const gcasRouter = new Elysia({ prefix: "/gcas" })
               t.Object({
                 encryptedMasterKey: t.String(),
                 applicationId: t.String(),
+                userId: t.String(),
               })
             ),
           }),

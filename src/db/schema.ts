@@ -687,6 +687,7 @@ export const GcasRelations = relations(Gcas, ({ many, one }) => ({
   }),
   applications: many(applications),
   applicationStepApprovals: many(ApplicationStepApprovals),
+  delegatedUsers: many(GcaDelegatedUsers),
 }));
 
 export const applicationsDraft = pgTable("applicationsDraft", {
@@ -1175,6 +1176,9 @@ export const RewardSplitsRelations = relations(RewardSplits, ({ one }) => ({
  * @param {string} farmId - The ID of the farm associated with the device.
  * @param {string} publicKey - The public key of the device.
  * @param {number} shortId - A short ID for simplicity and readability.
+ * @param {boolean} isEnabled - Indicates if the device is enabled.
+ * @param {timestamp} enabledAt - The date and time when the device was enabled.
+ * @param {timestamp} disabledAt - The date and time when the device was disabled.
  */
 export const Devices = pgTable("devices", {
   id: text("device_id")
@@ -1185,6 +1189,9 @@ export const Devices = pgTable("devices", {
     .references(() => farms.id, { onDelete: "cascade" }),
   publicKey: varchar("public_key", { length: 255 }).unique().notNull(),
   shortId: varchar("short_id", { length: 255 }).notNull(), // can have multiple devices with the same shortId but different public keys // @0xSimbo will store as varchar since it's planned to change it to an hex
+  isEnabled: boolean("is_enabled").notNull().default(true),
+  enabledAt: timestamp("enabled_at"),
+  disabledAt: timestamp("disabled_at"),
 });
 
 export type DeviceType = InferSelectModel<typeof Devices>;
