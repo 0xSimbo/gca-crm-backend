@@ -21,6 +21,16 @@ import {
 } from "../../../utils/r2/upload-to-r2";
 import { getStepNameFromIndex } from "../../../utils/getStepNameFromIndex";
 
+export type ApplicationAuditFieldsType = {
+  solarPanelsQuantity: number;
+  solarPanelsBrandAndModel: string;
+  solarPanelsWarranty: string;
+  averageSunlightHoursPerDay: string;
+  adjustedWeeklyCarbonCredits: string;
+  weeklyTotalCarbonDebt: string;
+  netCarbonCreditEarningWeekly: string;
+};
+
 /**
  * Fills an application step with documents atomically.
  *
@@ -40,7 +50,8 @@ export const completeApplicationWithDocumentsAndCreateFarmWithDevices = async (
   documents: DocumentsInsertType[],
   devices: { publicKey: string; shortId: string }[],
   protocolFee: bigint,
-  protocolFeePaymentHash: string
+  protocolFeePaymentHash: string,
+  applicationAuditFields: ApplicationAuditFieldsType
 ) => {
   if (!process.env.R2_NOT_ENCRYPTED_FILES_BUCKET_NAME) {
     throw new Error("R2_NOT_ENCRYPTED_FILES_BUCKET_NAME is not defined");
@@ -187,6 +198,7 @@ export const completeApplicationWithDocumentsAndCreateFarmWithDevices = async (
       .set({
         status: ApplicationStatusEnum.completed,
         farmId: farmInsert[0].farmId,
+        ...applicationAuditFields,
       })
       .where(and(eq(applications.id, applicationId)))
       .returning({ status: applications.status });

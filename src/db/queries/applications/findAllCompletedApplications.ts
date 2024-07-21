@@ -4,7 +4,7 @@ import { Documents, applications } from "../../schema";
 import { formatUnits } from "viem";
 import { ApplicationStatusEnum } from "../../../types/api-types/Application";
 
-export const findAllCompletedApplications = async () => {
+export const findAllCompletedApplications = async (withDocuments?: boolean) => {
   const applicationsDb = await db.query.applications.findMany({
     where: and(
       eq(applications.isCancelled, false),
@@ -24,6 +24,13 @@ export const findAllCompletedApplications = async () => {
       userId: true,
       gcaAcceptanceTimestamp: true,
       gcaAssignedTimestamp: true,
+      solarPanelsQuantity: true,
+      solarPanelsBrandAndModel: true,
+      solarPanelsWarranty: true,
+      averageSunlightHoursPerDay: true,
+      adjustedWeeklyCarbonCredits: true,
+      weeklyTotalCarbonDebt: true,
+      netCarbonCreditEarningWeekly: true,
     },
     with: {
       rewardSplits: {
@@ -46,6 +53,14 @@ export const findAllCompletedApplications = async () => {
           shortId: true,
         },
       },
+      documents: withDocuments
+        ? {
+            where: eq(Documents.isEncrypted, false),
+          }
+        : {
+            where: eq(Documents.isEncrypted, false),
+            columns: { id: true },
+          },
     },
   });
   return applicationsDb.map((application) => ({

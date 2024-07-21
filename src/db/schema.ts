@@ -824,6 +824,28 @@ export const applications = pgTable("applications", {
   // payment step fields
   paymentDate: timestamp("payment_date"),
   paymentTxHash: varchar("payment_tx_hash", { length: 66 }),
+  // audit specific fields
+  solarPanelsQuantity: integer("solar_panels_quantity"),
+  solarPanelsBrandAndModel: varchar("solar_panels_brand_and_model", {
+    length: 255,
+  }),
+  solarPanelsWarranty: varchar("solar_panels_warranty", { length: 255 }),
+  averageSunlightHoursPerDay: numeric("average_sunlight_hours_per_day", {
+    precision: 10,
+    scale: 2,
+  }),
+  adjustedWeeklyCarbonCredits: numeric("adjusted_weekly_carbon_credits", {
+    precision: 10,
+    scale: 2,
+  }),
+  weeklyTotalCarbonDebt: numeric("weekly_total_carbon_debt", {
+    precision: 10,
+    scale: 2,
+  }),
+  netCarbonCreditEarningWeekly: numeric("net_carbon_credit_earning_weekly", {
+    precision: 10,
+    scale: 2,
+  }),
   // gca assignement fields
   gcaAssignedTimestamp: timestamp("gca_assigned_timestamp"),
   gcaAcceptanceTimestamp: timestamp("gca_acceptance_timestamp"),

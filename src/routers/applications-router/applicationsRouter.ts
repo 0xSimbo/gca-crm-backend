@@ -239,9 +239,11 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
   .use(bearerplugin())
   .get(
     "/completed",
-    async ({ set }) => {
+    async ({ query: { withDocuments }, set }) => {
       try {
-        const applications = await findAllCompletedApplications();
+        const applications = await findAllCompletedApplications(
+          !!withDocuments
+        );
 
         return applications;
       } catch (e) {
@@ -254,6 +256,9 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
       }
     },
     {
+      query: t.Object({
+        withDocuments: t.Optional(t.Literal("true")),
+      }),
       detail: {
         summary: "Get all completed applications ",
         description: `Get all completed applications `,
@@ -2025,6 +2030,16 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                 ...body.withoutPIIdocuments,
                 miscDocuments: body.miscDocuments,
                 devices: body.devices,
+                applicationAuditFields: {
+                  solarPanelsQuantity: body.solarPanelsQuantity,
+                  solarPanelsBrandAndModel: body.solarPanelsBrandAndModel,
+                  solarPanelsWarranty: body.solarPanelsWarranty,
+                  averageSunlightHoursPerDay: body.averageSunlightHoursPerDay,
+                  adjustedWeeklyCarbonCredits: body.adjustedWeeklyCarbonCredits,
+                  weeklyTotalCarbonDebt: body.weeklyTotalCarbonDebt,
+                  netCarbonCreditEarningWeekly:
+                    body.netCarbonCreditEarningWeekly,
+                },
               }
             );
             //TODO: send event with kafka to notify that the application is completed and publish audit;
@@ -2066,6 +2081,13 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               inspection: t.Nullable(t.String()),
               pto: t.Nullable(t.String()),
             }),
+            solarPanelsQuantity: t.Number(),
+            solarPanelsBrandAndModel: t.String(),
+            solarPanelsWarranty: t.String(),
+            averageSunlightHoursPerDay: t.String(),
+            adjustedWeeklyCarbonCredits: t.String(),
+            weeklyTotalCarbonDebt: t.String(),
+            netCarbonCreditEarningWeekly: t.String(),
           }),
           detail: {
             summary: "",

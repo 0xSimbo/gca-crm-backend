@@ -1,5 +1,8 @@
 import { ethers } from "ethers";
-import { completeApplicationWithDocumentsAndCreateFarmWithDevices } from "../../../db/mutations/applications/completeApplicationWithDocumentsAndCreateFarm";
+import {
+  ApplicationAuditFieldsType,
+  completeApplicationWithDocumentsAndCreateFarmWithDevices,
+} from "../../../db/mutations/applications/completeApplicationWithDocumentsAndCreateFarm";
 import { ApplicationType, DocumentsInsertType } from "../../../db/schema";
 import {
   ApplicationSteps,
@@ -32,6 +35,7 @@ export const handleCreateWithoutPIIDocumentsAndCompleteApplication = async (
       documentName: string;
       extension: string;
     }[];
+    applicationAuditFields: ApplicationAuditFieldsType;
   }
 ) => {
   const documents: DocumentsInsertType[] = [
@@ -186,6 +190,7 @@ export const handleCreateWithoutPIIDocumentsAndCompleteApplication = async (
     documents,
     args.devices,
     BigInt(ethers.utils.parseUnits(application.finalProtocolFee, 6).toString()),
-    application.paymentTxHash
+    application.paymentTxHash,
+    args.applicationAuditFields
   );
 };
