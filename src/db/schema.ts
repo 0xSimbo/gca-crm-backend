@@ -755,6 +755,9 @@ export const applications = pgTable("applications", {
   roundRobinStatus: roundRobinStatusEnum("round_robin_status").notNull(),
   status: applicationStatusEnum("application_status").notNull(),
   isCancelled: boolean("is_cancelled").notNull().default(false),
+  isDocumentsCorrupted: boolean("is_documents_corrupted")
+    .notNull()
+    .default(false),
   // enquiry step fields
   address: varchar("address", { length: 255 }).notNull(),
   farmOwnerName: varchar("farm_owner_name", { length: 255 })

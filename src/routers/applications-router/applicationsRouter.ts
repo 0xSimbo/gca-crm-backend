@@ -2438,6 +2438,9 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                 applicationId: body.applicationId,
               }))
             );
+            await updateApplication(body.applicationId, {
+              isDocumentsCorrupted: body.isDocumentsCorrupted,
+            });
           } catch (e) {
             if (e instanceof Error) {
               set.status = 400;
@@ -2453,6 +2456,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
         {
           body: t.Object({
             applicationId: t.String(),
+            isDocumentsCorrupted: t.Boolean(),
             applicationEncryptedMasterKeys: t.Array(
               t.Object({
                 publicKey: t.Optional(t.String()),
