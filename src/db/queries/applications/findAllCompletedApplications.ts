@@ -32,6 +32,7 @@ export const findAllCompletedApplications = async (withDocuments?: boolean) => {
       weeklyTotalCarbonDebt: true,
       netCarbonCreditEarningWeekly: true,
       revisedCostOfPowerPerKWh: true,
+      estimatedCostOfPowerPerKWh: true,
       revisedKwhGeneratedPerYear: true,
       installFinishedDate: true,
       ptoObtainedDate: true,
