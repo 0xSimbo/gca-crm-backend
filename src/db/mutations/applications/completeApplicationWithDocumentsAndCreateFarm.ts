@@ -29,6 +29,8 @@ export type ApplicationAuditFieldsType = {
   adjustedWeeklyCarbonCredits: string;
   weeklyTotalCarbonDebt: string;
   netCarbonCreditEarningWeekly: string;
+  ptoObtainedDate: Date | null;
+  locationWithoutPII: string;
 };
 
 /**

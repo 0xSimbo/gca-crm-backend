@@ -31,6 +31,11 @@ export const findAllCompletedApplications = async (withDocuments?: boolean) => {
       adjustedWeeklyCarbonCredits: true,
       weeklyTotalCarbonDebt: true,
       netCarbonCreditEarningWeekly: true,
+      revisedCostOfPowerPerKWh: true,
+      revisedKwhGeneratedPerYear: true,
+      installFinishedDate: true,
+      ptoObtainedDate: true,
+      locationWithoutPII: true,
     },
     with: {
       rewardSplits: {
@@ -53,14 +58,18 @@ export const findAllCompletedApplications = async (withDocuments?: boolean) => {
           shortId: true,
         },
       },
-      documents: withDocuments
-        ? {
-            where: eq(Documents.isEncrypted, false),
-          }
-        : {
-            where: eq(Documents.isEncrypted, false),
-            columns: { id: true },
-          },
+      documents: {
+        where: eq(Documents.isEncrypted, false),
+        columns: withDocuments
+          ? {
+              id: true,
+              name: true,
+              url: true,
+              annotation: true,
+              createdAt: true,
+            }
+          : { id: true },
+      },
     },
   });
   return applicationsDb.map((application) => ({
