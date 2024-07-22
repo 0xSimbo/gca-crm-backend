@@ -57,32 +57,32 @@ const app = new Elysia()
     return "Internal Server Error";
   })
   .use(cors())
-  .use(swagger({ autoDarkMode: true, path: "/swagger" }))
-  // .use(
-  //   cron({
-  //     name: "Updating Rewards",
-  //     pattern: Patterns.everyHours(2),
-  //     async run() {
-  //       const currentWeek = getProtocolWeek();
-  //       const weekToQuery = currentWeek - 1;
-  //       // Make sure to keep updateWalletRewardsForWeek before updateFarmRewardsForWeek
-  //       // Update Wallet Rewards For Week checks the merkle tree for the previous week
-  //       // We don't want to update the farm rewards for the current week if a GCA hasn;t submitted the report yet.
-  //       try {
-  //         const keepGoing = await updateWalletRewardsForWeek(weekToQuery);
-  //         if (!keepGoing.keepGoing) {
-  //           console.log(
-  //             `Already Updated Wallet Rewards for week ${weekToQuery}`
-  //           );
-  //           return;
-  //         }
-  //         await updateFarmRewardsForWeek({ weekNumber: weekToQuery });
-  //       } catch (error) {
-  //         console.error("Error updating rewards", error);
-  //       }
-  //     },
-  //   })
-  // )
+  // .use(swagger({ autoDarkMode: true, path: "/swagger" }))
+  .use(
+    cron({
+      name: "Updating Rewards",
+      pattern: Patterns.everyHours(2),
+      async run() {
+        const currentWeek = getProtocolWeek();
+        const weekToQuery = currentWeek - 1;
+        // Make sure to keep updateWalletRewardsForWeek before updateFarmRewardsForWeek
+        // Update Wallet Rewards For Week checks the merkle tree for the previous week
+        // We don't want to update the farm rewards for the current week if a GCA hasn;t submitted the report yet.
+        try {
+          const keepGoing = await updateWalletRewardsForWeek(weekToQuery);
+          if (!keepGoing.keepGoing) {
+            console.log(
+              `Already Updated Wallet Rewards for week ${weekToQuery}`
+            );
+            return;
+          }
+          await updateFarmRewardsForWeek({ weekNumber: weekToQuery });
+        } catch (error) {
+          console.error("Error updating rewards", error);
+        }
+      },
+    })
+  )
   .use(protocolFeeRouter)
   .use(rewardsRouter)
   .use(accountsRouter)
