@@ -8,7 +8,7 @@ export const createApplicationEncryptedMasterKeysForUsers = async (
   applicationsEncryptedMasterKeysInsert: ApplicationsEncryptedMasterKeysInsertType[]
 ) => {
   if (applicationsEncryptedMasterKeysInsert.length === 0) {
-    throw new Error("No applications encrypted master keys provided.");
+    return;
   }
   await db
     .insert(ApplicationsEncryptedMasterKeys)
