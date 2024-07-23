@@ -14,7 +14,7 @@ export const bearerGuard = {
     try {
       jwtHandler(authorization.split(" ")[1]);
     } catch (error) {
-      console.error(error);
+      // console.error(error);
       if (error instanceof Error && error.message === "jwt expired") {
         set.status = 401;
         return "Session Expired";
