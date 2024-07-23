@@ -358,6 +358,72 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
         }
       )
       .get(
+        "/edit-application-allowed",
+        async ({ query, set, userId }) => {
+          if (!query.id) throw new Error("ID is required");
+          try {
+            const application = await FindFirstApplicationById(query.id);
+            if (!application) {
+              set.status = 404;
+              throw new Error("Application not found");
+            }
+            if (application.userId !== userId) {
+              const account = await findFirstAccountById(userId);
+
+              if (
+                !account ||
+                (account.role !== "ADMIN" && account.role !== "GCA")
+              ) {
+                const organizationApplication =
+                  await findFirstOrganizationApplicationByApplicationId(
+                    query.id
+                  );
+
+                if (!organizationApplication) {
+                  set.status = 400;
+                  return "Unauthorized";
+                } else {
+                  const organizationMember =
+                    await findOrganizationMemberByUserId(
+                      organizationApplication.organization.id,
+                      userId
+                    );
+                  const isAuthorized = false;
+                  // organizationMember?.role.rolePermissions.find(
+                  //   (p) =>
+                  //     p.permission.key === PermissionsEnum.ApplicationsEdit
+                  // )
+                  //TODO: implement application edit permission
+
+                  if (!isAuthorized) {
+                    set.status = 400;
+                    return "Unauthorized";
+                  }
+                }
+              }
+            }
+            return true;
+          } catch (e) {
+            if (e instanceof Error) {
+              set.status = 400;
+              return e.message;
+            }
+            console.log("[applicationsRouter] edit-application-allowed", e);
+            throw new Error("Error Occured");
+          }
+        },
+        {
+          query: t.Object({
+            id: t.String(),
+          }),
+          detail: {
+            summary: "Get Application by ID",
+            description: `Get Application by ID`,
+            tags: [TAG.APPLICATIONS],
+          },
+        }
+      )
+      .get(
         "/all-applications-by-organization-id",
         async ({ query, set, userId }) => {
           if (!query.organizationId)
