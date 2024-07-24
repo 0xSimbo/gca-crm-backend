@@ -851,6 +851,7 @@ export const applications = pgTable("applications", {
   }),
   ptoObtainedDate: timestamp("pto_date"),
   locationWithoutPII: varchar("location_without_pii", { length: 255 }),
+  revisedInstallFinishedDate: timestamp("revised_install_finished_date"),
   // gca assignement fields
   gcaAssignedTimestamp: timestamp("gca_assigned_timestamp"),
   gcaAcceptanceTimestamp: timestamp("gca_acceptance_timestamp"),

@@ -36,6 +36,7 @@ export const findAllCompletedApplications = async (withDocuments?: boolean) => {
       revisedKwhGeneratedPerYear: true,
       installFinishedDate: true,
       ptoObtainedDate: true,
+      revisedInstallFinishedDate: true,
       locationWithoutPII: true,
     },
     with: {
