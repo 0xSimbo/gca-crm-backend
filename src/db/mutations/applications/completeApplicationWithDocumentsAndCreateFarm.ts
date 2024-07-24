@@ -103,12 +103,14 @@ export const completeApplicationWithDocumentsAndCreateFarmWithDevices = async (
   //     doc.encryptedMasterKeys
   //   )
   // );
-
-  const defermentsTxtPromises = createAndUploadJsonFile(
-    process.env.R2_NOT_ENCRYPTED_FILES_BUCKET_NAME!!,
-    `${applicationId}/deferments.json`,
-    applicationDeferments
-  );
+  let defermentsTxtPromises: Promise<string> | undefined;
+  if (applicationDeferments.length) {
+    defermentsTxtPromises = createAndUploadJsonFile(
+      process.env.R2_NOT_ENCRYPTED_FILES_BUCKET_NAME!!,
+      `${applicationId}/deferments.json`,
+      applicationDeferments
+    );
+  }
 
   const extraThoughtsTxtPromises = applicationStepApprovals.map((approval) =>
     createAndUploadTXTFile(
@@ -120,12 +122,17 @@ export const completeApplicationWithDocumentsAndCreateFarmWithDevices = async (
     )
   );
 
-  const uploads = await Promise.all([
+  const uploadsArr = [
     ...annotationsTxtPromises,
     // ...encryptionKeysTxtPromises,
-    defermentsTxtPromises,
     ...extraThoughtsTxtPromises,
-  ]);
+  ];
+
+  if (defermentsTxtPromises) {
+    uploadsArr.push(defermentsTxtPromises);
+  }
+
+  const uploads = await Promise.all(uploadsArr);
 
   const insertDocuments = [
     ...documents,
