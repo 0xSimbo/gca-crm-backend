@@ -85,5 +85,6 @@ export const findAllCompletedApplications = async (withDocuments?: boolean) => {
       (a, b) =>
         b.farm!!.auditCompleteDate.getTime() -
         a.farm!!.auditCompleteDate.getTime()
-    );
+    )
+    .reverse();
 };
