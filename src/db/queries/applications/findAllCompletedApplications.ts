@@ -73,11 +73,17 @@ export const findAllCompletedApplications = async (withDocuments?: boolean) => {
       },
     },
   });
-  return applicationsDb.map((application) => ({
-    ...application,
-    finalProtocolFee: formatUnits(
-      (application.finalProtocolFee || BigInt(0)) as bigint,
-      6
-    ),
-  }));
+  return applicationsDb
+    .map((application) => ({
+      ...application,
+      finalProtocolFee: formatUnits(
+        (application.finalProtocolFee || BigInt(0)) as bigint,
+        6
+      ),
+    }))
+    .sort(
+      (a, b) =>
+        b.farm!!.auditCompleteDate.getTime() -
+        a.farm!!.auditCompleteDate.getTime()
+    );
 };
