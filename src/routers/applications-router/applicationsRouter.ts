@@ -2107,6 +2107,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                     body.netCarbonCreditEarningWeekly,
                   ptoObtainedDate: body.ptoObtainedDate,
                   locationWithoutPII: body.locationWithoutPII,
+                  revisedInstallFinishedDate: body.revisedInstallFinishedDate,
                 },
               }
             );
@@ -2157,6 +2158,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
             weeklyTotalCarbonDebt: t.String(),
             netCarbonCreditEarningWeekly: t.String(),
             ptoObtainedDate: t.Nullable(t.Date()),
+            revisedInstallFinishedDate: t.Date(),
             locationWithoutPII: t.String(),
           }),
           detail: {

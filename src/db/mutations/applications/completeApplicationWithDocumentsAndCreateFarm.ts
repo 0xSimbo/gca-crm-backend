@@ -30,6 +30,7 @@ export type ApplicationAuditFieldsType = {
   weeklyTotalCarbonDebt: string;
   netCarbonCreditEarningWeekly: string;
   ptoObtainedDate: Date | null;
+  revisedInstallFinishedDate: Date;
   locationWithoutPII: string;
 };
 
