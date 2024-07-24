@@ -1,4 +1,4 @@
-import { and, count, eq, isNotNull } from "drizzle-orm";
+import { and, count, eq, isNotNull, ne } from "drizzle-orm";
 import { db } from "../../db";
 import {
   ApplicationStepApprovals,
@@ -70,7 +70,8 @@ export const completeApplicationWithDocumentsAndCreateFarmWithDevices = async (
   const applicationEncryptedDocuments = await db.query.Documents.findMany({
     where: and(
       eq(Documents.applicationId, applicationId),
-      eq(Documents.isEncrypted, true)
+      eq(Documents.isEncrypted, true),
+      isNotNull(Documents.annotation)
     ),
   });
 
@@ -86,7 +87,6 @@ export const completeApplicationWithDocumentsAndCreateFarmWithDevices = async (
       ),
     });
 
-  // sync with @0xSimbo for misc_doc_name_rationale.txt ?? do we need to upload the missing documents with reason ?
   const annotationsTxtPromises = applicationEncryptedDocuments.map((doc) =>
     createAndUploadTXTFile(
       process.env.R2_NOT_ENCRYPTED_FILES_BUCKET_NAME!!,
@@ -95,13 +95,13 @@ export const completeApplicationWithDocumentsAndCreateFarmWithDevices = async (
     )
   );
 
-  const encryptionKeysTxtPromises = applicationEncryptedDocuments.map((doc) =>
-    createAndUploadJsonFile(
-      process.env.R2_NOT_ENCRYPTED_FILES_BUCKET_NAME!!,
-      `${applicationId}/${doc.name}_encryption_keys.json`,
-      doc.encryptedMasterKeys
-    )
-  );
+  // const encryptionKeysTxtPromises = applicationEncryptedDocuments.map((doc) =>
+  //   createAndUploadJsonFile(
+  //     process.env.R2_NOT_ENCRYPTED_FILES_BUCKET_NAME!!,
+  //     `${applicationId}/${doc.name}_encryption_keys.json`,
+  //     doc.encryptedMasterKeys
+  //   )
+  // );
 
   const defermentsTxtPromises = createAndUploadJsonFile(
     process.env.R2_NOT_ENCRYPTED_FILES_BUCKET_NAME!!,
@@ -121,7 +121,7 @@ export const completeApplicationWithDocumentsAndCreateFarmWithDevices = async (
 
   const uploads = await Promise.all([
     ...annotationsTxtPromises,
-    ...encryptionKeysTxtPromises,
+    // ...encryptionKeysTxtPromises,
     defermentsTxtPromises,
     ...extraThoughtsTxtPromises,
   ]);
