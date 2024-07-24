@@ -68,7 +68,7 @@ export const handleCreateOrUpdateAfterInstallDocuments = async (
     },
   ];
 
-  if (args.mortgageStatement) {
+  if (args.mortgageStatement && args.mortgageStatement.publicUrl) {
     documents.push({
       name: RequiredDocumentsNamesEnum.mortgageStatement,
       applicationId: application.id,
@@ -82,7 +82,7 @@ export const handleCreateOrUpdateAfterInstallDocuments = async (
     });
   }
 
-  if (args.propertyDeed) {
+  if (args.propertyDeed && args.propertyDeed.publicUrl) {
     documents.push({
       name: RequiredDocumentsNamesEnum.propertyDeed,
       applicationId: application.id,
