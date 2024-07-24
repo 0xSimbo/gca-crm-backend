@@ -1635,6 +1635,9 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
         "/verify-payment",
         async ({ body, set, userId }) => {
           try {
+            let protocolFeeData:
+              | GetProtocolFeePaymentFromTxHashReceipt
+              | undefined;
             const application = await FindFirstApplicationById(
               body.applicationId
             );
@@ -1683,8 +1686,9 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
             }
 
             if (process.env.NODE_ENV === "production") {
-              const protocolFeeData: GetProtocolFeePaymentFromTxHashReceipt =
-                await getProtocolFeePaymentFromTxHashReceipt(body.txHash);
+              protocolFeeData = await getProtocolFeePaymentFromTxHashReceipt(
+                body.txHash
+              );
 
               if (
                 protocolFeeData.user.id.toLowerCase() !== userId.toLowerCase()
@@ -1750,6 +1754,9 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
             await updateApplication(body.applicationId, {
               status: ApplicationStatusEnum.paymentConfirmed,
               paymentTxHash: body.txHash,
+              paymentDate: protocolFeeData
+                ? protocolFeeData.paymentDate
+                : new Date(),
             });
           } catch (e) {
             if (e instanceof Error) {
