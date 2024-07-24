@@ -89,7 +89,10 @@ export const handleCreateWithoutPIIDocumentsAndCompleteApplication = async (
       encryptedMasterKeys: [],
       createdAt: new Date(),
     },
-    {
+  ];
+
+  if (args.mortgageStatement) {
+    documents.push({
       name: RequiredDocumentsNamesEnum.mortgageStatement,
       applicationId: application.id,
       url: args.mortgageStatement,
@@ -98,8 +101,11 @@ export const handleCreateWithoutPIIDocumentsAndCompleteApplication = async (
       step,
       encryptedMasterKeys: [],
       createdAt: new Date(),
-    },
-    {
+    });
+  }
+
+  if (args.propertyDeed) {
+    documents.push({
       name: RequiredDocumentsNamesEnum.propertyDeed,
       applicationId: application.id,
       url: args.propertyDeed,
@@ -108,8 +114,8 @@ export const handleCreateWithoutPIIDocumentsAndCompleteApplication = async (
       step,
       encryptedMasterKeys: [],
       createdAt: new Date(),
-    },
-  ];
+    });
+  }
 
   if (args.plansets) {
     documents.push({
