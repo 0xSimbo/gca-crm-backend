@@ -47,7 +47,7 @@ import {
 import { ethers } from "ethers";
 import { handleCreateWithoutPIIDocumentsAndCompleteApplication } from "./steps/gca-application-completion";
 import { db } from "../../db/db";
-import { applicationsDraft } from "../../db/schema";
+import { OrganizationUsers, applicationsDraft } from "../../db/schema";
 
 import { convertKWhToMWh } from "../../utils/format/convertKWhToMWh";
 import { findFirstUserById } from "../../db/queries/users/findFirstUserById";
@@ -73,6 +73,13 @@ import {
   GetProtocolFeePaymentFromTxHashReceipt,
   getProtocolFeePaymentFromTxHashReceipt,
 } from "../../utils/getProtocolFeePaymentFromTxHashReceipt";
+import { findAllApplicationsOwnersByIds } from "../../db/queries/applications/findAllApplicationsOwnersByIds";
+import { createOrganizationApplicationBatch } from "../../db/mutations/organizations/createOrganizationApplicationBatch";
+import { deleteOrganizationApplicationBatch } from "../../db/mutations/organizations/deleteOrganizationApplicationBatch";
+import { findAllApplicationsByOrgUserId } from "../../db/queries/applications/findAllApplicationsByOrgUserId";
+import { eq } from "drizzle-orm";
+import { findFirstOrgMemberwithShareAllApplications } from "../../db/queries/organizations/findFirstOrgMemberwithShareAllApplications";
+import { findOrganizationsMemberByUserIdAndOrganizationIds } from "../../db/queries/organizations/findOrganizationsMemberByUserIdAndOrganizationIds";
 
 const encryptedFileUpload = t.Object({
   publicUrl: t.String({
@@ -105,15 +112,18 @@ export type EncryptedFileUploadType = {
 export type ApplicationEncryptedMasterKeysType = {
   userId: string;
   encryptedMasterKey: string;
+  organizationUserId?: string;
 };
 
 export const EnquiryQueryBody = t.Object({
   applicationId: t.String(),
   latestUtilityBill: encryptedFileUpload,
+  organizationIds: t.Array(t.String()),
   applicationEncryptedMasterKeys: t.Array(
     t.Object({
       userId: t.String(),
       encryptedMasterKey: t.String(),
+      organizationUserId: t.Optional(t.String()),
     })
   ),
   estimatedCostOfPowerPerKWh: t.Numeric({
@@ -579,6 +589,105 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
         }
       )
       .post(
+        "/share-all-applications-to-organization",
+        async ({ body, set, userId }) => {
+          try {
+            const user = await findFirstUserById(userId);
+            if (!user) {
+              set.status = 400;
+
+              return "Unauthorized";
+            }
+
+            const organizationMember = await findOrganizationMemberByUserId(
+              body.organizationId,
+              userId
+            );
+
+            if (!organizationMember) {
+              set.status = 400;
+              return "User is not a member of the organization";
+            }
+
+            const isAlreadyShardingAllApplications =
+              await findFirstOrgMemberwithShareAllApplications(userId);
+
+            if (isAlreadyShardingAllApplications) {
+              set.status = 400;
+              return "User is already sharing all applications with an organization";
+            }
+
+            const isAuthorized = organizationMember?.role.rolePermissions.find(
+              (p) => p.permission.key === PermissionsEnum.ApplicationsShare
+            );
+
+            if (!isAuthorized) {
+              set.status = 400;
+              return "User does not have the required permissions";
+            }
+
+            const applications = await findAllApplicationsOwnersByIds(
+              body.applicationIds
+            );
+
+            if (applications.length !== body.applicationIds.length) {
+              set.status = 404;
+              return "Application not found";
+            }
+
+            if (applications.some((a) => a.user.id !== userId)) {
+              set.status = 400;
+              return "User is not the owner of the application";
+            }
+
+            if (body.applicationIds.length === 0) {
+              await db
+                .update(OrganizationUsers)
+                .set({
+                  shareAllApplications: true,
+                })
+                .where(eq(OrganizationUsers.id, organizationMember.id));
+            } else {
+              await createOrganizationApplicationBatch(
+                organizationMember.id,
+                body.organizationId,
+                body.applicationIds,
+                body.delegatedApplicationsEncryptedMasterKeys
+              );
+            }
+          } catch (e) {
+            if (e instanceof Error) {
+              set.status = 400;
+              return e.message;
+            }
+            console.log(
+              "[organizationsRouter] /share-all-applications-to-organization",
+              e
+            );
+            throw new Error("Error Occured");
+          }
+        },
+        {
+          body: t.Object({
+            organizationId: t.String(),
+            applicationIds: t.Array(t.String()),
+            delegatedApplicationsEncryptedMasterKeys: t.Array(
+              t.Object({
+                userId: t.String(),
+                encryptedMasterKey: t.String(),
+                applicationId: t.String(),
+                organizationUserId: t.String(),
+              })
+            ),
+          }),
+          detail: {
+            summary: "Share all org member applications with the organization",
+            description: `share all org member applications with the organization`,
+            tags: [TAG.APPLICATIONS],
+          },
+        }
+      )
+      .post(
         "/cancel-or-resume-application",
         async ({ body, set, userId }) => {
           try {
@@ -696,8 +805,65 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
             applicationId: t.String(),
           }),
           detail: {
-            summary: "Add application to organization",
-            description: `Add application to organization and check if the user is authorized to add applications to the organization`,
+            summary: "Remove application from organization",
+            description: `Remove application from organization and check if the user is authorized to remove the application from the organization`,
+            tags: [TAG.APPLICATIONS],
+          },
+        }
+      )
+      .post(
+        "/remove-org-user-applications-from-organization",
+        async ({ body, set, userId }) => {
+          try {
+            const user = await findFirstUserById(userId);
+            if (!user) {
+              set.status = 400;
+
+              return "Unauthorized";
+            }
+
+            const organization = await findOrganizationById(
+              body.organizationId
+            );
+
+            const organizationMember = await findOrganizationMemberByUserId(
+              body.organizationId,
+              userId
+            );
+
+            if (!organizationMember) {
+              set.status = 400;
+              return "Unauthorized";
+            }
+
+            const allOrgUserApplications = await findAllApplicationsByOrgUserId(
+              organizationMember.id
+            );
+
+            await deleteOrganizationApplicationBatch(
+              organizationMember.id,
+              body.organizationId,
+              allOrgUserApplications.map((a) => a.id)
+            );
+          } catch (e) {
+            if (e instanceof Error) {
+              set.status = 400;
+              return e.message;
+            }
+            console.log(
+              "[organizationsRouter] /remove-org-user-applications-from-organization",
+              e
+            );
+            throw new Error("Error Occured");
+          }
+        },
+        {
+          body: t.Object({
+            organizationId: t.String(),
+          }),
+          detail: {
+            summary: "Remove applications from organization",
+            description: `Remove applications from organization and check if the user is authorized to remove applications from the organization`,
             tags: [TAG.APPLICATIONS],
           },
         }
@@ -1380,7 +1546,19 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
 
             if (!existingApplication) {
               const gcaAddress = await roundRobinAssignement();
+              const orgUsers =
+                await findOrganizationsMemberByUserIdAndOrganizationIds(
+                  body.organizationIds,
+                  userId
+                );
+
+              if (orgUsers.length !== body.organizationIds.length) {
+                set.status = 400;
+                return "Unauthorized";
+              }
+
               await createApplication(
+                orgUsers,
                 body.latestUtilityBill.publicUrl,
                 body.applicationEncryptedMasterKeys,
                 {

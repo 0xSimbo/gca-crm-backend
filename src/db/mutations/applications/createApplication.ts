@@ -1,7 +1,6 @@
 import { ApplicationEncryptedMasterKeysType } from "../../../routers/applications-router/applicationsRouter";
 import {
   ApplicationSteps,
-  EncryptedMasterKeySet,
   RequiredDocumentsNamesEnum,
 } from "../../../types/api-types/Application";
 import { db } from "../../db";
@@ -12,10 +11,12 @@ import {
   ApplicationsEncryptedMasterKeys,
   Documents,
   DocumentsInsertType,
+  OrganizationApplications,
   applications,
 } from "../../schema";
 
 export const createApplication = async (
+  organizationUsers: { id: string; organizationId: string }[],
   latestUtilityBillPublicUrl: string,
   applicationEncryptedMasterKeys: ApplicationEncryptedMasterKeysType[],
   application: ApplicationInsertType
@@ -42,6 +43,7 @@ export const createApplication = async (
         userId: string;
         gcaDelegatedUserId: string | null;
         encryptedMasterKey: string;
+        organizationUserId: string | undefined;
       }[],
       user
     ) => {
@@ -55,6 +57,7 @@ export const createApplication = async (
         userId: user.id,
         gcaDelegatedUserId: user.gcaDelegatedUser?.id,
         encryptedMasterKey: userEncryptedMasterKey.encryptedMasterKey,
+        organizationUserId: userEncryptedMasterKey.organizationUserId,
       });
       return acc;
     },
@@ -96,9 +99,11 @@ export const createApplication = async (
       .insert(applications)
       .values(application)
       .returning({ insertedId: applications.id });
+
     if (res.length === 0) {
       tx.rollback();
     }
+
     const resInsertedId = res[0].insertedId;
 
     const documents: DocumentsInsertType[] = [
@@ -156,6 +161,23 @@ export const createApplication = async (
       gcasWithEncryptedMasterKey.length
     ) {
       tx.rollback();
+    }
+
+    if (organizationUsers.length) {
+      const OrganizationApplicationsRes = await tx
+        .insert(OrganizationApplications)
+        .values(
+          organizationUsers.map(({ organizationId, id }) => ({
+            organizationId,
+            applicationId: resInsertedId,
+            orgUserId: id,
+          }))
+        )
+        .returning({ insertedId: OrganizationApplications.id });
+
+      if (OrganizationApplicationsRes.length === 0) {
+        tx.rollback();
+      }
     }
   });
 };

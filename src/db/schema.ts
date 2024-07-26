@@ -244,6 +244,7 @@ export const OrganizationUsers = pgTable(
       .notNull()
       .default(false),
     isOwner: boolean("is_owner").notNull().default(false),
+    shareAllApplications: boolean("share_all_applications").default(false),
   },
   (t) => {
     return {

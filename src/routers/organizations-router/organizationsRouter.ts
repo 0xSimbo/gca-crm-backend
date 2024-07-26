@@ -28,6 +28,7 @@ import { updateOrganizationMemberRole } from "../../db/mutations/organizations/u
 import { findFirstUserById } from "../../db/queries/users/findFirstUserById";
 import { createApplicationEncryptedMasterKeysForUsers } from "../../db/mutations/applications/createApplicationEncryptedMasterKeysForUsers";
 import { deleteAllOrganizationMemberEncryptedApplicationsMasterKeys } from "../../db/mutations/organizations/deleteAllOrganizationMemberEncryptedApplicationsMasterKeys";
+import { findAllUserOrganizationsWithMembersWithDocumentsAccess } from "../../db/queries/organizations/findAllUserOrganizationsWithMembersWithDocumentsAccess";
 
 export const organizationsRouter = new Elysia({ prefix: "/organizations" })
   .get(
@@ -232,6 +233,50 @@ export const organizationsRouter = new Elysia({ prefix: "/organizations" })
           detail: {
             summary: "Get Organizations by User ID",
             description: `Get Organizations by User ID`,
+            tags: [TAG.ORGANIZATIONS],
+          },
+        }
+      )
+      .get(
+        "/all-org-users-to-share-application-with",
+        async ({ set, userId }) => {
+          try {
+            const user = await findFirstUserById(userId);
+            if (!user) {
+              set.status = 404;
+              return "User not found";
+            }
+
+            const organizationWithShareAllApplications = (
+              await findAllUserOrganizationsWithMembersWithDocumentsAccess(
+                userId
+              )
+            )
+              .filter((org) => org.shareAllApplications)
+              .map(({ organization }) => organization);
+
+            return organizationWithShareAllApplications.map(
+              ({ id, users }) => ({
+                organizationId: id,
+                organizationUsers: users.filter((u) => u.user.id !== userId), // filter out the user from the list
+              })
+            );
+          } catch (e) {
+            if (e instanceof Error) {
+              set.status = 400;
+              return e.message;
+            }
+            console.log(
+              "[organizationsRouter] /all-org-users-to-share-application-with",
+              e
+            );
+            throw new Error("Error Occured");
+          }
+        },
+        {
+          detail: {
+            summary: "Get Organization users to share application with",
+            description: `Get Organization users to share application with`,
             tags: [TAG.ORGANIZATIONS],
           },
         }
