@@ -23,6 +23,8 @@ export const findAllApplicationsAssignedToGca = async (gcaAddress: string) => {
       installerPhone: true,
       installerName: true,
       farmOwnerName: true,
+      preInstallVisitDate: true,
+      afterInstallVisitDate: true,
     },
     with: {
       user: {

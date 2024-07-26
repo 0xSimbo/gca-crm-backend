@@ -183,6 +183,10 @@ export const devicesRouter = new Elysia({ prefix: "/devices" })
               body.gcaServerurl
             );
 
+            if (!pubKeysAndShortIds.length) {
+              return [];
+            }
+
             const devicesAlreadyInDb = await db.query.Devices.findMany({
               where: inArray(
                 Devices.publicKey,

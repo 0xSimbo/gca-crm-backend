@@ -29,6 +29,8 @@ export const findAllApplicationsByOrganizationId = async (
           farmOwnerName: true,
           isCancelled: true,
           finalProtocolFee: true,
+          preInstallVisitDate: true,
+          afterInstallVisitDate: true,
         },
         with: {
           user: {

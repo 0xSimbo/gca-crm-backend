@@ -20,6 +20,8 @@ export const findAllApplicationsByUserId = async (userId: string) => {
       installerName: true,
       farmOwnerName: true,
       isCancelled: true,
+      preInstallVisitDate: true,
+      afterInstallVisitDate: true,
     },
     with: {
       user: {

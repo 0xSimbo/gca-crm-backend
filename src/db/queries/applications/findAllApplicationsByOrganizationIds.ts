@@ -5,6 +5,9 @@ import { OrganizationApplications, applications } from "../../schema";
 export const findAllApplicationsByOrganizationIds = async (
   organizationIds: string[]
 ) => {
+  if (organizationIds.length === 0) {
+    return [];
+  }
   const applicationsDb = await db.query.OrganizationApplications.findMany({
     where: and(
       inArray(OrganizationApplications.organizationId, organizationIds)
@@ -27,6 +30,8 @@ export const findAllApplicationsByOrganizationIds = async (
           installerName: true,
           isCancelled: true,
           farmOwnerName: true,
+          preInstallVisitDate: true,
+          afterInstallVisitDate: true,
         },
         with: {
           user: {

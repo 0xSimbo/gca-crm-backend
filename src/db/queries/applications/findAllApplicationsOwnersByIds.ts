@@ -3,7 +3,10 @@ import { db } from "../../db";
 import { applications } from "../../schema";
 
 export const findAllApplicationsOwnersByIds = async (ids: string[]) => {
-  const applicationDb = await db.query.applications.findMany({
+  if (ids.length === 0) {
+    return [];
+  }
+  return await db.query.applications.findMany({
     where: inArray(applications.id, ids),
     columns: {
       id: true,
@@ -16,6 +19,4 @@ export const findAllApplicationsOwnersByIds = async (ids: string[]) => {
       },
     },
   });
-
-  return applicationDb;
 };
