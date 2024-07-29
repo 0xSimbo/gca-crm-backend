@@ -25,6 +25,7 @@ import { permissions } from "./types/api-types/Permissions";
 import { findAllPermissions } from "./db/queries/permissions/findAllPermissions";
 import { createPermission } from "./db/mutations/permissions/createPermission";
 import { legacyFarms } from "./legacy/farms";
+import { farmsRouter } from "./routers/farms/farmsRouter";
 
 const PORT = process.env.PORT || 3005;
 const app = new Elysia()
@@ -94,6 +95,7 @@ const app = new Elysia()
   .use(applicationsRouter)
   .use(organizationsRouter)
   .use(usersRouter)
+  .use(farmsRouter)
   .get("/update-rewards-for-current-week", async () => {
     //Will only work if the GCA has submitted the report for the current week.
     const currentWeek = getProtocolWeek();

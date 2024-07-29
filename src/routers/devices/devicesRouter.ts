@@ -2,24 +2,20 @@ import { Elysia, t } from "elysia";
 import { TAG } from "../../constants";
 
 import { bearer as bearerplugin } from "@elysiajs/bearer";
-import { FindFirstApplicationById } from "../../db/queries/applications/findFirstApplicationById";
+
 import { bearerGuard } from "../../guards/bearerGuard";
 import { jwtHandler } from "../../handlers/jwtHandler";
 import { findFirstAccountById } from "../../db/queries/accounts/findFirstAccountById";
-import { findAllRewardSplitsByApplicationId } from "../../db/queries/rewardSplits/findAllRewardSplitsByApplicationId";
-import {
-  ApplicationStatusEnum,
-  ApplicationSteps,
-} from "../../types/api-types/Application";
-import { createSplits } from "../../db/mutations/reward-splits/createSplits";
-import { updateApplicationStatus } from "../../db/mutations/applications/updateApplicationStatus";
-import { updateApplication } from "../../db/mutations/applications/updateApplication";
-import { findFirstFarmById } from "../../db/queries/farms/findFirstFarmByShortId";
+
 import { findAllDevicesByFarmId } from "../../db/queries/devices/findAllDevicesByFarmId";
 import { getPubkeysAndShortIds } from "./get-pubkeys-and-short-ids";
 import { db } from "../../db/db";
 import { eq, inArray } from "drizzle-orm";
 import { DeviceInsertType, Devices } from "../../db/schema";
+import { findFirstFarmById } from "../../db/queries/farms/findFirstFarmById";
+import { findFirstFarmIdByShortId } from "../../db/queries/farms/findFirstFarmIdByShortId";
+import { FindFirstGcaById } from "../../db/queries/gcas/findFirsGcaById";
+import { findFirstDeviceByPublicKey } from "../../db/queries/devices/findFirstDeviceByPublicKey";
 
 export const devicesRouter = new Elysia({ prefix: "/devices" })
   .post(
@@ -125,6 +121,105 @@ export const devicesRouter = new Elysia({ prefix: "/devices" })
           userId,
         };
       })
+      .post(
+        "/replace-device",
+        async ({ body, set, userId }) => {
+          const gca = await FindFirstGcaById(userId);
+          if (!gca) {
+            set.status = 401;
+            return "Unauthorized";
+          }
+          const serverUrl = gca.serverUrls[0];
+          try {
+            const farmId = await findFirstFarmIdByShortId(body.previousShortId);
+            if (!farmId) {
+              set.status = 404;
+              return "Farm not found";
+            }
+
+            const pubKeysAndShortIds = await getPubkeysAndShortIds(serverUrl);
+
+            const newDevicePubKey = pubKeysAndShortIds.find(
+              (c) => c.shortId === Number(body.newShortId)
+            )?.pubkey;
+
+            if (!newDevicePubKey) {
+              set.status = 404;
+              return "New device not found";
+            }
+
+            const newDeviceAlreadyExist = await findFirstDeviceByPublicKey(
+              newDevicePubKey
+            );
+
+            if (newDeviceAlreadyExist) {
+              set.status = 400;
+              return "New device already exist";
+            }
+
+            const previousDevicePubKey = pubKeysAndShortIds.find(
+              (c) => c.shortId === Number(body.previousShortId)
+            )?.pubkey;
+
+            if (!previousDevicePubKey) {
+              set.status = 404;
+              return "Previous device not found";
+            }
+
+            const previousDevice = await findFirstDeviceByPublicKey(
+              previousDevicePubKey
+            );
+
+            if (!previousDevice) {
+              set.status = 404;
+              return "Previous device not found";
+            }
+
+            if (!previousDevice.isEnabled) {
+              set.status = 400;
+              return "Previous device is already disabled";
+            }
+
+            const device: DeviceInsertType = {
+              publicKey: newDevicePubKey,
+              shortId: body.newShortId,
+              farmId: farmId,
+              enabledAt: new Date(),
+            };
+
+            await db.transaction(async (trx) => {
+              await trx.insert(Devices).values(device).returning({
+                id: Devices.id,
+              });
+              await trx
+                .update(Devices)
+                .set({
+                  isEnabled: false,
+                  disabledAt: new Date(),
+                })
+                .where(eq(Devices.id, previousDevice.id));
+            });
+          } catch (e) {
+            if (e instanceof Error) {
+              set.status = 400;
+              return e.message;
+            }
+            console.log("[devicesRouter] /replace-device", e);
+            throw new Error("Error Occured");
+          }
+        },
+        {
+          body: t.Object({
+            previousShortId: t.String(),
+            newShortId: t.String(),
+          }),
+          detail: {
+            summary: "Replace a device",
+            description: `Replace a device with the given previous short id and new short id, it will disable the previous device and create a new device with the new short id`,
+            tags: [TAG.DEVICES],
+          },
+        }
+      )
       .get(
         "/all-by-farm-id",
         async ({ query: { id }, set, userId }) => {
