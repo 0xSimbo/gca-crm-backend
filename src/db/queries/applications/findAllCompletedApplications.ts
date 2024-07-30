@@ -58,6 +58,9 @@ export const findAllCompletedApplications = async (withDocuments?: boolean) => {
         columns: {
           publicKey: true,
           shortId: true,
+          isEnabled: true,
+          enabledAt: true,
+          disabledAt: true,
         },
       },
       documents: {
