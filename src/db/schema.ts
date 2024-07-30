@@ -1219,6 +1219,7 @@ export const Devices = pgTable("devices", {
   publicKey: varchar("public_key", { length: 255 }).unique().notNull(),
   shortId: varchar("short_id", { length: 255 }).notNull(), // can have multiple devices with the same shortId but different public keys // @0xSimbo will store as varchar since it's planned to change it to an hex
   isEnabled: boolean("is_enabled").notNull().default(true),
+  previousPublicKey: varchar("previous_public_key", { length: 255 }), // if device is a replacement, store the previous public key
   enabledAt: timestamp("enabled_at"),
   disabledAt: timestamp("disabled_at"),
 });

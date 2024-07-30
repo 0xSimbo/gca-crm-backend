@@ -185,6 +185,7 @@ export const devicesRouter = new Elysia({ prefix: "/devices" })
               shortId: body.newShortId,
               farmId: farmId,
               enabledAt: new Date(),
+              previousPublicKey: previousDevice.publicKey,
             };
 
             await db.transaction(async (trx) => {
