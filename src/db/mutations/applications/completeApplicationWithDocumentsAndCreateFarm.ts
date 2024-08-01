@@ -194,7 +194,7 @@ export const completeApplicationWithDocumentsAndCreateFarmWithDevices = async (
     const rewardSplitsUpdate = await tx
       .update(RewardSplits)
       .set({ farmId: farmInsert[0].farmId })
-      .where(and(eq(RewardSplits.id, applicationId)))
+      .where(and(eq(RewardSplits.applicationId, applicationId)))
       .returning({ farmId: applications.farmId });
 
     if (
