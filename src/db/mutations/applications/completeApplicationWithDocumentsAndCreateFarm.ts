@@ -194,8 +194,8 @@ export const completeApplicationWithDocumentsAndCreateFarmWithDevices = async (
     const rewardSplitsUpdate = await tx
       .update(RewardSplits)
       .set({ farmId: farmInsert[0].farmId })
-      .where(and(eq(RewardSplits.applicationId, applicationId)))
-      .returning({ farmId: applications.farmId });
+      .where(eq(RewardSplits.applicationId, applicationId))
+      .returning({ farmId: RewardSplits.farmId });
 
     if (
       !rewardSplitsUpdate.every(({ farmId }) => farmId === farmInsert[0].farmId)
