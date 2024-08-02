@@ -539,6 +539,47 @@ export const farmRewards = pgTable(
   }
 );
 
+export const deviceRewardParent = pgTable("device_reward_parent", {
+  id: varchar("device_hexkey", { length: 66 }).primaryKey().notNull(),
+});
+export const deviceRewards = pgTable(
+  "device_rewards",
+  {
+    hexlifiedFarmPubKey: varchar("device_pubkey", { length: 66 })
+      .notNull()
+      .references(() => deviceRewardParent.id, { onDelete: "cascade" }),
+    weekNumber: integer("week_number").notNull(),
+    usdgRewards: numeric("usdg_rewards", { precision: 30, scale: 2 }),
+    glowRewards: numeric("glow_rewards", { precision: 30, scale: 2 }),
+  },
+  (t) => {
+    return {
+      weekNumberIndex: index("week_number_ix").on(t.weekNumber),
+      weekHexPubkeyUniqueIndex: uniqueIndex("week_hex_pubkey_unique_ix").on(
+        t.weekNumber,
+        t.hexlifiedFarmPubKey
+      ),
+    };
+  }
+);
+
+export const DeviceParentRelations = relations(
+  deviceRewardParent,
+  ({ many }) => ({
+    deviceRewards: many(deviceRewards),
+  })
+);
+
+export const DeviceRewardsRelations = relations(deviceRewards, ({ one }) => ({
+  farm: one(deviceRewardParent, {
+    fields: [deviceRewards.hexlifiedFarmPubKey],
+    references: [deviceRewardParent.id],
+  }),
+}));
+
+export type DeviceRewardsDatabaseType = InferSelectModel<typeof deviceRewards>;
+export type DeviceRewardsInsertType = typeof deviceRewards.$inferInsert;
+
 export type FarmRewardsDatabaseType = InferSelectModel<typeof farmRewards>;
 export type FarmRewardsInsertType = typeof farmRewards.$inferInsert;
 

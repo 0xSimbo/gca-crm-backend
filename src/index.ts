@@ -25,6 +25,8 @@ import { permissions } from "./types/api-types/Permissions";
 import { findAllPermissions } from "./db/queries/permissions/findAllPermissions";
 import { createPermission } from "./db/mutations/permissions/createPermission";
 import { legacyFarms } from "./legacy/farms";
+// import { farmsRouter } from "./routers/farms/farmsRouter";
+import { updateDeviceRewardsForWeek } from "./crons/update-farm-rewards/update-device-rewards-for-week";
 import { farmsRouter } from "./routers/farms/farmsRouter";
 
 const PORT = process.env.PORT || 3005;
@@ -70,6 +72,9 @@ const app = new Elysia()
         // Update Wallet Rewards For Week checks the merkle tree for the previous week
         // We don't want to update the farm rewards for the current week if a GCA hasn;t submitted the report yet.
         try {
+          await updateDeviceRewardsForWeek({ weekNumber: weekToQuery });
+        } catch (e) {}
+        try {
           const keepGoing = await updateWalletRewardsForWeek(weekToQuery);
           if (!keepGoing.keepGoing) {
             console.log(
@@ -96,6 +101,16 @@ const app = new Elysia()
   .use(organizationsRouter)
   .use(usersRouter)
   .use(farmsRouter)
+  .get("/me", async () => {
+    const startWeek = 9;
+    const endWeek = 35;
+    for (let i = startWeek; i <= endWeek; i++) {
+      console.log(`Updating rewards for week ${i}`);
+      await updateDeviceRewardsForWeek({ weekNumber: i });
+    }
+    // await updateDeviceRewardsForWeek({ weekNumber: i });
+    return { message: "success" };
+  })
   .get("/update-rewards-for-current-week", async () => {
     //Will only work if the GCA has submitted the report for the current week.
     const currentWeek = getProtocolWeek();

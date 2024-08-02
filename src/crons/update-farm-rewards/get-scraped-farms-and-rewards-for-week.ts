@@ -98,8 +98,7 @@ export async function getScrapedFarmsAndRewards({
       rewards: farm.rewards,
       shortId: farm.shortId.toString(),
       auditCompleteDate: farm.timestampAuditedComplete,
-      installerWallet: farm.installerWallet,
-      payoutWallet: farm.payoutWallet,
+      rewardSplits: farm.rewardSplits,
     };
   });
   const findFarm28 = minimalData.find((farm) => farm.shortId === "28");
