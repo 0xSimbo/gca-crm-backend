@@ -72,6 +72,9 @@ export const rewardsRouter = new Elysia({ prefix: "/rewards" })
     "/device-rewards",
     async ({ query }) => {
       const shortId = query.shortId;
+      if (!isNumber(shortId)) {
+        throw new Error("Invalid ShortId");
+      }
       // console.log({ shortId });
 
       console.log("I'm here wit short id = ", shortId);
@@ -164,3 +167,7 @@ export const rewardsRouter = new Elysia({ prefix: "/rewards" })
       }),
     }
   );
+
+const isNumber = (val: string) => {
+  return !isNaN(Number(val));
+};
