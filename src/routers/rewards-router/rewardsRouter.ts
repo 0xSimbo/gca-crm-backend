@@ -71,92 +71,100 @@ export const rewardsRouter = new Elysia({ prefix: "/rewards" })
   .get(
     "/device-rewards",
     async ({ query }) => {
-      const shortId = query.shortId;
-      if (!isNumber(shortId)) {
-        throw new Error("Invalid ShortId");
-      }
-      // console.log({ shortId });
+      try {
+        const shortId = query.shortId;
+        if (!isNumber(shortId)) {
+          throw new Error("Invalid ShortId");
+        }
+        // console.log({ shortId });
 
-      console.log("I'm here wit short id = ", shortId);
-      const hexlifiedPubkey = await getHexPubkeyFromShortId(shortId);
+        console.log("I'm here wit short id = ", shortId);
+        const hexlifiedPubkey = await getHexPubkeyFromShortId(shortId);
+        if (!hexlifiedPubkey) {
+          throw new Error("Invalid ShortId");
+        }
 
-      //log the hex pubkey
-      console.log("hexlifiedPubkey", hexlifiedPubkey);
-      const rewards = await db.query.deviceRewards.findMany({
-        where: eq(deviceRewards.hexlifiedFarmPubKey, hexlifiedPubkey),
-      });
+        //log the hex pubkey
+        console.log("hexlifiedPubkey", hexlifiedPubkey);
+        const rewards = await db.query.deviceRewards.findMany({
+          where: eq(deviceRewards.hexlifiedFarmPubKey, hexlifiedPubkey),
+        });
 
-      const lifetimeGlowEarned = rewards.reduce((acc, cur) => {
-        return acc + Number(cur.glowRewards);
-      }, 0);
+        const lifetimeGlowEarned = rewards.reduce((acc, cur) => {
+          return acc + Number(cur.glowRewards);
+        }, 0);
 
-      const lifetimeUSDGEarned = rewards.reduce((acc, cur) => {
-        return acc + Number(cur.usdgRewards);
-      }, 0);
+        const lifetimeUSDGEarned = rewards.reduce((acc, cur) => {
+          return acc + Number(cur.usdgRewards);
+        }, 0);
 
-      const currentProtooclWeek = getProtocolWeek();
-      const amountMadeLastWeekOrNull = rewards.find(
-        (r) => r.weekNumber === currentProtooclWeek - 1
-      );
+        const currentProtooclWeek = getProtocolWeek();
+        const amountMadeLastWeekOrNull = rewards.find(
+          (r) => r.weekNumber === currentProtooclWeek - 1
+        );
 
-      const serializedRewards = rewards.map((r) => {
+        const serializedRewards = rewards.map((r) => {
+          return {
+            weekNumber: r.weekNumber,
+            glowRewards: Number(r.glowRewards),
+            usdgRewards: Number(r.usdgRewards),
+          };
+        });
+
+        const lastMonth = [
+          currentProtooclWeek - 3,
+          currentProtooclWeek - 2,
+          currentProtooclWeek - 1,
+          currentProtooclWeek,
+        ];
+        const lastMonthRewards = rewards.filter((r) =>
+          lastMonth.includes(r.weekNumber)
+        );
+        const lastMonthGlow = lastMonthRewards.reduce(
+          (acc, cur) => acc + Number(cur.glowRewards),
+          0
+        );
+        const lastMonthUSDG = lastMonthRewards.reduce(
+          (acc, cur) => acc + Number(cur.usdgRewards),
+          0
+        );
+
+        const lastYear = Array.from(
+          { length: 52 },
+          (_, i) => currentProtooclWeek - i
+        );
+        const lastYearNoZeroes = lastYear.filter((n) => n >= 0);
+        const lastYearRewards = rewards.filter((r) =>
+          lastYearNoZeroes.includes(r.weekNumber)
+        );
+        const lastYearGlow = lastYearRewards.reduce(
+          (acc, cur) => acc + Number(cur.glowRewards),
+          0
+        );
+        const lastYearUSDG = lastYearRewards.reduce(
+          (acc, cur) => acc + Number(cur.usdgRewards),
+          0
+        );
+
         return {
-          weekNumber: r.weekNumber,
-          glowRewards: Number(r.glowRewards),
-          usdgRewards: Number(r.usdgRewards),
+          lifetimeGlowEarned,
+          lifetimeUSDGEarned,
+          lastYearGlowEarned: lastYearGlow,
+          lastYearUSDGEarned: lastYearUSDG,
+          lastMonthGlowEarned: lastMonthGlow,
+          lastMonthUSDGEarned: lastMonthUSDG,
+          amountGlowEarnedLastWeek: Number(
+            amountMadeLastWeekOrNull?.glowRewards || 0
+          ),
+          amountUSDGEarnedLastWeek: Number(
+            amountMadeLastWeekOrNull?.usdgRewards || 0
+          ),
+          weeklyHistory: serializedRewards,
         };
-      });
-
-      const lastMonth = [
-        currentProtooclWeek - 3,
-        currentProtooclWeek - 2,
-        currentProtooclWeek - 1,
-        currentProtooclWeek,
-      ];
-      const lastMonthRewards = rewards.filter((r) =>
-        lastMonth.includes(r.weekNumber)
-      );
-      const lastMonthGlow = lastMonthRewards.reduce(
-        (acc, cur) => acc + Number(cur.glowRewards),
-        0
-      );
-      const lastMonthUSDG = lastMonthRewards.reduce(
-        (acc, cur) => acc + Number(cur.usdgRewards),
-        0
-      );
-
-      const lastYear = Array.from(
-        { length: 52 },
-        (_, i) => currentProtooclWeek - i
-      );
-      const lastYearNoZeroes = lastYear.filter((n) => n >= 0);
-      const lastYearRewards = rewards.filter((r) =>
-        lastYearNoZeroes.includes(r.weekNumber)
-      );
-      const lastYearGlow = lastYearRewards.reduce(
-        (acc, cur) => acc + Number(cur.glowRewards),
-        0
-      );
-      const lastYearUSDG = lastYearRewards.reduce(
-        (acc, cur) => acc + Number(cur.usdgRewards),
-        0
-      );
-
-      return {
-        lifetimeGlowEarned,
-        lifetimeUSDGEarned,
-        lastYearGlowEarned: lastYearGlow,
-        lastYearUSDGEarned: lastYearUSDG,
-        lastMonthGlowEarned: lastMonthGlow,
-        lastMonthUSDGEarned: lastMonthUSDG,
-        amountGlowEarnedLastWeek: Number(
-          amountMadeLastWeekOrNull?.glowRewards || 0
-        ),
-        amountUSDGEarnedLastWeek: Number(
-          amountMadeLastWeekOrNull?.usdgRewards || 0
-        ),
-        weeklyHistory: serializedRewards,
-      };
+      } catch (e) {
+        console.log("[rewardsRouter] device-rewards", e);
+        throw new Error("Error Occured");
+      }
     },
     {
       query: t.Object({
