@@ -30,6 +30,12 @@ export type FarmUpdate = {
   updatedValue: any;
 };
 
+export type RewardsSplit = {
+  walletAddress: string;
+  usdgSplitPercent: string;
+  glowSplitPercent: string;
+};
+
 /**
     * @dev
     Rewards in the database are stored in 2 decimals.
@@ -1220,6 +1226,17 @@ export const RewardSplits = pgTable("rewardsSplits", {
     precision: 5,
     scale: 2,
   }).notNull(),
+  updatedAt: timestamp("updated_at"),
+});
+
+export const RewardsSplitsHistory = pgTable("rewardsSplitsHistory", {
+  id: text("rewards_splits_history_id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  applicationId: text("application_id").notNull(),
+  farmId: varchar("farm_id", { length: 66 }).notNull(),
+  rewardsSplits: json("rewards_splits").$type<RewardsSplit[]>().notNull(),
+  createdAt: timestamp("created_at").notNull(),
 });
 
 export type RewardSplitsType = InferSelectModel<typeof RewardSplits>;
@@ -1239,6 +1256,20 @@ export const RewardSplitsRelations = relations(RewardSplits, ({ one }) => ({
     references: [wallets.id],
   }),
 }));
+
+export const RewardsSplitsHistoryRelations = relations(
+  RewardsSplitsHistory,
+  ({ one }) => ({
+    application: one(applications, {
+      fields: [RewardsSplitsHistory.applicationId],
+      references: [applications.id],
+    }),
+    farm: one(farms, {
+      fields: [RewardsSplitsHistory.farmId],
+      references: [farms.id],
+    }),
+  })
+);
 
 /**
  * @dev Represents a device associated with a farm.
