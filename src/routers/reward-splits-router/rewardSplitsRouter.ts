@@ -295,6 +295,7 @@ export const rewardSplitsRouter = new Elysia({ prefix: "/rewardsSplits" })
             }
 
             await updateSplitsWithHistory(
+              userId,
               application.id,
               application.farmId,
               body.splits.map((split) => ({

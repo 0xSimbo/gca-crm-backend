@@ -10,7 +10,7 @@ export const incrementApplicationStep = async (
   return await db
     .update(applications)
     .set({
-      status: ApplicationStatusEnum.draft,
+      status: ApplicationStatusEnum.waitingForApproval,
       currentStep: index + 1,
     })
     .where(eq(applications.id, applicationId));
