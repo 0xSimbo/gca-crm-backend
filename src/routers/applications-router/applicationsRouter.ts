@@ -183,6 +183,7 @@ const encryptedUploadedUrlExample =
   "https://pub-7e0365747f054c9e85051df5f20fa815.r2.dev/0x18a0ba01bbec4aa358650d297ba7bb330a78b073/contract-agreement.enc";
 export const PreInstallDocumentsQueryBody = t.Object({
   applicationId: t.String(),
+  estimatedInstallDate: t.Date(),
   contractAgreement: encryptedFileUpload,
   declarationOfIntention: encryptedFileUpload,
 });
@@ -1686,52 +1687,6 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
         }
       )
       .post(
-        "/estimated-install-date",
-        async ({ body, set, userId }) => {
-          try {
-            const application = await FindFirstApplicationById(
-              body.applicationId
-            );
-            if (!application) {
-              set.status = 404;
-              return "Application not found";
-            }
-            const errorChecks = await fillApplicationStepCheckHandler(
-              userId,
-              application,
-              ApplicationSteps.permitDocumentation
-            );
-
-            if (errorChecks) {
-              set.status = errorChecks.errorCode;
-              return errorChecks.errorMessage;
-            }
-
-            await handleCreateOrUpdatePermitDocumentation(application, {
-              estimatedInstallDate: body.estimatedInstallDate,
-            });
-
-            return body.applicationId;
-          } catch (e) {
-            console.error("error", e);
-            if (e instanceof Error) {
-              set.status = 400;
-              return e.message;
-            }
-            console.log("[applicationsRouter] /estimated-install-date", e);
-            throw new Error("Error Occured");
-          }
-        },
-        {
-          body: PermitDocumentationQueryBody,
-          detail: {
-            summary: "Create or Update the estimated install date",
-            description: `insert the estimated install date in db and update the application status to waitingForApproval`,
-            tags: [TAG.APPLICATIONS],
-          },
-        }
-      )
-      .post(
         "/inspection-and-pto",
         async ({ body, set, userId }) => {
           try {
@@ -2188,10 +2143,8 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                 }
               );
             } else {
-              await updateApplication(body.applicationId, {
-                status: ApplicationStatusEnum.changesRequired,
-                preInstallVisitDate: null,
-              });
+              set.status = 400;
+              return "Ask for Changes is not allowed for this step.";
             }
           } catch (e) {
             if (e instanceof Error) {

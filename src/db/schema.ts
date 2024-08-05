@@ -1237,6 +1237,7 @@ export const RewardsSplitsHistory = pgTable("rewardsSplitsHistory", {
   farmId: varchar("farm_id", { length: 66 }).notNull(),
   rewardsSplits: json("rewards_splits").$type<RewardsSplit[]>().notNull(),
   createdAt: timestamp("created_at").notNull(),
+  overWrittenBy: varchar("over_written_by", { length: 42 }).notNull(),
 });
 
 export type RewardSplitsType = InferSelectModel<typeof RewardSplits>;

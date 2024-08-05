@@ -12,6 +12,7 @@ import { EncryptedFileUploadType } from "../applicationsRouter";
 type UpdatePreInstallDocumentsRequiredType = {
   contractAgreement: EncryptedFileUploadType;
   declarationOfIntention: EncryptedFileUploadType;
+  estimatedInstallDate: Date;
 };
 
 export const handleCreateOrUpdatePreIntallDocuments = async (
@@ -51,6 +52,9 @@ export const handleCreateOrUpdatePreIntallDocuments = async (
     application.status,
     application.currentStep,
     documents,
-    []
+    [],
+    {
+      estimatedInstallDate: args.estimatedInstallDate,
+    }
   );
 };
