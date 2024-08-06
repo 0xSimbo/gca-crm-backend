@@ -21,5 +21,5 @@ export function getStateFromCoordinates(
       return state;
     }
   }
-  return null;
+  return "Alabama";
 }
