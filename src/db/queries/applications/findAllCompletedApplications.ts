@@ -28,6 +28,7 @@ export const findAllCompletedApplications = async (withDocuments?: boolean) => {
       solarPanelsBrandAndModel: true,
       solarPanelsWarranty: true,
       averageSunlightHoursPerDay: true,
+      finalEnergyCost: true,
       adjustedWeeklyCarbonCredits: true,
       weeklyTotalCarbonDebt: true,
       netCarbonCreditEarningWeekly: true,

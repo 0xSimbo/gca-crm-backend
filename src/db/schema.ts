@@ -897,6 +897,10 @@ export const applications = pgTable("applications", {
     precision: 10,
     scale: 2,
   }),
+  finalEnergyCost: numeric("final_energy_cost", {
+    precision: 10,
+    scale: 2,
+  }),
   ptoObtainedDate: timestamp("pto_date"),
   locationWithoutPII: varchar("location_without_pii", { length: 255 }),
   revisedInstallFinishedDate: timestamp("revised_install_finished_date"),
