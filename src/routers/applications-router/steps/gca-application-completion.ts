@@ -27,6 +27,7 @@ export const handleCreateWithoutPIIDocumentsAndCompleteApplication = async (
   gcaId: string,
   signature: string,
   step: ApplicationSteps,
+  stepAnnotation: string | null,
   args: WithoutPiiDocumentsType & {
     finalAuditReport: string;
     devices: { publicKey: string; shortId: string }[];
@@ -197,6 +198,7 @@ export const handleCreateWithoutPIIDocumentsAndCompleteApplication = async (
     args.devices,
     BigInt(ethers.utils.parseUnits(application.finalProtocolFee, 6).toString()),
     application.paymentTxHash,
+    stepAnnotation,
     args.applicationAuditFields
   );
 };
