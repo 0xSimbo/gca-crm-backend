@@ -2229,6 +2229,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               gcaId,
               body.signature,
               ApplicationSteps.payment,
+              body.annotation,
               {
                 finalAuditReport: body.finalAuditReport,
                 ...body.withoutPIIdocuments,
@@ -2250,7 +2251,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                 },
               }
             );
-            //TODO: send event with kafka to notify that the application is completed and publish audit;
+            //TODO: send event with kafka to notify that the application is completed;
           } catch (e) {
             if (e instanceof Error) {
               set.status = 400;
