@@ -28,6 +28,7 @@ import { legacyFarms } from "./legacy/farms";
 // import { farmsRouter } from "./routers/farms/farmsRouter";
 import { updateDeviceRewardsForWeek } from "./crons/update-farm-rewards/update-device-rewards-for-week";
 import { farmsRouter } from "./routers/farms/farmsRouter";
+import { getStateFromCoordinates } from "./lib/geography/get-state-from-lat-long";
 
 const PORT = process.env.PORT || 3005;
 const app = new Elysia()
@@ -60,7 +61,7 @@ const app = new Elysia()
     return "Internal Server Error";
   })
   .use(cors())
-  // .use(swagger({ autoDarkMode: true, path: "/swagger" }))
+  .use(swagger({ autoDarkMode: true, path: "/swagger" }))
   .use(
     cron({
       name: "Updating Rewards",
