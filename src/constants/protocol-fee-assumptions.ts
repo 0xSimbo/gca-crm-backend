@@ -56,8 +56,7 @@ export type EstimateProtocolFeeArgs = {
   longitude: number;
   escalatorReference: number | undefined;
 };
-export function estimateProtocolFees(args: EstimateProtocolFeeArgs) {
-  console.log(`args = ${JSON.stringify(args)}`);
+export async function estimateProtocolFees(args: EstimateProtocolFeeArgs) {
   const firstYearPrice =
     args.electricityPricePerKWH *
     args.powerOutputMWH *
@@ -65,15 +64,13 @@ export function estimateProtocolFees(args: EstimateProtocolFeeArgs) {
     args.hoursOfSunlightPerDay *
     protocolFeeAssumptions.numberOfDaysPerYear;
 
-  const foundState = getStateFromCoordinates({
+  const foundState = await getStateFromCoordinates({
     latitude: args.latitude,
     longitude: args.longitude,
   });
   if (!foundState) {
     throw new Error("State not found");
   }
-
-  console.log("Found state: ", foundState);
 
   const escalatorReference =
     args.escalatorReference ||
@@ -85,7 +82,9 @@ export function estimateProtocolFees(args: EstimateProtocolFeeArgs) {
     })?.percent;
 
   if (!escalatorReference) {
-    throw new Error("Escalator reference not found");
+    throw new Error(
+      `Escalator reference not found, ${foundState} is not yet supported`
+    );
   }
 
   // const _presentValue = getPresentValue(

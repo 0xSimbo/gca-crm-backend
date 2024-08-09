@@ -96,7 +96,7 @@ export const protocolFeeRouter = new Elysia({ prefix: "/protocolFees" })
           escalatorReference: parsedQuery.escalatorReference,
         };
 
-        const estimatedProtocolFees = estimateProtocolFees(args);
+        const estimatedProtocolFees = await estimateProtocolFees(args);
 
         const costPerWatt =
           estimatedProtocolFees.protocolFees / args.powerOutputMWH / 1e6; // 1e6 to convert from MWH to WH
