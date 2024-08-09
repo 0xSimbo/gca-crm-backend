@@ -133,6 +133,15 @@ export const completeApplicationWithDocumentsAndCreateFarmWithDevices = async (
   if (defermentsTxtPromises) {
     uploadsArr.push(defermentsTxtPromises);
   }
+  if (stepAnnotation) {
+    uploadsArr.push(
+      createAndUploadTXTFile(
+        process.env.R2_NOT_ENCRYPTED_FILES_BUCKET_NAME!!,
+        `${applicationId}/final_thoughts.txt`,
+        stepAnnotation
+      )
+    );
+  }
 
   const uploads = await Promise.all(uploadsArr);
 
