@@ -70,7 +70,11 @@ export const rewardsRouter = new Elysia({ prefix: "/rewards" })
   )
   .get("/all-device-rewards", async () => {
     try {
-      const rewards = await db.query.deviceRewards.findMany();
+      const rewards = await db.query.deviceRewardParent.findMany({
+        with: {
+          deviceRewards: true,
+        },
+      });
       return rewards;
     } catch (e) {
       console.log("[rewardsRouter] all-device-rewards", e);
