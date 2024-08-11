@@ -68,19 +68,29 @@ export const rewardsRouter = new Elysia({ prefix: "/rewards" })
       },
     }
   )
-  .get("/all-device-rewards", async () => {
-    try {
-      const rewards = await db.query.deviceRewardParent.findMany({
-        with: {
-          deviceRewards: true,
-        },
-      });
-      return rewards;
-    } catch (e) {
-      console.log("[rewardsRouter] all-device-rewards", e);
-      throw new Error("Error Occured");
+  .get(
+    "/all-device-rewards",
+    async () => {
+      try {
+        const rewards = await db.query.deviceRewardParent.findMany({
+          with: {
+            deviceRewards: true,
+          },
+        });
+        return rewards;
+      } catch (e) {
+        console.log("[rewardsRouter] all-device-rewards", e);
+        throw new Error("Error Occured");
+      }
+    },
+    {
+      detail: {
+        summary: "Get All Device Rewards",
+        description: `This route returns all the device rewards for all the farms in the system.`,
+        tags: [TAG.REWARDS],
+      },
     }
-  })
+  )
   .get(
     "/device-rewards",
     async ({ query }) => {
@@ -180,6 +190,11 @@ export const rewardsRouter = new Elysia({ prefix: "/rewards" })
       }
     },
     {
+      detail: {
+        summary: "Get Device Rewards",
+        description: `This route takes in a short ID and returns the rewards information for the device. This includes the lifetime GLOW and USDG rewards, as well as the rewards for the last week, last month, and last year. It also includes the rewards for each week in the array.`,
+        tags: [TAG.REWARDS],
+      },
       query: t.Object({
         shortId: t.String({
           minLength: 1,
