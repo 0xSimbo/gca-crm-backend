@@ -13,6 +13,7 @@ import { formatUnits } from "viem";
 import { TAG } from "../../constants";
 import { getHexPubkeyFromShortId } from "../../utils/getHexPubkeyFromShortId";
 import { getProtocolWeek } from "../../utils/getProtocolWeek";
+import { getAllHexkeysAndShortIds } from "../../utils/getAllHexkeysAndShortIds";
 
 export const GetUserRewardsQueryBody = t.Object({
   wallet: t.String({
@@ -70,13 +71,35 @@ export const rewardsRouter = new Elysia({ prefix: "/rewards" })
   )
   .get(
     "/all-device-rewards",
-    async () => {
+    async ({ query }) => {
       try {
         const rewards = await db.query.deviceRewardParent.findMany({
           with: {
-            deviceRewards: true,
+            deviceRewards: {
+              columns: {
+                weekNumber: true,
+                glowRewards: true,
+                usdgRewards: true,
+              },
+            },
           },
         });
+
+        if (query.includeShortIds === "true") {
+          const allKeys: { pubkey: `0x${string}`; shortId: number }[] =
+            await getAllHexkeysAndShortIds();
+          console.log(allKeys);
+
+          const rewardsWithShortIds = rewards.map((r) => {
+            const shortId = allKeys.find((k) => k.pubkey === r.id)?.shortId;
+            return {
+              ...r,
+              shortId,
+            };
+          });
+
+          return rewardsWithShortIds;
+        }
         return rewards;
       } catch (e) {
         console.log("[rewardsRouter] all-device-rewards", e);
@@ -84,6 +107,9 @@ export const rewardsRouter = new Elysia({ prefix: "/rewards" })
       }
     },
     {
+      query: t.Object({
+        includeShortIds: t.Optional(t.String()),
+      }),
       detail: {
         summary: "Get All Device Rewards",
         description: `This route returns all the device rewards for all the farms in the system.`,
