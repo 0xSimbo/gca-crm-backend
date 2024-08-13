@@ -21,6 +21,7 @@ type UpdatePreInstallDocumentsRequiredType = {
   estimatedInstallDate: Date;
   declarationOfIntentionSignature: string;
   declarationOfIntentionFieldsValue: declarationOfIntentionFieldsValueType;
+  declarationOfIntentionVersion: string;
 };
 
 export const handleCreateOrUpdatePreIntallDocuments = async (
@@ -65,6 +66,7 @@ export const handleCreateOrUpdatePreIntallDocuments = async (
       estimatedInstallDate: args.estimatedInstallDate,
       declarationOfIntentionSignature: args.declarationOfIntentionSignature,
       declarationOfIntentionFieldsValue: args.declarationOfIntentionFieldsValue,
+      declarationOfIntentionVersion: args.declarationOfIntentionVersion,
       declarationOfIntentionSignatureDate: new Date(
         args.declarationOfIntentionFieldsValue.date * 1000
       ),

@@ -856,6 +856,9 @@ export const applications = pgTable("applications", {
     "declaration_of_intention_commited_on_chain_tx_hash",
     { length: 66 }
   ),
+  declarationOfIntentionVersion: varchar("declaration_of_intention_version", {
+    length: 12,
+  }),
   // wallet signature of the account owner
   finalQuotePerWatt: varchar("final_quote_per_watt", { length: 255 }),
   revisedKwhGeneratedPerYear: numeric("revised_kwh_generated_per_year", {

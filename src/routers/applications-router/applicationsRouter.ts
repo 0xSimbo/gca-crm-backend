@@ -193,6 +193,7 @@ export const PreInstallDocumentsQueryBody = t.Object({
     longitude: t.String(),
     date: t.Number(), // timestamp without milliseconds (Math.floor(Date.now() / 1000))
   }),
+  declarationOfIntentionVersion: t.String(),
 });
 
 export const PermitDocumentationQueryBody = t.Object({

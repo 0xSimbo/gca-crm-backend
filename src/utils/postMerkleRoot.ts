@@ -135,13 +135,8 @@ export const postMerkleRootHandler = async () => {
     process.env.R2_NOT_ENCRYPTED_FILES_BUCKET_NAME!!,
     `declarationOfIntentionMerkleRoots/${merkleRoot}.json`,
     {
-      leaves: declarations,
       root: merkleRoot,
       metadata: {
-        hashFunction:
-          'function hashLeaf(declaration: { fullname: string; latitude: string; longitude: string; date: number; signer: string; signature: string; }): string { return ethers.utils.solidityKeccak256(["string", "string", "string", "uint256", "address", "bytes"], [ declaration.fullname, declaration.latitude, declaration.longitude, declaration.date, declaration.signer, declaration.signature ]); }'
-            .replace(/\n/g, "\\n")
-            .replace(/"/g, '\\"'), // Escaping newlines and quotes
         domain: {
           name: "Glow Crm",
           version: "1",
@@ -155,7 +150,10 @@ export const postMerkleRootHandler = async () => {
             { name: "date", type: "uint256" },
           ],
         },
+        hashFunction:
+          'function hashLeaf(declaration: { fullname: string; latitude: string; longitude: string; date: number; signer: string; signature: string; }): string { return ethers.utils.solidityKeccak256(["string", "string", "string", "uint256", "address", "bytes"], [ declaration.fullname, declaration.latitude, declaration.longitude, declaration.date, declaration.signer, declaration.signature ]); }',
       },
+      leaves: declarations,
     }
   );
 
