@@ -842,6 +842,21 @@ export const applications = pgTable("applications", {
   // null if application just got created
   updatedAt: timestamp("updatedAt"),
   // pre-install documents step fields
+  declarationOfIntentionSignature: varchar(
+    "declaration_of_intention_signature",
+    { length: 255 }
+  ),
+  declarationOfIntentionSignatureDate: timestamp(
+    "declaration_of_intention_signature_date"
+  ),
+  declarationOfIntentionFieldsValue: json(
+    "declaration_of_intention_fields_value"
+  ),
+  declarationOfIntentionCommitedOnChainTxHash: varchar(
+    "declaration_of_intention_commited_on_chain_tx_hash",
+    { length: 66 }
+  ),
+  // wallet signature of the account owner
   finalQuotePerWatt: varchar("final_quote_per_watt", { length: 255 }),
   revisedKwhGeneratedPerYear: numeric("revised_kwh_generated_per_year", {
     precision: 10,
@@ -1355,4 +1370,18 @@ export const ApplicationStepApprovalsRelations = relations(
       references: [Gcas.id],
     }),
   })
+);
+
+export const DeclarationOfIntentionMerkleRoots = pgTable(
+  "declaration_of_intention_merkle_roots",
+  {
+    id: text("declaration_of_intention_merkle_roots_id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    timestamp: timestamp("timestamp").notNull(),
+    merkleRoot: varchar("merkle_root", { length: 66 }).notNull(),
+    txHash: varchar("tx_hash", { length: 66 }).notNull(),
+    merkleRootLength: integer("merkle_root_length").notNull(),
+    applicationIds: text("application_ids").array().notNull(),
+  }
 );

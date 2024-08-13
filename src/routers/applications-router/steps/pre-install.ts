@@ -9,10 +9,18 @@ import {
 } from "../../../types/api-types/Application";
 import { EncryptedFileUploadType } from "../applicationsRouter";
 
+export type declarationOfIntentionFieldsValueType = {
+  fullname: string;
+  latitude: string;
+  longitude: string;
+  date: number;
+};
 type UpdatePreInstallDocumentsRequiredType = {
   contractAgreement: EncryptedFileUploadType;
   declarationOfIntention: EncryptedFileUploadType;
   estimatedInstallDate: Date;
+  declarationOfIntentionSignature: string;
+  declarationOfIntentionFieldsValue: declarationOfIntentionFieldsValueType;
 };
 
 export const handleCreateOrUpdatePreIntallDocuments = async (
@@ -55,6 +63,11 @@ export const handleCreateOrUpdatePreIntallDocuments = async (
     [],
     {
       estimatedInstallDate: args.estimatedInstallDate,
+      declarationOfIntentionSignature: args.declarationOfIntentionSignature,
+      declarationOfIntentionFieldsValue: args.declarationOfIntentionFieldsValue,
+      declarationOfIntentionSignatureDate: new Date(
+        args.declarationOfIntentionFieldsValue.date * 1000
+      ),
     }
   );
 };
