@@ -1383,5 +1383,6 @@ export const DeclarationOfIntentionMerkleRoots = pgTable(
     txHash: varchar("tx_hash", { length: 66 }).notNull(),
     merkleRootLength: integer("merkle_root_length").notNull(),
     applicationIds: text("application_ids").array().notNull(),
+    r2Url: varchar("r2_url", { length: 255 }).notNull(),
   }
 );

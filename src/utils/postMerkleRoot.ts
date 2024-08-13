@@ -10,6 +10,7 @@ import {
   ApplicationSteps,
 } from "../types/api-types/Application";
 import { declarationOfIntentionFieldsValueType } from "../routers/applications-router/steps/pre-install";
+import { createAndUploadJsonFile } from "./r2/upload-to-r2";
 
 interface Declaration {
   fullname: string;
@@ -111,6 +112,7 @@ export const postMerkleRootHandler = async () => {
       )
     ),
   });
+
   const declarations = readyToCommitApplications.map((application) => ({
     ...(application.declarationOfIntentionFieldsValue as declarationOfIntentionFieldsValueType),
     signer: application.userId,
@@ -129,12 +131,41 @@ export const postMerkleRootHandler = async () => {
   const merkleRoot = merkleTree.getRoot().toString("hex");
   const txHash = await postMerkleRoot(merkleRoot);
 
+  const r2Url = await createAndUploadJsonFile(
+    process.env.R2_NOT_ENCRYPTED_FILES_BUCKET_NAME!!,
+    `declarationOfIntentionMerkleRoots/${merkleRoot}.json`,
+    {
+      leaves: declarations,
+      root: merkleRoot,
+      metadata: {
+        hashFunction:
+          'function hashLeaf(declaration: { fullname: string; latitude: string; longitude: string; date: number; signer: string; signature: string; }): string { return ethers.utils.solidityKeccak256(["string", "string", "string", "uint256", "address", "bytes"], [ declaration.fullname, declaration.latitude, declaration.longitude, declaration.date, declaration.signer, declaration.signature ]); }'
+            .replace(/\n/g, "\\n")
+            .replace(/"/g, '\\"'), // Escaping newlines and quotes
+        domain: {
+          name: "Glow Crm",
+          version: "1",
+          chainId: 1,
+        },
+        type: {
+          declarationOfIntention: [
+            { name: "fullname", type: "string" },
+            { name: "latitude", type: "string" },
+            { name: "longitude", type: "string" },
+            { name: "date", type: "uint256" },
+          ],
+        },
+      },
+    }
+  );
+
   await db.insert(DeclarationOfIntentionMerkleRoots).values({
     merkleRoot: merkleRoot,
     txHash,
     merkleRootLength: leaves.length,
     applicationIds: readyToCommitApplications.map((a) => a.id),
     timestamp: new Date(),
+    r2Url,
   });
   await db
     .update(applications)

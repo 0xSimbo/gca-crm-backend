@@ -94,7 +94,7 @@ const app = new Elysia()
   )
   .use(
     cron({
-      name: "Upload Merkle Root",
+      name: "declaration-of-intention-merkle-root",
       pattern: Patterns.EVERY_WEEK,
       async run() {
         if (process.env.NODE_ENV === "production") {
@@ -112,6 +112,17 @@ const app = new Elysia()
         }
       },
     })
+  )
+  .get(
+    "/trigger-merkle-root-cron",
+    async ({
+      store: {
+        cron: { "declaration-of-intention-merkle-root": cronJob },
+      },
+    }) => {
+      await cronJob.trigger();
+      return { message: "success" };
+    }
   )
   .use(protocolFeeRouter)
   .use(rewardsRouter)
