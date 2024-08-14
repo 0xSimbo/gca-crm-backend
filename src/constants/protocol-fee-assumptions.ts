@@ -72,7 +72,7 @@ export async function estimateProtocolFees(args: EstimateProtocolFeeArgs) {
     throw new Error("State not found");
   }
 
-  const escalatorReference =
+  let escalatorReference =
     args.escalatorReference ||
     statesWithEscalatorFees.find(({ state }) => {
       return (
@@ -82,9 +82,7 @@ export async function estimateProtocolFees(args: EstimateProtocolFeeArgs) {
     })?.percent;
 
   if (!escalatorReference) {
-    throw new Error(
-      `Escalator reference not found, ${foundState} is not yet supported`
-    );
+    escalatorReference = 0.0331;
   }
 
   // const _presentValue = getPresentValue(
