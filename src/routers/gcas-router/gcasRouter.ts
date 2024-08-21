@@ -25,6 +25,8 @@ import { findFirstDelegatedUserByUserId } from "../../db/queries/gcaDelegatedUse
 import { findFirstUserById } from "../../db/queries/users/findFirstUserById";
 import { findAllGcaDelegatedUsers } from "../../db/queries/gcaDelegatedUsers/findAllGcaDelegatedUsers";
 import { createApplicationEncryptedMasterKeysForUsers } from "../../db/mutations/applications/createApplicationEncryptedMasterKeysForUsers";
+import { createWeeklyReport } from "@glowlabs-org/utils";
+import { getProtocolWeek } from "../../utils/getProtocolWeek";
 
 export const CreateGCAQueryBody = t.Object({
   publicEncryptionKey: t.String({
@@ -64,6 +66,34 @@ export const gcasRouter = new Elysia({ prefix: "/gcas" })
       detail: {
         summary: "Get All GCAs",
         description: `Get all GCAs and return an array of GCA objects. If no GCAs are found, it will return an empty array`,
+        tags: [TAG.GCAS],
+      },
+    }
+  )
+  .get(
+    "/weekly-reports",
+    async ({ set }) => {
+      try {
+        const currrentWeek = getProtocolWeek() - 1;
+        const { headlineStats } = await createWeeklyReport({
+          apiUrl: `https://fun-rust-production.up.railway.app/headline_farm_stats`,
+          gcaUrls: ["http://95.217.194.59:35015"],
+          week: currrentWeek,
+        });
+        return headlineStats;
+      } catch (e) {
+        set.status = 400;
+        if (e instanceof Error) {
+          return e.message;
+        }
+        console.log("[gcasRouter] weekly-reports", e);
+        throw new Error("Error Occured");
+      }
+    },
+    {
+      detail: {
+        summary: "Get Weekly Reports",
+        description: `Get weekly reports Json data`,
         tags: [TAG.GCAS],
       },
     }
