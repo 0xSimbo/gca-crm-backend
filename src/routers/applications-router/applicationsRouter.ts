@@ -186,6 +186,14 @@ export const PreInstallDocumentsQueryBody = t.Object({
   estimatedInstallDate: t.Date(),
   contractAgreement: encryptedFileUpload,
   declarationOfIntention: encryptedFileUpload,
+  declarationOfIntentionSignature: t.String(),
+  declarationOfIntentionFieldsValue: t.Object({
+    fullname: t.String(), // user.firstName + " " + user.lastName
+    latitude: t.String(),
+    longitude: t.String(),
+    date: t.Number(), // timestamp without milliseconds (Math.floor(Date.now() / 1000))
+  }),
+  declarationOfIntentionVersion: t.String(),
 });
 
 export const PermitDocumentationQueryBody = t.Object({
