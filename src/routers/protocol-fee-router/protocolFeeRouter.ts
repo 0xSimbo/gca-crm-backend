@@ -44,8 +44,8 @@ export const protocolFeeRouter = new Elysia({ prefix: "/protocolFees" })
     "/sunlightAndCertificates",
     async ({ query }) => {
       const parsedQuery = {
-        latitude: query.latitude,
-        longitude: query.longitude,
+        latitude: Number(query.latitude),
+        longitude: Number(query.longitude),
       };
       const sunlightHoursAndCertificates =
         await getSunlightHoursAndCertificates(parsedQuery);
