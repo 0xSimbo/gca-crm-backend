@@ -28,7 +28,7 @@ import { legacyFarms } from "./legacy/farms";
 // import { farmsRouter } from "./routers/farms/farmsRouter";
 import { updateDeviceRewardsForWeek } from "./crons/update-farm-rewards/update-device-rewards-for-week";
 import { farmsRouter } from "./routers/farms/farmsRouter";
-import { getStateFromCoordinates } from "./lib/geography/get-state-from-lat-long";
+import { postMerkleRootHandler } from "./utils/postMerkleRoot";
 
 const PORT = process.env.PORT || 3005;
 const app = new Elysia()
@@ -67,28 +67,62 @@ const app = new Elysia()
       name: "Updating Rewards",
       pattern: Patterns.everyHours(2),
       async run() {
-        const currentWeek = getProtocolWeek();
-        const weekToQuery = currentWeek - 1;
-        // Make sure to keep updateWalletRewardsForWeek before updateFarmRewardsForWeek
-        // Update Wallet Rewards For Week checks the merkle tree for the previous week
-        // We don't want to update the farm rewards for the current week if a GCA hasn;t submitted the report yet.
-        try {
-          await updateDeviceRewardsForWeek({ weekNumber: weekToQuery });
-        } catch (e) {}
-        try {
-          const keepGoing = await updateWalletRewardsForWeek(weekToQuery);
-          if (!keepGoing.keepGoing) {
-            console.log(
-              `Already Updated Wallet Rewards for week ${weekToQuery}`
-            );
-            return;
+        if (process.env.NODE_ENV === "production") {
+          const currentWeek = getProtocolWeek();
+          const weekToQuery = currentWeek - 1;
+          // Make sure to keep updateWalletRewardsForWeek before updateFarmRewardsForWeek
+          // Update Wallet Rewards For Week checks the merkle tree for the previous week
+          // We don't want to update the farm rewards for the current week if a GCA hasn;t submitted the report yet.
+          try {
+            await updateDeviceRewardsForWeek({ weekNumber: weekToQuery });
+          } catch (e) {}
+          try {
+            const keepGoing = await updateWalletRewardsForWeek(weekToQuery);
+            if (!keepGoing.keepGoing) {
+              console.log(
+                `Already Updated Wallet Rewards for week ${weekToQuery}`
+              );
+              return;
+            }
+            await updateFarmRewardsForWeek({ weekNumber: weekToQuery });
+          } catch (error) {
+            console.error("Error updating rewards", error);
           }
-          await updateFarmRewardsForWeek({ weekNumber: weekToQuery });
-        } catch (error) {
-          console.error("Error updating rewards", error);
         }
       },
     })
+  )
+  .use(
+    cron({
+      name: "declaration-of-intention-merkle-root",
+      pattern: Patterns.EVERY_WEEK,
+      async run() {
+        if (process.env.NODE_ENV === "production") {
+          try {
+            await postMerkleRootHandler();
+          } catch (error) {
+            if (error instanceof Error) {
+              console.error("Error uploading merkle root", error.message);
+              return error.message;
+            } else {
+              console.error("Error uploading merkle root");
+              return "Error uploading merkle root";
+            }
+          }
+        }
+      },
+    })
+  )
+  .get(
+    "/trigger-merkle-root-cron",
+    async ({
+      store: {
+        cron: { "declaration-of-intention-merkle-root": cronJob },
+      },
+    }) => {
+      await cronJob.trigger();
+      return { message: "success" };
+    }
   )
   .use(protocolFeeRouter)
   .use(rewardsRouter)

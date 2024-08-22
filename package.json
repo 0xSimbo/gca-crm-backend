@@ -1,6 +1,6 @@
 {
   "name": "@glowlabs-org/crm-bindings",
-  "version": "0.1.0-alpha.25",
+  "version": "0.1.0-alpha.29",
   "description": "A library containing all API bindings for the Elysia App",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
@@ -18,11 +18,12 @@
     "@elysiajs/bearer": "^1.0.2",
     "@elysiajs/cors": "^0.8.0",
     "@elysiajs/cron": "^1.0.3",
-    "@elysiajs/eden": "^1.0.14",
     "@elysiajs/swagger": "^1.0.5",
     "@glowlabs-org/guarded-launch-ethers-sdk": "^0.0.3",
+    "@glowlabs-org/utils": "^0.0.9",
     "drizzle-orm": "^0.30.1",
-    "elysia": "1.0.22",
+    "@elysiajs/eden": "1.1.2",
+    "elysia": "1.1.1",
     "ethers": "5.7.2",
     "graphql-request": "^7.0.1",
     "jsonwebtoken": "^9.0.2",
@@ -42,8 +43,8 @@
     "drizzle-kit": "^0.21.1"
   },
   "peerDependencies": {
-    "@elysiajs/eden": "1.0.12",
-    "elysia": "1.0.16"
+    "@elysiajs/eden": "1.1.2",
+    "elysia": "1.1.1"
   },
   "repository": {
     "type": "git",
