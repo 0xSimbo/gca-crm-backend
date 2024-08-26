@@ -1,5 +1,4 @@
 import { S3 } from "@aws-sdk/client-s3";
-import { writeFile, readFile, unlink } from "fs/promises";
 
 const AWS_ACCESS_KEY_ID = process.env.AWS_ACCESS_KEY_ID;
 const AWS_SECRET_ACCESS_KEY = process.env.AWS_SECRET_ACCESS_KEY;
@@ -21,6 +20,23 @@ const s3 = new S3({
     secretAccessKey: `${AWS_SECRET_ACCESS_KEY}`,
   },
 });
+
+export async function listObjects(bucketName: string, prefix?: string) {
+  try {
+    const response = await s3.listObjectsV2({
+      Bucket: bucketName,
+      Prefix: prefix,
+    });
+
+    return response.Contents;
+  } catch (error) {
+    console.error(
+      `Error listing objects in ${bucketName} with prefix ${prefix}:`,
+      error
+    );
+    throw error;
+  }
+}
 
 export async function createAndUploadTXTFile(
   bucketName: string,
