@@ -9,6 +9,7 @@ import {
   OptionalDocumentsNamesEnum,
   RequiredDocumentsNamesEnum,
 } from "../../../types/api-types/Application";
+import { listObjects } from "../../../utils/r2/upload-to-r2";
 type WithoutPiiDocumentsType = {
   contractAgreement: string;
   declarationOfIntention: string;
@@ -187,6 +188,36 @@ export const handleCreateWithoutPIIDocumentsAndCompleteApplication = async (
 
   if (!application.paymentTxHash) {
     throw new Error("Payment transaction hash is missing");
+  }
+  const allRequiredKeys = documents.map((doc) => doc.name);
+  const appId = application.id;
+
+  const objects = await listObjects(
+    process.env.R2_NOT_ENCRYPTED_FILES_BUCKET_NAME!!,
+    appId
+  );
+
+  if (!objects || objects.length === 0) {
+    return { message: "Files not uploaded to r2" };
+  }
+
+  objects.forEach((object) => {
+    const key = object.Key;
+    // console.log(key);
+    if (!key) {
+      return;
+    }
+    const requiredKey = allRequiredKeys.find((requiredKey) =>
+      key.split(appId)[1].includes(requiredKey)
+    );
+
+    if (requiredKey) {
+      allRequiredKeys.splice(allRequiredKeys.indexOf(requiredKey), 1);
+    }
+  });
+
+  if (allRequiredKeys.length) {
+    throw new Error("Some documents upload failed " + allRequiredKeys);
   }
 
   return await completeApplicationWithDocumentsAndCreateFarmWithDevices(
