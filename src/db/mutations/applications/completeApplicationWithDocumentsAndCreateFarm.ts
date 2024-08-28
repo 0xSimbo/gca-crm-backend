@@ -27,6 +27,7 @@ export type ApplicationAuditFieldsType = {
   solarPanelsWarranty: string;
   averageSunlightHoursPerDay: string;
   finalEnergyCost: string;
+  systemWattageOutput: string;
   adjustedWeeklyCarbonCredits: string;
   weeklyTotalCarbonDebt: string;
   netCarbonCreditEarningWeekly: string;

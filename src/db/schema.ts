@@ -919,6 +919,7 @@ export const applications = pgTable("applications", {
     precision: 10,
     scale: 2,
   }),
+  systemWattageOutput: varchar("system_wattage_output", { length: 255 }),
   ptoObtainedDate: timestamp("pto_date"),
   locationWithoutPII: varchar("location_without_pii", { length: 255 }),
   revisedInstallFinishedDate: timestamp("revised_install_finished_date"),

@@ -2245,6 +2245,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                 devices: body.devices,
                 applicationAuditFields: {
                   finalEnergyCost: body.finalEnergyCost,
+                  systemWattageOutput: body.systemWattageOutput,
                   solarPanelsQuantity: body.solarPanelsQuantity,
                   solarPanelsBrandAndModel: body.solarPanelsBrandAndModel,
                   solarPanelsWarranty: body.solarPanelsWarranty,
@@ -2303,6 +2304,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
             solarPanelsWarranty: t.String(),
             averageSunlightHoursPerDay: t.String(),
             finalEnergyCost: t.String(),
+            systemWattageOutput: t.String(),
             adjustedWeeklyCarbonCredits: t.String(),
             weeklyTotalCarbonDebt: t.String(),
             netCarbonCreditEarningWeekly: t.String(),
