@@ -1,11 +1,10 @@
-import { drizzle } from "drizzle-orm/neon-http";
-import { neon } from "@neondatabase/serverless";
-import { config } from "dotenv";
-import * as Schema from "./schema";
+/* eslint-disable @typescript-eslint/ban-ts-comment */
+import postgres from "postgres";
+import { drizzle, type PostgresJsDatabase } from "drizzle-orm/postgres-js";
+import * as schema from "./schema";
+import { PG_DATABASE_URL, PG_ENV } from "./PG_ENV";
+const queryClient = postgres(PG_DATABASE_URL, PG_ENV);
 
-config({ path: ".env" });
-
-const sql = neon(process.env.DATABASE_URL!);
-export const db = drizzle(sql, {
-  schema: Schema,
+export const db: PostgresJsDatabase<typeof schema> = drizzle(queryClient, {
+  schema,
 });
