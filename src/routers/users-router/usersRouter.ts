@@ -23,6 +23,7 @@ import { updateInstaller } from "../../db/mutations/installers/updateInstaller";
 import { findFirstInstallerById } from "../../db/queries/installers/findFirstInstallerById";
 import { updateUser } from "../../db/mutations/users/updateUser";
 import { findFirstDelegatedUserByUserId } from "../../db/queries/gcaDelegatedUsers/findFirstDelegatedUserByUserId";
+import { FindFirstGcaById } from "../../db/queries/gcas/findFirsGcaById";
 
 export const CreateUserQueryBody = t.Object({
   encryptedPrivateEncryptionKey: t.String({
@@ -421,6 +422,54 @@ export const usersRouter = new Elysia({ prefix: "/users" })
           detail: {
             summary: "Get User by ID",
             description: `Get a User by ID. If the user does not exist, it will throw an error.`,
+            tags: [TAG.USERS],
+          },
+        }
+      )
+      .get(
+        "/encryption-keys",
+        async ({ userId, error }) => {
+          const account = await findFirstAccountById(userId);
+          if (!account) {
+            return error(404, "Account not found");
+          }
+
+          try {
+            if (account.role === "GCA") {
+              const gca = await FindFirstGcaById(userId);
+              if (!gca) {
+                return error(404, "keys not found");
+              }
+              return {
+                encryptedPrivateEncryptionKey:
+                  gca.encryptedPrivateEncryptionKey,
+                publicEncryptionKey: gca.publicEncryptionKey,
+              };
+            } else {
+              const user = await findFirstUserById(userId);
+              if (!user) {
+                return error(404, "keys not found");
+              }
+
+              return {
+                encryptedPrivateEncryptionKey:
+                  user.encryptedPrivateEncryptionKey,
+                publicEncryptionKey: user.publicEncryptionKey,
+              };
+            }
+          } catch (e) {
+            if (e instanceof Error) {
+              console.error("[UsersRouter] encryption-keys", e.message);
+              return error(400, e.message);
+            }
+            console.error("[UsersRouter] encryption-keys", e);
+            return error(500, "Error Occured");
+          }
+        },
+        {
+          detail: {
+            summary: "Get User Public Key by ID",
+            description: `Get a User Public Key by ID. If the user does not exist, it will throw an error.`,
             tags: [TAG.USERS],
           },
         }

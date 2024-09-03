@@ -30,6 +30,8 @@ export const findAllApplicationsByOrganizationIds = async (
           installerName: true,
           isCancelled: true,
           farmOwnerName: true,
+          farmOwnerEmail: true,
+          farmOwnerPhone: true,
           preInstallVisitDate: true,
           afterInstallVisitDate: true,
         },
