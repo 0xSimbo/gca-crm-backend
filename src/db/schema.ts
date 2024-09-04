@@ -811,6 +811,12 @@ export const applications = pgTable("applications", {
   farmOwnerName: varchar("farm_owner_name", { length: 255 })
     .notNull()
     .default("N/A"),
+  farmOwnerEmail: varchar("farm_owner_email", { length: 255 })
+    .notNull()
+    .default("N/A"),
+  farmOwnerPhone: varchar("farm_owner_phone", { length: 255 })
+    .notNull()
+    .default("N/A"),
   lat: numeric("lat", {
     precision: 10,
     scale: 5,

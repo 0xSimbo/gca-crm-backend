@@ -17,6 +17,8 @@ export const findAllApplications = async () => {
       installerPhone: true,
       installerName: true,
       farmOwnerName: true,
+      farmOwnerEmail: true,
+      farmOwnerPhone: true,
     },
     with: {
       user: {

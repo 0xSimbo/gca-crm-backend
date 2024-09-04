@@ -146,6 +146,14 @@ export const EnquiryQueryBody = t.Object({
     example: "John Doe",
     minLength: 2,
   }),
+  farmOwnerEmail: t.String({
+    example: "JohnDoe@gmail.com",
+    minLength: 2,
+  }),
+  farmOwnerPhone: t.String({
+    example: "123-456-7890",
+    minLength: 2,
+  }),
   installerCompanyName: t.String({
     example: "John Doe Farms",
     minLength: 2,
@@ -378,13 +386,12 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
       )
       .get(
         "/edit-application-allowed",
-        async ({ query, set, userId }) => {
+        async ({ query, error, userId }) => {
           if (!query.id) throw new Error("ID is required");
           try {
             const application = await FindFirstApplicationById(query.id);
             if (!application) {
-              set.status = 404;
-              throw new Error("Application not found");
+              return error(404, "Application not found");
             }
             if (application.userId !== userId) {
               const account = await findFirstAccountById(userId);
@@ -399,8 +406,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                   );
 
                 if (!organizationApplication) {
-                  set.status = 400;
-                  return "Unauthorized";
+                  return error(400, "Unauthorized");
                 } else {
                   const organizationMember =
                     await findOrganizationMemberByUserId(
@@ -415,25 +421,35 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                   //TODO: implement application edit permission
 
                   if (!isAuthorized) {
-                    set.status = 400;
-                    return "Unauthorized";
+                    return error(400, "Unauthorized");
                   }
                 }
               }
             }
+            if (
+              application.status !== ApplicationStatusEnum.draft &&
+              application.status !== ApplicationStatusEnum.changesRequired
+            ) {
+              return error(403, "Application is not in the correct status");
+            }
+            if (application.currentStep !== query.stepIndex) {
+              return error(403, "Application is not in the correct step");
+            }
+
             return true;
           } catch (e) {
             if (e instanceof Error) {
-              set.status = 400;
-              return e.message;
+              return error(400, e.message);
+            } else {
+              console.log("[applicationsRouter] edit-application-allowed", e);
+              return error(500, "Error Occured");
             }
-            console.log("[applicationsRouter] edit-application-allowed", e);
-            throw new Error("Error Occured");
           }
         },
         {
           query: t.Object({
             id: t.String(),
+            stepIndex: t.Number(),
           }),
           detail: {
             summary: "Get Application by ID",
