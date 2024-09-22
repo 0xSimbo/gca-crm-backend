@@ -16,6 +16,7 @@ export const findAllCompletedApplications = async (withDocuments?: boolean) => {
       createdAt: true,
       updatedAt: true,
       paymentTxHash: true,
+      additionalPaymentTxHash: true,
       paymentDate: true,
       lat: true,
       lng: true,

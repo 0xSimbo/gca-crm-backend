@@ -788,6 +788,7 @@ export const applicationsDraftRelations = relations(
  * @param {bigint} finalProtocolFee - The final protocol fee as bigint 6decimals.
  * @param {timestamp} paymentDate - The payment date.
  * @param {string} paymentTxHash - The transaction hash of the payment.
+ * @param {string} additionalPaymentTxHash - The transaction hash of the additional payment if the payment was split into more than one tx
  * @param {timestamp} gcaAssignedTimestamp - The timestamp when the GCA was assigned.
  * @param {timestamp} gcaAcceptanceTimestamp - The timestamp when the GCA accepted the assignment.
  * @param {string} gcaAddress - The address of the GCA.
@@ -899,6 +900,9 @@ export const applications = pgTable("applications", {
   // payment step fields
   paymentDate: timestamp("payment_date"),
   paymentTxHash: varchar("payment_tx_hash", { length: 66 }),
+  additionalPaymentTxHash: varchar("additional_payment_tx_hash", {
+    length: 66,
+  }),
   // audit specific fields
   solarPanelsQuantity: integer("solar_panels_quantity"),
   solarPanelsBrandAndModel: varchar("solar_panels_brand_and_model", {

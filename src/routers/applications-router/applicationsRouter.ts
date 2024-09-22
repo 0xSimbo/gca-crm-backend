@@ -1846,6 +1846,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               protocolFeeData = await getProtocolFeePaymentFromTxHashReceipt(
                 body.txHash
               );
+              //TODO: handle additionalPaymentTxHash + verify if wallets are allowed to pay for additionalPaymentTxHash wallets
 
               if (
                 protocolFeeData.user.id.toLowerCase() !== userId.toLowerCase()
@@ -1928,6 +1929,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
           body: t.Object({
             applicationId: t.String(),
             txHash: t.String(),
+            additionalPaymentTxHash: t.Optional(t.Array(t.String())),
           }),
           detail: {
             summary: "Verify Payment",
