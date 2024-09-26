@@ -229,6 +229,7 @@ export const handleCreateWithoutPIIDocumentsAndCompleteApplication = async (
     args.devices,
     BigInt(ethers.utils.parseUnits(application.finalProtocolFee, 6).toString()),
     application.paymentTxHash,
+    application.additionalPaymentTxHash,
     stepAnnotation,
     args.applicationAuditFields
   );

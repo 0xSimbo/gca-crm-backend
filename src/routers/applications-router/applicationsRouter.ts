@@ -80,6 +80,7 @@ import { findAllApplicationsByOrgUserId } from "../../db/queries/applications/fi
 import { eq } from "drizzle-orm";
 import { findFirstOrgMemberwithShareAllApplications } from "../../db/queries/organizations/findFirstOrgMemberwithShareAllApplications";
 import { findOrganizationsMemberByUserIdAndOrganizationIds } from "../../db/queries/organizations/findOrganizationsMemberByUserIdAndOrganizationIds";
+import { findUsedTxHash } from "../../db/queries/applications/findUsedTxHash";
 
 const encryptedFileUpload = t.Object({
   publicUrl: t.String({
@@ -1798,6 +1799,13 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
             const application = await FindFirstApplicationById(
               body.applicationId
             );
+
+            const usedTxHash = await findUsedTxHash(body.txHash);
+
+            if (usedTxHash) {
+              set.status = 400;
+              return "Transaction hash already been used";
+            }
 
             if (!application) {
               set.status = 404;

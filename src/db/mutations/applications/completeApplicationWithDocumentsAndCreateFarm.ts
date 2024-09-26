@@ -56,6 +56,7 @@ export const completeApplicationWithDocumentsAndCreateFarmWithDevices = async (
   devices: { publicKey: string; shortId: string }[],
   protocolFee: bigint,
   protocolFeePaymentHash: string,
+  protocolFeeAdditionalPaymentTxHash: string | null,
   stepAnnotation: string | null,
   applicationAuditFields: ApplicationAuditFieldsType
 ) => {
@@ -182,6 +183,7 @@ export const completeApplicationWithDocumentsAndCreateFarmWithDevices = async (
         auditCompleteDate: new Date(),
         protocolFee,
         protocolFeePaymentHash,
+        protocolFeeAdditionalPaymentTxHash,
       })
       .returning({ farmId: applications.farmId });
 

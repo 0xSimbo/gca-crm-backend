@@ -417,6 +417,9 @@ export type GcaDelegatedUsersInsertType = typeof GcaDelegatedUsers.$inferInsert;
  * @param {BigInt} totalUSDGRewards - The total USDG rewards of the farm in 2 Decimals.
  * @param {timestamp} createdAt - The creation date of the farm.
  * @param {timestamp} auditCompleteDate - The date when the farm audit was completed.
+ * @param {BigInt} protocolFee - The protocol fee of the farm.
+ * @param {string} protocolFeePaymentHash - The hash of the transaction that paid the protocol fee.
+ * @param {string} protocolFeeAdditionalPaymentTxHash - Optional Additional payment hash for the protocol fee.
  * @param {string} gcaId - The GCA (Green Certificate Authority) ID.
  * @param {string} userId - The user ID who owns the farm.
  */
@@ -440,6 +443,12 @@ export const farms = pgTable(
     protocolFeePaymentHash: varchar("protocol_fee_payment_hash", {
       length: 66,
     }).notNull(),
+    protocolFeeAdditionalPaymentTxHash: varchar(
+      "protocol_fee_additional_payment_tx_hash",
+      {
+        length: 66,
+      }
+    ),
     gcaId: varchar("gca_id", { length: 42 }).notNull(),
     userId: varchar("user_id", { length: 42 }).notNull(),
     oldShortIds: varchar("old_short_ids", { length: 255 }).array(),
