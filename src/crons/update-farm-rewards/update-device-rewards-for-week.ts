@@ -39,6 +39,6 @@ export async function updateDeviceRewardsForWeek({
       .onConflictDoNothing();
     await db.insert(deviceRewards).values(values);
   } catch (e) {
-    console.log(e);
+    // console.error(e);
   }
 }

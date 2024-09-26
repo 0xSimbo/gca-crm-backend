@@ -79,15 +79,10 @@ const app = new Elysia()
           try {
             const keepGoing = await updateWalletRewardsForWeek(weekToQuery);
             if (!keepGoing.keepGoing) {
-              console.log(
-                `Already Updated Wallet Rewards for week ${weekToQuery}`
-              );
               return;
             }
             await updateFarmRewardsForWeek({ weekNumber: weekToQuery });
-          } catch (error) {
-            console.error("Error updating rewards", error);
-          }
+          } catch (error) {}
         }
       },
     })
