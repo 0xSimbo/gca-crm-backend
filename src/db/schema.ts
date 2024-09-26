@@ -417,6 +417,9 @@ export type GcaDelegatedUsersInsertType = typeof GcaDelegatedUsers.$inferInsert;
  * @param {BigInt} totalUSDGRewards - The total USDG rewards of the farm in 2 Decimals.
  * @param {timestamp} createdAt - The creation date of the farm.
  * @param {timestamp} auditCompleteDate - The date when the farm audit was completed.
+ * @param {BigInt} protocolFee - The protocol fee of the farm.
+ * @param {string} protocolFeePaymentHash - The hash of the transaction that paid the protocol fee.
+ * @param {string} protocolFeeAdditionalPaymentTxHash - Optional Additional payment hash for the protocol fee.
  * @param {string} gcaId - The GCA (Green Certificate Authority) ID.
  * @param {string} userId - The user ID who owns the farm.
  */
@@ -440,6 +443,12 @@ export const farms = pgTable(
     protocolFeePaymentHash: varchar("protocol_fee_payment_hash", {
       length: 66,
     }).notNull(),
+    protocolFeeAdditionalPaymentTxHash: varchar(
+      "protocol_fee_additional_payment_tx_hash",
+      {
+        length: 66,
+      }
+    ),
     gcaId: varchar("gca_id", { length: 42 }).notNull(),
     userId: varchar("user_id", { length: 42 }).notNull(),
     oldShortIds: varchar("old_short_ids", { length: 255 }).array(),
@@ -788,6 +797,7 @@ export const applicationsDraftRelations = relations(
  * @param {bigint} finalProtocolFee - The final protocol fee as bigint 6decimals.
  * @param {timestamp} paymentDate - The payment date.
  * @param {string} paymentTxHash - The transaction hash of the payment.
+ * @param {string} additionalPaymentTxHash - The transaction hash of the additional payment if the payment was split into more than one tx
  * @param {timestamp} gcaAssignedTimestamp - The timestamp when the GCA was assigned.
  * @param {timestamp} gcaAcceptanceTimestamp - The timestamp when the GCA accepted the assignment.
  * @param {string} gcaAddress - The address of the GCA.
@@ -899,6 +909,9 @@ export const applications = pgTable("applications", {
   // payment step fields
   paymentDate: timestamp("payment_date"),
   paymentTxHash: varchar("payment_tx_hash", { length: 66 }),
+  additionalPaymentTxHash: varchar("additional_payment_tx_hash", {
+    length: 66,
+  }),
   // audit specific fields
   solarPanelsQuantity: integer("solar_panels_quantity"),
   solarPanelsBrandAndModel: varchar("solar_panels_brand_and_model", {

@@ -80,6 +80,7 @@ import { findAllApplicationsByOrgUserId } from "../../db/queries/applications/fi
 import { eq } from "drizzle-orm";
 import { findFirstOrgMemberwithShareAllApplications } from "../../db/queries/organizations/findFirstOrgMemberwithShareAllApplications";
 import { findOrganizationsMemberByUserIdAndOrganizationIds } from "../../db/queries/organizations/findOrganizationsMemberByUserIdAndOrganizationIds";
+import { findUsedTxHash } from "../../db/queries/applications/findUsedTxHash";
 
 const encryptedFileUpload = t.Object({
   publicUrl: t.String({
@@ -1799,6 +1800,13 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               body.applicationId
             );
 
+            const usedTxHash = await findUsedTxHash(body.txHash);
+
+            if (usedTxHash) {
+              set.status = 400;
+              return "Transaction hash already been used";
+            }
+
             if (!application) {
               set.status = 404;
               return "Application not found";
@@ -1846,6 +1854,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               protocolFeeData = await getProtocolFeePaymentFromTxHashReceipt(
                 body.txHash
               );
+              //TODO: handle additionalPaymentTxHash + verify if wallets are allowed to pay for additionalPaymentTxHash wallets
 
               if (
                 protocolFeeData.user.id.toLowerCase() !== userId.toLowerCase()
@@ -1928,6 +1937,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
           body: t.Object({
             applicationId: t.String(),
             txHash: t.String(),
+            additionalPaymentTxHash: t.Optional(t.Array(t.String())),
           }),
           detail: {
             summary: "Verify Payment",

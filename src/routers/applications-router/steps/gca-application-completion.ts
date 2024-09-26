@@ -189,7 +189,13 @@ export const handleCreateWithoutPIIDocumentsAndCompleteApplication = async (
   if (!application.paymentTxHash) {
     throw new Error("Payment transaction hash is missing");
   }
-  const allRequiredKeys = documents.map((doc) => doc.name);
+  const formatKey = (key: string) =>
+    key
+      .replace(/\(\d+\)/, "")
+      .replace(/\.[^/.]+$/, "")
+      .trim();
+
+  const allRequiredKeys = documents.map((doc) => formatKey(doc.name));
   const appId = application.id;
 
   const objects = await listObjects(
@@ -201,18 +207,36 @@ export const handleCreateWithoutPIIDocumentsAndCompleteApplication = async (
     return { message: "Files not uploaded to r2" };
   }
 
+  // Create a map to count occurrences of each required key
+  const requiredKeyCounts = new Map<string, number>();
+  allRequiredKeys.forEach((key) => {
+    const formattedKey = formatKey(key);
+    requiredKeyCounts.set(
+      formattedKey,
+      (requiredKeyCounts.get(formattedKey) || 0) + 1
+    );
+  });
+
   objects.forEach((object) => {
     const key = object.Key;
-    // console.log(key);
     if (!key) {
       return;
     }
+
+    // Extract the base name without the suffix and trim spaces
+    const baseKey = formatKey(key.split(appId)[1]);
+
     const requiredKey = allRequiredKeys.find((requiredKey) =>
-      key.split(appId)[1].includes(requiredKey)
+      baseKey.includes(requiredKey)
     );
 
     if (requiredKey) {
-      allRequiredKeys.splice(allRequiredKeys.indexOf(requiredKey), 1);
+      const count = requiredKeyCounts.get(requiredKey);
+
+      if (count && count > 0) {
+        requiredKeyCounts.set(requiredKey, count - 1);
+        allRequiredKeys.splice(allRequiredKeys.indexOf(requiredKey), 1);
+      }
     }
   });
 
@@ -229,6 +253,7 @@ export const handleCreateWithoutPIIDocumentsAndCompleteApplication = async (
     args.devices,
     BigInt(ethers.utils.parseUnits(application.finalProtocolFee, 6).toString()),
     application.paymentTxHash,
+    application.additionalPaymentTxHash,
     stepAnnotation,
     args.applicationAuditFields
   );

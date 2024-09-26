@@ -176,6 +176,7 @@ export const postMerkleRootHandler = async () => {
         readyToCommitApplications.map((a) => a.id)
       )
     );
+  console.log("Merkle root posted:", txHash);
   return {
     message: "txHash: " + txHash,
   };
