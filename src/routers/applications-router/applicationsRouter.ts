@@ -1850,72 +1850,72 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               return "Application is not waiting for payment";
             }
 
-            if (process.env.NODE_ENV === "production") {
-              protocolFeeData = await getProtocolFeePaymentFromTxHashReceipt(
-                body.txHash
-              );
-              //TODO: handle additionalPaymentTxHash + verify if wallets are allowed to pay for additionalPaymentTxHash wallets
+            // if (process.env.NODE_ENV === "production") {
+            //   protocolFeeData = await getProtocolFeePaymentFromTxHashReceipt(
+            //     body.txHash
+            //   );
+            //   //TODO: handle additionalPaymentTxHash + verify if wallets are allowed to pay for additionalPaymentTxHash wallets
 
-              if (
-                protocolFeeData.user.id.toLowerCase() !== userId.toLowerCase()
-              ) {
-                const organizationApplication =
-                  await findFirstOrganizationApplicationByApplicationId(
-                    body.applicationId
-                  );
+            //   if (
+            //     protocolFeeData.user.id.toLowerCase() !== userId.toLowerCase()
+            //   ) {
+            //     const organizationApplication =
+            //       await findFirstOrganizationApplicationByApplicationId(
+            //         body.applicationId
+            //       );
 
-                if (!organizationApplication) {
-                  set.status = 400;
-                  return "The transaction hash does not belong to the user";
-                }
+            //     if (!organizationApplication) {
+            //       set.status = 400;
+            //       return "The transaction hash does not belong to the user";
+            //     }
 
-                const organizationMembers = await findAllOrganizationMembers(
-                  organizationApplication.organization.id
-                );
+            //     const organizationMembers = await findAllOrganizationMembers(
+            //       organizationApplication.organization.id
+            //     );
 
-                const allowedWallets = organizationMembers
-                  .filter((m) =>
-                    m.role.rolePermissions.find(
-                      (p) =>
-                        p.permission.key === PermissionsEnum.ProtocolFeePayment
-                    )
-                  )
-                  .map((c) => c.userId.toLowerCase());
+            //     const allowedWallets = organizationMembers
+            //       .filter((m) =>
+            //         m.role.rolePermissions.find(
+            //           (p) =>
+            //             p.permission.key === PermissionsEnum.ProtocolFeePayment
+            //         )
+            //       )
+            //       .map((c) => c.userId.toLowerCase());
 
-                if (
-                  !allowedWallets.includes(
-                    protocolFeeData.user.id.toLowerCase()
-                  )
-                ) {
-                  set.status = 400;
-                  return "The transaction hash does not belong to the user or any of the organization members allowed to pay the protocol fee";
-                }
-              }
+            //     if (
+            //       !allowedWallets.includes(
+            //         protocolFeeData.user.id.toLowerCase()
+            //       )
+            //     ) {
+            //       set.status = 400;
+            //       return "The transaction hash does not belong to the user or any of the organization members allowed to pay the protocol fee";
+            //     }
+            //   }
 
-              if (
-                BigInt(
-                  ethers.utils
-                    .parseUnits(application.finalProtocolFee, 6)
-                    .toString()
-                ) === BigInt(0)
-              ) {
-                set.status = 400;
-                return "Final Protocol Fee is not set";
-              }
+            //   if (
+            //     BigInt(
+            //       ethers.utils
+            //         .parseUnits(application.finalProtocolFee, 6)
+            //         .toString()
+            //     ) === BigInt(0)
+            //   ) {
+            //     set.status = 400;
+            //     return "Final Protocol Fee is not set";
+            //   }
 
-              /// TODO: If it's greater, need to check with david what to do on that. For now, let's not change anything
-              if (
-                BigInt(protocolFeeData.amount) <
-                BigInt(
-                  ethers.utils
-                    .parseUnits(application.finalProtocolFee, 6)
-                    .toString()
-                )
-              ) {
-                set.status = 400;
-                return "Invalid Amount";
-              }
-            }
+            //   /// TODO: If it's greater, need to check with david what to do on that. For now, let's not change anything
+            //   if (
+            //     BigInt(protocolFeeData.amount) <
+            //     BigInt(
+            //       ethers.utils
+            //         .parseUnits(application.finalProtocolFee, 6)
+            //         .toString()
+            //     )
+            //   ) {
+            //     set.status = 400;
+            //     return "Invalid Amount";
+            //   }
+            // }
 
             await updateApplication(body.applicationId, {
               status: ApplicationStatusEnum.paymentConfirmed,
