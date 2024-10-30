@@ -1849,11 +1849,11 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               set.status = 400;
               return "Application is not waiting for payment";
             }
-
+            protocolFeeData = await getProtocolFeePaymentFromTxHashReceipt(
+              body.txHash
+            );
             // if (process.env.NODE_ENV === "production") {
-            //   protocolFeeData = await getProtocolFeePaymentFromTxHashReceipt(
-            //     body.txHash
-            //   );
+
             //   //TODO: handle additionalPaymentTxHash + verify if wallets are allowed to pay for additionalPaymentTxHash wallets
 
             //   if (
