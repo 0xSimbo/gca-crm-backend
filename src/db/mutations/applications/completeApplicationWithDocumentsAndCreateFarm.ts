@@ -34,6 +34,8 @@ export type ApplicationAuditFieldsType = {
   ptoObtainedDate: Date | null;
   revisedInstallFinishedDate: Date;
   locationWithoutPII: string;
+  lat: string;
+  lng: string;
 };
 
 /**

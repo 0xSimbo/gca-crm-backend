@@ -2283,6 +2283,8 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                   ptoObtainedDate: body.ptoObtainedDate,
                   locationWithoutPII: body.locationWithoutPII,
                   revisedInstallFinishedDate: body.revisedInstallFinishedDate,
+                  lat: body.lat.toString(),
+                  lng: body.lng.toString(),
                 },
               }
             );
@@ -2337,6 +2339,16 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
             ptoObtainedDate: t.Nullable(t.Date()),
             revisedInstallFinishedDate: t.Date(),
             locationWithoutPII: t.String(),
+            lat: t.Numeric({
+              example: 38.234242,
+              minimum: -90,
+              maximum: 90,
+            }),
+            lng: t.Numeric({
+              example: -111.123412,
+              minimum: -180,
+              maximum: 180,
+            }),
           }),
           detail: {
             summary: "",
