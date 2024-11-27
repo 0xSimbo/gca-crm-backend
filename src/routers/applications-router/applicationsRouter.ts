@@ -1878,14 +1878,14 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                   )
                   .map((c) => c.userId.toLowerCase());
 
-                // if (
-                //   !allowedWallets.includes(
-                //     protocolFeeData.user.id.toLowerCase()
-                //   )
-                // ) {
-                //   set.status = 400;
-                //   return "The transaction hash does not belong to the user or any of the organization members allowed to pay the protocol fee";
-                // }
+                if (
+                  !allowedWallets.includes(
+                    protocolFeeData.user.id.toLowerCase()
+                  )
+                ) {
+                  set.status = 400;
+                  return "The transaction hash does not belong to the user or any of the organization members allowed to pay the protocol fee";
+                }
               }
 
               if (
