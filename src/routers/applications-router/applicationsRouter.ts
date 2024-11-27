@@ -269,9 +269,8 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
     "/completed",
     async ({ query: { withDocuments }, set }) => {
       try {
-        const applications = await findAllCompletedApplications(
-          !!withDocuments
-        );
+        const applications =
+          await findAllCompletedApplications(!!withDocuments);
 
         return applications;
       } catch (e) {
@@ -325,9 +324,8 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                   );
 
                 if (!organizationApplication) {
-                  const gcaDelegatedUser = await findFirstDelegatedUserByUserId(
-                    userId
-                  );
+                  const gcaDelegatedUser =
+                    await findFirstDelegatedUserByUserId(userId);
 
                   if (!gcaDelegatedUser) {
                     set.status = 400;
@@ -1472,9 +1470,8 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
           if (!applicationId) throw new Error("application id is required");
 
           try {
-            const userOrganizations = await findAllUserJoinedOrganizations(
-              userId
-            );
+            const userOrganizations =
+              await findAllUserJoinedOrganizations(userId);
 
             if (userOrganizations.length === 0) {
               set.status = 400;
@@ -1523,9 +1520,8 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
           if (!applicationId) throw new Error("application id is required");
 
           try {
-            const gcaDelegatedUser = await findFirstDelegatedUserByUserId(
-              userId
-            );
+            const gcaDelegatedUser =
+              await findFirstDelegatedUserByUserId(userId);
 
             if (!gcaDelegatedUser) {
               set.status = 400;
@@ -1882,14 +1878,14 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                   )
                   .map((c) => c.userId.toLowerCase());
 
-                if (
-                  !allowedWallets.includes(
-                    protocolFeeData.user.id.toLowerCase()
-                  )
-                ) {
-                  set.status = 400;
-                  return "The transaction hash does not belong to the user or any of the organization members allowed to pay the protocol fee";
-                }
+                // if (
+                //   !allowedWallets.includes(
+                //     protocolFeeData.user.id.toLowerCase()
+                //   )
+                // ) {
+                //   set.status = 400;
+                //   return "The transaction hash does not belong to the user or any of the organization members allowed to pay the protocol fee";
+                // }
               }
 
               if (
