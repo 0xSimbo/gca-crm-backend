@@ -228,6 +228,65 @@ export const rewardsRouter = new Elysia({ prefix: "/rewards" })
         }),
       }),
     }
+  )
+  .get(
+    "/weekly-device-rewards",
+    async ({ query }) => {
+      try {
+        const weekNumber = Number(query.weekNumber);
+        if (isNaN(weekNumber)) {
+          throw new Error("Invalid Week Number");
+        }
+
+        const rewards = await db.query.deviceRewards.findMany({
+          where: eq(deviceRewards.weekNumber, weekNumber),
+        });
+
+        const allKeys = await getAllHexkeysAndShortIds();
+
+        const serializedRewards = rewards.map((reward) => {
+          const shortId = allKeys.find(
+            (k) => k.pubkey === reward.hexlifiedFarmPubKey
+          )?.shortId;
+
+          return {
+            shortId,
+            hexPubkey: reward.hexlifiedFarmPubKey,
+            glowRewards: Number(reward.glowRewards),
+            usdgRewards: Number(reward.usdgRewards),
+            weekNumber: reward.weekNumber,
+          };
+        });
+
+        return {
+          weekNumber,
+          devices: serializedRewards,
+          totalDevices: serializedRewards.length,
+          totalGlowRewards: serializedRewards.reduce(
+            (acc, cur) => acc + cur.glowRewards,
+            0
+          ),
+          totalUsdgRewards: serializedRewards.reduce(
+            (acc, cur) => acc + cur.usdgRewards,
+            0
+          ),
+        };
+      } catch (e) {
+        console.log("[rewardsRouter] weekly-device-rewards", e);
+        throw new Error("Error Occurred");
+      }
+    },
+    {
+      query: t.Object({
+        weekNumber: t.String(),
+      }),
+      detail: {
+        summary: "Get All Device Rewards for a Specific Week",
+        description:
+          "Returns all device rewards for a given protocol week number, including total rewards and device count",
+        tags: [TAG.REWARDS],
+      },
+    }
   );
 
 const isNumber = (val: string) => {
