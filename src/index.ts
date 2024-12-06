@@ -1,4 +1,4 @@
-import { Elysia, NotFoundError, ParseError, ValidationError } from "elysia";
+import { Elysia, NotFoundError, ParseError, t, ValidationError } from "elysia";
 import { swagger } from "@elysiajs/swagger";
 import { cors } from "@elysiajs/cors";
 import { protocolFeeRouter } from "./routers/protocol-fee-router/protocolFeeRouter";

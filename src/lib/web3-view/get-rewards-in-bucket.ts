@@ -22,6 +22,7 @@ export const getRewardsInBucket = async (
       functionName: "reward",
       args: [BigInt(weekNumber)],
     })) as { amountInBucket: BigInt };
+
     return rewards.amountInBucket;
   } catch (e) {
     return BigInt(0);

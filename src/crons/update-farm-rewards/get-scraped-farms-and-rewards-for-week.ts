@@ -58,6 +58,7 @@ const transformFarmsToFarmsAndRewards = (
     (farm: Farm) => {
       const usdg =
         (farm.carbonCreditsProduced / totalCreditsProduced) * totalUSDGRewards;
+
       const glow =
         (farm.weeklyPayment / totalProtocolFeesPaid) * TOTAL_GLOW_REWARDS;
 
@@ -85,6 +86,7 @@ export async function getScrapedFarmsAndRewards({
   //We need to subtract 1 when we scrape the farms since the data for report (x) is from week (x-1)
   const farms = await scrapeFarms({ weekNumber: weekNumber - 1 });
   const rewardsInBucketBigNumber = await getRewardsInBucket(weekNumber);
+
   const rewardsInBucket = formatUnits(rewardsInBucketBigNumber as bigint, 6);
   const farmsWithRewards = transformFarmsToFarmsAndRewards(
     farms,
@@ -101,10 +103,5 @@ export async function getScrapedFarmsAndRewards({
       rewardSplits: farm.rewardSplits,
     };
   });
-  const findFarm28 = minimalData.find((farm) => farm.shortId === "28");
-  if (findFarm28) {
-    console.log("Farms with rewards minimalData", findFarm28);
-  }
-
   return minimalData;
 }

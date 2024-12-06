@@ -1,9 +1,19 @@
+import fs from "fs";
 import { DB_DECIMALS } from "../../constants";
 
 import { db } from "../../db/db";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { farmRewards, FarmRewardsInsertType, farms } from "../../db/schema";
 import { getScrapedFarmsAndRewards } from "./get-scraped-farms-and-rewards-for-week";
+
+// Helper function to convert BigInt to string in objects
+// function replaceBigInts(obj: any): any {
+//   return JSON.parse(
+//     JSON.stringify(obj, (_, value) =>
+//       typeof value === "bigint" ? value.toString() : value
+//     )
+//   );
+// }
 
 export async function updateFarmRewardsForWeek({
   weekNumber,
@@ -28,6 +38,16 @@ export async function updateFarmRewardsForWeek({
       },
     },
   });
+
+  // fs.writeFileSync(
+  //   `./src/crons/update-farm-rewards/logs/farmsWithRewards-${weekNumber}.json`,
+  //   JSON.stringify(replaceBigInts(farmsWithRewards), null, 2)
+  // );
+
+  // fs.writeFileSync(
+  //   `./src/crons/update-farm-rewards/logs/allFarmsIdsWithDevices-${weekNumber}.json`,
+  //   JSON.stringify(replaceBigInts(allFarmsIdsWithDevices), null, 2)
+  // );
 
   const farmWithRewards: (FarmRewardsInsertType & {
     previousUsdgRewards: bigint;
@@ -60,13 +80,35 @@ export async function updateFarmRewardsForWeek({
     return carry;
   }, []);
 
-  if (farmWithRewards.length === 0) {
+  // Deduplicate farm rewards by combining rewards for the same farm and week
+  const deduplicatedFarmRewards = Object.values(
+    farmWithRewards.reduce((acc, farm) => {
+      const key = `${farm.hexlifiedFarmPubKey}-${farm.weekNumber}`;
+
+      if (!acc[key]) {
+        acc[key] = farm;
+      } else {
+        // Combine rewards if there are multiple entries for the same farm
+        acc[key] = {
+          ...acc[key],
+          usdgRewards: acc[key].usdgRewards!! + farm.usdgRewards!!,
+          glowRewards: acc[key].glowRewards!! + farm.glowRewards!!,
+        };
+      }
+
+      return acc;
+    }, {} as Record<string, (typeof farmWithRewards)[number]>)
+  );
+
+  if (deduplicatedFarmRewards.length === 0) {
     return;
   }
-  console.log(farmWithRewards);
+
   await db.transaction(async (trx) => {
+    await trx.insert(farmRewards).values(deduplicatedFarmRewards);
+
     await Promise.all(
-      farmWithRewards.map((farm) =>
+      deduplicatedFarmRewards.map((farm) =>
         trx
           .update(farms)
           .set({
@@ -76,7 +118,5 @@ export async function updateFarmRewardsForWeek({
           .where(eq(farms.id, farm.hexlifiedFarmPubKey))
       )
     );
-
-    await trx.insert(farmRewards).values(farmWithRewards);
   });
 }
