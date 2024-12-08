@@ -287,6 +287,54 @@ export const rewardsRouter = new Elysia({ prefix: "/rewards" })
         tags: [TAG.REWARDS],
       },
     }
+  )
+  .get(
+    "/wallet-rewards",
+    async ({ query }) => {
+      try {
+        const wallet = await db.query.wallets.findFirst({
+          where: eq(wallets.id, query.wallet),
+          with: {
+            weeklyRewards: true,
+          },
+        });
+
+        if (!wallet) throw new Error("Wallet not found");
+
+        const userSerialized = {
+          id: wallet.id,
+          totalUSDGRewards: formatUnits(wallet.totalUSDGRewards, 2),
+          totalGlowRewards: formatUnits(wallet.totalGlowRewards, 2),
+          weeklyRewards: wallet.weeklyRewards.map((r) => ({
+            weekNumber: r.weekNumber,
+            usdgWeight: r.usdgWeight.toString(),
+            glowWeight: r.glowWeight.toString(),
+            usdgRewards: formatUnits(r.usdgRewards, 2),
+            glowRewards: formatUnits(r.glowRewards, 2),
+            indexInReports: r.indexInReports,
+            claimProof: r.claimProof,
+          })),
+        };
+        return userSerialized;
+      } catch (e) {
+        console.log("[rewardsRouter] get-wallet-rewards", e);
+        throw new Error("Error occurred while fetching wallet rewards");
+      }
+    },
+    {
+      query: t.Object({
+        wallet: t.String({
+          minLength: 42,
+          maxLength: 42,
+        }),
+      }),
+      detail: {
+        summary: "Get All Rewards For a Wallet",
+        description:
+          "Returns all rewards information for a given wallet address, including total USDG and GLOW rewards and complete weekly reward history.",
+        tags: [TAG.REWARDS],
+      },
+    }
   );
 
 const isNumber = (val: string) => {
