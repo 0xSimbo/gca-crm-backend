@@ -120,15 +120,19 @@ export type ApplicationEncryptedMasterKeysType = {
 export const EnquiryQueryBody = t.Object({
   applicationId: t.String(),
   latestUtilityBill: encryptedFileUpload,
-  declarationOfIntention: encryptedFileUpload,
-  declarationOfIntentionSignature: t.String(),
-  declarationOfIntentionFieldsValue: t.Object({
-    fullname: t.String(), // user.firstName + " " + user.lastName
-    latitude: t.String(),
-    longitude: t.String(),
-    date: t.Number(), // timestamp without milliseconds (Math.floor(Date.now() / 1000))
-  }),
-  declarationOfIntentionVersion: t.String(),
+  declarationOfIntentionBody: t.Optional(
+    t.Object({
+      declarationOfIntention: encryptedFileUpload,
+      declarationOfIntentionSignature: t.String(),
+      declarationOfIntentionFieldsValue: t.Object({
+        fullname: t.String(), // user.firstName + " " + user.lastName
+        latitude: t.String(),
+        longitude: t.String(),
+        date: t.Number(), // timestamp without milliseconds (Math.floor(Date.now() / 1000))
+      }),
+      declarationOfIntentionVersion: t.String(),
+    })
+  ),
   organizationIds: t.Array(t.String()),
   applicationEncryptedMasterKeys: t.Array(
     t.Object({
@@ -1597,6 +1601,11 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                 return "Unauthorized";
               }
 
+              if (!body.declarationOfIntentionBody) {
+                set.status = 400;
+                return "Declaration of intention is required";
+              }
+
               await createApplication(
                 orgUsers,
                 body.latestUtilityBill.publicUrl,
@@ -1622,13 +1631,17 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                   status: ApplicationStatusEnum.waitingForApproval,
                 },
                 {
-                  declarationOfIntention: body.declarationOfIntention,
+                  declarationOfIntention:
+                    body.declarationOfIntentionBody.declarationOfIntention,
                   declarationOfIntentionSignature:
-                    body.declarationOfIntentionSignature,
+                    body.declarationOfIntentionBody
+                      .declarationOfIntentionSignature,
                   declarationOfIntentionFieldsValue:
-                    body.declarationOfIntentionFieldsValue,
+                    body.declarationOfIntentionBody
+                      .declarationOfIntentionFieldsValue,
                   declarationOfIntentionVersion:
-                    body.declarationOfIntentionVersion,
+                    body.declarationOfIntentionBody
+                      .declarationOfIntentionVersion,
                 }
               );
             } else {
