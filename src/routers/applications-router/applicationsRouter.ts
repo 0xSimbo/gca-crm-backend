@@ -2189,6 +2189,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                 now.getMonth(),
                 now.getDate()
               );
+
               const preInstallVisitDateTime = new Date(
                 application.preInstallVisitDate.getFullYear(),
                 application.preInstallVisitDate.getMonth(),
@@ -2584,14 +2585,15 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
             );
             const tomorrowTime = new Date(today.getTime() + 86400000).getTime();
 
-            if (
-              preInstallVisitDate.getTime() <= tomorrowTime ||
-              preInstallVisitDate.getTime() >=
-                application.estimatedInstallDate.getTime()
-            ) {
-              set.status = 400;
-              return "Invalid date";
-            }
+            //TODO: Uncomment this after finishing migrating old farms
+            // if (
+            //   preInstallVisitDate.getTime() <= tomorrowTime ||
+            //   preInstallVisitDate.getTime() >=
+            //     application.estimatedInstallDate.getTime()
+            // ) {
+            //   set.status = 400;
+            //   return "Invalid date";
+            // }
 
             await updateApplicationPreInstallVisitDate(
               body.applicationId,
