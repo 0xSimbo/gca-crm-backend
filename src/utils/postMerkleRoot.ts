@@ -9,8 +9,9 @@ import {
   ApplicationStatusEnum,
   ApplicationSteps,
 } from "../types/api-types/Application";
-import { declarationOfIntentionFieldsValueType } from "../routers/applications-router/steps/pre-install";
+
 import { createAndUploadJsonFile } from "./r2/upload-to-r2";
+import { declarationOfIntentionFieldsValueType } from "../db/mutations/applications/createApplication";
 
 interface Declaration {
   fullname: string;
@@ -96,9 +97,9 @@ export const postMerkleRootHandler = async () => {
     },
     where: and(
       or(
-        gt(applications.currentStep, ApplicationSteps.preInstallDocuments),
+        gt(applications.currentStep, ApplicationSteps.enquiry),
         and(
-          eq(applications.currentStep, ApplicationSteps.preInstallDocuments),
+          eq(applications.currentStep, ApplicationSteps.enquiry),
           eq(applications.status, ApplicationStatusEnum.approved)
         )
       ),

@@ -1,4 +1,7 @@
-import { ApplicationEncryptedMasterKeysType } from "../../../routers/applications-router/applicationsRouter";
+import {
+  ApplicationEncryptedMasterKeysType,
+  EncryptedFileUploadType,
+} from "../../../routers/applications-router/applicationsRouter";
 import {
   ApplicationSteps,
   RequiredDocumentsNamesEnum,
@@ -15,11 +18,24 @@ import {
   applications,
 } from "../../schema";
 
+export type declarationOfIntentionFieldsValueType = {
+  fullname: string;
+  latitude: string;
+  longitude: string;
+  date: number;
+};
+
 export const createApplication = async (
   organizationUsers: { id: string; organizationId: string }[],
   latestUtilityBillPublicUrl: string,
   applicationEncryptedMasterKeys: ApplicationEncryptedMasterKeysType[],
-  application: ApplicationInsertType
+  application: ApplicationInsertType,
+  declarationOfIntentionFields: {
+    declarationOfIntention: EncryptedFileUploadType;
+    declarationOfIntentionSignature: string;
+    declarationOfIntentionFieldsValue: declarationOfIntentionFieldsValueType;
+    declarationOfIntentionVersion: string;
+  }
 ) => {
   const ids = applicationEncryptedMasterKeys.map((key) => key.userId);
   const gcas = await findGcasByIds(ids);
@@ -97,7 +113,19 @@ export const createApplication = async (
   return await db.transaction(async (tx) => {
     const res = await db
       .insert(applications)
-      .values(application)
+      .values({
+        ...application,
+        declarationOfIntentionSignature:
+          declarationOfIntentionFields.declarationOfIntentionSignature,
+        declarationOfIntentionFieldsValue:
+          declarationOfIntentionFields.declarationOfIntentionFieldsValue,
+        declarationOfIntentionVersion:
+          declarationOfIntentionFields.declarationOfIntentionVersion,
+        declarationOfIntentionSignatureDate: new Date(
+          declarationOfIntentionFields.declarationOfIntentionFieldsValue.date *
+            1000
+        ),
+      })
       .returning({ insertedId: applications.id });
 
     if (res.length === 0) {
@@ -114,6 +142,17 @@ export const createApplication = async (
         type: "enc",
         annotation: null,
         isEncrypted: true,
+        step: ApplicationSteps.enquiry,
+        encryptedMasterKeys: [],
+        createdAt: new Date(),
+      },
+      {
+        name: RequiredDocumentsNamesEnum.declarationOfIntention,
+        applicationId: resInsertedId,
+        url: declarationOfIntentionFields.declarationOfIntention.publicUrl,
+        type: "pdf",
+        isEncrypted: true,
+        annotation: null,
         step: ApplicationSteps.enquiry,
         encryptedMasterKeys: [],
         createdAt: new Date(),

@@ -81,6 +81,7 @@ import { eq } from "drizzle-orm";
 import { findFirstOrgMemberwithShareAllApplications } from "../../db/queries/organizations/findFirstOrgMemberwithShareAllApplications";
 import { findOrganizationsMemberByUserIdAndOrganizationIds } from "../../db/queries/organizations/findOrganizationsMemberByUserIdAndOrganizationIds";
 import { findUsedTxHash } from "../../db/queries/applications/findUsedTxHash";
+import { patchDeclarationOfIntention } from "../../db/mutations/applications/patchDeclarationOfIntention";
 
 const encryptedFileUpload = t.Object({
   publicUrl: t.String({
@@ -119,6 +120,15 @@ export type ApplicationEncryptedMasterKeysType = {
 export const EnquiryQueryBody = t.Object({
   applicationId: t.String(),
   latestUtilityBill: encryptedFileUpload,
+  declarationOfIntention: encryptedFileUpload,
+  declarationOfIntentionSignature: t.String(),
+  declarationOfIntentionFieldsValue: t.Object({
+    fullname: t.String(), // user.firstName + " " + user.lastName
+    latitude: t.String(),
+    longitude: t.String(),
+    date: t.Number(), // timestamp without milliseconds (Math.floor(Date.now() / 1000))
+  }),
+  declarationOfIntentionVersion: t.String(),
   organizationIds: t.Array(t.String()),
   applicationEncryptedMasterKeys: t.Array(
     t.Object({
@@ -187,22 +197,26 @@ export const EnquiryQueryBody = t.Object({
   }),
 });
 
+export const DeclarationOfIntentionMissingQueryBody = t.Object({
+  applicationId: t.String(),
+  declarationOfIntention: encryptedFileUpload,
+  declarationOfIntentionSignature: t.String(),
+  declarationOfIntentionFieldsValue: t.Object({
+    fullname: t.String(),
+    latitude: t.String(),
+    longitude: t.String(),
+    date: t.Number(),
+  }),
+  declarationOfIntentionVersion: t.String(),
+});
+
 // r2 baseUrl + bucketName = userID + fileName.enc @0xSimbo
-const encryptedUploadedUrlExample =
-  "https://pub-7e0365747f054c9e85051df5f20fa815.r2.dev/0x18a0ba01bbec4aa358650d297ba7bb330a78b073/contract-agreement.enc";
+// const encryptedUploadedUrlExample =
+//   "https://pub-7e0365747f054c9e85051df5f20fa815.r2.dev/0x18a0ba01bbec4aa358650d297ba7bb330a78b073/contract-agreement.enc";
 export const PreInstallDocumentsQueryBody = t.Object({
   applicationId: t.String(),
   estimatedInstallDate: t.Date(),
   contractAgreement: encryptedFileUpload,
-  declarationOfIntention: encryptedFileUpload,
-  declarationOfIntentionSignature: t.String(),
-  declarationOfIntentionFieldsValue: t.Object({
-    fullname: t.String(), // user.firstName + " " + user.lastName
-    latitude: t.String(),
-    longitude: t.String(),
-    date: t.Number(), // timestamp without milliseconds (Math.floor(Date.now() / 1000))
-  }),
-  declarationOfIntentionVersion: t.String(),
 });
 
 export const PermitDocumentationQueryBody = t.Object({
@@ -269,8 +283,9 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
     "/completed",
     async ({ query: { withDocuments }, set }) => {
       try {
-        const applications =
-          await findAllCompletedApplications(!!withDocuments);
+        const applications = await findAllCompletedApplications(
+          !!withDocuments
+        );
 
         return applications;
       } catch (e) {
@@ -324,8 +339,9 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                   );
 
                 if (!organizationApplication) {
-                  const gcaDelegatedUser =
-                    await findFirstDelegatedUserByUserId(userId);
+                  const gcaDelegatedUser = await findFirstDelegatedUserByUserId(
+                    userId
+                  );
 
                   if (!gcaDelegatedUser) {
                     set.status = 400;
@@ -1470,8 +1486,9 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
           if (!applicationId) throw new Error("application id is required");
 
           try {
-            const userOrganizations =
-              await findAllUserJoinedOrganizations(userId);
+            const userOrganizations = await findAllUserJoinedOrganizations(
+              userId
+            );
 
             if (userOrganizations.length === 0) {
               set.status = 400;
@@ -1520,8 +1537,9 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
           if (!applicationId) throw new Error("application id is required");
 
           try {
-            const gcaDelegatedUser =
-              await findFirstDelegatedUserByUserId(userId);
+            const gcaDelegatedUser = await findFirstDelegatedUserByUserId(
+              userId
+            );
 
             if (!gcaDelegatedUser) {
               set.status = 400;
@@ -1602,6 +1620,15 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                   gcaAddress,
                   roundRobinStatus: RoundRobinStatusEnum.waitingToBeAccepted,
                   status: ApplicationStatusEnum.waitingForApproval,
+                },
+                {
+                  declarationOfIntention: body.declarationOfIntention,
+                  declarationOfIntentionSignature:
+                    body.declarationOfIntentionSignature,
+                  declarationOfIntentionFieldsValue:
+                    body.declarationOfIntentionFieldsValue,
+                  declarationOfIntentionVersion:
+                    body.declarationOfIntentionVersion,
                 }
               );
             } else {
@@ -2543,15 +2570,15 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               new Date().getDate()
             );
             const tomorrowTime = new Date(today.getTime() + 86400000).getTime();
-            //TODO: Uncomment this after finishing migrating old farms
-            // if (
-            //   preInstallVisitDate.getTime() <= tomorrowTime ||
-            //   preInstallVisitDate.getTime() >=
-            //     application.estimatedInstallDate.getTime()
-            // ) {
-            //   set.status = 400;
-            //   return "Invalid date";
-            // }
+
+            if (
+              preInstallVisitDate.getTime() <= tomorrowTime ||
+              preInstallVisitDate.getTime() >=
+                application.estimatedInstallDate.getTime()
+            ) {
+              set.status = 400;
+              return "Invalid date";
+            }
 
             await updateApplicationPreInstallVisitDate(
               body.applicationId,
@@ -2633,14 +2660,13 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               application.installFinishedDate.getTime()
             );
 
-            //TODO: Uncomment this after finishing migrating old farms
-            // if (
-            //   afterInstallVisitDate.getTime() <
-            //   dayAfterInstallFinishedDate.getTime()
-            // ) {
-            //   set.status = 400;
-            //   return "Invalid date";
-            // }
+            if (
+              afterInstallVisitDate.getTime() <
+              dayAfterInstallFinishedDate.getTime()
+            ) {
+              set.status = 400;
+              return "Invalid date";
+            }
 
             await updateApplicationAfterInstallVisitDate(
               body.applicationId,
@@ -2721,6 +2747,60 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
           detail: {
             summary: "Create Application Encrypted Master Keys",
             description: `Create Application Encrypted Master Keys. If the user is not a GCA, it will throw an error.`,
+            tags: [TAG.APPLICATIONS],
+          },
+        }
+      )
+      .post(
+        "/patch-declaration-of-intention",
+        async ({ body, set, userId }) => {
+          try {
+            const application = await FindFirstApplicationById(
+              body.applicationId
+            );
+
+            if (!application) {
+              set.status = 404;
+              return "Application not found";
+            }
+
+            if (application.userId !== userId) {
+              set.status = 403;
+              return "Unauthorized";
+            }
+
+            if (application.declarationOfIntentionSignature) {
+              set.status = 400;
+              return "Declaration of intention already exists for this application";
+            }
+
+            await patchDeclarationOfIntention(
+              application.id,
+              body.declarationOfIntention,
+              body.declarationOfIntentionSignature,
+              body.declarationOfIntentionFieldsValue,
+              body.declarationOfIntentionVersion
+            );
+
+            return { success: true };
+          } catch (e) {
+            if (e instanceof Error) {
+              set.status = 400;
+              return e.message;
+            }
+            console.log(
+              "[applicationsRouter] patch-declaration-of-intention",
+              e
+            );
+            throw new Error("Error Occurred");
+          }
+        },
+        {
+          body: DeclarationOfIntentionMissingQueryBody,
+          detail: {
+            summary: "Patch missing declaration of intention",
+            description:
+              "Add declaration of intention to an application where it's missing",
             tags: [TAG.APPLICATIONS],
           },
         }
