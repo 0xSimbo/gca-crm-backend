@@ -924,7 +924,7 @@ export const applications = pgTable("applications", {
   }),
   adjustedWeeklyCarbonCredits: numeric("adjusted_weekly_carbon_credits", {
     precision: 10,
-    scale: 2,
+    scale: 6,
   }),
   weeklyTotalCarbonDebt: numeric("weekly_total_carbon_debt", {
     precision: 10,
