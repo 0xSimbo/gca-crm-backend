@@ -82,6 +82,7 @@ import { findFirstOrgMemberwithShareAllApplications } from "../../db/queries/org
 import { findOrganizationsMemberByUserIdAndOrganizationIds } from "../../db/queries/organizations/findOrganizationsMemberByUserIdAndOrganizationIds";
 import { findUsedTxHash } from "../../db/queries/applications/findUsedTxHash";
 import { patchDeclarationOfIntention } from "../../db/mutations/applications/patchDeclarationOfIntention";
+import { createGlowEventEmitter } from "@glowlabs-org/events-sdk";
 
 const encryptedFileUpload = t.Object({
   publicUrl: t.String({
@@ -1644,6 +1645,27 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                       .declarationOfIntentionVersion,
                 }
               );
+              const emitter = createGlowEventEmitter({
+                username: process.env.RABBITMQ_ADMIN_USER!,
+                password: process.env.RABBITMQ_ADMIN_PASSWORD!,
+                zoneId: 1,
+              });
+
+              emitter
+                .emit({
+                  eventType: "application.created",
+                  schemaVersion: 1,
+                  payload: {
+                    gcaAddress,
+                    lat: body.lat,
+                    lng: body.lng,
+                    estimatedCostOfPowerPerKWh: body.estimatedCostOfPowerPerKWh,
+                    estimatedKWhGeneratedPerYear:
+                      body.estimatedKWhGeneratedPerYear,
+                    installerCompanyName: body.installerCompanyName,
+                  },
+                })
+                .catch(console.error);
             } else {
               const errorChecks = await fillApplicationStepCheckHandler(
                 userId,
@@ -1951,6 +1973,24 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                 set.status = 400;
                 return "Invalid Amount";
               }
+              const emitter = createGlowEventEmitter({
+                username: process.env.RABBITMQ_ADMIN_USER!,
+                password: process.env.RABBITMQ_ADMIN_PASSWORD!,
+                zoneId: 1,
+              });
+
+              emitter
+                .emit({
+                  eventType: "audit.pfees.paid",
+                  schemaVersion: 1,
+                  payload: {
+                    applicationId: body.applicationId,
+                    payer: protocolFeeData.user.id,
+                    amount_12Decimals: protocolFeeData.amount,
+                    txHash: body.txHash,
+                  },
+                })
+                .catch(console.error);
             }
 
             await updateApplication(body.applicationId, {
