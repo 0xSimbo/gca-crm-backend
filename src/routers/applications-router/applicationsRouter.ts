@@ -44,7 +44,7 @@ import {
   getProtocolFeePaymentFromTransactionHash,
   GetProtocolFeePaymentFromTransactionHashSubgraphResponseIndividual,
 } from "../../subgraph/queries/getProtocolFeePaymentFromTransactionHash";
-import { ethers } from "ethers";
+import { BigNumber, ethers } from "ethers";
 import { handleCreateWithoutPIIDocumentsAndCompleteApplication } from "./steps/gca-application-completion";
 import { db } from "../../db/db";
 import { OrganizationUsers, applicationsDraft } from "../../db/schema";
@@ -82,7 +82,7 @@ import { findFirstOrgMemberwithShareAllApplications } from "../../db/queries/org
 import { findOrganizationsMemberByUserIdAndOrganizationIds } from "../../db/queries/organizations/findOrganizationsMemberByUserIdAndOrganizationIds";
 import { findUsedTxHash } from "../../db/queries/applications/findUsedTxHash";
 import { patchDeclarationOfIntention } from "../../db/mutations/applications/patchDeclarationOfIntention";
-import { createGlowEventEmitter } from "@glowlabs-org/events-sdk";
+import { createGlowEventEmitter, eventTypes } from "@glowlabs-org/events-sdk";
 
 const encryptedFileUpload = t.Object({
   publicUrl: t.String({
@@ -1645,26 +1645,32 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                       .declarationOfIntentionVersion,
                 }
               );
-              const emitter = createGlowEventEmitter({
-                username: process.env.RABBITMQ_ADMIN_USER!,
-                password: process.env.RABBITMQ_ADMIN_PASSWORD!,
-                zoneId: 1,
-              });
+              if (process.env.NODE_ENV === "production") {
+                const emitter = createGlowEventEmitter({
+                  username: process.env.RABBITMQ_ADMIN_USER!,
+                  password: process.env.RABBITMQ_ADMIN_PASSWORD!,
+                  zoneId: 1,
+                });
 
-              await emitter.emit({
-                eventType: "application.created",
-                schemaVersion: 1,
-                payload: {
-                  gcaAddress,
-                  lat: body.lat,
-                  lng: body.lng,
-                  estimatedCostOfPowerPerKWh: body.estimatedCostOfPowerPerKWh,
-                  estimatedKWhGeneratedPerYear:
-                    body.estimatedKWhGeneratedPerYear,
-                  installerCompanyName: body.installerCompanyName,
-                },
-              });
-              console.log("application.created event emitted");
+                emitter
+                  .emit({
+                    eventType: eventTypes.applicationCreated,
+                    schemaVersion: "v1",
+                    payload: {
+                      gcaAddress,
+                      lat: body.lat,
+                      lng: body.lng,
+                      estimatedCostOfPowerPerKWh:
+                        body.estimatedCostOfPowerPerKWh,
+                      estimatedKWhGeneratedPerYear:
+                        body.estimatedKWhGeneratedPerYear,
+                      installerCompanyName: body.installerCompanyName,
+                    },
+                  })
+                  .catch((e) => {
+                    console.error("error with application.created event", e);
+                  });
+              }
             } else {
               const errorChecks = await fillApplicationStepCheckHandler(
                 userId,
@@ -1978,17 +1984,20 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                 zoneId: 1,
               });
 
-              await emitter.emit({
-                eventType: "audit.pfees.paid",
-                schemaVersion: 1,
-                payload: {
-                  applicationId: body.applicationId,
-                  payer: protocolFeeData.user.id,
-                  amount_12Decimals: protocolFeeData.amount,
-                  txHash: body.txHash,
-                },
-              });
-              console.log("audit.pfees.paid event emitted");
+              emitter
+                .emit({
+                  eventType: eventTypes.auditPfeesPaid,
+                  schemaVersion: "v1",
+                  payload: {
+                    applicationId: body.applicationId,
+                    payer: protocolFeeData.user.id,
+                    amount_12Decimals: protocolFeeData.amount,
+                    txHash: body.txHash,
+                  },
+                })
+                .catch((e) => {
+                  console.error("error with audit.pfees.paid event", e);
+                });
             }
 
             await updateApplication(body.applicationId, {
@@ -2333,37 +2342,74 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               return "Application already linked with a farm";
             }
 
-            await handleCreateWithoutPIIDocumentsAndCompleteApplication(
-              application,
-              gcaId,
-              body.signature,
-              ApplicationSteps.payment,
-              body.annotation,
-              {
-                finalAuditReport: body.finalAuditReport,
-                ...body.withoutPIIdocuments,
-                miscDocuments: body.miscDocuments,
-                devices: body.devices,
-                applicationAuditFields: {
-                  finalEnergyCost: body.finalEnergyCost,
-                  systemWattageOutput: body.systemWattageOutput,
-                  solarPanelsQuantity: body.solarPanelsQuantity,
-                  solarPanelsBrandAndModel: body.solarPanelsBrandAndModel,
-                  solarPanelsWarranty: body.solarPanelsWarranty,
-                  averageSunlightHoursPerDay: body.averageSunlightHoursPerDay,
-                  adjustedWeeklyCarbonCredits: body.adjustedWeeklyCarbonCredits,
-                  weeklyTotalCarbonDebt: body.weeklyTotalCarbonDebt,
-                  netCarbonCreditEarningWeekly:
-                    body.netCarbonCreditEarningWeekly,
-                  ptoObtainedDate: body.ptoObtainedDate,
-                  locationWithoutPII: body.locationWithoutPII,
-                  revisedInstallFinishedDate: body.revisedInstallFinishedDate,
-                  lat: body.lat.toString(),
-                  lng: body.lng.toString(),
-                },
-              }
-            );
-            //TODO: send event with kafka to notify that the application is completed;
+            const farmId =
+              await handleCreateWithoutPIIDocumentsAndCompleteApplication(
+                application,
+                gcaId,
+                body.signature,
+                ApplicationSteps.payment,
+                body.annotation,
+                {
+                  finalAuditReport: body.finalAuditReport,
+                  ...body.withoutPIIdocuments,
+                  miscDocuments: body.miscDocuments,
+                  devices: body.devices,
+                  applicationAuditFields: {
+                    finalEnergyCost: body.finalEnergyCost,
+                    systemWattageOutput: body.systemWattageOutput,
+                    solarPanelsQuantity: body.solarPanelsQuantity,
+                    solarPanelsBrandAndModel: body.solarPanelsBrandAndModel,
+                    solarPanelsWarranty: body.solarPanelsWarranty,
+                    averageSunlightHoursPerDay: body.averageSunlightHoursPerDay,
+                    adjustedWeeklyCarbonCredits:
+                      body.adjustedWeeklyCarbonCredits,
+                    weeklyTotalCarbonDebt: body.weeklyTotalCarbonDebt,
+                    netCarbonCreditEarningWeekly:
+                      body.netCarbonCreditEarningWeekly,
+                    ptoObtainedDate: body.ptoObtainedDate,
+                    locationWithoutPII: body.locationWithoutPII,
+                    revisedInstallFinishedDate: body.revisedInstallFinishedDate,
+                    lat: body.lat.toString(),
+                    lng: body.lng.toString(),
+                  },
+                }
+              );
+
+            if (
+              process.env.NODE_ENV === "production" &&
+              typeof farmId === "string"
+            ) {
+              const emitter = createGlowEventEmitter({
+                username: process.env.RABBITMQ_ADMIN_USER!,
+                password: process.env.RABBITMQ_ADMIN_PASSWORD!,
+                zoneId: 1,
+              });
+              const protocolFeeUSDPrice_12Decimals = BigNumber.from(
+                application.finalProtocolFee
+              )
+                .mul(BigNumber.from("1000000")) // 6 -> 12 decimals
+                .toString();
+
+              const expectedProduction_12Decimals = BigNumber.from(
+                Math.floor(Number(body.adjustedWeeklyCarbonCredits) * 1e6)
+              ) // convert to int, 6 decimals
+                .mul(BigNumber.from("1000000")) // 6 -> 12 decimals
+                .toString();
+              emitter
+                .emit({
+                  eventType: eventTypes.auditPushed,
+                  schemaVersion: "v1",
+                  payload: {
+                    farmId,
+                    protocolFeeUSDPrice_12Decimals,
+                    expectedProduction_12Decimals,
+                    txHash: application.paymentTxHash,
+                  },
+                })
+                .catch((e) => {
+                  console.error("error with audit.pushed event", e);
+                });
+            }
           } catch (e) {
             if (e instanceof Error) {
               set.status = 400;

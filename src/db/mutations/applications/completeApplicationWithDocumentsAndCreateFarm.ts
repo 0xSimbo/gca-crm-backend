@@ -252,5 +252,6 @@ export const completeApplicationWithDocumentsAndCreateFarmWithDevices = async (
     if (!approval[0].id) {
       tx.rollback();
     }
+    return farmInsert[0].farmId;
   });
 };
