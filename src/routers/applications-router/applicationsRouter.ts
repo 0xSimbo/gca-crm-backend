@@ -1651,21 +1651,20 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                 zoneId: 1,
               });
 
-              emitter
-                .emit({
-                  eventType: "application.created",
-                  schemaVersion: 1,
-                  payload: {
-                    gcaAddress,
-                    lat: body.lat,
-                    lng: body.lng,
-                    estimatedCostOfPowerPerKWh: body.estimatedCostOfPowerPerKWh,
-                    estimatedKWhGeneratedPerYear:
-                      body.estimatedKWhGeneratedPerYear,
-                    installerCompanyName: body.installerCompanyName,
-                  },
-                })
-                .catch(console.error);
+              await emitter.emit({
+                eventType: "application.created",
+                schemaVersion: 1,
+                payload: {
+                  gcaAddress,
+                  lat: body.lat,
+                  lng: body.lng,
+                  estimatedCostOfPowerPerKWh: body.estimatedCostOfPowerPerKWh,
+                  estimatedKWhGeneratedPerYear:
+                    body.estimatedKWhGeneratedPerYear,
+                  installerCompanyName: body.installerCompanyName,
+                },
+              });
+              console.log("application.created event emitted");
             } else {
               const errorChecks = await fillApplicationStepCheckHandler(
                 userId,
@@ -1979,18 +1978,17 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                 zoneId: 1,
               });
 
-              emitter
-                .emit({
-                  eventType: "audit.pfees.paid",
-                  schemaVersion: 1,
-                  payload: {
-                    applicationId: body.applicationId,
-                    payer: protocolFeeData.user.id,
-                    amount_12Decimals: protocolFeeData.amount,
-                    txHash: body.txHash,
-                  },
-                })
-                .catch(console.error);
+              await emitter.emit({
+                eventType: "audit.pfees.paid",
+                schemaVersion: 1,
+                payload: {
+                  applicationId: body.applicationId,
+                  payer: protocolFeeData.user.id,
+                  amount_12Decimals: protocolFeeData.amount,
+                  txHash: body.txHash,
+                },
+              });
+              console.log("audit.pfees.paid event emitted");
             }
 
             await updateApplication(body.applicationId, {
