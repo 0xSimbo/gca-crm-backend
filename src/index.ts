@@ -191,19 +191,25 @@ const app = new Elysia()
     // }
     console.log("Migrating farms");
     try {
+      // hub farms
       const farmsData = await findAllFarmsCoordinates();
+      // legacy farms
+      // const farmsData = await findAllLegacyFarmsCoordinates();
+
       for (const farm of farmsData) {
         if (!farm.farmId) {
           console.log("No farm id found for farm", farm);
           continue;
         }
-        if (farm.region && farm.regionFullName && farm.signalType) {
-          console.log("Farm already has region", farm);
+        if (
+          farm.region !== "__UNSET__" &&
+          farm.regionFullName !== "__UNSET__" &&
+          farm.signalType !== "__UNSET__"
+        ) {
+          // console.log("Farm already has region", farm);
           continue;
         }
-        console.log("Getting region for farm", farm);
         const region = await getRegionFromLatAndLng(farm.lat, farm.lng);
-        console.log("Updating farm region", farm.farmId, region);
         await updateFarmRegion(farm.farmId, region);
       }
       return { message: "success" };
