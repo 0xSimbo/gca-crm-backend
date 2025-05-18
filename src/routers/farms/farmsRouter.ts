@@ -7,9 +7,58 @@ import { bearerGuard } from "../../guards/bearerGuard";
 import { jwtHandler } from "../../handlers/jwtHandler";
 import { findFirstAccountById } from "../../db/queries/accounts/findFirstAccountById";
 import { findFirstFarmIdByShortId } from "../../db/queries/farms/findFirstFarmIdByShortId";
+import { db } from "../../db/db";
 
 export const farmsRouter = new Elysia({ prefix: "/farms" })
   .use(bearerplugin())
+  .get(
+    "/regions",
+    async ({ set }) => {
+      try {
+        const farms = await db.query.farms.findMany({
+          columns: {
+            id: true,
+            region: true,
+            regionFullName: true,
+            signalType: true,
+          },
+          with: {
+            devices: {
+              columns: {
+                id: true,
+                shortId: true,
+                publicKey: true,
+                isEnabled: true,
+                enabledAt: true,
+                disabledAt: true,
+              },
+            },
+          },
+        });
+        return farms.map((farm) => ({
+          farmId: farm.id,
+          region: farm.region,
+          regionFullName: farm.regionFullName,
+          signalType: farm.signalType,
+          devices: farm.devices,
+        }));
+      } catch (e) {
+        if (e instanceof Error) {
+          set.status = 400;
+          return e.message;
+        }
+        set.status = 500;
+        return "Internal Server Error";
+      }
+    },
+    {
+      detail: {
+        summary: "Get all farms with region info and devices",
+        description: `Returns all farms with their farmId, region, regionFullName, signalType, and devices`,
+        tags: [TAG.FARMS],
+      },
+    }
+  )
   .guard(bearerGuard, (app) =>
     app
       .resolve(({ headers: { authorization } }) => {
