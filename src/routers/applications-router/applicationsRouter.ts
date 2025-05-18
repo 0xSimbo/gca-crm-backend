@@ -65,7 +65,10 @@ import { findFirstDelegatedEncryptedMasterKeyByApplicationIdAndOrganizationUserI
 import { findFirstDelegatedEncryptedMasterKeyByApplicationId } from "../../db/queries/organizations/findFirstDelegatedEncryptedMasterKeyByApplicationId";
 import { FindFirstGcaById } from "../../db/queries/gcas/findFirsGcaById";
 import { findFirstApplicationMasterKeyByApplicationIdAndUserId } from "../../db/queries/applications/findFirstApplicationMasterKeyByApplicationIdAndUserId";
-import { findAllCompletedApplications } from "../../db/queries/applications/findAllCompletedApplications";
+import {
+  findAllCompletedApplications,
+  findCompletedApplication,
+} from "../../db/queries/applications/findAllCompletedApplications";
 import { findAllApplicationsWithoutMasterKey } from "../../db/queries/applications/findAllApplicationsWithoutMasterKey";
 import { createApplicationEncryptedMasterKeysForUsers } from "../../db/mutations/applications/createApplicationEncryptedMasterKeysForUsers";
 import { findAllApplications } from "../../db/queries/applications/findAllApplications";
@@ -309,6 +312,48 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
       detail: {
         summary: "Get all completed applications ",
         description: `Get all completed applications `,
+        tags: [TAG.APPLICATIONS],
+      },
+    }
+  )
+  .get(
+    "/completed/by",
+    async ({ query, set }) => {
+      try {
+        const { farmId, publicKey, shortId } = query;
+        if (!farmId && !publicKey && !shortId) {
+          set.status = 400;
+          return "You must provide one of: farmId, publicKey, or shortId";
+        }
+        const application = await findCompletedApplication({
+          farmId,
+          publicKey,
+          shortId,
+        });
+        if (!application) {
+          set.status = 404;
+          return "Completed application not found";
+        }
+        return application;
+      } catch (e) {
+        if (e instanceof Error) {
+          set.status = 400;
+          return e.message;
+        }
+        set.status = 500;
+        return "Internal Server Error";
+      }
+    },
+    {
+      query: t.Object({
+        farmId: t.Optional(t.String()),
+        publicKey: t.Optional(t.String()),
+        shortId: t.Optional(t.String()),
+      }),
+      detail: {
+        summary:
+          "Get one completed application by farmId, publicKey, or shortId",
+        description: `Returns a completed application for a farm or device. Prioritizes: publicKey > shortId > farmId.`,
         tags: [TAG.APPLICATIONS],
       },
     }
