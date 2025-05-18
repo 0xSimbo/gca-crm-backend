@@ -29,6 +29,9 @@ import { legacyFarms } from "./legacy/farms";
 import { updateDeviceRewardsForWeek } from "./crons/update-farm-rewards/update-device-rewards-for-week";
 import { farmsRouter } from "./routers/farms/farmsRouter";
 import { postMerkleRootHandler } from "./utils/postMerkleRoot";
+import { findAllFarmsCoordinates } from "./db/queries/farms/findAllFarmsCoordinates";
+import { getRegionFromLatAndLng } from "./utils/getRegionFromLatAndLng";
+import { updateFarmRegion } from "./db/mutations/farms/updateFarmRegion";
 
 const PORT = process.env.PORT || 3005;
 const app = new Elysia()
@@ -170,16 +173,38 @@ const app = new Elysia()
     }
   })
   .get("/migrate-farms", async () => {
-    const farmsData: MigrationFarmData[] = LegacyFarmsData.map((farm) => ({
-      ...farm,
-      old_short_ids: (farm.old_short_ids || []).map((shortId) =>
-        shortId.toString()
-      ),
-    }));
+    // const farmsData: MigrationFarmData[] = LegacyFarmsData.map((farm) => ({
+    //   ...farm,
+    //   old_short_ids: (farm.old_short_ids || []).map((shortId) =>
+    //     shortId.toString()
+    //   ),
+    // }));
 
+    // try {
+    //   for (const farmData of farmsData) {
+    //     await insertFarmWithDependencies(farmData);
+    //   }
+    //   return { message: "success" };
+    // } catch (error) {
+    //   console.error("Error migrating farm", error);
+    //   return { message: "error" };
+    // }
+    console.log("Migrating farms");
     try {
-      for (const farmData of farmsData) {
-        await insertFarmWithDependencies(farmData);
+      const farmsData = await findAllFarmsCoordinates();
+      for (const farm of farmsData) {
+        if (!farm.farmId) {
+          console.log("No farm id found for farm", farm);
+          continue;
+        }
+        if (farm.region && farm.regionFullName && farm.signalType) {
+          console.log("Farm already has region", farm);
+          continue;
+        }
+        console.log("Getting region for farm", farm);
+        const region = await getRegionFromLatAndLng(farm.lat, farm.lng);
+        console.log("Updating farm region", farm.farmId, region);
+        await updateFarmRegion(farm.farmId, region);
       }
       return { message: "success" };
     } catch (error) {

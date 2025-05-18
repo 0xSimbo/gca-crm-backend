@@ -20,6 +20,7 @@ import {
   createAndUploadTXTFile,
 } from "../../../utils/r2/upload-to-r2";
 import { getStepNameFromIndex } from "../../../utils/getStepNameFromIndex";
+import { getRegionFromLatAndLng } from "../../../utils/getRegionFromLatAndLng";
 
 export type ApplicationAuditFieldsType = {
   solarPanelsQuantity: number;
@@ -164,6 +165,12 @@ export const completeApplicationWithDocumentsAndCreateFarmWithDevices = async (
     })),
   ];
 
+  // get region from lat and lng and store in newly created farm
+  const region = await getRegionFromLatAndLng(
+    applicationAuditFields.lat,
+    applicationAuditFields.lng
+  );
+
   return db.transaction(async (tx) => {
     if (documents.length) {
       const documentsInsert = await tx
@@ -186,6 +193,9 @@ export const completeApplicationWithDocumentsAndCreateFarmWithDevices = async (
         protocolFee,
         protocolFeePaymentHash,
         protocolFeeAdditionalPaymentTxHash,
+        region: region.region,
+        regionFullName: region.regionFullName,
+        signalType: region.signalType,
       })
       .returning({ farmId: applications.farmId });
 

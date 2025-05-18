@@ -422,6 +422,9 @@ export type GcaDelegatedUsersInsertType = typeof GcaDelegatedUsers.$inferInsert;
  * @param {string} protocolFeeAdditionalPaymentTxHash - Optional Additional payment hash for the protocol fee.
  * @param {string} gcaId - The GCA (Green Certificate Authority) ID.
  * @param {string} userId - The user ID who owns the farm.
+ * @param {string} region - The region of the farm.
+ * @param {string} regionFullName - The full name of the region.
+ * @param {string} signalType - The signal type of the region.
  */
 export const farms = pgTable(
   "farms",
@@ -452,6 +455,13 @@ export const farms = pgTable(
     gcaId: varchar("gca_id", { length: 42 }).notNull(),
     userId: varchar("user_id", { length: 42 }).notNull(),
     oldShortIds: varchar("old_short_ids", { length: 255 }).array(),
+    region: varchar("region", { length: 255 }).notNull().default("__UNSET__"),
+    regionFullName: varchar("region_full_name", { length: 255 })
+      .notNull()
+      .default("__UNSET__"),
+    signalType: varchar("signal_type", { length: 255 })
+      .notNull()
+      .default("__UNSET__"),
   },
   (t) => {
     return {
