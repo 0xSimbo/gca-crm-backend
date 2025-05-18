@@ -59,6 +59,88 @@ export const farmsRouter = new Elysia({ prefix: "/farms" })
       },
     }
   )
+  .get(
+    "/region",
+    async ({ query, set }) => {
+      try {
+        const { publicKey, shortId, farmId } = query;
+        let farm;
+        if (publicKey) {
+          const device = await db.query.Devices.findFirst({
+            where: (devices, { eq }) => eq(devices.publicKey, publicKey),
+            with: {
+              farm: {
+                columns: {
+                  id: true,
+                  region: true,
+                  regionFullName: true,
+                  signalType: true,
+                },
+              },
+            },
+          });
+          farm = device?.farm;
+        } else if (shortId) {
+          const device = await db.query.Devices.findFirst({
+            where: (devices, { eq }) => eq(devices.shortId, shortId),
+            with: {
+              farm: {
+                columns: {
+                  id: true,
+                  region: true,
+                  regionFullName: true,
+                  signalType: true,
+                },
+              },
+            },
+          });
+          farm = device?.farm;
+        } else if (farmId) {
+          farm = await db.query.farms.findFirst({
+            where: (farms, { eq }) => eq(farms.id, farmId),
+            columns: {
+              id: true,
+              region: true,
+              regionFullName: true,
+              signalType: true,
+            },
+          });
+        } else {
+          set.status = 400;
+          return "You must provide one of: publicKey, shortId, or farmId";
+        }
+        if (!farm) {
+          set.status = 404;
+          return "Region not found";
+        }
+        return {
+          farmId: farm.id,
+          region: farm.region,
+          regionFullName: farm.regionFullName,
+          signalType: farm.signalType,
+        };
+      } catch (e) {
+        if (e instanceof Error) {
+          set.status = 400;
+          return e.message;
+        }
+        set.status = 500;
+        return "Internal Server Error";
+      }
+    },
+    {
+      query: t.Object({
+        publicKey: t.Optional(t.String()),
+        shortId: t.Optional(t.String()),
+        farmId: t.Optional(t.String()),
+      }),
+      detail: {
+        summary: "Get region info for a device or farm",
+        description: `Returns the region, regionFullName, signalType, and farmId for a device (by publicKey or shortId) or a farm (by farmId). If multiple params are provided, prioritizes: publicKey > shortId > farmId.`,
+        tags: [TAG.FARMS],
+      },
+    }
+  )
   .guard(bearerGuard, (app) =>
     app
       .resolve(({ headers: { authorization } }) => {
