@@ -18,6 +18,7 @@ export type CalculationParms = {
   hoursOfSunlightPerDay: number; // from nasa api
   carbonOffsetsPerMWH: number;
 };
+
 export function estimateProductionAndDebt(args: CalculationParms) {
   //Production
   const weeklyProductionMWH =
