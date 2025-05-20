@@ -77,8 +77,8 @@ export async function estimateProtocolFees(args: EstimateProtocolFeeArgs) {
     args.escalatorReference ||
     statesWithEscalatorFees.find(({ state }) => {
       return (
-        state.replaceAll(" ", "").toLowerCase() ==
-        foundState.replaceAll(" ", "").toLowerCase()
+        state.replace(/ /g, "").toLowerCase() ==
+        foundState.replace(/ /g, "").toLowerCase()
       );
     })?.percent;
 
