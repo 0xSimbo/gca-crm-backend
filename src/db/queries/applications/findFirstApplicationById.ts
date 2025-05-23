@@ -28,6 +28,8 @@ export const FindFirstApplicationById = async (id: string) => {
       applicationStepApprovals: true,
       rewardSplits: true,
       devices: true,
+      weeklyProduction: true,
+      weeklyCarbonDebt: true,
     },
   });
 
