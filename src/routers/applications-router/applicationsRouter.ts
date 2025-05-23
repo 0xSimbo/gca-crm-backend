@@ -6,7 +6,6 @@ import { createApplication } from "../../db/mutations/applications/createApplica
 import {
   ApplicationStatusEnum,
   ApplicationSteps,
-  EncryptedMasterKeySet,
   RoundRobinStatusEnum,
 } from "../../types/api-types/Application";
 import { FindFirstApplicationById } from "../../db/queries/applications/findFirstApplicationById";
@@ -33,17 +32,14 @@ import { updateApplicationEnquiry } from "../../db/mutations/applications/update
 import { incrementApplicationStep } from "../../db/mutations/applications/incrementApplicationStep";
 import { approveOrAskForChangesCheckHandler } from "../../utils/check-handlers/approve-or-ask-for-changes";
 import { fillApplicationStepCheckHandler } from "../../utils/check-handlers/fill-application-step";
-import { handleCreateOrUpdatePermitDocumentation } from "./steps/permit-documentation";
+
 import { handleCreateOrUpdatePreIntallDocuments } from "./steps/pre-install";
 import { updateApplicationPreInstallVisitDate } from "../../db/mutations/applications/updateApplicationPreInstallVisitDate";
 import { updateApplicationAfterInstallVisitDate } from "../../db/mutations/applications/updateApplicationAfterInstallVisitDate";
 import { handleCreateOrUpdateAfterInstallDocuments } from "./steps/after-install";
 import { updateApplication } from "../../db/mutations/applications/updateApplication";
 import { roundRobinAssignement } from "../../db/queries/gcas/roundRobinAssignement";
-import {
-  getProtocolFeePaymentFromTransactionHash,
-  GetProtocolFeePaymentFromTransactionHashSubgraphResponseIndividual,
-} from "../../subgraph/queries/getProtocolFeePaymentFromTransactionHash";
+
 import { BigNumber, ethers } from "ethers";
 import { handleCreateWithoutPIIDocumentsAndCompleteApplication } from "./steps/gca-application-completion";
 import { db } from "../../db/db";
@@ -86,204 +82,17 @@ import { findOrganizationsMemberByUserIdAndOrganizationIds } from "../../db/quer
 import { findUsedTxHash } from "../../db/queries/applications/findUsedTxHash";
 import { patchDeclarationOfIntention } from "../../db/mutations/applications/patchDeclarationOfIntention";
 import { createGlowEventEmitter, eventTypes } from "@glowlabs-org/events-sdk";
-
-const encryptedFileUpload = t.Object({
-  publicUrl: t.String({
-    example:
-      "https://pub-7e0365747f054c9e85051df5f20fa815.r2.dev/0x18a0ba01bbec4aa358650d297ba7bb330a78b073/utility-bill.enc",
-  }),
-  // keysSet: t.Array(
-  //   t.Object({
-  //     publicKey: t.String(),
-  //     encryptedMasterKey: t.String(),
-  //   })
-  // ),
-  // orgMembersMasterkeys: t.Array(
-  //   t.Object({
-  //     orgUserId: t.String(),
-  //     encryptedMasterKey: t.String(),
-  //   })
-  // ),
-});
-
-export type EncryptedFileUploadType = {
-  publicUrl: string;
-  // keysSet: EncryptedMasterKeySet[];
-  // orgMembersMasterkeys: {
-  //   orgUserId: string;
-  //   encryptedMasterKey: string;
-  // }[];
-};
-
-export type ApplicationEncryptedMasterKeysType = {
-  userId: string;
-  encryptedMasterKey: string;
-  organizationUserId?: string;
-};
-
-export const EnquiryQueryBody = t.Object({
-  applicationId: t.String(),
-  latestUtilityBill: encryptedFileUpload,
-  declarationOfIntentionBody: t.Optional(
-    t.Object({
-      declarationOfIntention: encryptedFileUpload,
-      declarationOfIntentionSignature: t.String(),
-      declarationOfIntentionFieldsValue: t.Object({
-        fullname: t.String(), // user.firstName + " " + user.lastName
-        latitude: t.String(),
-        longitude: t.String(),
-        date: t.Number(), // timestamp without milliseconds (Math.floor(Date.now() / 1000))
-      }),
-      declarationOfIntentionVersion: t.String(),
-    })
-  ),
-  organizationIds: t.Array(t.String()),
-  applicationEncryptedMasterKeys: t.Array(
-    t.Object({
-      userId: t.String(),
-      encryptedMasterKey: t.String(),
-      organizationUserId: t.Optional(t.String()),
-    })
-  ),
-  estimatedCostOfPowerPerKWh: t.Numeric({
-    example: 0.12,
-    minimum: 0,
-  }),
-  enquiryEstimatedFees: t.Numeric({
-    example: 109894,
-    minimum: 0,
-  }),
-  enquiryEstimatedQuotePerWatt: t.Numeric({
-    example: 0.32,
-    minimum: 0,
-  }),
-  estimatedKWhGeneratedPerYear: t.Numeric({
-    example: 32,
-    minimum: 0,
-  }),
-  farmOwnerName: t.String({
-    example: "John Doe",
-    minLength: 2,
-  }),
-  farmOwnerEmail: t.String({
-    example: "JohnDoe@gmail.com",
-    minLength: 2,
-  }),
-  farmOwnerPhone: t.String({
-    example: "123-456-7890",
-    minLength: 2,
-  }),
-  installerCompanyName: t.String({
-    example: "John Doe Farms",
-    minLength: 2,
-  }),
-  installerEmail: t.String({
-    example: "JohnDoe@gmail.com",
-    minLength: 2,
-  }),
-  installerPhone: t.String({
-    example: "123-456-7890",
-    minLength: 2,
-  }),
-  installerName: t.String({
-    example: "John",
-    minLength: 2,
-  }),
-  address: t.String({
-    example: "123 John Doe Street, Phoenix, AZ 85001",
-    minLength: 10,
-  }),
-  lat: t.Numeric({
-    example: 38.234242,
-    minimum: -90,
-    maximum: 90,
-  }),
-  lng: t.Numeric({
-    example: -111.123412,
-    minimum: -180,
-    maximum: 180,
-  }),
-});
-
-export const DeclarationOfIntentionMissingQueryBody = t.Object({
-  applicationId: t.String(),
-  declarationOfIntention: encryptedFileUpload,
-  declarationOfIntentionSignature: t.String(),
-  declarationOfIntentionFieldsValue: t.Object({
-    fullname: t.String(),
-    latitude: t.String(),
-    longitude: t.String(),
-    date: t.Number(),
-  }),
-  declarationOfIntentionVersion: t.String(),
-});
-
-// r2 baseUrl + bucketName = userID + fileName.enc @0xSimbo
-// const encryptedUploadedUrlExample =
-//   "https://pub-7e0365747f054c9e85051df5f20fa815.r2.dev/0x18a0ba01bbec4aa358650d297ba7bb330a78b073/contract-agreement.enc";
-export const PreInstallDocumentsQueryBody = t.Object({
-  applicationId: t.String(),
-  estimatedInstallDate: t.Date(),
-  contractAgreement: encryptedFileUpload,
-});
-
-export const PermitDocumentationQueryBody = t.Object({
-  applicationId: t.String(),
-  estimatedInstallDate: t.Date(),
-});
-
-export const InspectionAndPTOQueryBody = t.Object({
-  applicationId: t.String(),
-  plansets: t.Nullable(encryptedFileUpload),
-  plansetsNotAvailableReason: t.Nullable(t.String()),
-  cityPermit: t.Nullable(encryptedFileUpload),
-  cityPermitNotAvailableReason: t.Nullable(t.String()),
-  inspection: t.Nullable(encryptedFileUpload),
-  inspectionNotAvailableReason: t.Nullable(t.String()),
-  pto: t.Nullable(encryptedFileUpload),
-  firstUtilityBill: encryptedFileUpload,
-  secondUtilityBill: encryptedFileUpload,
-  mortgageStatement: t.Nullable(encryptedFileUpload),
-  propertyDeed: t.Nullable(encryptedFileUpload),
-  ptoNotAvailableReason: t.Nullable(t.String()),
-  installFinishedDate: t.Date(),
-  miscDocuments: t.Array(
-    t.Object({
-      name: t.String(),
-      encryptedFileUpload,
-      extension: t.Union([
-        t.Literal("pdf"),
-        t.Literal("png"),
-        t.Literal("jpg"),
-        t.Literal("jpeg"),
-      ]),
-    })
-  ),
-});
-
-export const GcaAcceptApplicationQueryBody = t.Object({
-  applicationId: t.String(),
-  signature: t.String(),
-  deadline: t.Numeric(),
-  accepted: t.Boolean(),
-  reason: t.Nullable(t.String()),
-  to: t.Nullable(
-    t.String({
-      example: "0x18a0bA01Bbec4aa358650d297Ba7bB330a78B073",
-      minLength: 42,
-      maxLength: 42,
-    })
-  ),
-});
-
-export const ApproveOrAskForChangesQueryBody = {
-  applicationId: t.String(),
-  signature: t.String(),
-  deadline: t.Numeric(),
-  approved: t.Boolean(),
-  annotation: t.Nullable(t.String()),
-  stepIndex: t.Numeric(),
-};
+import { weeklyProduction, weeklyCarbonDebt } from "../../db/schema";
+import {
+  WeeklyProductionSchema,
+  WeeklyCarbonDebtSchema,
+  EnquiryQueryBody,
+  DeclarationOfIntentionMissingQueryBody,
+  PreInstallDocumentsQueryBody,
+  InspectionAndPTOQueryBody,
+  GcaAcceptApplicationQueryBody,
+  ApproveOrAskForChangesQueryBody,
+} from "./query-schemas";
 
 export const applicationsRouter = new Elysia({ prefix: "/applications" })
   .use(bearerplugin())
@@ -2387,6 +2196,11 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               return "Application already linked with a farm";
             }
 
+            if (!application.adjustedWeeklyCarbonCredits) {
+              set.status = 400;
+              return "Application is not completed, adjustedWeeklyCarbonCredits is not set";
+            }
+
             const farmId =
               await handleCreateWithoutPIIDocumentsAndCompleteApplication(
                 application,
@@ -2401,16 +2215,9 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                   devices: body.devices,
                   applicationAuditFields: {
                     finalEnergyCost: body.finalEnergyCost,
-                    systemWattageOutput: body.systemWattageOutput,
                     solarPanelsQuantity: body.solarPanelsQuantity,
                     solarPanelsBrandAndModel: body.solarPanelsBrandAndModel,
                     solarPanelsWarranty: body.solarPanelsWarranty,
-                    averageSunlightHoursPerDay: body.averageSunlightHoursPerDay,
-                    adjustedWeeklyCarbonCredits:
-                      body.adjustedWeeklyCarbonCredits,
-                    weeklyTotalCarbonDebt: body.weeklyTotalCarbonDebt,
-                    netCarbonCreditEarningWeekly:
-                      body.netCarbonCreditEarningWeekly,
                     ptoObtainedDate: body.ptoObtainedDate,
                     locationWithoutPII: body.locationWithoutPII,
                     revisedInstallFinishedDate: body.revisedInstallFinishedDate,
@@ -2436,7 +2243,9 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                 .toString();
 
               const expectedProduction_12Decimals = BigNumber.from(
-                Math.floor(Number(body.adjustedWeeklyCarbonCredits) * 1e6)
+                Math.floor(
+                  Number(application.adjustedWeeklyCarbonCredits) * 1e6
+                )
               ) // convert to int, 6 decimals
                 .mul(BigNumber.from("1000000")) // 6 -> 12 decimals
                 .toString();
@@ -2496,12 +2305,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
             solarPanelsQuantity: t.Number(),
             solarPanelsBrandAndModel: t.String(),
             solarPanelsWarranty: t.String(),
-            averageSunlightHoursPerDay: t.String(),
             finalEnergyCost: t.String(),
-            systemWattageOutput: t.String(),
-            adjustedWeeklyCarbonCredits: t.String(),
-            weeklyTotalCarbonDebt: t.String(),
-            netCarbonCreditEarningWeekly: t.String(),
             ptoObtainedDate: t.Nullable(t.Date()),
             revisedInstallFinishedDate: t.Date(),
             locationWithoutPII: t.String(),
@@ -2563,6 +2367,26 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                 return "Final Protocol Fee is required in case of approval";
               }
 
+              if (
+                !body.adjustedWeeklyCarbonCredits ||
+                !body.weeklyTotalCarbonDebt ||
+                !body.powerOutputMWH ||
+                !body.hoursOfSunlightPerDay ||
+                !body.carbonOffsetsPerMWH ||
+                !body.adjustmentDueToUncertainty ||
+                !body.weeklyPowerProductionMWh ||
+                !body.weeklyCarbonCredits ||
+                !body.totalCarbonDebtAdjustedKWh ||
+                !body.convertToKW ||
+                !body.totalCarbonDebtProduced ||
+                !body.disasterRisk ||
+                !body.commitmentPeriod ||
+                !body.adjustedTotalCarbonDebt
+              ) {
+                set.status = 400;
+                return "Missing required fields for weekly production and weekly carbon debt";
+              }
+
               recoveredAddress = await recoverAddressHandler(
                 stepApprovedWithFinalProtocolFeeTypes,
                 approvedValues,
@@ -2614,6 +2438,9 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                 return "After Install Visit Date is not passed yet";
               }
 
+              const netCarbonCreditEarningWeekly = (
+                body.adjustedWeeklyCarbonCredits - body.weeklyTotalCarbonDebt
+              ).toString();
               await approveApplicationStep(
                 body.applicationId,
                 account.id,
@@ -2626,8 +2453,46 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                   finalProtocolFee: ethers.utils
                     .parseUnits(body.finalProtocolFee!!, 6)
                     .toBigInt(),
+                  systemWattageOutput: body.convertToKW.toString(),
+                  netCarbonCreditEarningWeekly,
+                  weeklyTotalCarbonDebt: body.weeklyTotalCarbonDebt.toString(),
+                  averageSunlightHoursPerDay:
+                    body.hoursOfSunlightPerDay.toString(),
                 }
               );
+
+              // --- Insert into weeklyProduction and weeklyCarbonDebt ---
+              try {
+                await db.insert(weeklyProduction).values({
+                  applicationId: body.applicationId,
+                  createdAt: new Date(),
+                  powerOutputMWH: body.powerOutputMWH,
+                  hoursOfSunlightPerDay: body.hoursOfSunlightPerDay,
+                  carbonOffsetsPerMWH: body.carbonOffsetsPerMWH,
+                  adjustmentDueToUncertainty: body.adjustmentDueToUncertainty,
+                  weeklyPowerProductionMWh: body.weeklyPowerProductionMWh,
+                  weeklyCarbonCredits: body.weeklyCarbonCredits,
+                  adjustedWeeklyCarbonCredits: body.adjustedWeeklyCarbonCredits,
+                } as any);
+
+                await db.insert(weeklyCarbonDebt).values({
+                  applicationId: body.applicationId,
+                  createdAt: new Date(),
+                  totalCarbonDebtAdjustedKWh: body.totalCarbonDebtAdjustedKWh,
+                  powerOutputMWH: body.powerOutputMWH,
+                  convertToKW: body.convertToKW,
+                  totalCarbonDebtProduced: body.totalCarbonDebtProduced,
+                  disasterRisk: body.disasterRisk,
+                  commitmentPeriod: body.commitmentPeriod,
+                  adjustedTotalCarbonDebt: body.adjustedTotalCarbonDebt,
+                  weeklyTotalCarbonDebt: body.weeklyTotalCarbonDebt,
+                } as any);
+              } catch (err) {
+                set.status = 500;
+                return `Failed to insert weekly production or carbon debt: ${
+                  err instanceof Error ? err.message : String(err)
+                }`;
+              }
             } else {
               await updateApplication(body.applicationId, {
                 status: ApplicationStatusEnum.changesRequired,
@@ -2945,6 +2810,111 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
             summary: "Patch missing declaration of intention",
             description:
               "Add declaration of intention to an application where it's missing",
+            tags: [TAG.APPLICATIONS],
+          },
+        }
+      )
+      .patch(
+        "/patch-production-and-carbon-debt",
+        async ({ body, set, userId: gcaId }) => {
+          try {
+            const account = await findFirstAccountById(gcaId);
+            if (!account) {
+              return { errorCode: 404, errorMessage: "Account not found" };
+            }
+
+            if (account.role !== "GCA") {
+              return {
+                errorCode: 403,
+                errorMessage: "Unauthorized",
+              };
+            }
+
+            // Validate application exists
+            const application = await FindFirstApplicationById(
+              body.applicationId
+            );
+            if (!application) {
+              set.status = 404;
+              return { error: "Application not found" };
+            }
+
+            if (application.status === ApplicationStatusEnum.completed) {
+              return {
+                errorCode: 400,
+                errorMessage: "Application is already completed",
+              };
+            }
+
+            if (application.gcaAddress !== account.id) {
+              return {
+                errorCode: 403,
+                errorMessage:
+                  "Unauthorized, you are not assigned to this application",
+              };
+            }
+
+            const netCarbonCreditEarningWeekly = (
+              Number(application.adjustedWeeklyCarbonCredits) -
+              Number(application.weeklyTotalCarbonDebt)
+            ).toString();
+
+            // Update application with the specified fields
+            await updateApplication(body.applicationId, {
+              systemWattageOutput: body.systemWattageOutput.toString(),
+              netCarbonCreditEarningWeekly:
+                netCarbonCreditEarningWeekly.toString(),
+              weeklyTotalCarbonDebt: body.weeklyTotalCarbonDebt.toString(),
+              averageSunlightHoursPerDay:
+                body.averageSunlightHoursPerDay.toString(),
+            });
+
+            // Insert into weeklyProduction
+            await db.insert(weeklyProduction).values({
+              applicationId: body.applicationId,
+              createdAt: new Date(),
+              powerOutputMWH: body.powerOutputMWH,
+              hoursOfSunlightPerDay: body.hoursOfSunlightPerDay,
+              carbonOffsetsPerMWH: body.carbonOffsetsPerMWH,
+              adjustmentDueToUncertainty: body.adjustmentDueToUncertainty,
+              weeklyPowerProductionMWh: body.weeklyPowerProductionMWh,
+              weeklyCarbonCredits: body.weeklyCarbonCredits,
+              adjustedWeeklyCarbonCredits: body.adjustedWeeklyCarbonCredits,
+            } as any);
+
+            // Insert into weeklyCarbonDebt
+            await db.insert(weeklyCarbonDebt).values({
+              applicationId: body.applicationId,
+              createdAt: new Date(),
+              totalCarbonDebtAdjustedKWh: body.totalCarbonDebtAdjustedKWh,
+              powerOutputMWH: body.powerOutputMWH,
+              convertToKW: body.convertToKW,
+              totalCarbonDebtProduced: body.totalCarbonDebtProduced,
+              disasterRisk: body.disasterRisk,
+              commitmentPeriod: body.commitmentPeriod,
+              adjustedTotalCarbonDebt: body.adjustedTotalCarbonDebt,
+              weeklyTotalCarbonDebt: body.weeklyTotalCarbonDebt,
+            } as any);
+
+            return { success: true };
+          } catch (e) {
+            set.status = 500;
+            return { error: e instanceof Error ? e.message : String(e) };
+          }
+        },
+        {
+          body: t.Object({
+            applicationId: t.String(),
+            systemWattageOutput: t.String(),
+            averageSunlightHoursPerDay: t.Numeric(),
+            netCarbonCreditEarningWeekly: t.Numeric(),
+            ...WeeklyProductionSchema,
+            ...WeeklyCarbonDebtSchema,
+          }),
+          detail: {
+            summary: "Patch production and carbon debt for an application",
+            description:
+              "Update application with systemWattageOutput, netCarbonCreditEarningWeekly, weeklyTotalCarbonDebt, averageSunlightHoursPerDay and insert weeklyProduction and weeklyCarbonDebt records.",
             tags: [TAG.APPLICATIONS],
           },
         }

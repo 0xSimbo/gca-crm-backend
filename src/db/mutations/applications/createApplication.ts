@@ -1,7 +1,7 @@
 import {
-  ApplicationEncryptedMasterKeysType,
   EncryptedFileUploadType,
-} from "../../../routers/applications-router/applicationsRouter";
+  ApplicationEncryptedMasterKeysType,
+} from "../../../routers/applications-router/query-schemas";
 import {
   ApplicationSteps,
   RequiredDocumentsNamesEnum,

@@ -1,11 +1,9 @@
-import { db } from "../../../db/db";
 import {
   DocumentsInsertTypeExtended,
   fillApplicationStepWithDocuments,
 } from "../../../db/mutations/applications/fillApplicationStepWithDocuments";
 import {
   ApplicationType,
-  DocumentsInsertType,
   DocumentsMissingWithReasonInsertType,
 } from "../../../db/schema";
 import {
@@ -14,7 +12,7 @@ import {
   OptionalDocumentsNamesEnum,
   RequiredDocumentsNamesEnum,
 } from "../../../types/api-types/Application";
-import { EncryptedFileUploadType } from "../applicationsRouter";
+import { EncryptedFileUploadType } from "../query-schemas";
 
 type UpdateInspectionAndPtoType = {
   installFinishedDate: Date;

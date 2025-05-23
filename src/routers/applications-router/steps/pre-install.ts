@@ -7,7 +7,7 @@ import {
   ApplicationSteps,
   RequiredDocumentsNamesEnum,
 } from "../../../types/api-types/Application";
-import { EncryptedFileUploadType } from "../applicationsRouter";
+import { EncryptedFileUploadType } from "../query-schemas";
 
 type UpdatePreInstallDocumentsRequiredType = {
   contractAgreement: EncryptedFileUploadType;

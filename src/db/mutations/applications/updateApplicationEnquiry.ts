@@ -10,7 +10,7 @@ import {
   ApplicationSteps,
   RequiredDocumentsNamesEnum,
 } from "../../../types/api-types/Application";
-import { EncryptedFileUploadType } from "../../../routers/applications-router/applicationsRouter";
+import { EncryptedFileUploadType } from "../../../routers/applications-router/query-schemas";
 import { DocumentsInsertTypeExtended } from "./fillApplicationStepWithDocuments";
 
 export const updateApplicationEnquiry = async (

@@ -26,12 +26,7 @@ export type ApplicationAuditFieldsType = {
   solarPanelsQuantity: number;
   solarPanelsBrandAndModel: string;
   solarPanelsWarranty: string;
-  averageSunlightHoursPerDay: string;
   finalEnergyCost: string;
-  systemWattageOutput: string;
-  adjustedWeeklyCarbonCredits: string;
-  weeklyTotalCarbonDebt: string;
-  netCarbonCreditEarningWeekly: string;
   ptoObtainedDate: Date | null;
   revisedInstallFinishedDate: Date;
   locationWithoutPII: string;

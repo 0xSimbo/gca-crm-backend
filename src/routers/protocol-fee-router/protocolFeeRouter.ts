@@ -35,10 +35,6 @@ const EstimateProtocolFeeArgsSchema = t.Object({
   escalatorReference: t.Optional(t.String()),
 });
 
-type EstimateProtocolFeeArgsType = UnwrapSchema<
-  typeof EstimateProtocolFeeArgsSchema
->;
-
 export const protocolFeeRouter = new Elysia({ prefix: "/protocolFees" })
   .get(
     "/sunlightAndCertificates",

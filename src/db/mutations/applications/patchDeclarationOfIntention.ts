@@ -5,7 +5,7 @@ import {
 } from "../../../types/api-types/Application";
 import { Documents, applications } from "../../schema";
 import { eq } from "drizzle-orm";
-import { EncryptedFileUploadType } from "../../../routers/applications-router/applicationsRouter";
+import { EncryptedFileUploadType } from "../../../routers/applications-router/query-schemas";
 import { declarationOfIntentionFieldsValueType } from "./createApplication";
 
 export const patchDeclarationOfIntention = async (
