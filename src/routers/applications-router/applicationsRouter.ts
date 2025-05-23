@@ -2367,26 +2367,6 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                 return "Final Protocol Fee is required in case of approval";
               }
 
-              if (
-                !body.adjustedWeeklyCarbonCredits ||
-                !body.weeklyTotalCarbonDebt ||
-                !body.powerOutputMWH ||
-                !body.hoursOfSunlightPerDay ||
-                !body.carbonOffsetsPerMWH ||
-                !body.adjustmentDueToUncertainty ||
-                !body.weeklyPowerProductionMWh ||
-                !body.weeklyCarbonCredits ||
-                !body.totalCarbonDebtAdjustedKWh ||
-                !body.convertToKW ||
-                !body.totalCarbonDebtProduced ||
-                !body.disasterRisk ||
-                !body.commitmentPeriod ||
-                !body.adjustedTotalCarbonDebt
-              ) {
-                set.status = 400;
-                return "Missing required fields for weekly production and weekly carbon debt";
-              }
-
               recoveredAddress = await recoverAddressHandler(
                 stepApprovedWithFinalProtocolFeeTypes,
                 approvedValues,
@@ -2438,8 +2418,14 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                 return "After Install Visit Date is not passed yet";
               }
 
+              if (!body.weeklyProduction || !body.weeklyCarbonDebt) {
+                set.status = 400;
+                return "Missing required fields for weekly production and weekly carbon debt";
+              }
+
               const netCarbonCreditEarningWeekly = (
-                body.adjustedWeeklyCarbonCredits - body.weeklyTotalCarbonDebt
+                body.weeklyProduction?.adjustedWeeklyCarbonCredits -
+                body.weeklyCarbonDebt?.weeklyTotalCarbonDebt
               ).toString();
               await approveApplicationStep(
                 body.applicationId,
@@ -2453,11 +2439,13 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                   finalProtocolFee: ethers.utils
                     .parseUnits(body.finalProtocolFee!!, 6)
                     .toBigInt(),
-                  systemWattageOutput: body.convertToKW.toString(),
+                  systemWattageOutput:
+                    body.weeklyCarbonDebt?.convertToKW.toString(),
                   netCarbonCreditEarningWeekly,
-                  weeklyTotalCarbonDebt: body.weeklyTotalCarbonDebt.toString(),
+                  weeklyTotalCarbonDebt:
+                    body.weeklyCarbonDebt?.weeklyTotalCarbonDebt.toString(),
                   averageSunlightHoursPerDay:
-                    body.hoursOfSunlightPerDay.toString(),
+                    body.weeklyProduction?.hoursOfSunlightPerDay.toString(),
                 }
               );
 
@@ -2466,26 +2454,35 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                 await db.insert(weeklyProduction).values({
                   applicationId: body.applicationId,
                   createdAt: new Date(),
-                  powerOutputMWH: body.powerOutputMWH,
-                  hoursOfSunlightPerDay: body.hoursOfSunlightPerDay,
-                  carbonOffsetsPerMWH: body.carbonOffsetsPerMWH,
-                  adjustmentDueToUncertainty: body.adjustmentDueToUncertainty,
-                  weeklyPowerProductionMWh: body.weeklyPowerProductionMWh,
-                  weeklyCarbonCredits: body.weeklyCarbonCredits,
-                  adjustedWeeklyCarbonCredits: body.adjustedWeeklyCarbonCredits,
+                  powerOutputMWH: body.weeklyProduction?.powerOutputMWH,
+                  hoursOfSunlightPerDay:
+                    body.weeklyProduction?.hoursOfSunlightPerDay,
+                  carbonOffsetsPerMWH:
+                    body.weeklyProduction?.carbonOffsetsPerMWH,
+                  adjustmentDueToUncertainty:
+                    body.weeklyProduction?.adjustmentDueToUncertainty,
+                  weeklyPowerProductionMWh:
+                    body.weeklyProduction?.weeklyPowerProductionMWh,
+                  weeklyCarbonCredits:
+                    body.weeklyProduction?.weeklyCarbonCredits,
+                  adjustedWeeklyCarbonCredits:
+                    body.weeklyProduction?.adjustedWeeklyCarbonCredits,
                 } as any);
 
                 await db.insert(weeklyCarbonDebt).values({
                   applicationId: body.applicationId,
                   createdAt: new Date(),
-                  totalCarbonDebtAdjustedKWh: body.totalCarbonDebtAdjustedKWh,
-                  powerOutputMWH: body.powerOutputMWH,
-                  convertToKW: body.convertToKW,
-                  totalCarbonDebtProduced: body.totalCarbonDebtProduced,
-                  disasterRisk: body.disasterRisk,
-                  commitmentPeriod: body.commitmentPeriod,
-                  adjustedTotalCarbonDebt: body.adjustedTotalCarbonDebt,
-                  weeklyTotalCarbonDebt: body.weeklyTotalCarbonDebt,
+                  totalCarbonDebtAdjustedKWh:
+                    body.weeklyCarbonDebt?.totalCarbonDebtAdjustedKWh,
+                  convertToKW: body.weeklyCarbonDebt?.convertToKW,
+                  totalCarbonDebtProduced:
+                    body.weeklyCarbonDebt?.totalCarbonDebtProduced,
+                  disasterRisk: body.weeklyCarbonDebt?.disasterRisk,
+                  commitmentPeriod: body.weeklyCarbonDebt?.commitmentPeriod,
+                  adjustedTotalCarbonDebt:
+                    body.weeklyCarbonDebt?.adjustedTotalCarbonDebt,
+                  weeklyTotalCarbonDebt:
+                    body.weeklyCarbonDebt?.weeklyTotalCarbonDebt,
                 } as any);
               } catch (err) {
                 set.status = 500;
@@ -2514,8 +2511,8 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
         {
           body: t.Object({
             ...ApproveOrAskForChangesQueryBody,
-            ...WeeklyProductionSchema,
-            ...WeeklyCarbonDebtSchema,
+            weeklyProduction: t.Nullable(t.Object(WeeklyProductionSchema)),
+            weeklyCarbonDebt: t.Nullable(t.Object(WeeklyCarbonDebtSchema)),
             finalProtocolFee: t.Nullable(t.String()),
           }),
           detail: {

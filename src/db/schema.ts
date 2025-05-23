@@ -1491,7 +1491,6 @@ export const WeeklyProductionRelations = relations(
  * @param {string} applicationId - The ID of the application associated with this record.
  * @param {timestamp} createdAt - The date and time when the weekly carbon debt record was created.
  * @param {number} totalCarbonDebtAdjustedKWh - Fixed value.
- * @param {number} powerOutputMWH - Input value for power output in MWH.
  * @param {number} convertToKW - Calculated: powerOutputMWH * 1000.
  * @param {number} totalCarbonDebtProduced - Calculated: totalCarbonDebtAdjustedKWh * powerOutputMWH * 1000.
  * @param {number} disasterRisk - Fixed value.
@@ -1508,10 +1507,6 @@ export const weeklyCarbonDebt = pgTable("weekly_carbon_debt", {
     .references(() => applications.id, { onDelete: "cascade" }),
   createdAt: timestamp("created_at").notNull(),
   totalCarbonDebtAdjustedKWh: numeric("total_carbon_debt_adjusted_kwh", {
-    precision: 20,
-    scale: 8,
-  }).notNull(),
-  powerOutputMWH: numeric("power_output_mwh", {
     precision: 20,
     scale: 8,
   }).notNull(),
