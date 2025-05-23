@@ -1007,8 +1007,14 @@ export const applicationsRelations = relations(
       references: [OrganizationApplications.applicationId],
     }),
     applicationsEncryptedMasterKeys: many(ApplicationsEncryptedMasterKeys),
-    weeklyProduction: many(weeklyProduction),
-    weeklyCarbonDebt: many(weeklyCarbonDebt),
+    weeklyProduction: one(weeklyProduction, {
+      fields: [applications.id],
+      references: [weeklyProduction.applicationId],
+    }),
+    weeklyCarbonDebt: one(weeklyCarbonDebt, {
+      fields: [applications.id],
+      references: [weeklyCarbonDebt.applicationId],
+    }),
   })
 );
 
