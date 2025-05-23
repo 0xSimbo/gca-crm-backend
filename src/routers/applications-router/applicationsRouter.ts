@@ -2863,12 +2863,11 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
 
             // Update application with the specified fields
             await updateApplication(body.applicationId, {
-              systemWattageOutput: body.systemWattageOutput.toString(),
+              systemWattageOutput: body.convertToKW.toString(),
               netCarbonCreditEarningWeekly:
                 netCarbonCreditEarningWeekly.toString(),
               weeklyTotalCarbonDebt: body.weeklyTotalCarbonDebt.toString(),
-              averageSunlightHoursPerDay:
-                body.averageSunlightHoursPerDay.toString(),
+              averageSunlightHoursPerDay: body.hoursOfSunlightPerDay.toString(),
             });
 
             // Insert into weeklyProduction
@@ -2907,9 +2906,6 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
         {
           body: t.Object({
             applicationId: t.String(),
-            systemWattageOutput: t.String(),
-            averageSunlightHoursPerDay: t.Numeric(),
-            netCarbonCreditEarningWeekly: t.Numeric(),
             ...WeeklyProductionSchema,
             ...WeeklyCarbonDebtSchema,
           }),
