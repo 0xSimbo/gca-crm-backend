@@ -2514,6 +2514,8 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
         {
           body: t.Object({
             ...ApproveOrAskForChangesQueryBody,
+            ...WeeklyProductionSchema,
+            ...WeeklyCarbonDebtSchema,
             finalProtocolFee: t.Nullable(t.String()),
           }),
           detail: {

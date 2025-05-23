@@ -198,6 +198,4 @@ export const ApproveOrAskForChangesQueryBody = {
   approved: t.Boolean(),
   annotation: t.Nullable(t.String()),
   stepIndex: t.Numeric(),
-  ...WeeklyProductionSchema,
-  ...WeeklyCarbonDebtSchema,
 };
