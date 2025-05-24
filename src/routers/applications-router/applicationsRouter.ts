@@ -2853,6 +2853,8 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                 netCarbonCreditEarningWeekly.toString(),
               weeklyTotalCarbonDebt: body.weeklyTotalCarbonDebt.toString(),
               averageSunlightHoursPerDay: body.hoursOfSunlightPerDay.toString(),
+              lat: body.lat.toString(),
+              lng: body.lng.toString(),
             });
 
             // Insert into weeklyProduction
@@ -2893,11 +2895,21 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
             applicationId: t.String(),
             ...WeeklyProductionSchema,
             ...WeeklyCarbonDebtSchema,
+            lat: t.Numeric({
+              example: 38.234242,
+              minimum: -90,
+              maximum: 90,
+            }),
+            lng: t.Numeric({
+              example: -111.123412,
+              minimum: -180,
+              maximum: 180,
+            }),
           }),
           detail: {
             summary: "Patch production and carbon debt for an application",
             description:
-              "Update application with systemWattageOutput, netCarbonCreditEarningWeekly, weeklyTotalCarbonDebt, averageSunlightHoursPerDay and insert weeklyProduction and weeklyCarbonDebt records.",
+              "Update application with systemWattageOutput, netCarbonCreditEarningWeekly, weeklyTotalCarbonDebt, averageSunlightHoursPerDay, lat, lng and insert weeklyProduction and weeklyCarbonDebt records.",
             tags: [TAG.APPLICATIONS],
           },
         }
