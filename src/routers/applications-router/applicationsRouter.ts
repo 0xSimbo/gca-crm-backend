@@ -2853,11 +2853,15 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
 
             // Update application with the specified fields
             await updateApplication(body.applicationId, {
-              systemWattageOutput: body.convertToKW.toString(),
+              systemWattageOutput: body.weeklyCarbonDebt.convertToKW.toString(),
               netCarbonCreditEarningWeekly:
                 netCarbonCreditEarningWeekly.toString(),
-              weeklyTotalCarbonDebt: body.weeklyTotalCarbonDebt.toString(),
-              averageSunlightHoursPerDay: body.hoursOfSunlightPerDay.toString(),
+              weeklyTotalCarbonDebt:
+                body.weeklyCarbonDebt.weeklyTotalCarbonDebt.toString(),
+              averageSunlightHoursPerDay:
+                body.weeklyProduction.hoursOfSunlightPerDay.toString(),
+              adjustedWeeklyCarbonCredits:
+                body.weeklyProduction.adjustedWeeklyCarbonCredits.toString(),
               lat: body.lat.toString(),
               lng: body.lng.toString(),
             });
@@ -2866,27 +2870,35 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
             await db.insert(weeklyProduction).values({
               applicationId: body.applicationId,
               createdAt: new Date(),
-              powerOutputMWH: body.powerOutputMWH,
-              hoursOfSunlightPerDay: body.hoursOfSunlightPerDay,
-              carbonOffsetsPerMWH: body.carbonOffsetsPerMWH,
-              adjustmentDueToUncertainty: body.adjustmentDueToUncertainty,
-              weeklyPowerProductionMWh: body.weeklyPowerProductionMWh,
-              weeklyCarbonCredits: body.weeklyCarbonCredits,
-              adjustedWeeklyCarbonCredits: body.adjustedWeeklyCarbonCredits,
+              powerOutputMWH: body.weeklyProduction.powerOutputMWH,
+              hoursOfSunlightPerDay:
+                body.weeklyProduction.hoursOfSunlightPerDay,
+              carbonOffsetsPerMWH: body.weeklyProduction.carbonOffsetsPerMWH,
+              adjustmentDueToUncertainty:
+                body.weeklyProduction.adjustmentDueToUncertainty,
+              weeklyPowerProductionMWh:
+                body.weeklyProduction.weeklyPowerProductionMWh,
+              weeklyCarbonCredits: body.weeklyProduction.weeklyCarbonCredits,
+              adjustedWeeklyCarbonCredits:
+                body.weeklyProduction.adjustedWeeklyCarbonCredits,
             } as any);
 
             // Insert into weeklyCarbonDebt
             await db.insert(weeklyCarbonDebt).values({
               applicationId: body.applicationId,
               createdAt: new Date(),
-              totalCarbonDebtAdjustedKWh: body.totalCarbonDebtAdjustedKWh,
-              powerOutputMWH: body.powerOutputMWH,
-              convertToKW: body.convertToKW,
-              totalCarbonDebtProduced: body.totalCarbonDebtProduced,
-              disasterRisk: body.disasterRisk,
-              commitmentPeriod: body.commitmentPeriod,
-              adjustedTotalCarbonDebt: body.adjustedTotalCarbonDebt,
-              weeklyTotalCarbonDebt: body.weeklyTotalCarbonDebt,
+              totalCarbonDebtAdjustedKWh:
+                body.weeklyCarbonDebt.totalCarbonDebtAdjustedKWh,
+              powerOutputMWH: body.weeklyProduction.powerOutputMWH,
+              convertToKW: body.weeklyCarbonDebt.convertToKW,
+              totalCarbonDebtProduced:
+                body.weeklyCarbonDebt.totalCarbonDebtProduced,
+              disasterRisk: body.weeklyCarbonDebt.disasterRisk,
+              commitmentPeriod: body.weeklyCarbonDebt.commitmentPeriod,
+              adjustedTotalCarbonDebt:
+                body.weeklyCarbonDebt.adjustedTotalCarbonDebt,
+              weeklyTotalCarbonDebt:
+                body.weeklyCarbonDebt.weeklyTotalCarbonDebt,
             } as any);
 
             return { success: true };
@@ -2898,8 +2910,8 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
         {
           body: t.Object({
             applicationId: t.String(),
-            ...WeeklyProductionSchema,
-            ...WeeklyCarbonDebtSchema,
+            weeklyProduction: t.Object(WeeklyProductionSchema),
+            weeklyCarbonDebt: t.Object(WeeklyCarbonDebtSchema),
             lat: t.Numeric({
               example: 38.234242,
               minimum: -90,
