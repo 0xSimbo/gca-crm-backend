@@ -2300,7 +2300,10 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               inspection: t.Nullable(t.String()),
               pto: t.Nullable(t.String()),
             }),
-            solarPanelsQuantity: t.Number(),
+            solarPanelsQuantity: t.Number({
+              example: 10,
+              minimum: 1,
+            }),
             solarPanelsBrandAndModel: t.String(),
             solarPanelsWarranty: t.String(),
             finalEnergyCost: t.String(),
@@ -2434,6 +2437,8 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                     body.weeklyCarbonDebt?.weeklyTotalCarbonDebt.toString(),
                   averageSunlightHoursPerDay:
                     body.weeklyProduction?.hoursOfSunlightPerDay.toString(),
+                  adjustedWeeklyCarbonCredits:
+                    body.weeklyProduction?.adjustedWeeklyCarbonCredits.toString(),
                 }
               );
 
@@ -2801,7 +2806,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
           },
         }
       )
-      .patch(
+      .post(
         "/patch-production-and-carbon-debt",
         async ({ body, set, userId: gcaId }) => {
           try {
