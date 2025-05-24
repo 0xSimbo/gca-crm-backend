@@ -30,8 +30,6 @@ export type ApplicationAuditFieldsType = {
   ptoObtainedDate: Date | null;
   revisedInstallFinishedDate: Date;
   locationWithoutPII: string;
-  lat: string;
-  lng: string;
 };
 
 /**
@@ -56,7 +54,9 @@ export const completeApplicationWithDocumentsAndCreateFarmWithDevices = async (
   protocolFeePaymentHash: string,
   protocolFeeAdditionalPaymentTxHash: string | null,
   stepAnnotation: string | null,
-  applicationAuditFields: ApplicationAuditFieldsType
+  applicationAuditFields: ApplicationAuditFieldsType,
+  lat: string,
+  lng: string
 ) => {
   if (!process.env.R2_NOT_ENCRYPTED_FILES_BUCKET_NAME) {
     throw new Error("R2_NOT_ENCRYPTED_FILES_BUCKET_NAME is not defined");
@@ -161,10 +161,7 @@ export const completeApplicationWithDocumentsAndCreateFarmWithDevices = async (
   ];
 
   // get region from lat and lng and store in newly created farm
-  const region = await getRegionFromLatAndLng(
-    applicationAuditFields.lat,
-    applicationAuditFields.lng
-  );
+  const region = await getRegionFromLatAndLng(lat, lng);
 
   return db.transaction(async (tx) => {
     if (documents.length) {

@@ -255,6 +255,8 @@ export const handleCreateWithoutPIIDocumentsAndCompleteApplication = async (
     application.paymentTxHash,
     application.additionalPaymentTxHash,
     stepAnnotation,
-    args.applicationAuditFields
+    args.applicationAuditFields,
+    application.lat,
+    application.lng
   );
 };
