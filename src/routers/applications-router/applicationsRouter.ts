@@ -2444,42 +2444,88 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
 
               // --- Insert into weeklyProduction and weeklyCarbonDebt ---
               try {
-                await db.insert(weeklyProduction).values({
-                  applicationId: body.applicationId,
-                  createdAt: new Date(),
-                  powerOutputMWH: body.weeklyProduction?.powerOutputMWH,
-                  hoursOfSunlightPerDay:
-                    body.weeklyProduction?.hoursOfSunlightPerDay,
-                  carbonOffsetsPerMWH:
-                    body.weeklyProduction?.carbonOffsetsPerMWH,
-                  adjustmentDueToUncertainty:
-                    body.weeklyProduction?.adjustmentDueToUncertainty,
-                  weeklyPowerProductionMWh:
-                    body.weeklyProduction?.weeklyPowerProductionMWh,
-                  weeklyCarbonCredits:
-                    body.weeklyProduction?.weeklyCarbonCredits,
-                  adjustedWeeklyCarbonCredits:
-                    body.weeklyProduction?.adjustedWeeklyCarbonCredits,
-                } as any);
+                await db
+                  .insert(weeklyProduction)
+                  .values({
+                    applicationId: body.applicationId,
+                    createdAt: new Date(),
+                    powerOutputMWH:
+                      body.weeklyProduction?.powerOutputMWH?.toString(),
+                    hoursOfSunlightPerDay:
+                      body.weeklyProduction?.hoursOfSunlightPerDay?.toString(),
+                    carbonOffsetsPerMWH:
+                      body.weeklyProduction?.carbonOffsetsPerMWH?.toString(),
+                    adjustmentDueToUncertainty:
+                      body.weeklyProduction?.adjustmentDueToUncertainty?.toString(),
+                    weeklyPowerProductionMWh:
+                      body.weeklyProduction?.weeklyPowerProductionMWh?.toString(),
+                    weeklyCarbonCredits:
+                      body.weeklyProduction?.weeklyCarbonCredits?.toString(),
+                    adjustedWeeklyCarbonCredits:
+                      body.weeklyProduction?.adjustedWeeklyCarbonCredits?.toString(),
+                  } as any)
+                  .onConflictDoUpdate({
+                    target: [weeklyProduction.applicationId],
+                    set: {
+                      createdAt: new Date(),
+                      powerOutputMWH:
+                        body.weeklyProduction?.powerOutputMWH?.toString(),
+                      hoursOfSunlightPerDay:
+                        body.weeklyProduction?.hoursOfSunlightPerDay?.toString(),
+                      carbonOffsetsPerMWH:
+                        body.weeklyProduction?.carbonOffsetsPerMWH?.toString(),
+                      adjustmentDueToUncertainty:
+                        body.weeklyProduction?.adjustmentDueToUncertainty?.toString(),
+                      weeklyPowerProductionMWh:
+                        body.weeklyProduction?.weeklyPowerProductionMWh?.toString(),
+                      weeklyCarbonCredits:
+                        body.weeklyProduction?.weeklyCarbonCredits?.toString(),
+                      adjustedWeeklyCarbonCredits:
+                        body.weeklyProduction?.adjustedWeeklyCarbonCredits?.toString(),
+                    },
+                  });
 
-                await db.insert(weeklyCarbonDebt).values({
-                  applicationId: body.applicationId,
-                  createdAt: new Date(),
-                  totalCarbonDebtAdjustedKWh:
-                    body.weeklyCarbonDebt?.totalCarbonDebtAdjustedKWh,
-                  convertToKW: body.weeklyCarbonDebt?.convertToKW,
-                  totalCarbonDebtProduced:
-                    body.weeklyCarbonDebt?.totalCarbonDebtProduced,
-                  disasterRisk: body.weeklyCarbonDebt?.disasterRisk,
-                  commitmentPeriod: body.weeklyCarbonDebt?.commitmentPeriod,
-                  adjustedTotalCarbonDebt:
-                    body.weeklyCarbonDebt?.adjustedTotalCarbonDebt,
-                  weeklyTotalCarbonDebt:
-                    body.weeklyCarbonDebt?.weeklyTotalCarbonDebt,
-                } as any);
+                await db
+                  .insert(weeklyCarbonDebt)
+                  .values({
+                    applicationId: body.applicationId,
+                    createdAt: new Date(),
+                    totalCarbonDebtAdjustedKWh:
+                      body.weeklyCarbonDebt?.totalCarbonDebtAdjustedKWh?.toString(),
+                    convertToKW: body.weeklyCarbonDebt?.convertToKW?.toString(),
+                    totalCarbonDebtProduced:
+                      body.weeklyCarbonDebt?.totalCarbonDebtProduced?.toString(),
+                    disasterRisk:
+                      body.weeklyCarbonDebt?.disasterRisk?.toString(),
+                    commitmentPeriod:
+                      body.weeklyCarbonDebt?.commitmentPeriod?.toString(),
+                    adjustedTotalCarbonDebt:
+                      body.weeklyCarbonDebt?.adjustedTotalCarbonDebt?.toString(),
+                    weeklyTotalCarbonDebt:
+                      body.weeklyCarbonDebt?.weeklyTotalCarbonDebt?.toString(),
+                  } as any)
+                  .onConflictDoUpdate({
+                    target: [weeklyCarbonDebt.applicationId],
+                    set: {
+                      createdAt: new Date(),
+                      totalCarbonDebtAdjustedKWh:
+                        body.weeklyCarbonDebt?.totalCarbonDebtAdjustedKWh?.toString(),
+                      convertToKW:
+                        body.weeklyCarbonDebt?.convertToKW?.toString(),
+                      totalCarbonDebtProduced:
+                        body.weeklyCarbonDebt?.totalCarbonDebtProduced?.toString(),
+                      disasterRisk:
+                        body.weeklyCarbonDebt?.disasterRisk?.toString(),
+                      commitmentPeriod: body.weeklyCarbonDebt?.commitmentPeriod,
+                      adjustedTotalCarbonDebt:
+                        body.weeklyCarbonDebt?.adjustedTotalCarbonDebt?.toString(),
+                      weeklyTotalCarbonDebt:
+                        body.weeklyCarbonDebt?.weeklyTotalCarbonDebt?.toString(),
+                    },
+                  });
               } catch (err) {
                 set.status = 500;
-                return `Failed to insert weekly production or carbon debt: ${
+                return `Failed to upsert weekly production or carbon debt: ${
                   err instanceof Error ? err.message : String(err)
                 }`;
               }
@@ -2867,39 +2913,92 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
             });
 
             // Insert into weeklyProduction
-            await db.insert(weeklyProduction).values({
-              applicationId: body.applicationId,
-              createdAt: new Date(),
-              powerOutputMWH: body.weeklyProduction.powerOutputMWH,
-              hoursOfSunlightPerDay:
-                body.weeklyProduction.hoursOfSunlightPerDay,
-              carbonOffsetsPerMWH: body.weeklyProduction.carbonOffsetsPerMWH,
-              adjustmentDueToUncertainty:
-                body.weeklyProduction.adjustmentDueToUncertainty,
-              weeklyPowerProductionMWh:
-                body.weeklyProduction.weeklyPowerProductionMWh,
-              weeklyCarbonCredits: body.weeklyProduction.weeklyCarbonCredits,
-              adjustedWeeklyCarbonCredits:
-                body.weeklyProduction.adjustedWeeklyCarbonCredits,
-            } as any);
+            try {
+              await db
+                .insert(weeklyProduction)
+                .values({
+                  applicationId: body.applicationId,
+                  createdAt: new Date(),
+                  powerOutputMWH:
+                    body.weeklyProduction.powerOutputMWH.toString(),
+                  hoursOfSunlightPerDay:
+                    body.weeklyProduction.hoursOfSunlightPerDay.toString(),
+                  carbonOffsetsPerMWH:
+                    body.weeklyProduction.carbonOffsetsPerMWH.toString(),
+                  adjustmentDueToUncertainty:
+                    body.weeklyProduction.adjustmentDueToUncertainty.toString(),
+                  weeklyPowerProductionMWh:
+                    body.weeklyProduction.weeklyPowerProductionMWh.toString(),
+                  weeklyCarbonCredits:
+                    body.weeklyProduction.weeklyCarbonCredits.toString(),
+                  adjustedWeeklyCarbonCredits:
+                    body.weeklyProduction.adjustedWeeklyCarbonCredits.toString(),
+                } as any)
+                .onConflictDoUpdate({
+                  target: [weeklyProduction.applicationId],
+                  set: {
+                    createdAt: new Date(),
+                    powerOutputMWH:
+                      body.weeklyProduction.powerOutputMWH.toString(),
+                    hoursOfSunlightPerDay:
+                      body.weeklyProduction.hoursOfSunlightPerDay.toString(),
+                    carbonOffsetsPerMWH:
+                      body.weeklyProduction.carbonOffsetsPerMWH.toString(),
+                    adjustmentDueToUncertainty:
+                      body.weeklyProduction.adjustmentDueToUncertainty.toString(),
+                    weeklyPowerProductionMWh:
+                      body.weeklyProduction.weeklyPowerProductionMWh.toString(),
+                    weeklyCarbonCredits:
+                      body.weeklyProduction.weeklyCarbonCredits.toString(),
+                    adjustedWeeklyCarbonCredits:
+                      body.weeklyProduction.adjustedWeeklyCarbonCredits.toString(),
+                  },
+                });
 
-            // Insert into weeklyCarbonDebt
-            await db.insert(weeklyCarbonDebt).values({
-              applicationId: body.applicationId,
-              createdAt: new Date(),
-              totalCarbonDebtAdjustedKWh:
-                body.weeklyCarbonDebt.totalCarbonDebtAdjustedKWh,
-              powerOutputMWH: body.weeklyProduction.powerOutputMWH,
-              convertToKW: body.weeklyCarbonDebt.convertToKW,
-              totalCarbonDebtProduced:
-                body.weeklyCarbonDebt.totalCarbonDebtProduced,
-              disasterRisk: body.weeklyCarbonDebt.disasterRisk,
-              commitmentPeriod: body.weeklyCarbonDebt.commitmentPeriod,
-              adjustedTotalCarbonDebt:
-                body.weeklyCarbonDebt.adjustedTotalCarbonDebt,
-              weeklyTotalCarbonDebt:
-                body.weeklyCarbonDebt.weeklyTotalCarbonDebt,
-            } as any);
+              // Insert into weeklyCarbonDebt
+              await db
+                .insert(weeklyCarbonDebt)
+                .values({
+                  applicationId: body.applicationId,
+                  createdAt: new Date(),
+                  totalCarbonDebtAdjustedKWh:
+                    body.weeklyCarbonDebt.totalCarbonDebtAdjustedKWh.toString(),
+                  convertToKW: body.weeklyCarbonDebt.convertToKW.toString(),
+                  totalCarbonDebtProduced:
+                    body.weeklyCarbonDebt.totalCarbonDebtProduced.toString(),
+                  disasterRisk: body.weeklyCarbonDebt.disasterRisk.toString(),
+                  commitmentPeriod:
+                    body.weeklyCarbonDebt.commitmentPeriod.toString(),
+                  adjustedTotalCarbonDebt:
+                    body.weeklyCarbonDebt.adjustedTotalCarbonDebt.toString(),
+                  weeklyTotalCarbonDebt:
+                    body.weeklyCarbonDebt.weeklyTotalCarbonDebt.toString(),
+                } as any)
+                .onConflictDoUpdate({
+                  target: [weeklyCarbonDebt.applicationId],
+                  set: {
+                    createdAt: new Date(),
+                    totalCarbonDebtAdjustedKWh:
+                      body.weeklyCarbonDebt.totalCarbonDebtAdjustedKWh.toString(),
+                    convertToKW: body.weeklyCarbonDebt.convertToKW.toString(),
+                    totalCarbonDebtProduced:
+                      body.weeklyCarbonDebt.totalCarbonDebtProduced.toString(),
+                    disasterRisk: body.weeklyCarbonDebt.disasterRisk.toString(),
+                    commitmentPeriod: body.weeklyCarbonDebt.commitmentPeriod,
+                    adjustedTotalCarbonDebt:
+                      body.weeklyCarbonDebt.adjustedTotalCarbonDebt.toString(),
+                    weeklyTotalCarbonDebt:
+                      body.weeklyCarbonDebt.weeklyTotalCarbonDebt.toString(),
+                  },
+                });
+            } catch (err) {
+              set.status = 500;
+              return {
+                error: `Failed to upsert weekly production or carbon debt: ${
+                  err instanceof Error ? err.message : String(err)
+                }`,
+              };
+            }
 
             return { success: true };
           } catch (e) {

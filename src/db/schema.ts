@@ -1441,43 +1441,51 @@ export const DeclarationOfIntentionMerkleRoots = pgTable(
  * @param {number} weeklyCarbonCredits - Calculated: weeklyPowerProductionMWh * carbonOffsetsPerMWH.
  * @param {number} adjustedWeeklyCarbonCredits - Calculated: weeklyCarbonCredits * (1 - adjustmentDueToUncertainty).
  */
-export const weeklyProduction = pgTable("weekly_production", {
-  id: text("weekly_production_id")
-    .primaryKey()
-    .$defaultFn(() => crypto.randomUUID()),
-  applicationId: text("application_id")
-    .notNull()
-    .references(() => applications.id, { onDelete: "cascade" }),
-  createdAt: timestamp("created_at").notNull(),
-  powerOutputMWH: numeric("power_output_mwh", {
-    precision: 20,
-    scale: 8,
-  }).notNull(),
-  hoursOfSunlightPerDay: numeric("hours_of_sunlight_per_day", {
-    precision: 20,
-    scale: 8,
-  }).notNull(),
-  carbonOffsetsPerMWH: numeric("carbon_offsets_per_mwh", {
-    precision: 20,
-    scale: 8,
-  }).notNull(),
-  adjustmentDueToUncertainty: numeric("adjustment_due_to_uncertainty", {
-    precision: 5,
-    scale: 2,
-  }).notNull(),
-  weeklyPowerProductionMWh: numeric("weekly_power_production_mwh", {
-    precision: 20,
-    scale: 8,
-  }).notNull(),
-  weeklyCarbonCredits: numeric("weekly_carbon_credits", {
-    precision: 20,
-    scale: 8,
-  }).notNull(),
-  adjustedWeeklyCarbonCredits: numeric("adjusted_weekly_carbon_credits", {
-    precision: 20,
-    scale: 8,
-  }).notNull(),
-});
+export const weeklyProduction = pgTable(
+  "weekly_production",
+  {
+    id: text("weekly_production_id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    applicationId: text("application_id")
+      .notNull()
+      .references(() => applications.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at").notNull(),
+    powerOutputMWH: numeric("power_output_mwh", {
+      precision: 20,
+      scale: 8,
+    }).notNull(),
+    hoursOfSunlightPerDay: numeric("hours_of_sunlight_per_day", {
+      precision: 20,
+      scale: 8,
+    }).notNull(),
+    carbonOffsetsPerMWH: numeric("carbon_offsets_per_mwh", {
+      precision: 20,
+      scale: 8,
+    }).notNull(),
+    adjustmentDueToUncertainty: numeric("adjustment_due_to_uncertainty", {
+      precision: 5,
+      scale: 2,
+    }).notNull(),
+    weeklyPowerProductionMWh: numeric("weekly_power_production_mwh", {
+      precision: 20,
+      scale: 8,
+    }).notNull(),
+    weeklyCarbonCredits: numeric("weekly_carbon_credits", {
+      precision: 20,
+      scale: 8,
+    }).notNull(),
+    adjustedWeeklyCarbonCredits: numeric("adjusted_weekly_carbon_credits", {
+      precision: 20,
+      scale: 8,
+    }).notNull(),
+  },
+  (t) => ({
+    uniqueApplicationId: uniqueIndex(
+      "weekly_production_application_id_unique_ix"
+    ).on(t.applicationId),
+  })
+);
 
 export type WeeklyProductionType = InferSelectModel<typeof weeklyProduction>;
 
@@ -1504,34 +1512,48 @@ export const WeeklyProductionRelations = relations(
  * @param {number} adjustedTotalCarbonDebt - Calculated: totalCarbonDebtProduced * (1 + disasterRisk) ** commitmentPeriod.
  * @param {number} weeklyTotalCarbonDebt - Calculated: adjustedTotalCarbonDebt / (weeksPerYear * commitmentPeriod).
  */
-export const weeklyCarbonDebt = pgTable("weekly_carbon_debt", {
-  id: text("weekly_carbon_debt_id")
-    .primaryKey()
-    .$defaultFn(() => crypto.randomUUID()),
-  applicationId: text("application_id")
-    .notNull()
-    .references(() => applications.id, { onDelete: "cascade" }),
-  createdAt: timestamp("created_at").notNull(),
-  totalCarbonDebtAdjustedKWh: numeric("total_carbon_debt_adjusted_kwh", {
-    precision: 20,
-    scale: 8,
-  }).notNull(),
-  convertToKW: numeric("convert_to_kw", { precision: 20, scale: 8 }).notNull(),
-  totalCarbonDebtProduced: numeric("total_carbon_debt_produced", {
-    precision: 20,
-    scale: 8,
-  }).notNull(),
-  disasterRisk: numeric("disaster_risk", { precision: 10, scale: 8 }).notNull(),
-  commitmentPeriod: integer("commitment_period").notNull(),
-  adjustedTotalCarbonDebt: numeric("adjusted_total_carbon_debt", {
-    precision: 20,
-    scale: 8,
-  }).notNull(),
-  weeklyTotalCarbonDebt: numeric("weekly_total_carbon_debt", {
-    precision: 20,
-    scale: 8,
-  }).notNull(),
-});
+export const weeklyCarbonDebt = pgTable(
+  "weekly_carbon_debt",
+  {
+    id: text("weekly_carbon_debt_id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    applicationId: text("application_id")
+      .notNull()
+      .references(() => applications.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at").notNull(),
+    totalCarbonDebtAdjustedKWh: numeric("total_carbon_debt_adjusted_kwh", {
+      precision: 20,
+      scale: 8,
+    }).notNull(),
+    convertToKW: numeric("convert_to_kw", {
+      precision: 20,
+      scale: 8,
+    }).notNull(),
+    totalCarbonDebtProduced: numeric("total_carbon_debt_produced", {
+      precision: 20,
+      scale: 8,
+    }).notNull(),
+    disasterRisk: numeric("disaster_risk", {
+      precision: 10,
+      scale: 8,
+    }).notNull(),
+    commitmentPeriod: integer("commitment_period").notNull(),
+    adjustedTotalCarbonDebt: numeric("adjusted_total_carbon_debt", {
+      precision: 20,
+      scale: 8,
+    }).notNull(),
+    weeklyTotalCarbonDebt: numeric("weekly_total_carbon_debt", {
+      precision: 20,
+      scale: 8,
+    }).notNull(),
+  },
+  (t) => ({
+    uniqueApplicationId: uniqueIndex(
+      "weekly_carbon_debt_application_id_unique_ix"
+    ).on(t.applicationId),
+  })
+);
 
 export type WeeklyCarbonDebtType = InferSelectModel<typeof weeklyCarbonDebt>;
 
