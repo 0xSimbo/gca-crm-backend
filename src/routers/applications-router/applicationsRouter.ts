@@ -2304,12 +2304,20 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               example: 10,
               minimum: 1,
             }),
-            solarPanelsBrandAndModel: t.String(),
-            solarPanelsWarranty: t.String(),
-            finalEnergyCost: t.String(),
+            solarPanelsBrandAndModel: t.String({
+              minLength: 1,
+            }),
+            solarPanelsWarranty: t.String({
+              minLength: 1,
+            }),
+            finalEnergyCost: t.String({
+              minLength: 1,
+            }),
             ptoObtainedDate: t.Nullable(t.Date()),
             revisedInstallFinishedDate: t.Date(),
-            locationWithoutPII: t.String(),
+            locationWithoutPII: t.String({
+              minLength: 1,
+            }),
           }),
           detail: {
             summary: "",
