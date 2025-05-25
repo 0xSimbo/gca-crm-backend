@@ -156,6 +156,7 @@ const app = new Elysia()
     return legacyFarms;
   })
   .get("/update-rewards-for-all-weeks", async () => {
+    return { message: "dev only" };
     const lastWeek = getProtocolWeek() - 1;
     try {
       await db.update(farms).set({
