@@ -1,36 +1,38 @@
-import { DB_DECIMALS } from "../../constants";
-
 import { db } from "../../db/db";
-import { eq, sql } from "drizzle-orm";
 import {
   deviceRewardParent,
   deviceRewards,
   DeviceRewardsInsertType,
-  farmRewards,
-  FarmRewardsInsertType,
-  farms,
 } from "../../db/schema";
-import { getScrapedFarmsAndRewards } from "./get-scraped-farms-and-rewards-for-week";
+import { DeviceLifetimeMetrics } from "./get-devices-lifetime-metrics";
 
 export async function updateDeviceRewardsForWeek({
+  deviceLifetimeMetrics,
   weekNumber,
 }: {
+  deviceLifetimeMetrics: DeviceLifetimeMetrics[];
   weekNumber: number;
 }) {
-  console.log("here!");
-  const devicesWithRewards = await getScrapedFarmsAndRewards({ weekNumber });
-  const hexkeysOnly = devicesWithRewards.map((device) => {
-    return { id: device.hexPubKey };
+  const hexkeysOnly = deviceLifetimeMetrics.map((device) => {
+    return { id: device.hexlifiedPublicKey };
   });
 
-  const values: DeviceRewardsInsertType[] = devicesWithRewards.map((device) => {
-    return {
-      weekNumber,
-      usdgRewards: device.rewards.usdg.toString(),
-      glowRewards: device.rewards.glow.toString(),
-      hexlifiedFarmPubKey: device.hexPubKey,
-    };
-  });
+  const values: DeviceRewardsInsertType[] = deviceLifetimeMetrics.flatMap(
+    (device) => {
+      const weekData = device.weeklyData.find(
+        (w) => w.weekNumber === weekNumber
+      );
+      if (!weekData) return [];
+      return [
+        {
+          weekNumber,
+          usdgRewards: weekData.rewards.usdg.toString(),
+          glowRewards: weekData.rewards.glow.toString(),
+          hexlifiedFarmPubKey: device.hexlifiedPublicKey,
+        },
+      ];
+    }
+  );
 
   try {
     await db
@@ -39,6 +41,6 @@ export async function updateDeviceRewardsForWeek({
       .onConflictDoNothing();
     await db.insert(deviceRewards).values(values);
   } catch (e) {
-    // console.error(e);
+    console.error("Failed to update device rewards", e);
   }
 }

@@ -24,6 +24,14 @@ export const updateWalletRewardsForWeek = async (
   if (existsInCurrentWeek.length > 0) {
     return { keepGoing: false };
   }
+
+  //TODO: Grab the on-chain rewards.
+  // We can store this in a 24 hour since there is a 16 week offset between
+  // Rewards being injected vs their distribution.
+  // For example: If Week 20 of the protocol gets injected with $10,000 in USDG Rewards,
+  // Those rewards are not available until Week 36.
+  const usdgRewards = await getRewardsInBucket(weekNumber);
+
   const { merkleTree } = await getMerkleTreeForWeek(weekNumber - 1);
   const leafType = ["address", "uint256", "uint256"];
 
@@ -33,13 +41,6 @@ export const updateWalletRewardsForWeek = async (
     return hash;
   });
   const tree = new MerkleTree(leaves, keccak256, { sort: true });
-
-  //TODO: Grab the on-chain rewards.
-  // We can store this in a 24 hour since there is a 16 week offset between
-  // Rewards being injected vs their distribution.
-  // For example: If Week 20 of the protocol gets injected with $10,000 in USDG Rewards,
-  // Those rewards are not available until Week 36.
-  const usdgRewards = await getRewardsInBucket(weekNumber);
 
   const sumOfWeights = merkleTree.reduce(
     (acc, cur) => {
@@ -87,6 +88,30 @@ export const updateWalletRewardsForWeek = async (
       claimProof: proof,
     };
   });
+
+  const totalGlowRewards = walletsAndRewards.reduce(
+    (acc, cur) => acc + cur.glowRewards,
+    BigInt(0)
+  );
+  const totalUsdgRewards = walletsAndRewards.reduce(
+    (acc, cur) => acc + cur.usdgRewards,
+    0
+  );
+
+  if (totalGlowRewards / BigInt(10 ** DB_DECIMALS) > GLOW_REWARDS_PER_WEEK) {
+    throw new Error(
+      `Total Glow Rewards ${totalGlowRewards} does not match expected ${GLOW_REWARDS_PER_WEEK}`
+    );
+  }
+
+  if (
+    totalUsdgRewards >
+    parseFloat(formatUnits(usdgRewards as bigint, 6 - DB_DECIMALS))
+  ) {
+    throw new Error(
+      `Total USDG Rewards ${totalUsdgRewards} does not match expected ${usdgRewards}`
+    );
+  }
 
   const INDEX = 0; //TODO: fix when u get a chance @0xSimbo don't forget to fix this
   const globalValues = walletsAndRewards

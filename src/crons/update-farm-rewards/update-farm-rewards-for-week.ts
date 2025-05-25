@@ -4,7 +4,10 @@ import { DB_DECIMALS } from "../../constants";
 import { db } from "../../db/db";
 import { eq, sql } from "drizzle-orm";
 import { farmRewards, FarmRewardsInsertType, farms } from "../../db/schema";
-import { getScrapedFarmsAndRewards } from "./get-scraped-farms-and-rewards-for-week";
+import {
+  DeviceLifetimeMetrics,
+  getDevicesLifetimeMetrics,
+} from "./get-devices-lifetime-metrics";
 
 // Helper function to convert BigInt to string in objects
 // function replaceBigInts(obj: any): any {
@@ -16,12 +19,12 @@ import { getScrapedFarmsAndRewards } from "./get-scraped-farms-and-rewards-for-w
 // }
 
 export async function updateFarmRewardsForWeek({
+  deviceLifetimeMetrics,
   weekNumber,
 }: {
+  deviceLifetimeMetrics: DeviceLifetimeMetrics[];
   weekNumber: number;
 }) {
-  const farmsWithRewards = await getScrapedFarmsAndRewards({ weekNumber });
-
   const allFarmsIdsWithDevices = await db.query.farms.findMany({
     columns: {
       id: true,
@@ -39,84 +42,74 @@ export async function updateFarmRewardsForWeek({
     },
   });
 
-  // fs.writeFileSync(
-  //   `./src/crons/update-farm-rewards/logs/farmsWithRewards-${weekNumber}.json`,
-  //   JSON.stringify(replaceBigInts(farmsWithRewards), null, 2)
-  // );
-
-  // fs.writeFileSync(
-  //   `./src/crons/update-farm-rewards/logs/allFarmsIdsWithDevices-${weekNumber}.json`,
-  //   JSON.stringify(replaceBigInts(allFarmsIdsWithDevices), null, 2)
-  // );
-
+  // Directly map DeviceLifetimeMetrics to farm rewards
   const farmWithRewards: (FarmRewardsInsertType & {
     previousUsdgRewards: bigint;
     previousGlowRewards: bigint;
-  })[] = farmsWithRewards.reduce((carry: any[], farm) => {
+  })[] = deviceLifetimeMetrics.flatMap((farm) => {
     const farmMatch = allFarmsIdsWithDevices.find((dbFarm) =>
-      dbFarm.devices.find(
+      dbFarm.devices.some(
         (device) =>
-          device.publicKey.toLowerCase() === farm.hexPubKey.toLowerCase()
+          device.publicKey.toLowerCase() ===
+          farm.hexlifiedPublicKey.toLowerCase()
       )
     );
-
-    if (farmMatch) {
-      const hexlifiedFarmPubKey = farmMatch.id;
-      return [
-        ...carry,
-        {
-          hexlifiedFarmPubKey,
-          weekNumber,
-          usdgRewards:
-            BigInt(Math.floor(farm.rewards.usdg)) * BigInt(10 ** DB_DECIMALS),
-          glowRewards:
-            BigInt(Math.floor(farm.rewards.glow)) * BigInt(10 ** DB_DECIMALS),
-          previousUsdgRewards: farmMatch.totalUSDGRewards,
-          previousGlowRewards: farmMatch.totalGlowRewards,
-        },
-      ];
-    }
-    // console.log("No match found for farm", farm.shortId);
-    return carry;
-  }, []);
+    if (!farmMatch) return [];
+    const hexlifiedFarmPubKey = farmMatch.id;
+    // Find the week data for the given weekNumber
+    const weekData = farm.weeklyData.find((w) => w.weekNumber === weekNumber);
+    if (!weekData) return [];
+    return [
+      {
+        hexlifiedFarmPubKey,
+        weekNumber,
+        usdgRewards:
+          BigInt(Math.floor(weekData.rewards.usdg)) * BigInt(10 ** DB_DECIMALS),
+        glowRewards:
+          BigInt(Math.floor(weekData.rewards.glow)) * BigInt(10 ** DB_DECIMALS),
+        previousUsdgRewards: farmMatch.totalUSDGRewards,
+        previousGlowRewards: farmMatch.totalGlowRewards,
+      },
+    ];
+  });
 
   // Deduplicate farm rewards by combining rewards for the same farm and week
   const deduplicatedFarmRewards = Object.values(
     farmWithRewards.reduce((acc, farm) => {
       const key = `${farm.hexlifiedFarmPubKey}-${farm.weekNumber}`;
-
       if (!acc[key]) {
         acc[key] = farm;
       } else {
-        // Combine rewards if there are multiple entries for the same farm
         acc[key] = {
           ...acc[key],
-          usdgRewards: acc[key].usdgRewards!! + farm.usdgRewards!!,
-          glowRewards: acc[key].glowRewards!! + farm.glowRewards!!,
+          usdgRewards:
+            (acc[key].usdgRewards ?? BigInt(0)) +
+            (farm.usdgRewards ?? BigInt(0)),
+          glowRewards:
+            (acc[key].glowRewards ?? BigInt(0)) +
+            (farm.glowRewards ?? BigInt(0)),
         };
       }
-
       return acc;
     }, {} as Record<string, (typeof farmWithRewards)[number]>)
   );
 
-  if (deduplicatedFarmRewards.length === 0) {
-    return;
-  }
+  if (deduplicatedFarmRewards.length === 0) return;
 
   await db.transaction(async (trx) => {
     await trx.insert(farmRewards).values(deduplicatedFarmRewards);
-
     await Promise.all(
-      deduplicatedFarmRewards.map((farm) =>
-        trx
+      deduplicatedFarmRewards.map((farm) => {
+        const usdgRewards = farm.usdgRewards ?? BigInt(0);
+        const glowRewards = farm.glowRewards ?? BigInt(0);
+        return trx
           .update(farms)
           .set({
-            totalUSDGRewards: farm.previousUsdgRewards + farm.usdgRewards!!,
-            totalGlowRewards: farm.previousGlowRewards + farm.glowRewards!!,
+            totalUSDGRewards: farm.previousUsdgRewards + usdgRewards,
+            totalGlowRewards: farm.previousGlowRewards + glowRewards,
           })
-          .where(eq(farms.id, farm.hexlifiedFarmPubKey))
-      )
+          .where(eq(farms.id, farm.hexlifiedFarmPubKey));
+      })
     );
   });
 }

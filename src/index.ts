@@ -24,6 +24,9 @@ import { legacyFarms } from "./legacy/farms";
 import { updateDeviceRewardsForWeek } from "./crons/update-farm-rewards/update-device-rewards-for-week";
 import { farmsRouter } from "./routers/farms/farmsRouter";
 import { postMerkleRootHandler } from "./utils/postMerkleRoot";
+import { getDevicesLifetimeMetrics } from "./crons/update-farm-rewards/get-devices-lifetime-metrics";
+import { db } from "./db/db";
+import { deviceRewards, farmRewards, farms } from "./db/schema";
 
 const PORT = process.env.PORT || 3005;
 const app = new Elysia()
@@ -60,23 +63,30 @@ const app = new Elysia()
   .use(
     cron({
       name: "Updating Rewards",
-      pattern: Patterns.everyHours(2),
+      pattern: Patterns.EVERY_WEEK,
       async run() {
         if (process.env.NODE_ENV === "production") {
           const currentWeek = getProtocolWeek();
           const weekToQuery = currentWeek - 1;
+          const deviceLifetimeMetrics = await getDevicesLifetimeMetrics();
           // Make sure to keep updateWalletRewardsForWeek before updateFarmRewardsForWeek
           // Update Wallet Rewards For Week checks the merkle tree for the previous week
           // We don't want to update the farm rewards for the current week if a GCA hasn;t submitted the report yet.
           try {
-            await updateDeviceRewardsForWeek({ weekNumber: weekToQuery });
+            await updateDeviceRewardsForWeek({
+              deviceLifetimeMetrics,
+              weekNumber: weekToQuery,
+            });
           } catch (e) {}
           try {
             const keepGoing = await updateWalletRewardsForWeek(weekToQuery);
             if (!keepGoing.keepGoing) {
               return;
             }
-            await updateFarmRewardsForWeek({ weekNumber: weekToQuery });
+            await updateFarmRewardsForWeek({
+              weekNumber: weekToQuery,
+              deviceLifetimeMetrics,
+            });
           } catch (error) {}
         }
       },
@@ -126,22 +136,16 @@ const app = new Elysia()
   .use(organizationsRouter)
   .use(usersRouter)
   .use(farmsRouter)
-  .get("/me", async () => {
-    const startWeek = 9;
-    const endWeek = 35;
-    for (let i = startWeek; i <= endWeek; i++) {
-      console.log(`Updating rewards for week ${i}`);
-      await updateDeviceRewardsForWeek({ weekNumber: i });
-    }
-    // await updateDeviceRewardsForWeek({ weekNumber: i });
-    return { message: "success" };
-  })
   .get("/update-rewards-for-current-week", async () => {
     //Will only work if the GCA has submitted the report for the current week.
     const currentWeek = getProtocolWeek();
     try {
+      const deviceLifetimeMetrics = await getDevicesLifetimeMetrics();
       await updateWalletRewardsForWeek(currentWeek);
-      await updateFarmRewardsForWeek({ weekNumber: currentWeek });
+      await updateFarmRewardsForWeek({
+        deviceLifetimeMetrics,
+        weekNumber: currentWeek,
+      });
       return { message: "success" };
     } catch (error) {
       console.error("Error updating rewards", error);
@@ -152,11 +156,26 @@ const app = new Elysia()
     return legacyFarms;
   })
   .get("/update-rewards-for-all-weeks", async () => {
-    const lastWeek = getProtocolWeek() - 2;
+    const lastWeek = getProtocolWeek() - 1;
     try {
-      for (let i = 12; i <= lastWeek; i++) {
+      await db.update(farms).set({
+        totalUSDGRewards: BigInt(0),
+        totalGlowRewards: BigInt(0),
+      });
+      await db.delete(farmRewards);
+      await db.delete(deviceRewards);
+      const deviceLifetimeMetrics = await getDevicesLifetimeMetrics();
+      for (let i = 10; i <= lastWeek; i++) {
+        console.log("Updating rewards for week", i);
         await updateWalletRewardsForWeek(i);
-        await updateFarmRewardsForWeek({ weekNumber: i });
+        await updateDeviceRewardsForWeek({
+          deviceLifetimeMetrics,
+          weekNumber: i,
+        });
+        await updateFarmRewardsForWeek({
+          deviceLifetimeMetrics,
+          weekNumber: i,
+        });
       }
       return { message: "success" };
     } catch (error) {
