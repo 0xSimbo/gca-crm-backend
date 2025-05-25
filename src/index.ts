@@ -15,11 +15,6 @@ import { rewardSplitsRouter } from "./routers/reward-splits-router/rewardSplitsR
 import { devicesRouter } from "./routers/devices/devicesRouter";
 import { cron, Patterns } from "@elysiajs/cron";
 import { getProtocolWeek } from "./utils/getProtocolWeek";
-import {
-  MigrationFarmData,
-  insertFarmWithDependencies,
-} from "./db/scripts/farm-migration";
-import LegacyFarmsData from "./db/scripts/legacy-farms.json";
 import { organizationsRouter } from "./routers/organizations-router/organizationsRouter";
 import { permissions } from "./types/api-types/Permissions";
 import { findAllPermissions } from "./db/queries/permissions/findAllPermissions";
@@ -29,9 +24,6 @@ import { legacyFarms } from "./legacy/farms";
 import { updateDeviceRewardsForWeek } from "./crons/update-farm-rewards/update-device-rewards-for-week";
 import { farmsRouter } from "./routers/farms/farmsRouter";
 import { postMerkleRootHandler } from "./utils/postMerkleRoot";
-import { findAllFarmsCoordinates } from "./db/queries/farms/findAllFarmsCoordinates";
-import { getRegionFromLatAndLng } from "./utils/getRegionFromLatAndLng";
-import { updateFarmRegion } from "./db/mutations/farms/updateFarmRegion";
 
 const PORT = process.env.PORT || 3005;
 const app = new Elysia()
@@ -189,29 +181,31 @@ const app = new Elysia()
     //   console.error("Error migrating farm", error);
     //   return { message: "error" };
     // }
-    console.log("Migrating farms");
-    try {
-      // hub farms
-      const farmsData = await findAllFarmsCoordinates();
-      // legacy farms
-      // const farmsData = await findAllLegacyFarmsCoordinates();
 
-      for (const farm of farmsData) {
-        if (!farm.farmId) {
-          console.log("No farm id found for farm", farm);
-          continue;
-        }
-        if (
-          farm.region !== "__UNSET__" &&
-          farm.regionFullName !== "__UNSET__" &&
-          farm.signalType !== "__UNSET__"
-        ) {
-          // console.log("Farm already has region", farm);
-          continue;
-        }
-        const region = await getRegionFromLatAndLng(farm.lat, farm.lng);
-        await updateFarmRegion(farm.farmId, region);
-      }
+    try {
+      // console.log("Migrating farms coordinates");
+      //   // hub farms
+      //   const farmsData = await findAllFarmsCoordinates();
+      //   // legacy farms
+      //   // const farmsData = await findAllLegacyFarmsCoordinates();
+
+      //   for (const farm of farmsData) {
+      //     if (!farm.farmId) {
+      //       console.log("No farm id found for farm", farm);
+      //       continue;
+      //     }
+      //     if (
+      //       farm.region !== "__UNSET__" &&
+      //       farm.regionFullName !== "__UNSET__" &&
+      //       farm.signalType !== "__UNSET__"
+      //     ) {
+      //       // console.log("Farm already has region", farm);
+      //       continue;
+      //     }
+      //     const region = await getRegionFromLatAndLng(farm.lat, farm.lng);
+      //     await updateFarmRegion(farm.farmId, region);
+      //   }
+
       return { message: "success" };
     } catch (error) {
       console.error("Error migrating farm", error);
