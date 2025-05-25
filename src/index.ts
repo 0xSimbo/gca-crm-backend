@@ -26,7 +26,12 @@ import { farmsRouter } from "./routers/farms/farmsRouter";
 import { postMerkleRootHandler } from "./utils/postMerkleRoot";
 import { getDevicesLifetimeMetrics } from "./crons/update-farm-rewards/get-devices-lifetime-metrics";
 import { db } from "./db/db";
-import { deviceRewards, farmRewards, farms } from "./db/schema";
+import {
+  deviceRewards,
+  farmRewards,
+  farms,
+  walletWeeklyRewards,
+} from "./db/schema";
 
 const PORT = process.env.PORT || 3005;
 const app = new Elysia()
@@ -165,6 +170,7 @@ const app = new Elysia()
       });
       await db.delete(farmRewards);
       await db.delete(deviceRewards);
+      await db.delete(walletWeeklyRewards);
       const deviceLifetimeMetrics = await getDevicesLifetimeMetrics();
       for (let i = 10; i <= lastWeek; i++) {
         console.log("Updating rewards for week", i);
