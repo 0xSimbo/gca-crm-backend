@@ -30,6 +30,7 @@ import {
   deviceRewards,
   farmRewards,
   farms,
+  wallets,
   walletWeeklyRewards,
 } from "./db/schema";
 
@@ -164,25 +165,29 @@ const app = new Elysia()
     return { message: "dev only" };
     const lastWeek = getProtocolWeek() - 1;
     try {
-      await db.update(farms).set({
+      // await db.update(farms).set({
+      //   totalUSDGRewards: BigInt(0),
+      //   totalGlowRewards: BigInt(0),
+      // });
+      await db.update(wallets).set({
         totalUSDGRewards: BigInt(0),
         totalGlowRewards: BigInt(0),
       });
-      await db.delete(farmRewards);
-      await db.delete(deviceRewards);
+      // await db.delete(farmRewards);
+      // await db.delete(deviceRewards);
       await db.delete(walletWeeklyRewards);
-      const deviceLifetimeMetrics = await getDevicesLifetimeMetrics();
+      // const deviceLifetimeMetrics = await getDevicesLifetimeMetrics();
       for (let i = 10; i <= lastWeek; i++) {
         console.log("Updating rewards for week", i);
         await updateWalletRewardsForWeek(i);
-        await updateDeviceRewardsForWeek({
-          deviceLifetimeMetrics,
-          weekNumber: i,
-        });
-        await updateFarmRewardsForWeek({
-          deviceLifetimeMetrics,
-          weekNumber: i,
-        });
+        // await updateDeviceRewardsForWeek({
+        //   deviceLifetimeMetrics,
+        //   weekNumber: i,
+        // });
+        // await updateFarmRewardsForWeek({
+        //   deviceLifetimeMetrics,
+        //   weekNumber: i,
+        // });
       }
       return { message: "success" };
     } catch (error) {
