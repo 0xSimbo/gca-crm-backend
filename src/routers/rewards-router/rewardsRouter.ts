@@ -1,19 +1,14 @@
 import { Elysia, t } from "elysia";
 import { db } from "../../db/db";
 import { eq, inArray } from "drizzle-orm";
-import {
-  walletWeeklyRewards,
-  wallets,
-  farms,
-  Devices,
-  farmRewards,
-  deviceRewards,
-} from "../../db/schema";
-import { formatUnits } from "viem";
+import { walletWeeklyRewards, wallets, deviceRewards } from "../../db/schema";
+import { formatUnits, checksumAddress } from "viem";
 import { TAG } from "../../constants";
 import { getHexPubkeyFromShortId } from "../../utils/getHexPubkeyFromShortId";
 import { getProtocolWeek } from "../../utils/getProtocolWeek";
 import { getAllHexkeysAndShortIds } from "../../utils/getAllHexkeysAndShortIds";
+
+const DEFAULT_PAGE_SIZE = 100;
 
 export const GetUserRewardsQueryBody = t.Object({
   wallet: t.String({
@@ -290,16 +285,37 @@ export const rewardsRouter = new Elysia({ prefix: "/rewards" })
   )
   .get(
     "/wallet-rewards",
-    async ({ query }) => {
+    async ({ query, set }) => {
       try {
+        // Ensure wallet address is checksummed
+        let checksummedWallet: string;
+        try {
+          const checksummed = checksumAddress(query.wallet as `0x${string}`);
+          if (
+            typeof checksummed === "string" &&
+            checksummed.startsWith("0x") &&
+            checksummed.length === 42
+          ) {
+            checksummedWallet = checksummed;
+          } else {
+            throw new Error();
+          }
+        } catch (err) {
+          throw new Error("Invalid wallet address format");
+        }
         const wallet = await db.query.wallets.findFirst({
-          where: eq(wallets.id, query.wallet),
+          where: eq(wallets.id, checksummedWallet),
           with: {
             weeklyRewards: true,
           },
         });
 
-        if (!wallet) throw new Error("Wallet not found");
+        if (!wallet) {
+          set.status = 404;
+          return {
+            error: "Wallet not found",
+          };
+        }
 
         const userSerialized = {
           id: wallet.id,
@@ -318,7 +334,11 @@ export const rewardsRouter = new Elysia({ prefix: "/rewards" })
         return userSerialized;
       } catch (e) {
         console.log("[rewardsRouter] get-wallet-rewards", e);
-        throw new Error("Error occurred while fetching wallet rewards");
+        throw new Error(
+          e instanceof Error
+            ? e.message
+            : "Error occurred while fetching wallet rewards"
+        );
       }
     },
     {
@@ -326,12 +346,160 @@ export const rewardsRouter = new Elysia({ prefix: "/rewards" })
         wallet: t.String({
           minLength: 42,
           maxLength: 42,
+          pattern: "^0x[a-fA-F0-9]{40}$", // 42 characters, starting with 0x and 40 hex digits
         }),
       }),
       detail: {
         summary: "Get All Rewards For a Wallet",
         description:
           "Returns all rewards information for a given wallet address, including total USDG and GLOW rewards and complete weekly reward history.",
+        tags: [TAG.REWARDS],
+      },
+    }
+  )
+  .get(
+    "/wallets",
+    async ({ query, set }) => {
+      try {
+        // Parse and validate pagination params
+        const page = Number(query.page) > 0 ? Number(query.page) : 1;
+        const pageSize =
+          Number(query.pageSize) > 0
+            ? Number(query.pageSize)
+            : DEFAULT_PAGE_SIZE;
+        const offset = (page - 1) * pageSize;
+        const omitWeeklyRewards = query.omitWeeklyRewards === "true";
+
+        // Get total wallet count
+        const allWallets = await db.select().from(wallets);
+        const totalCount = allWallets.length;
+
+        // Always fetch weeklyRewards for type safety
+        const walletsResult = await db.query.wallets.findMany({
+          limit: pageSize,
+          offset,
+          with: {
+            weeklyRewards: true,
+          },
+        });
+
+        const walletList = walletsResult.map((wallet) => {
+          const base = {
+            id: wallet.id,
+            totalUSDGRewards: formatUnits(wallet.totalUSDGRewards, 2),
+            totalGlowRewards: formatUnits(wallet.totalGlowRewards, 2),
+          };
+          if (omitWeeklyRewards) return base;
+          return {
+            ...base,
+            weeklyRewards: wallet.weeklyRewards.map((r: any) => ({
+              weekNumber: r.weekNumber,
+              usdgWeight: r.usdgWeight.toString(),
+              glowWeight: r.glowWeight.toString(),
+              usdgRewards: formatUnits(r.usdgRewards, 2),
+              glowRewards: formatUnits(r.glowRewards, 2),
+              indexInReports: r.indexInReports,
+              claimProof: r.claimProof,
+            })),
+          };
+        });
+
+        return {
+          wallets: walletList,
+          totalCount,
+          page,
+          pageSize,
+        };
+      } catch (e) {
+        set.status = 500;
+        return {
+          error:
+            e instanceof Error
+              ? e.message
+              : "Error occurred while fetching wallets",
+        };
+      }
+    },
+    {
+      query: t.Object({
+        page: t.Optional(t.String()),
+        pageSize: t.Optional(t.String()),
+        omitWeeklyRewards: t.Optional(t.String()),
+      }),
+      detail: {
+        summary: "Get paginated wallets with rewards and total count",
+        description:
+          "Returns paginated wallets with their rewards and the total wallet count. Set omitWeeklyRewards=true to omit the weeklyRewards array.",
+        tags: [TAG.REWARDS],
+      },
+    }
+  )
+  .get(
+    "/weekly-wallets",
+    async ({ query, set }) => {
+      try {
+        const weekNumber = Number(query.weekNumber);
+        if (isNaN(weekNumber)) {
+          set.status = 400;
+          return { error: "Invalid or missing weekNumber" };
+        }
+        const page = Number(query.page) > 0 ? Number(query.page) : 1;
+        const pageSize =
+          Number(query.pageSize) > 0
+            ? Number(query.pageSize)
+            : DEFAULT_PAGE_SIZE;
+        const offset = (page - 1) * pageSize;
+
+        // Get all weekly rewards for the week
+        const allWeeklyRewards = await db.query.walletWeeklyRewards.findMany({
+          where: eq(walletWeeklyRewards.weekNumber, weekNumber),
+        });
+        const totalCount = allWeeklyRewards.length;
+        const paginatedWeeklyRewards = allWeeklyRewards.slice(
+          offset,
+          offset + pageSize
+        );
+
+        // Compose response
+        const wallets = paginatedWeeklyRewards.map((reward) => ({
+          id: reward.id,
+          weeklyReward: {
+            weekNumber: reward.weekNumber,
+            usdgWeight: reward.usdgWeight.toString(),
+            glowWeight: reward.glowWeight.toString(),
+            usdgRewards: formatUnits(reward.usdgRewards, 2),
+            glowRewards: formatUnits(reward.glowRewards, 2),
+            indexInReports: reward.indexInReports,
+            claimProof: reward.claimProof,
+          },
+        }));
+
+        return {
+          wallets,
+          totalCount,
+          page,
+          pageSize,
+        };
+      } catch (e) {
+        set.status = 500;
+        return {
+          error:
+            e instanceof Error
+              ? e.message
+              : "Error occurred while fetching weekly wallets",
+        };
+      }
+    },
+    {
+      query: t.Object({
+        weekNumber: t.String(),
+        page: t.Optional(t.String()),
+        pageSize: t.Optional(t.String()),
+      }),
+      detail: {
+        summary: "Get all wallets with a weekly reward for a specific week",
+        description:
+          "Returns all wallets that have a weekly reward for the given week, with pagination.",
         tags: [TAG.REWARDS],
       },
     }
