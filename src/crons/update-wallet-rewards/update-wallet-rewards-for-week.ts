@@ -3,7 +3,7 @@ import { sql, eq } from "drizzle-orm";
 import { getMerkleTreeForWeek } from "../../lib/get-merkletree-for-week";
 import { getRewardsInBucket } from "../../lib/web3-view/get-rewards-in-bucket";
 import { DB_DECIMALS, GLOW_REWARDS_PER_WEEK } from "../../constants";
-import { formatUnits } from "viem";
+import { checksumAddress, formatUnits } from "viem";
 import MerkleTree from "merkletreejs";
 import keccak256 from "keccak256";
 import { ethers } from "ethers";
@@ -75,9 +75,9 @@ export const updateWalletRewardsForWeek = async (
     ]);
 
     const proof = tree.getHexProof(targetLeaf);
-
+    const checksummed = checksumAddress(leaf.address as `0x${string}`);
     return {
-      address: leaf.address,
+      address: checksummed,
       glowWeight: leaf.glowWeight,
       usdgWeight: leaf.usdcWeight,
       usdgRewards: Math.floor(
