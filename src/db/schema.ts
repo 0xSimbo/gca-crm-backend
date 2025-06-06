@@ -12,6 +12,7 @@ import {
   boolean,
   numeric,
   uniqueIndex,
+  serial,
 } from "drizzle-orm/pg-core";
 import { relations, type InferSelectModel, sql, or } from "drizzle-orm";
 import { EncryptedMasterKeySet } from "../types/api-types/Application";
@@ -22,6 +23,7 @@ import {
   optionalDocumentsEnum,
   roundRobinStatusEnum,
 } from "./enums";
+import { z } from "zod";
 
 // db diagram here : https://app.eraser.io/workspace/Ro75vSbOwABbdvKvyTFJ?origin=share @0xSimbo
 
@@ -431,7 +433,8 @@ export const farms = pgTable(
   {
     id: varchar("farm_id")
       .primaryKey()
-      .$defaultFn(() => crypto.randomUUID()), // later on will be pulled from gca server
+      .$defaultFn(() => crypto.randomUUID()),
+    zoneId: integer("zone_id").notNull().default(1),
     totalGlowRewards: bigint("total_glow_rewards", { mode: "bigint" })
       .default(sql`'0'::bigint`)
       .notNull(),
@@ -488,6 +491,10 @@ export const FarmRelations = relations(farms, ({ many, one }) => ({
   application: one(applications, {
     fields: [farms.id],
     references: [applications.farmId],
+  }),
+  zone: one(zones, {
+    fields: [farms.zoneId],
+    references: [zones.id],
   }),
 }));
 
@@ -783,7 +790,7 @@ export const applicationsDraftRelations = relations(
 );
 
 /**
- * @dev Represents an application in the system.
+ * @dev Represents the common fields for all applications
  * @param {string} id - The unique ID of the application.
  * @param {string} userId - The ID of the user who submitted the application.
  * @param {string} farmId - The ID of the farm created after the application is completed.
@@ -791,11 +798,7 @@ export const applicationsDraftRelations = relations(
  * @param {number} currentStep - The current step of the application process.
  * @param {string} roundRobinStatus - The round robin status of the application.
  * @param {string} status - The status of the application.
- * @param {string} address - The address related to the application.
- * @param {number} lat - The latitude of the location.
- * @param {number} lng - The longitude of the location.
- * @param {number} estimatedCostOfPowerPerKWh - The estimated cost of power per kWh.
- * @param {number} estimatedKWhGeneratedPerYear - The estimated kWh generated per year.
+
  * @param {number} enquiryEstimatedQuotePerWatt - The estimated quote per watt for installation.
  * @param {timestamp} updatedAt - The last updated date of the application.
  * @param {string} finalQuotePerWatt - The final quote per watt for installation.
@@ -814,9 +817,8 @@ export const applicationsDraftRelations = relations(
  */
 export const applications = pgTable("applications", {
   id: text("application_id").primaryKey(),
-  // always linked to a farm owner account
   userId: varchar("user_id", { length: 42 }).notNull(),
-  // after application is "completed", a farm is created using the hexlified farm pub key
+  zoneId: integer("zone_id").notNull().default(1),
   farmId: varchar("farm_id", { length: 66 }).unique(),
   createdAt: timestamp("createdAt").notNull(),
   currentStep: integer("current_step").notNull(),
@@ -826,45 +828,6 @@ export const applications = pgTable("applications", {
   isDocumentsCorrupted: boolean("is_documents_corrupted")
     .notNull()
     .default(false),
-  // enquiry step fields
-  address: varchar("address", { length: 255 }).notNull(),
-  farmOwnerName: varchar("farm_owner_name", { length: 255 })
-    .notNull()
-    .default("N/A"),
-  farmOwnerEmail: varchar("farm_owner_email", { length: 255 })
-    .notNull()
-    .default("N/A"),
-  farmOwnerPhone: varchar("farm_owner_phone", { length: 255 })
-    .notNull()
-    .default("N/A"),
-  lat: numeric("lat", {
-    precision: 10,
-    scale: 5,
-  }).notNull(),
-  lng: numeric("lng", {
-    precision: 10,
-    scale: 5,
-  }).notNull(),
-  estimatedCostOfPowerPerKWh: numeric("estimated_cost_of_power_per_kwh", {
-    precision: 10,
-    scale: 2,
-  }).notNull(),
-  estimatedKWhGeneratedPerYear: numeric("estimated_kwh_generated_per_year", {
-    precision: 10,
-    scale: 2,
-  }).notNull(),
-  enquiryEstimatedFees: numeric("enquiry_estimated_fees", {
-    precision: 10,
-    scale: 2,
-  }).notNull(),
-  enquiryEstimatedQuotePerWatt: numeric("enquiry_estimated_quote_per_watt", {
-    precision: 10,
-    scale: 2,
-  }).notNull(),
-  installerName: varchar("installer_name", { length: 255 }),
-  installerCompanyName: varchar("installer_company_name", { length: 255 }),
-  installerEmail: varchar("installer_email", { length: 255 }),
-  installerPhone: varchar("installer_phone", { length: 255 }),
   // null if application just got created
   updatedAt: timestamp("updatedAt"),
   // pre-install documents step fields
@@ -922,36 +885,6 @@ export const applications = pgTable("applications", {
   additionalPaymentTxHash: varchar("additional_payment_tx_hash", {
     length: 66,
   }),
-  // audit specific fields
-  solarPanelsQuantity: integer("solar_panels_quantity"),
-  solarPanelsBrandAndModel: varchar("solar_panels_brand_and_model", {
-    length: 255,
-  }),
-  solarPanelsWarranty: varchar("solar_panels_warranty", { length: 255 }),
-  averageSunlightHoursPerDay: numeric("average_sunlight_hours_per_day", {
-    precision: 10,
-    scale: 2,
-  }),
-  adjustedWeeklyCarbonCredits: numeric("adjusted_weekly_carbon_credits", {
-    precision: 10,
-    scale: 6,
-  }),
-  weeklyTotalCarbonDebt: numeric("weekly_total_carbon_debt", {
-    precision: 10,
-    scale: 2,
-  }),
-  netCarbonCreditEarningWeekly: numeric("net_carbon_credit_earning_weekly", {
-    precision: 10,
-    scale: 2,
-  }),
-  finalEnergyCost: numeric("final_energy_cost", {
-    precision: 10,
-    scale: 2,
-  }),
-  systemWattageOutput: varchar("system_wattage_output", { length: 255 }),
-  ptoObtainedDate: timestamp("pto_date"),
-  locationWithoutPII: varchar("location_without_pii", { length: 255 }),
-  revisedInstallFinishedDate: timestamp("revised_install_finished_date"),
   // gca assignement fields
   gcaAssignedTimestamp: timestamp("gca_assigned_timestamp"),
   gcaAcceptanceTimestamp: timestamp("gca_acceptance_timestamp"),
@@ -959,15 +892,168 @@ export const applications = pgTable("applications", {
   gcaAcceptanceSignature: varchar("gca_acceptance_signature", { length: 255 }),
 });
 
+/**
+ * @dev Fields for competitive recursive subsidy applications
+ * @param {string} applicationId - The ID of the application
+ * @param {string} address - The address of the farm
+ * @param {string} farmOwnerName - The name of the farm owner
+ * @param {string} farmOwnerEmail - The email of the farm owner
+ * @param {string} farmOwnerPhone - The phone number of the farm owner
+ * @param {number} lat - The latitude of the farm
+ * @param {number} lng - The longitude of the farm
+ * @param {number} estimatedCostOfPowerPerKWh - The estimated cost of power per kWh
+ * @param {number} estimatedKWhGeneratedPerYear - The estimated kWh generated per year
+ * @param {number} enquiryEstimatedFees - The estimated fees for the enquiry
+ * @param {number} enquiryEstimatedQuotePerWatt - The estimated quote per watt for installation
+ * @param {string} installerName - The name of the installer
+ * @param {string} installerCompanyName - The company name of the installer
+ * @param {string} installerEmail - The email of the installer
+ * @param {string} installerPhone - The phone number of the installer
+ */
+export const applicationsEnquiryFieldsCRS = pgTable(
+  "applications_enquiry_fields_crs",
+  {
+    id: text("enquiry_field_id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    applicationId: text("application_id")
+      .notNull()
+      .references(() => applications.id, { onDelete: "cascade" }),
+    address: varchar("address", { length: 255 }).notNull(),
+    farmOwnerName: varchar("farm_owner_name", { length: 255 }).notNull(),
+    farmOwnerEmail: varchar("farm_owner_email", { length: 255 }).notNull(),
+    farmOwnerPhone: varchar("farm_owner_phone", { length: 255 }).notNull(),
+    lat: numeric("lat", {
+      precision: 10,
+      scale: 5,
+    }).notNull(),
+    lng: numeric("lng", {
+      precision: 10,
+      scale: 5,
+    }).notNull(),
+    estimatedCostOfPowerPerKWh: numeric("estimated_cost_of_power_per_kwh", {
+      precision: 10,
+      scale: 5,
+    }).notNull(),
+    estimatedKWhGeneratedPerYear: numeric("estimated_kwh_generated_per_year", {
+      precision: 15,
+      scale: 5,
+    }).notNull(),
+    enquiryEstimatedFees: numeric("enquiry_estimated_fees", {
+      precision: 15,
+      scale: 5,
+    }).notNull(),
+    enquiryEstimatedQuotePerWatt: numeric("enquiry_estimated_quote_per_watt", {
+      precision: 10,
+      scale: 5,
+    }).notNull(),
+    installerName: varchar("installer_name", { length: 255 }).notNull(),
+    installerCompanyName: varchar("installer_company_name", {
+      length: 255,
+    }).notNull(),
+    installerEmail: varchar("installer_email", { length: 255 }).notNull(),
+    installerPhone: varchar("installer_phone", { length: 255 }).notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at"),
+  }
+);
+
+export type ApplicationEnquiryFieldsCRSInsertType =
+  typeof applicationsEnquiryFieldsCRS.$inferInsert;
+
+/**
+ * @dev Fields for competitive recursive subsidy applications
+ * @param {string} applicationId - The ID of the application
+ * @param {string} solarPanelsQuantity - The quantity of solar panels
+ * @param {string} solarPanelsBrandAndModel - The brand and model of the solar panels
+ * @param {string} solarPanelsWarranty - The warranty of the solar panels
+ * @param {string} averageSunlightHoursPerDay - The average sunlight hours per day
+ * @param {string} adjustedWeeklyCarbonCredits - The adjusted weekly carbon credits
+ * @param {string} weeklyTotalCarbonDebt - The weekly total carbon debt
+ * @param {string} netCarbonCreditEarningWeekly - The net carbon credit earning weekly
+ * @param {string} finalEnergyCost - The final energy cost
+ * @param {string} systemWattageOutput - The system wattage output
+ * @param {string} ptoObtainedDate - The PTO obtained date
+ * @param {string} locationWithoutPII - The location without PII
+ * @param {string} revisedInstallFinishedDate - The revised install finished date
+ */
+export const applicationsAuditFieldsCRS = pgTable(
+  "applications_audit_fields_crs",
+  {
+    id: text("audit_field_id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    applicationId: text("application_id")
+      .notNull()
+      .references(() => applications.id, { onDelete: "cascade" }),
+    solarPanelsQuantity: integer("solar_panels_quantity"),
+    solarPanelsBrandAndModel: varchar("solar_panels_brand_and_model", {
+      length: 255,
+    }),
+    solarPanelsWarranty: varchar("solar_panels_warranty", { length: 255 }),
+    averageSunlightHoursPerDay: numeric("average_sunlight_hours_per_day", {
+      precision: 10,
+      scale: 5,
+    }),
+    adjustedWeeklyCarbonCredits: numeric("adjusted_weekly_carbon_credits", {
+      precision: 10,
+      scale: 6,
+    }),
+    weeklyTotalCarbonDebt: numeric("weekly_total_carbon_debt", {
+      precision: 10,
+      scale: 5,
+    }),
+    netCarbonCreditEarningWeekly: numeric("net_carbon_credit_earning_weekly", {
+      precision: 10,
+      scale: 5,
+    }),
+    finalEnergyCost: numeric("final_energy_cost", {
+      precision: 10,
+      scale: 5,
+    }),
+    systemWattageOutput: varchar("system_wattage_output", { length: 255 }),
+    ptoObtainedDate: timestamp("pto_date"),
+    locationWithoutPII: varchar("location_without_pii", { length: 255 }),
+    revisedInstallFinishedDate: timestamp("revised_install_finished_date"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at"),
+  }
+);
+
+export type ApplicationAuditFieldsCRSInsertType =
+  typeof applicationsAuditFieldsCRS.$inferInsert;
+
+export const ApplicationsEnquiryFieldsCRSRelations = relations(
+  applicationsEnquiryFieldsCRS,
+  ({ one }) => ({
+    application: one(applications, {
+      fields: [applicationsEnquiryFieldsCRS.applicationId],
+      references: [applications.id],
+    }),
+  })
+);
+
+export const ApplicationsAuditFieldsCRSRelations = relations(
+  applicationsAuditFieldsCRS,
+  ({ one }) => ({
+    application: one(applications, {
+      fields: [applicationsAuditFieldsCRS.applicationId],
+      references: [applications.id],
+    }),
+  })
+);
+
 export type ApplicationType = Omit<
   InferSelectModel<typeof applications>,
   "finalProtocolFee"
 > & {
   finalProtocolFee: string;
+  enquiryFields: ApplicationEnquiryFieldsCRSInsertType | null;
+  auditFields: ApplicationAuditFieldsCRSInsertType | null;
 };
 export type ApplicationInsertType = typeof applications.$inferInsert;
 export type ApplicationUpdateEnquiryType = Pick<
-  ApplicationInsertType,
+  ApplicationEnquiryFieldsCRSInsertType,
   | "address"
   | "lat"
   | "lng"
@@ -1014,6 +1100,18 @@ export const applicationsRelations = relations(
     weeklyCarbonDebt: one(weeklyCarbonDebt, {
       fields: [applications.id],
       references: [weeklyCarbonDebt.applicationId],
+    }),
+    zone: one(zones, {
+      fields: [applications.zoneId],
+      references: [zones.id],
+    }),
+    enquiryFieldsCRS: one(applicationsEnquiryFieldsCRS, {
+      fields: [applications.id],
+      references: [applicationsEnquiryFieldsCRS.applicationId],
+    }),
+    auditFieldsCRS: one(applicationsAuditFieldsCRS, {
+      fields: [applications.id],
+      references: [applicationsAuditFieldsCRS.applicationId],
     }),
   })
 );
@@ -1566,3 +1664,44 @@ export const WeeklyCarbonDebtRelations = relations(
     }),
   })
 );
+
+// ---------- Zones & dynamic-requirements (v2) ----------
+export const requirementSets = pgTable("requirement_sets", {
+  id: serial("requirement_set_id").primaryKey(),
+  code: varchar("code", { length: 32 }).notNull().unique(), // e.g. 'CRS'
+  name: varchar("name", { length: 255 }).notNull(), // friendly label
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export type RequirementSetType = InferSelectModel<typeof requirementSets>;
+export type RequirementSetInsert = typeof requirementSets.$inferInsert;
+
+/**
+ * @dev Represents a zone in the system.
+ * @param {string} id - The unique ID of the zone.
+ * @param {string} name - The name of the zone.
+ * @param {number} requirementSetId - The ID of the requirement set associated with the zone.
+ * @param {timestamp} createdAt - The date and time when the zone was created.
+ */
+export const zones = pgTable("zones", {
+  id: serial("zone_id").primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  requirementSetId: integer("requirement_set_id")
+    .notNull()
+    .references(() => requirementSets.id, { onDelete: "restrict" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const ZoneRelations = relations(zones, ({ one, many }) => ({
+  requirementSet: one(requirementSets, {
+    fields: [zones.requirementSetId],
+    references: [requirementSets.id],
+  }),
+  applications: many(applications),
+  farms: many(farms),
+}));
+
+export type ZoneType = InferSelectModel<typeof zones>;
+export type ZoneInsert = typeof zones.$inferInsert;
+
+// ---------- end zones ----------

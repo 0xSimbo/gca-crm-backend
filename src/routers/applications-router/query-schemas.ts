@@ -121,6 +121,7 @@ export const EnquiryQueryBody = t.Object({
     minimum: -180,
     maximum: 180,
   }),
+  zoneId: t.Number(),
 });
 
 export const DeclarationOfIntentionMissingQueryBody = t.Object({

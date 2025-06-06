@@ -10,12 +10,14 @@ import { db } from "../../db";
 import { findGcasByIds } from "../../queries/gcas/findGcasByIds";
 import { findUsersByIds } from "../../queries/users/findUsersByIds";
 import {
+  ApplicationEnquiryFieldsCRSInsertType,
   ApplicationInsertType,
   ApplicationsEncryptedMasterKeys,
   Documents,
   DocumentsInsertType,
   OrganizationApplications,
   applications,
+  applicationsEnquiryFieldsCRS,
 } from "../../schema";
 
 export type declarationOfIntentionFieldsValueType = {
@@ -30,6 +32,7 @@ export const createApplication = async (
   latestUtilityBillPublicUrl: string,
   applicationEncryptedMasterKeys: ApplicationEncryptedMasterKeysType[],
   application: ApplicationInsertType,
+  applicationEnquiryFields: ApplicationEnquiryFieldsCRSInsertType,
   declarationOfIntentionFields: {
     declarationOfIntention: EncryptedFileUploadType;
     declarationOfIntentionSignature: string;
@@ -128,11 +131,12 @@ export const createApplication = async (
       })
       .returning({ insertedId: applications.id });
 
-    if (res.length === 0) {
-      tx.rollback();
-    }
-
     const resInsertedId = res[0].insertedId;
+
+    await tx
+      .insert(applicationsEnquiryFieldsCRS)
+      .values(applicationEnquiryFields)
+      .returning({ id: applicationsEnquiryFieldsCRS.id });
 
     const documents: DocumentsInsertType[] = [
       {

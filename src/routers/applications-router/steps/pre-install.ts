@@ -4,6 +4,7 @@ import {
 } from "../../../db/mutations/applications/fillApplicationStepWithDocuments";
 import { ApplicationType } from "../../../db/schema";
 import {
+  ApplicationStatus,
   ApplicationSteps,
   RequiredDocumentsNamesEnum,
 } from "../../../types/api-types/Application";
@@ -15,7 +16,11 @@ type UpdatePreInstallDocumentsRequiredType = {
 };
 
 export const handleCreateOrUpdatePreIntallDocuments = async (
-  application: ApplicationType,
+  application: {
+    id: string;
+    status: ApplicationStatus;
+    currentStep: ApplicationSteps;
+  },
   organizationApplicationId: string | undefined,
   step: ApplicationSteps,
   args: UpdatePreInstallDocumentsRequiredType

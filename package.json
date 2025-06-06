@@ -33,11 +33,13 @@
     "keccak256": "^1.0.6",
     "merkletreejs": "^0.3.11",
     "nanoid": "^5.0.7",
+    "p-limit": "^6.2.0",
     "pg": "^8.11.5",
     "postgres": "^3.4.4",
     "redis": "^4.6.13",
     "siwe": "^2.3.2",
-    "viem": "^2.9.30"
+    "viem": "^2.9.30",
+    "zod": "^3.25.51"
   },
   "devDependencies": {
     "@types/bun": "^1.1.1",

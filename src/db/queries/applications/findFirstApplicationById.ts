@@ -2,12 +2,21 @@ import { eq } from "drizzle-orm";
 import { db } from "../../db";
 import { applications } from "../../schema";
 import { formatUnits } from "viem";
+import { requirementSetCodes, requirementSetMap } from "../../zones";
+import { getZoneRequirementFields } from "./zoneRequirementsUtil";
 
 export const FindFirstApplicationById = async (id: string) => {
   const applicationDb = await db.query.applications.findFirst({
     where: eq(applications.id, id),
     with: {
       gca: true,
+      enquiryFieldsCRS: true,
+      auditFieldsCRS: true,
+      zone: {
+        with: {
+          requirementSet: true,
+        },
+      },
       user: {
         columns: {
           id: true,
@@ -43,5 +52,7 @@ export const FindFirstApplicationById = async (id: string) => {
       (applicationDb?.finalProtocolFee || BigInt(0)) as bigint,
       6
     ),
+    enquiryFields: applicationDb.enquiryFieldsCRS,
+    auditFields: applicationDb.auditFieldsCRS,
   };
 };

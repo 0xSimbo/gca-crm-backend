@@ -2,6 +2,7 @@ import { findFirstOrganizationApplicationByApplicationId } from "../../db/querie
 import { findOrganizationMemberByUserId } from "../../db/queries/organizations/findOrganizationMemberByUserId";
 import { ApplicationType } from "../../db/schema";
 import {
+  ApplicationStatus,
   ApplicationStatusEnum,
   ApplicationSteps,
 } from "../../types/api-types/Application";
@@ -9,7 +10,11 @@ import { PermissionsEnum } from "../../types/api-types/Permissions";
 
 export const fillApplicationStepCheckHandler = async (
   userId: string,
-  application: ApplicationType,
+  application: {
+    userId: string;
+    status: ApplicationStatus;
+    currentStep: ApplicationSteps;
+  },
   applicationStep: ApplicationSteps
 ): Promise<{ errorCode: number; errorMessage: string } | null> => {
   if (application.userId !== userId) {

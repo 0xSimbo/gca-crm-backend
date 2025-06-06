@@ -7,6 +7,7 @@ import {
   DocumentsMissingWithReasonInsertType,
 } from "../../../db/schema";
 import {
+  ApplicationStatus,
   ApplicationSteps,
   OptionalDocumentsEnum,
   OptionalDocumentsNamesEnum,
@@ -36,7 +37,11 @@ type UpdateInspectionAndPtoType = {
 };
 
 export const handleCreateOrUpdateAfterInstallDocuments = async (
-  application: ApplicationType,
+  application: {
+    id: string;
+    status: ApplicationStatus;
+    currentStep: ApplicationSteps;
+  },
   organizationApplicationId: string | undefined,
   args: UpdateInspectionAndPtoType
 ) => {

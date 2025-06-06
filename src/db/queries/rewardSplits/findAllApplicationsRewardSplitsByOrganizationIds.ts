@@ -18,18 +18,25 @@ export const findAllApplicationsRewardSplitsByOrganizationIds = async (
       application: {
         columns: {
           id: true,
-          farmOwnerName: true,
           status: true,
           isCancelled: true,
         },
         with: {
+          enquiryFieldsCRS: {
+            columns: {
+              farmOwnerName: true,
+            },
+          },
           rewardSplits: true,
         },
       },
     },
   });
   return applicationsDb
-    .map((application) => application.application)
+    .map(({ application, application: { enquiryFieldsCRS } }) => ({
+      ...application,
+      ...enquiryFieldsCRS,
+    }))
     .filter(
       (a) => a.status === ApplicationStatusEnum.completed && !a.isCancelled
     )

@@ -1,9 +1,11 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "../../db";
 import {
+  ApplicationAuditFieldsCRSInsertType,
   ApplicationInsertType,
   ApplicationStepApprovals,
   applications,
+  applicationsAuditFieldsCRS,
 } from "../../schema";
 import { ApplicationStatusEnum } from "../../../types/api-types/Application";
 
@@ -13,7 +15,8 @@ export const approveApplicationStep = async (
   annotation: string | null,
   stepIndex: number,
   signature: string,
-  applicationFields?: Partial<ApplicationInsertType>
+  applicationFields?: Partial<ApplicationInsertType>,
+  applicationAuditFields?: ApplicationAuditFieldsCRSInsertType
 ) => {
   return db.transaction(async (tx) => {
     const res = await tx
@@ -32,6 +35,12 @@ export const approveApplicationStep = async (
       )
     ) {
       tx.rollback(); // if fails will rollback and don't reach second tx
+    }
+
+    if (applicationAuditFields) {
+      await tx.insert(applicationsAuditFieldsCRS).values({
+        ...applicationAuditFields,
+      });
     }
 
     await tx.insert(ApplicationStepApprovals).values({

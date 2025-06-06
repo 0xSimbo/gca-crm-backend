@@ -93,6 +93,10 @@ export const handleCreateWithoutPIIDocumentsAndCompleteApplication = async (
     },
   ];
 
+  if (!application.enquiryFields) {
+    throw new Error("Enquiry fields are missing");
+  }
+
   if (args.mortgageStatement) {
     documents.push({
       name: RequiredDocumentsNamesEnum.mortgageStatement,
@@ -256,7 +260,7 @@ export const handleCreateWithoutPIIDocumentsAndCompleteApplication = async (
     application.additionalPaymentTxHash,
     stepAnnotation,
     args.applicationAuditFields,
-    application.lat,
-    application.lng
+    application.enquiryFields.lat,
+    application.enquiryFields.lng
   );
 };

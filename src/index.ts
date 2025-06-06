@@ -16,23 +16,14 @@ import { devicesRouter } from "./routers/devices/devicesRouter";
 import { cron, Patterns } from "@elysiajs/cron";
 import { getProtocolWeek } from "./utils/getProtocolWeek";
 import { organizationsRouter } from "./routers/organizations-router/organizationsRouter";
-import { permissions } from "./types/api-types/Permissions";
-import { findAllPermissions } from "./db/queries/permissions/findAllPermissions";
-import { createPermission } from "./db/mutations/permissions/createPermission";
 import { legacyFarms } from "./legacy/farms";
 // import { farmsRouter } from "./routers/farms/farmsRouter";
 import { updateDeviceRewardsForWeek } from "./crons/update-farm-rewards/update-device-rewards-for-week";
 import { farmsRouter } from "./routers/farms/farmsRouter";
 import { postMerkleRootHandler } from "./utils/postMerkleRoot";
 import { getDevicesLifetimeMetrics } from "./crons/update-farm-rewards/get-devices-lifetime-metrics";
-import { db } from "./db/db";
-import {
-  deviceRewards,
-  farmRewards,
-  farms,
-  wallets,
-  walletWeeklyRewards,
-} from "./db/schema";
+
+import { adminRouter } from "./routers/admin-router/adminRouter";
 
 const PORT = process.env.PORT || 3005;
 const app = new Elysia()
@@ -142,6 +133,7 @@ const app = new Elysia()
   .use(organizationsRouter)
   .use(usersRouter)
   .use(farmsRouter)
+  .use(adminRouter)
   .get("/update-rewards-for-current-week", async () => {
     //Will only work if the GCA has submitted the report for the current week.
     const currentWeek = getProtocolWeek();
@@ -160,106 +152,6 @@ const app = new Elysia()
   })
   .get("/legacyFarms", async ({ params }) => {
     return legacyFarms;
-  })
-  .get("/update-rewards-for-all-weeks", async () => {
-    return { message: "dev only" };
-    const lastWeek = getProtocolWeek() - 1;
-    try {
-      // await db.update(farms).set({
-      //   totalUSDGRewards: BigInt(0),
-      //   totalGlowRewards: BigInt(0),
-      // });
-      await db.update(wallets).set({
-        totalUSDGRewards: BigInt(0),
-        totalGlowRewards: BigInt(0),
-      });
-      // await db.delete(farmRewards);
-      // await db.delete(deviceRewards);
-      await db.delete(walletWeeklyRewards);
-      // const deviceLifetimeMetrics = await getDevicesLifetimeMetrics();
-      for (let i = 10; i <= lastWeek; i++) {
-        console.log("Updating rewards for week", i);
-        await updateWalletRewardsForWeek(i);
-        // await updateDeviceRewardsForWeek({
-        //   deviceLifetimeMetrics,
-        //   weekNumber: i,
-        // });
-        // await updateFarmRewardsForWeek({
-        //   deviceLifetimeMetrics,
-        //   weekNumber: i,
-        // });
-      }
-      return { message: "success" };
-    } catch (error) {
-      console.error("Error updating rewards", error);
-      return { message: "error" };
-    }
-  })
-  .get("/migrate-farms", async () => {
-    // const farmsData: MigrationFarmData[] = LegacyFarmsData.map((farm) => ({
-    //   ...farm,
-    //   old_short_ids: (farm.old_short_ids || []).map((shortId) =>
-    //     shortId.toString()
-    //   ),
-    // }));
-
-    // try {
-    //   for (const farmData of farmsData) {
-    //     await insertFarmWithDependencies(farmData);
-    //   }
-    //   return { message: "success" };
-    // } catch (error) {
-    //   console.error("Error migrating farm", error);
-    //   return { message: "error" };
-    // }
-
-    try {
-      // console.log("Migrating farms coordinates");
-      //   // hub farms
-      //   const farmsData = await findAllFarmsCoordinates();
-      //   // legacy farms
-      //   // const farmsData = await findAllLegacyFarmsCoordinates();
-
-      //   for (const farm of farmsData) {
-      //     if (!farm.farmId) {
-      //       console.log("No farm id found for farm", farm);
-      //       continue;
-      //     }
-      //     if (
-      //       farm.region !== "__UNSET__" &&
-      //       farm.regionFullName !== "__UNSET__" &&
-      //       farm.signalType !== "__UNSET__"
-      //     ) {
-      //       // console.log("Farm already has region", farm);
-      //       continue;
-      //     }
-      //     const region = await getRegionFromLatAndLng(farm.lat, farm.lng);
-      //     await updateFarmRegion(farm.farmId, region);
-      //   }
-
-      return { message: "success" };
-    } catch (error) {
-      console.error("Error migrating farm", error);
-      return { message: "error" };
-    }
-  })
-  .get("/seed-permissions", async () => {
-    try {
-      const dbPermissions = await findAllPermissions();
-      if (dbPermissions.length > 0) {
-        throw new Error("Permissions already seeded");
-      }
-      for (const permission of permissions) {
-        await createPermission(permission);
-      }
-      return { message: "success" };
-    } catch (error) {
-      console.error("Error seeding permissions", error);
-      if (error instanceof Error) {
-        return { message: error.message };
-      }
-      return { message: "error" };
-    }
   })
   .get("/", () => "Hey!")
   .listen(PORT);

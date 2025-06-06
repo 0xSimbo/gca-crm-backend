@@ -37,7 +37,10 @@ import { handleCreateOrUpdatePreIntallDocuments } from "./steps/pre-install";
 import { updateApplicationPreInstallVisitDate } from "../../db/mutations/applications/updateApplicationPreInstallVisitDate";
 import { updateApplicationAfterInstallVisitDate } from "../../db/mutations/applications/updateApplicationAfterInstallVisitDate";
 import { handleCreateOrUpdateAfterInstallDocuments } from "./steps/after-install";
-import { updateApplication } from "../../db/mutations/applications/updateApplication";
+import {
+  updateApplication,
+  updateApplicationCRSFields,
+} from "../../db/mutations/applications/updateApplication";
 import { roundRobinAssignement } from "../../db/queries/gcas/roundRobinAssignement";
 
 import { BigNumber, ethers } from "ethers";
@@ -1468,7 +1471,21 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                 {
                   id: body.applicationId,
                   userId,
-                  ...body,
+                  zoneId: body.zoneId,
+                  farmId: null,
+                  createdAt: new Date(),
+                  currentStep: 1,
+                  gcaAssignedTimestamp: new Date(),
+                  gcaAddress,
+                  roundRobinStatus: RoundRobinStatusEnum.waitingToBeAccepted,
+                  status: ApplicationStatusEnum.waitingForApproval,
+                },
+                {
+                  applicationId: body.applicationId,
+                  address: body.address,
+                  farmOwnerName: body.farmOwnerName,
+                  farmOwnerEmail: body.farmOwnerEmail,
+                  farmOwnerPhone: body.farmOwnerPhone,
                   estimatedCostOfPowerPerKWh:
                     body.estimatedCostOfPowerPerKWh.toString(),
                   estimatedKWhGeneratedPerYear:
@@ -1476,14 +1493,12 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                   enquiryEstimatedFees: body.enquiryEstimatedFees.toString(),
                   enquiryEstimatedQuotePerWatt:
                     body.enquiryEstimatedQuotePerWatt.toString(),
+                  installerName: body.installerName,
+                  installerCompanyName: body.installerCompanyName,
+                  installerEmail: body.installerEmail,
+                  installerPhone: body.installerPhone,
                   lat: body.lat.toString(),
                   lng: body.lng.toString(),
-                  createdAt: new Date(),
-                  currentStep: 1,
-                  gcaAssignedTimestamp: new Date(),
-                  gcaAddress,
-                  roundRobinStatus: RoundRobinStatusEnum.waitingToBeAccepted,
-                  status: ApplicationStatusEnum.waitingForApproval,
                 },
                 {
                   declarationOfIntention:
@@ -2196,7 +2211,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               return "Application already linked with a farm";
             }
 
-            if (!application.adjustedWeeklyCarbonCredits) {
+            if (!application.auditFields?.adjustedWeeklyCarbonCredits) {
               set.status = 400;
               return "Application is not completed, adjustedWeeklyCarbonCredits is not set";
             }
@@ -2242,7 +2257,8 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
 
               const expectedProduction_12Decimals = BigNumber.from(
                 Math.floor(
-                  Number(application.adjustedWeeklyCarbonCredits) * 1e6
+                  Number(application.auditFields.adjustedWeeklyCarbonCredits) *
+                    1e6
                 )
               ) // convert to int, 6 decimals
                 .mul(BigNumber.from("1000000")) // 6 -> 12 decimals
@@ -2438,6 +2454,9 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                   finalProtocolFee: ethers.utils
                     .parseUnits(body.finalProtocolFee!!, 6)
                     .toBigInt(),
+                },
+                {
+                  applicationId: body.applicationId,
                   systemWattageOutput:
                     body.weeklyCarbonDebt?.convertToKW.toString(),
                   netCarbonCreditEarningWeekly,
@@ -2901,24 +2920,30 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
             }
 
             const netCarbonCreditEarningWeekly = (
-              Number(application.adjustedWeeklyCarbonCredits) -
-              Number(application.weeklyTotalCarbonDebt)
+              Number(application.auditFields?.adjustedWeeklyCarbonCredits) -
+              Number(application.auditFields?.weeklyTotalCarbonDebt)
             ).toString();
 
             // Update application with the specified fields
-            await updateApplication(body.applicationId, {
-              systemWattageOutput: body.weeklyCarbonDebt.convertToKW.toString(),
-              netCarbonCreditEarningWeekly:
-                netCarbonCreditEarningWeekly.toString(),
-              weeklyTotalCarbonDebt:
-                body.weeklyCarbonDebt.weeklyTotalCarbonDebt.toString(),
-              averageSunlightHoursPerDay:
-                body.weeklyProduction.hoursOfSunlightPerDay.toString(),
-              adjustedWeeklyCarbonCredits:
-                body.weeklyProduction.adjustedWeeklyCarbonCredits.toString(),
-              lat: body.lat.toString(),
-              lng: body.lng.toString(),
-            });
+            await updateApplicationCRSFields(
+              body.applicationId,
+              {
+                lat: body.lat.toString(),
+                lng: body.lng.toString(),
+              },
+              {
+                systemWattageOutput:
+                  body.weeklyCarbonDebt.convertToKW.toString(),
+                netCarbonCreditEarningWeekly:
+                  netCarbonCreditEarningWeekly.toString(),
+                weeklyTotalCarbonDebt:
+                  body.weeklyCarbonDebt.weeklyTotalCarbonDebt.toString(),
+                averageSunlightHoursPerDay:
+                  body.weeklyProduction.hoursOfSunlightPerDay.toString(),
+                adjustedWeeklyCarbonCredits:
+                  body.weeklyProduction.adjustedWeeklyCarbonCredits.toString(),
+              }
+            );
 
             // Insert into weeklyProduction
             try {

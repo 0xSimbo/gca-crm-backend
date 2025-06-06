@@ -18,23 +18,29 @@ export const findAllApplicationsByOrgUserId = async (
           status: true,
           createdAt: true,
           updatedAt: true,
-          address: true,
+
           currentStep: true,
           roundRobinStatus: true,
           gcaAddress: true,
-          installerCompanyName: true,
-          installerEmail: true,
-          installerPhone: true,
-          installerName: true,
-          farmOwnerName: true,
-          farmOwnerEmail: true,
-          farmOwnerPhone: true,
+
           isCancelled: true,
           finalProtocolFee: true,
           preInstallVisitDate: true,
           afterInstallVisitDate: true,
         },
         with: {
+          enquiryFieldsCRS: {
+            columns: {
+              address: true,
+              installerCompanyName: true,
+              installerEmail: true,
+              installerPhone: true,
+              installerName: true,
+              farmOwnerName: true,
+              farmOwnerEmail: true,
+              farmOwnerPhone: true,
+            },
+          },
           user: {
             columns: {
               id: true,
@@ -53,5 +59,6 @@ export const findAllApplicationsByOrgUserId = async (
       (application.finalProtocolFee || BigInt(0)) as bigint,
       6
     ),
+    ...application.enquiryFieldsCRS,
   }));
 };

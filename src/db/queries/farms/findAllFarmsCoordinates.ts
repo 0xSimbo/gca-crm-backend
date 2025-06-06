@@ -3,14 +3,23 @@ import { db } from "../../db";
 import { applications, Devices } from "../../schema";
 import { parseCoordinates } from "../../../utils/parseCoordinates";
 
+import pLimit from "p-limit";
+
 export const findAllFarmsCoordinates = async () => {
   const farmsCoordinates = await db.query.applications.findMany({
-    columns: {
-      lat: true,
-      lng: true,
-    },
     where: isNotNull(applications.farmId),
     with: {
+      enquiryFieldsCRS: true,
+      auditFieldsCRS: true,
+      zone: {
+        with: {
+          requirementSet: {
+            columns: {
+              code: true,
+            },
+          },
+        },
+      },
       farm: {
         columns: {
           id: true,
@@ -21,9 +30,10 @@ export const findAllFarmsCoordinates = async () => {
       },
     },
   });
+
   return farmsCoordinates.map((farm) => ({
-    lat: farm.lat,
-    lng: farm.lng,
+    lat: farm.enquiryFieldsCRS?.lat,
+    lng: farm.enquiryFieldsCRS?.lng,
     farmId: farm.farm?.id,
     region: farm.farm?.region,
     regionFullName: farm.farm?.regionFullName,

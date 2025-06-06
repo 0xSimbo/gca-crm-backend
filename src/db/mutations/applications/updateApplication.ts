@@ -1,6 +1,13 @@
 import { eq } from "drizzle-orm";
 import { db } from "../../db";
-import { ApplicationInsertType, applications } from "../../schema";
+import {
+  ApplicationAuditFieldsCRSInsertType,
+  ApplicationEnquiryFieldsCRSInsertType,
+  ApplicationInsertType,
+  applications,
+  applicationsAuditFieldsCRS,
+  applicationsEnquiryFieldsCRS,
+} from "../../schema";
 
 export const updateApplication = async (
   applicationId: string,
@@ -12,4 +19,26 @@ export const updateApplication = async (
       ...fields,
     })
     .where(eq(applications.id, applicationId));
+};
+
+export const updateApplicationCRSFields = async (
+  applicationId: string,
+  enquiryFields: Partial<ApplicationEnquiryFieldsCRSInsertType>,
+  auditFields: Partial<ApplicationAuditFieldsCRSInsertType>
+) => {
+  return db.transaction(async (tx) => {
+    await tx
+      .update(applicationsEnquiryFieldsCRS)
+      .set({
+        ...enquiryFields,
+      })
+      .where(eq(applications.id, applicationId));
+
+    await tx
+      .update(applicationsAuditFieldsCRS)
+      .set({
+        ...auditFields,
+      })
+      .where(eq(applications.id, applicationId));
+  });
 };

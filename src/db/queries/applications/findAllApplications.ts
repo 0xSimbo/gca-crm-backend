@@ -7,20 +7,25 @@ export const findAllApplications = async () => {
       status: true,
       createdAt: true,
       updatedAt: true,
-      address: true,
+
       currentStep: true,
       roundRobinStatus: true,
       gcaAddress: true,
       isCancelled: true,
-      installerCompanyName: true,
-      installerEmail: true,
-      installerPhone: true,
-      installerName: true,
-      farmOwnerName: true,
-      farmOwnerEmail: true,
-      farmOwnerPhone: true,
     },
     with: {
+      enquiryFieldsCRS: {
+        columns: {
+          address: true,
+          installerCompanyName: true,
+          installerEmail: true,
+          installerPhone: true,
+          installerName: true,
+          farmOwnerName: true,
+          farmOwnerEmail: true,
+          farmOwnerPhone: true,
+        },
+      },
       user: {
         columns: {
           contactType: true,
@@ -29,5 +34,8 @@ export const findAllApplications = async () => {
       },
     },
   });
-  return applicationsDb;
+  return applicationsDb.map((application) => ({
+    ...application,
+    enquiryFields: application.enquiryFieldsCRS,
+  }));
 };

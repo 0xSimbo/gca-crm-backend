@@ -1,6 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "../../db";
-import { OrganizationApplications, applications } from "../../schema";
+import { OrganizationApplications } from "../../schema";
 import { formatUnits } from "viem";
 
 export const findAllApplicationsByOrganizationId = async (
@@ -18,23 +18,30 @@ export const findAllApplicationsByOrganizationId = async (
           status: true,
           createdAt: true,
           updatedAt: true,
-          address: true,
+
           currentStep: true,
           roundRobinStatus: true,
           gcaAddress: true,
-          installerCompanyName: true,
-          installerEmail: true,
-          installerPhone: true,
-          installerName: true,
-          farmOwnerName: true,
+
           isCancelled: true,
-          farmOwnerEmail: true,
-          farmOwnerPhone: true,
+
           finalProtocolFee: true,
           preInstallVisitDate: true,
           afterInstallVisitDate: true,
         },
         with: {
+          enquiryFieldsCRS: {
+            columns: {
+              address: true,
+              installerCompanyName: true,
+              installerEmail: true,
+              installerPhone: true,
+              installerName: true,
+              farmOwnerName: true,
+              farmOwnerEmail: true,
+              farmOwnerPhone: true,
+            },
+          },
           user: {
             columns: {
               id: true,
@@ -53,5 +60,6 @@ export const findAllApplicationsByOrganizationId = async (
       (application.finalProtocolFee || BigInt(0)) as bigint,
       6
     ),
+    ...application.enquiryFieldsCRS,
   }));
 };

@@ -8,7 +8,7 @@ export const findAllApplicationsRewardSplitsByUserId = async (
   excludeIds?: string[]
 ) => {
   if (excludeIds && excludeIds.length === 0) {
-    return await db.query.applications.findMany({
+    const applicationsDb = await db.query.applications.findMany({
       where: and(
         eq(applications.userId, userId),
         notInArray(applications.id, excludeIds),
@@ -17,14 +17,22 @@ export const findAllApplicationsRewardSplitsByUserId = async (
       ),
       columns: {
         id: true,
-        farmOwnerName: true,
       },
       with: {
+        enquiryFieldsCRS: {
+          columns: {
+            farmOwnerName: true,
+          },
+        },
         rewardSplits: true,
       },
     });
+    return applicationsDb.map((application) => ({
+      ...application,
+      ...application.enquiryFieldsCRS,
+    }));
   } else {
-    return await db.query.applications.findMany({
+    const applicationsDb = await db.query.applications.findMany({
       where: and(
         eq(applications.userId, userId),
         ne(applications.isCancelled, true),
@@ -32,11 +40,19 @@ export const findAllApplicationsRewardSplitsByUserId = async (
       ),
       columns: {
         id: true,
-        farmOwnerName: true,
       },
       with: {
+        enquiryFieldsCRS: {
+          columns: {
+            farmOwnerName: true,
+          },
+        },
         rewardSplits: true,
       },
     });
+    return applicationsDb.map((application) => ({
+      ...application,
+      ...application.enquiryFieldsCRS,
+    }));
   }
 };
