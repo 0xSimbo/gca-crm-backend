@@ -15,7 +15,7 @@ export const approveApplicationStep = async (
   annotation: string | null,
   stepIndex: number,
   signature: string,
-  applicationFields?: Partial<ApplicationInsertType>,
+  applicationFields: Partial<ApplicationInsertType>,
   applicationAuditFields?: ApplicationAuditFieldsCRSInsertType
 ) => {
   return db.transaction(async (tx) => {

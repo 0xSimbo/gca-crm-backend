@@ -1555,7 +1555,6 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               const { applicationId, ...updateObject } = body;
               await updateApplicationEnquiry(
                 existingApplication.id,
-                existingApplication.organizationApplication?.id,
                 body.latestUtilityBill,
                 {
                   ...updateObject,

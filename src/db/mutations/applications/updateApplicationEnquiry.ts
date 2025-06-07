@@ -4,6 +4,7 @@ import {
   ApplicationUpdateEnquiryType,
   Documents,
   applications,
+  applicationsEnquiryFieldsCRS,
 } from "../../schema";
 import {
   ApplicationStatusEnum,
@@ -15,16 +16,14 @@ import { DocumentsInsertTypeExtended } from "./fillApplicationStepWithDocuments"
 
 export const updateApplicationEnquiry = async (
   applicationId: string,
-  organizationApplicationId: string | undefined,
   latestUtilityBill: EncryptedFileUploadType,
   insertValues: ApplicationUpdateEnquiryType
 ) => {
   let documentId: string = "";
   await db.transaction(async (tx) => {
-    const updateRes = await db
+    const updateRes = await tx
       .update(applications)
       .set({
-        ...insertValues,
         status: ApplicationStatusEnum.waitingForApproval,
       })
       .where(eq(applications.id, applicationId))
@@ -33,6 +32,13 @@ export const updateApplicationEnquiry = async (
     if (updateRes.length === 0) {
       tx.rollback();
     }
+
+    await tx
+      .update(applicationsEnquiryFieldsCRS)
+      .set({
+        ...insertValues,
+      })
+      .where(eq(applicationsEnquiryFieldsCRS.applicationId, applicationId));
 
     // console.log("updateRes", updateRes);
 

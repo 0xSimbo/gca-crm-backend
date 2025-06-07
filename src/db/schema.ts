@@ -986,27 +986,27 @@ export const applicationsAuditFieldsCRS = pgTable(
     applicationId: text("application_id")
       .notNull()
       .references(() => applications.id, { onDelete: "cascade" }),
+    averageSunlightHoursPerDay: numeric("average_sunlight_hours_per_day", {
+      precision: 10,
+      scale: 5,
+    }).notNull(),
+    adjustedWeeklyCarbonCredits: numeric("adjusted_weekly_carbon_credits", {
+      precision: 10,
+      scale: 6,
+    }).notNull(),
+    weeklyTotalCarbonDebt: numeric("weekly_total_carbon_debt", {
+      precision: 10,
+      scale: 5,
+    }).notNull(),
+    netCarbonCreditEarningWeekly: numeric("net_carbon_credit_earning_weekly", {
+      precision: 10,
+      scale: 5,
+    }).notNull(),
     solarPanelsQuantity: integer("solar_panels_quantity"),
     solarPanelsBrandAndModel: varchar("solar_panels_brand_and_model", {
       length: 255,
     }),
     solarPanelsWarranty: varchar("solar_panels_warranty", { length: 255 }),
-    averageSunlightHoursPerDay: numeric("average_sunlight_hours_per_day", {
-      precision: 10,
-      scale: 5,
-    }),
-    adjustedWeeklyCarbonCredits: numeric("adjusted_weekly_carbon_credits", {
-      precision: 10,
-      scale: 6,
-    }),
-    weeklyTotalCarbonDebt: numeric("weekly_total_carbon_debt", {
-      precision: 10,
-      scale: 5,
-    }),
-    netCarbonCreditEarningWeekly: numeric("net_carbon_credit_earning_weekly", {
-      precision: 10,
-      scale: 5,
-    }),
     finalEnergyCost: numeric("final_energy_cost", {
       precision: 10,
       scale: 5,
