@@ -529,6 +529,12 @@ export const rewardsRouter = new Elysia({ prefix: "/rewards" })
               },
               with: {
                 farmRewards: true,
+                devices: {
+                  columns: {
+                    shortId: true,
+                    isEnabled: true,
+                  },
+                },
               },
             },
           },
