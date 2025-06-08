@@ -520,6 +520,12 @@ export const rewardsRouter = new Elysia({ prefix: "/rewards" })
         const rewardSplits = await db.query.RewardSplits.findMany({
           where: (RewardSplits, { eq }) =>
             eq(RewardSplits.walletAddress, checksummedWallet),
+          columns: {
+            id: true,
+            walletAddress: true,
+            glowSplitPercent: true,
+            usdgSplitPercent: true,
+          },
           with: {
             farm: {
               columns: {
