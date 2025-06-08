@@ -503,6 +503,86 @@ export const rewardsRouter = new Elysia({ prefix: "/rewards" })
         tags: [TAG.REWARDS],
       },
     }
+  )
+  .get(
+    "/wallet-reward-splits-and-farm-rewards",
+    async ({ query, set }) => {
+      try {
+        const wallet = query.wallet;
+        if (!wallet || typeof wallet !== "string" || wallet.length !== 42) {
+          set.status = 400;
+          return { error: "Invalid wallet address" };
+        }
+
+        const checksummedWallet = checksumAddress(wallet as `0x${string}`);
+
+        // 2. Get all RewardSplits where walletAddress matches
+        const rewardSplits = await db.query.RewardSplits.findMany({
+          where: (RewardSplits, { eq }) =>
+            eq(RewardSplits.walletAddress, checksummedWallet),
+          columns: {
+            id: true,
+            walletAddress: true,
+            glowSplitPercent: true,
+            usdgSplitPercent: true,
+          },
+          with: {
+            farm: {
+              columns: {
+                id: true,
+                userId: true,
+                auditCompleteDate: true,
+              },
+              with: {
+                farmRewards: true,
+                devices: {
+                  columns: {
+                    shortId: true,
+                    isEnabled: true,
+                  },
+                },
+              },
+            },
+          },
+        });
+
+        return {
+          rewardSplits: rewardSplits.map(({ farm, ...split }) => {
+            return {
+              ...split,
+              farm: {
+                ...farm,
+                farmRewards: farm?.farmRewards.map((r) => {
+                  return {
+                    ...r,
+                    usdgRewards: formatUnits(r.usdgRewards, 2),
+                    glowRewards: formatUnits(r.glowRewards, 2),
+                  };
+                }),
+              },
+            };
+          }),
+        };
+      } catch (e) {
+        set.status = 400;
+        console.log("[rewardsRouter] wallet-reward-splits-and-farm-rewards", e);
+        return {
+          error: e instanceof Error ? e.message : "Unknown error",
+        };
+      }
+    },
+    {
+      query: t.Object({
+        wallet: t.String({ minLength: 42, maxLength: 42 }),
+      }),
+      detail: {
+        summary:
+          "Get all RewardSplits for a wallet and all farmRewards for their farms",
+        description:
+          "Returns all RewardSplits where walletAddress matches the given wallet, and all farmRewards for farms owned by the wallet.",
+        tags: [TAG.REWARDS],
+      },
+    }
   );
 
 const isNumber = (val: string) => {
