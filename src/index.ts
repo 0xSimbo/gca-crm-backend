@@ -24,6 +24,7 @@ import { postMerkleRootHandler } from "./utils/postMerkleRoot";
 import { getDevicesLifetimeMetrics } from "./crons/update-farm-rewards/get-devices-lifetime-metrics";
 
 import { adminRouter } from "./routers/admin-router/adminRouter";
+import { zonesRouter } from "./routers/zones/zonesRouter";
 
 const PORT = process.env.PORT || 3005;
 const app = new Elysia()
@@ -134,6 +135,7 @@ const app = new Elysia()
   .use(usersRouter)
   .use(farmsRouter)
   .use(adminRouter)
+  .use(zonesRouter)
   .get("/update-rewards-for-current-week", async () => {
     //Will only work if the GCA has submitted the report for the current week.
     const currentWeek = getProtocolWeek();

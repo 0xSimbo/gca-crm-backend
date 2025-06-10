@@ -11,6 +11,16 @@ export const requirementSetCodes = ["CRS"] as const;
 export const requirementSetMap = {
   CRS: {
     enquiry: applicationsEnquiryFieldsCRS,
+    enquiryColumnsSelect: {
+      address: true,
+      installerCompanyName: true,
+      installerEmail: true,
+      installerPhone: true,
+      installerName: true,
+      farmOwnerName: true,
+      farmOwnerEmail: true,
+      farmOwnerPhone: true,
+    },
     audit: applicationsAuditFieldsCRS,
   },
   // XYZ: { enquiry: applicationXyzEnquiry, audit: applicationXyzAudit },

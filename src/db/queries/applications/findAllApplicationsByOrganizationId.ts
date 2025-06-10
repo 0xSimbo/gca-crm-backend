@@ -2,6 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { db } from "../../db";
 import { OrganizationApplications } from "../../schema";
 import { formatUnits } from "viem";
+import { requirementSetMap } from "../../zones";
 
 export const findAllApplicationsByOrganizationId = async (
   organizationId: string
@@ -31,15 +32,12 @@ export const findAllApplicationsByOrganizationId = async (
         },
         with: {
           enquiryFieldsCRS: {
-            columns: {
-              address: true,
-              installerCompanyName: true,
-              installerEmail: true,
-              installerPhone: true,
-              installerName: true,
-              farmOwnerName: true,
-              farmOwnerEmail: true,
-              farmOwnerPhone: true,
+            columns: requirementSetMap.CRS.enquiryColumnsSelect,
+          },
+          auditFieldsCRS: true,
+          zone: {
+            with: {
+              requirementSet: true,
             },
           },
           user: {
@@ -53,13 +51,20 @@ export const findAllApplicationsByOrganizationId = async (
       },
     },
   });
-  return applicationsDb.map(({ id, application }) => ({
-    ...application,
-    organizationApplicationId: id,
-    finalProtocolFee: formatUnits(
-      (application.finalProtocolFee || BigInt(0)) as bigint,
-      6
-    ),
-    ...application.enquiryFieldsCRS,
-  }));
+  return applicationsDb.map(
+    ({
+      id,
+      application: { enquiryFieldsCRS, auditFieldsCRS, zone, ...application },
+    }) => ({
+      ...application,
+      organizationApplicationId: id,
+      finalProtocolFee: formatUnits(
+        (application.finalProtocolFee || BigInt(0)) as bigint,
+        6
+      ),
+      enquiryFields: enquiryFieldsCRS,
+      auditFields: auditFieldsCRS,
+      zone: zone,
+    })
+  );
 };

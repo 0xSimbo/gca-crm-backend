@@ -1,6 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "../../db";
 import { applications } from "../../schema";
+import { requirementSetMap } from "../../zones";
 
 export const findAllApplicationsAssignedToGca = async (gcaAddress: string) => {
   const applicationsDb = await db.query.applications.findMany({
@@ -24,15 +25,12 @@ export const findAllApplicationsAssignedToGca = async (gcaAddress: string) => {
     },
     with: {
       enquiryFieldsCRS: {
-        columns: {
-          address: true,
-          installerCompanyName: true,
-          installerEmail: true,
-          installerPhone: true,
-          installerName: true,
-          farmOwnerName: true,
-          farmOwnerEmail: true,
-          farmOwnerPhone: true,
+        columns: requirementSetMap.CRS.enquiryColumnsSelect,
+      },
+      auditFieldsCRS: true,
+      zone: {
+        with: {
+          requirementSet: true,
         },
       },
       user: {
@@ -43,8 +41,12 @@ export const findAllApplicationsAssignedToGca = async (gcaAddress: string) => {
       },
     },
   });
-  return applicationsDb.map((application) => ({
-    ...application,
-    enquiryFields: application.enquiryFieldsCRS,
-  }));
+  return applicationsDb.map(
+    ({ enquiryFieldsCRS, auditFieldsCRS, zone, ...application }) => ({
+      ...application,
+      enquiryFields: enquiryFieldsCRS,
+      auditFields: auditFieldsCRS,
+      zone: zone,
+    })
+  );
 };

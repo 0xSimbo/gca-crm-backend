@@ -96,6 +96,7 @@ import {
   GcaAcceptApplicationQueryBody,
   ApproveOrAskForChangesQueryBody,
 } from "./query-schemas";
+import { findFirstApplicationDraftByUserId } from "../../db/queries/applications/findFirstApplicationDraftByUserId";
 
 export const applicationsRouter = new Elysia({ prefix: "/applications" })
   .use(bearerplugin())
@@ -1242,6 +1243,14 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
             if (account.role !== "USER") {
               set.status = 400;
               return "Unauthorized";
+            }
+
+            // Try to find an existing draft for this user
+            const existingDraft = await findFirstApplicationDraftByUserId(
+              userId
+            );
+            if (existingDraft) {
+              return existingDraft.id;
             }
 
             const insert = await db

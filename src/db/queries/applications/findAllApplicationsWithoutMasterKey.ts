@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { db } from "../../db";
 import { Documents } from "../../schema";
+import { requirementSetMap } from "../../zones";
 
 export const findAllApplicationsWithoutMasterKey = async () => {
   const applicationsDb = await db.query.applications.findMany({
@@ -9,9 +10,7 @@ export const findAllApplicationsWithoutMasterKey = async () => {
     },
     with: {
       enquiryFieldsCRS: {
-        columns: {
-          farmOwnerName: true,
-        },
+        columns: requirementSetMap.CRS.enquiryColumnsSelect,
       },
       applicationsEncryptedMasterKeys: {
         columns: {
@@ -33,8 +32,8 @@ export const findAllApplicationsWithoutMasterKey = async () => {
     .filter(
       (application) => application.applicationsEncryptedMasterKeys.length === 0
     )
-    .map((application) => ({
+    .map(({ enquiryFieldsCRS, ...application }) => ({
       ...application,
-      ...application.enquiryFieldsCRS,
+      ...enquiryFieldsCRS,
     }));
 };

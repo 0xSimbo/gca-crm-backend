@@ -46,13 +46,17 @@ export const FindFirstApplicationById = async (id: string) => {
     return null;
   }
 
+  const { enquiryFieldsCRS, auditFieldsCRS, zone, ...application } =
+    applicationDb;
+
   return {
-    ...applicationDb,
+    ...application,
     finalProtocolFee: formatUnits(
-      (applicationDb?.finalProtocolFee || BigInt(0)) as bigint,
+      (application?.finalProtocolFee || BigInt(0)) as bigint,
       6
     ),
-    enquiryFields: applicationDb.enquiryFieldsCRS,
-    auditFields: applicationDb.auditFieldsCRS,
+    enquiryFields: enquiryFieldsCRS,
+    auditFields: auditFieldsCRS,
+    zone: zone,
   };
 };

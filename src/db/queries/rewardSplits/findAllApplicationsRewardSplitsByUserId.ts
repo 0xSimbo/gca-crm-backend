@@ -2,6 +2,7 @@ import { and, eq, inArray, ne, notInArray } from "drizzle-orm";
 import { db } from "../../db";
 import { applications } from "../../schema";
 import { ApplicationStatusEnum } from "../../../types/api-types/Application";
+import { requirementSetMap } from "../../zones";
 
 export const findAllApplicationsRewardSplitsByUserId = async (
   userId: string,
@@ -20,16 +21,21 @@ export const findAllApplicationsRewardSplitsByUserId = async (
       },
       with: {
         enquiryFieldsCRS: {
-          columns: {
-            farmOwnerName: true,
+          columns: requirementSetMap.CRS.enquiryColumnsSelect,
+        },
+
+        zone: {
+          with: {
+            requirementSet: true,
           },
         },
         rewardSplits: true,
       },
     });
-    return applicationsDb.map((application) => ({
+    return applicationsDb.map(({ enquiryFieldsCRS, zone, ...application }) => ({
       ...application,
-      ...application.enquiryFieldsCRS,
+      enquiryFields: enquiryFieldsCRS,
+      zone: zone,
     }));
   } else {
     const applicationsDb = await db.query.applications.findMany({
@@ -43,16 +49,20 @@ export const findAllApplicationsRewardSplitsByUserId = async (
       },
       with: {
         enquiryFieldsCRS: {
-          columns: {
-            farmOwnerName: true,
+          columns: requirementSetMap.CRS.enquiryColumnsSelect,
+        },
+        zone: {
+          with: {
+            requirementSet: true,
           },
         },
         rewardSplits: true,
       },
     });
-    return applicationsDb.map((application) => ({
+    return applicationsDb.map(({ enquiryFieldsCRS, zone, ...application }) => ({
       ...application,
-      ...application.enquiryFieldsCRS,
+      enquiryFields: enquiryFieldsCRS,
+      zone: zone,
     }));
   }
 };

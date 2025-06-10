@@ -8,6 +8,7 @@ import {
   DocumentsInsertType,
   RewardSplits,
   applications,
+  applicationsAuditFieldsCRS,
   deferments,
   farms,
 } from "../../schema";
@@ -226,10 +227,16 @@ export const completeApplicationWithDocumentsAndCreateFarmWithDevices = async (
       .set({
         status: ApplicationStatusEnum.completed,
         farmId: farmInsert[0].farmId,
-        ...applicationAuditFields,
       })
       .where(and(eq(applications.id, applicationId)))
       .returning({ status: applications.status });
+
+    await tx
+      .update(applicationsAuditFieldsCRS)
+      .set({
+        ...applicationAuditFields,
+      })
+      .where(eq(applicationsAuditFieldsCRS.applicationId, applicationId));
 
     if (
       !applicationUpdateStatus.every(

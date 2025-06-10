@@ -1,6 +1,7 @@
 import { and, eq, inArray } from "drizzle-orm";
 import { db } from "../../db";
 import { OrganizationApplications, applications } from "../../schema";
+import { requirementSetMap } from "../../zones";
 
 export const findAllApplicationsByOrganizationIds = async (
   organizationIds: string[]
@@ -32,16 +33,7 @@ export const findAllApplicationsByOrganizationIds = async (
         },
         with: {
           enquiryFieldsCRS: {
-            columns: {
-              address: true,
-              installerCompanyName: true,
-              installerEmail: true,
-              installerPhone: true,
-              installerName: true,
-              farmOwnerName: true,
-              farmOwnerEmail: true,
-              farmOwnerPhone: true,
-            },
+            columns: requirementSetMap.CRS.enquiryColumnsSelect,
           },
           user: {
             columns: {
@@ -53,8 +45,10 @@ export const findAllApplicationsByOrganizationIds = async (
       },
     },
   });
-  return applicationsDb.map(({ application }) => ({
-    ...application,
-    ...application.enquiryFieldsCRS,
-  }));
+  return applicationsDb.map(
+    ({ application: { enquiryFieldsCRS, ...application } }) => ({
+      ...application,
+      ...enquiryFieldsCRS,
+    })
+  );
 };

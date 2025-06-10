@@ -89,14 +89,14 @@ export const findAllCompletedApplications = async (withDocuments?: boolean) => {
     },
   });
   return applicationsDb
-    .map((application) => ({
+    .map(({ enquiryFieldsCRS, auditFieldsCRS, ...application }) => ({
       ...application,
       finalProtocolFee: formatUnits(
         (application.finalProtocolFee || BigInt(0)) as bigint,
         6
       ),
-      ...application.enquiryFieldsCRS,
-      ...application.auditFieldsCRS,
+      ...enquiryFieldsCRS,
+      ...auditFieldsCRS,
     }))
     .sort(
       (a, b) =>
@@ -217,13 +217,14 @@ export const findCompletedApplication = async ({
     },
   });
   if (!applicationsDb) return undefined;
+  const { enquiryFieldsCRS, auditFieldsCRS, ...application } = applicationsDb;
   return {
-    ...applicationsDb,
+    ...application,
     finalProtocolFee: formatUnits(
       (applicationsDb.finalProtocolFee || BigInt(0)) as bigint,
       6
     ),
-    ...applicationsDb.enquiryFieldsCRS,
-    ...applicationsDb.auditFieldsCRS,
+    ...enquiryFieldsCRS,
+    ...auditFieldsCRS,
   };
 };

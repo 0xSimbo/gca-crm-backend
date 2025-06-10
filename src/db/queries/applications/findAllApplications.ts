@@ -1,4 +1,5 @@
 import { db } from "../../db";
+import { requirementSetMap } from "../../zones";
 
 export const findAllApplications = async () => {
   const applicationsDb = await db.query.applications.findMany({
@@ -15,15 +16,12 @@ export const findAllApplications = async () => {
     },
     with: {
       enquiryFieldsCRS: {
-        columns: {
-          address: true,
-          installerCompanyName: true,
-          installerEmail: true,
-          installerPhone: true,
-          installerName: true,
-          farmOwnerName: true,
-          farmOwnerEmail: true,
-          farmOwnerPhone: true,
+        columns: requirementSetMap.CRS.enquiryColumnsSelect,
+      },
+      auditFieldsCRS: true,
+      zone: {
+        with: {
+          requirementSet: true,
         },
       },
       user: {
@@ -34,8 +32,12 @@ export const findAllApplications = async () => {
       },
     },
   });
-  return applicationsDb.map((application) => ({
-    ...application,
-    enquiryFields: application.enquiryFieldsCRS,
-  }));
+  return applicationsDb.map(
+    ({ enquiryFieldsCRS, auditFieldsCRS, zone, ...application }) => ({
+      ...application,
+      enquiryFields: enquiryFieldsCRS,
+      auditFields: auditFieldsCRS,
+      zone: zone,
+    })
+  );
 };

@@ -2,6 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { db } from "../../db";
 import { OrganizationApplications, applications } from "../../schema";
 import { formatUnits } from "viem";
+import { requirementSetMap } from "../../zones";
 
 export const findAllApplicationsByOrgUserId = async (
   organizationUserId: string
@@ -30,16 +31,7 @@ export const findAllApplicationsByOrgUserId = async (
         },
         with: {
           enquiryFieldsCRS: {
-            columns: {
-              address: true,
-              installerCompanyName: true,
-              installerEmail: true,
-              installerPhone: true,
-              installerName: true,
-              farmOwnerName: true,
-              farmOwnerEmail: true,
-              farmOwnerPhone: true,
-            },
+            columns: requirementSetMap.CRS.enquiryColumnsSelect,
           },
           user: {
             columns: {
@@ -52,13 +44,15 @@ export const findAllApplicationsByOrgUserId = async (
       },
     },
   });
-  return applicationsDb.map(({ id, application }) => ({
-    ...application,
-    organizationApplicationId: id,
-    finalProtocolFee: formatUnits(
-      (application.finalProtocolFee || BigInt(0)) as bigint,
-      6
-    ),
-    ...application.enquiryFieldsCRS,
-  }));
+  return applicationsDb.map(
+    ({ id, application: { enquiryFieldsCRS, ...application } }) => ({
+      ...application,
+      organizationApplicationId: id,
+      finalProtocolFee: formatUnits(
+        (application.finalProtocolFee || BigInt(0)) as bigint,
+        6
+      ),
+      ...enquiryFieldsCRS,
+    })
+  );
 };

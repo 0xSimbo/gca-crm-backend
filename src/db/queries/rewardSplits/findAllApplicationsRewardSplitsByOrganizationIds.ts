@@ -2,6 +2,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { db } from "../../db";
 import { OrganizationApplications } from "../../schema";
 import { ApplicationStatusEnum } from "../../../types/api-types/Application";
+import { requirementSetMap } from "../../zones";
 
 export const findAllApplicationsRewardSplitsByOrganizationIds = async (
   organizationIds: string[]
@@ -23,8 +24,11 @@ export const findAllApplicationsRewardSplitsByOrganizationIds = async (
         },
         with: {
           enquiryFieldsCRS: {
-            columns: {
-              farmOwnerName: true,
+            columns: requirementSetMap.CRS.enquiryColumnsSelect,
+          },
+          zone: {
+            with: {
+              requirementSet: true,
             },
           },
           rewardSplits: true,
@@ -35,7 +39,8 @@ export const findAllApplicationsRewardSplitsByOrganizationIds = async (
   return applicationsDb
     .map(({ application, application: { enquiryFieldsCRS } }) => ({
       ...application,
-      ...enquiryFieldsCRS,
+      enquiryFields: enquiryFieldsCRS,
+      zone: application.zone,
     }))
     .filter(
       (a) => a.status === ApplicationStatusEnum.completed && !a.isCancelled
