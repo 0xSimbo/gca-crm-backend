@@ -161,6 +161,12 @@ export const findCompletedApplication = async ({
       revisedKwhGeneratedPerYear: true,
     },
     with: {
+      zone: {
+        columns: {
+          id: true,
+          name: true,
+        },
+      },
       auditFieldsCRS: {
         columns: {
           solarPanelsQuantity: true,
