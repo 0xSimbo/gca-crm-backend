@@ -236,16 +236,16 @@ export const gcasRouter = new Elysia({ prefix: "/gcas" })
               provider
             );
 
-            if (process.env.NODE_ENV === "production") {
-              const allGcas = await minerPoolAndGCA.allGcas();
-              const isGca = allGcas
-                .map((c) => c.toLowerCase())
-                .includes(wallet.toLowerCase());
-              if (!isGca) {
-                set.status = 401;
-                return "This wallet is not a GCA";
-              }
+            // if (process.env.NODE_ENV === "production") {
+            const allGcas = await minerPoolAndGCA.allGcas();
+            const isGca = allGcas
+              .map((c) => c.toLowerCase())
+              .includes(wallet.toLowerCase());
+            if (!isGca) {
+              set.status = 401;
+              return "This wallet is not a GCA";
             }
+            // }
 
             await createGca({
               id: wallet,

@@ -2342,6 +2342,9 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
             locationWithoutPII: t.String({
               minLength: 1,
             }),
+            zoneId: t.Number({
+              minimum: 1,
+            }),
           }),
           detail: {
             summary: "",
