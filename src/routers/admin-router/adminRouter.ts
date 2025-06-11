@@ -193,7 +193,7 @@ export const adminRouter = new Elysia({ prefix: "/admin" })
       console.error("Error bootstrapping clean grid zone", error);
       return { message: "error" };
     }
-  }); // GET /migrate-legacy-applications
+  });
 // .get("/migrate-legacy-applications", async ({ set }) => {
 //   try {
 //     await db.transaction(async (tx) => {
@@ -210,34 +210,32 @@ export const adminRouter = new Elysia({ prefix: "/admin" })
 //       if (legacyApps.length === 0) return; // nothing to do
 
 //       /* 3️⃣  Prepare rows for each target table ----------------------- */
-//       const commonRows: ApplicationCommonInsert[] = [];
 //       const enquiryRows: (typeof applicationsEnquiryFieldsCRS.$inferInsert)[] =
 //         [];
 //       const auditRows: (typeof applicationsAuditFieldsCRS.$inferInsert)[] =
 //         [];
 
 //       for (const a of legacyApps) {
-//         if (a.currentStep > ApplicationSteps.enquiry) {
-//           enquiryRows.push({
-//             applicationId: a.id,
-//             address: a.address,
-//             farmOwnerName: a.farmOwnerName,
-//             farmOwnerEmail: a.farmOwnerEmail,
-//             farmOwnerPhone: a.farmOwnerPhone,
-//             lat: a.lat,
-//             lng: a.lng,
-//             estimatedCostOfPowerPerKWh: a.estimatedCostOfPowerPerKWh,
-//             estimatedKWhGeneratedPerYear: a.estimatedKWhGeneratedPerYear,
-//             enquiryEstimatedFees: a.enquiryEstimatedFees,
-//             enquiryEstimatedQuotePerWatt: a.enquiryEstimatedQuotePerWatt,
-//             installerName: a.installerName!,
-//             installerCompanyName: a.installerCompanyName!,
-//             installerEmail: a.installerEmail!,
-//             installerPhone: a.installerPhone!,
-//           });
-//         }
+//         enquiryRows.push({
+//           applicationId: a.id,
+//           address: a.address,
+//           farmOwnerName: a.farmOwnerName,
+//           farmOwnerEmail: a.farmOwnerEmail,
+//           farmOwnerPhone: a.farmOwnerPhone,
+//           lat: a.lat,
+//           lng: a.lng,
+//           estimatedCostOfPowerPerKWh: a.estimatedCostOfPowerPerKWh,
+//           estimatedKWhGeneratedPerYear: a.estimatedKWhGeneratedPerYear,
+//           enquiryEstimatedFees: a.enquiryEstimatedFees,
+//           enquiryEstimatedQuotePerWatt: a.enquiryEstimatedQuotePerWatt,
+//           installerName: a.installerName!,
+//           installerCompanyName: a.installerCompanyName!,
+//           installerEmail: a.installerEmail!,
+//           installerPhone: a.installerPhone!,
+//         });
+
 //         if (
-//           a.status > ApplicationStatusEnum.completed &&
+//           a.status === ApplicationStatusEnum.completed &&
 //           a.currentStep === ApplicationSteps.payment
 //         ) {
 //           auditRows.push({
@@ -264,16 +262,17 @@ export const adminRouter = new Elysia({ prefix: "/admin" })
 //         .values(enquiryRows)
 //         .onConflictDoNothing();
 
+//       console.log("auditRows", auditRows);
 //       await tx
 //         .insert(applicationsAuditFieldsCRS)
 //         .values(auditRows)
 //         .onConflictDoNothing();
 
-//       /* 5️⃣  Patch every farm that still has the legacy zone (1) */
-//       await tx
-//         .update(farms)
-//         .set({ zoneId: cleanGridZoneId })
-//         .where(eq(farms.zoneId, 1));
+//       // /* 5️⃣  Patch every farm that still has the legacy zone (1) */
+//       // await tx
+//       //   .update(farms)
+//       //   .set({ zoneId: cleanGridZoneId })
+//       //   .where(eq(farms.zoneId, 1));
 //     });
 
 //     set.status = 200;
