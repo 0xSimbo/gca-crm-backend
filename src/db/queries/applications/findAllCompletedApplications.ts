@@ -6,6 +6,7 @@ import { ApplicationStatusEnum } from "../../../types/api-types/Application";
 
 function stringifyApplicationFields(
   application: any,
+  zone: any,
   enquiryFieldsCRS?: any,
   auditFieldsCRS?: any
 ) {
@@ -17,6 +18,7 @@ function stringifyApplicationFields(
     ),
     ...enquiryFieldsCRS,
     ...auditFieldsCRS,
+    zone,
     lat:
       enquiryFieldsCRS?.lat !== undefined && enquiryFieldsCRS?.lat !== null
         ? enquiryFieldsCRS.lat.toString()
@@ -82,6 +84,12 @@ export const findAllCompletedApplications = async (withDocuments?: boolean) => {
       revisedKwhGeneratedPerYear: true,
     },
     with: {
+      zone: {
+        columns: {
+          id: true,
+          name: true,
+        },
+      },
       auditFieldsCRS: {
         columns: {
           solarPanelsQuantity: true,
@@ -143,8 +151,13 @@ export const findAllCompletedApplications = async (withDocuments?: boolean) => {
     },
   });
   return applicationsDb
-    .map(({ enquiryFieldsCRS, auditFieldsCRS, ...application }) =>
-      stringifyApplicationFields(application, enquiryFieldsCRS, auditFieldsCRS)
+    .map(({ enquiryFieldsCRS, auditFieldsCRS, zone, ...application }) =>
+      stringifyApplicationFields(
+        application,
+        zone,
+        enquiryFieldsCRS,
+        auditFieldsCRS
+      )
     )
     .sort(
       (a, b) =>
@@ -271,9 +284,11 @@ export const findCompletedApplication = async ({
     },
   });
   if (!applicationsDb) return undefined;
-  const { enquiryFieldsCRS, auditFieldsCRS, ...application } = applicationsDb;
+  const { enquiryFieldsCRS, auditFieldsCRS, zone, ...application } =
+    applicationsDb;
   return stringifyApplicationFields(
     application,
+    zone,
     enquiryFieldsCRS,
     auditFieldsCRS
   );
