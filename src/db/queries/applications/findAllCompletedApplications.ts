@@ -125,6 +125,7 @@ export const findAllCompletedApplications = async (withDocuments?: boolean) => {
         columns: {
           id: true,
           auditCompleteDate: true,
+          name: true,
         },
       },
       devices: {
@@ -266,6 +267,7 @@ export const findCompletedApplication = async ({
           region: true,
           regionFullName: true,
           signalType: true,
+          name: true,
         },
       },
       devices: {

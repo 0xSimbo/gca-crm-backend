@@ -465,6 +465,7 @@ export const farms = pgTable(
     signalType: varchar("signal_type", { length: 255 })
       .notNull()
       .default("__UNSET__"),
+    name: varchar("name", { length: 255 }).notNull().default("__UNSET__"),
   },
   (t) => {
     return {

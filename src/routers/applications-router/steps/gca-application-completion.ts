@@ -10,6 +10,7 @@ import {
   RequiredDocumentsNamesEnum,
 } from "../../../types/api-types/Application";
 import { listObjects } from "../../../utils/r2/upload-to-r2";
+import { getUniqueStarNameForApplicationId } from "../../farms/farmsRouter";
 type WithoutPiiDocumentsType = {
   contractAgreement: string;
   declarationOfIntention: string;
@@ -248,6 +249,11 @@ export const handleCreateWithoutPIIDocumentsAndCompleteApplication = async (
     throw new Error("Some documents upload failed " + allRequiredKeys);
   }
 
+  const farmName = await getUniqueStarNameForApplicationId(application.id);
+  if (!farmName) {
+    throw new Error("Failed to get a unique farm name");
+  }
+
   return await completeApplicationWithDocumentsAndCreateFarmWithDevices(
     application.id,
     gcaId,
@@ -261,6 +267,7 @@ export const handleCreateWithoutPIIDocumentsAndCompleteApplication = async (
     stepAnnotation,
     args.applicationAuditFields,
     application.enquiryFields.lat,
-    application.enquiryFields.lng
+    application.enquiryFields.lng,
+    farmName
   );
 };

@@ -57,7 +57,8 @@ export const completeApplicationWithDocumentsAndCreateFarmWithDevices = async (
   stepAnnotation: string | null,
   applicationAuditFields: ApplicationAuditFieldsType,
   lat: string,
-  lng: string
+  lng: string,
+  farmName: string
 ) => {
   if (!process.env.R2_NOT_ENCRYPTED_FILES_BUCKET_NAME) {
     throw new Error("R2_NOT_ENCRYPTED_FILES_BUCKET_NAME is not defined");
@@ -189,6 +190,7 @@ export const completeApplicationWithDocumentsAndCreateFarmWithDevices = async (
         region: region.region,
         regionFullName: region.regionFullName,
         signalType: region.signalType,
+        name: farmName,
       })
       .returning({ farmId: applications.farmId });
 
