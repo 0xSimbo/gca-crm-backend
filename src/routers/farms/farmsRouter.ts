@@ -173,6 +173,19 @@ export const farmsRouter = new Elysia({ prefix: "/farms" })
       },
     }
   )
+  // .get("/reset-farms-names", async ({ set }) => {
+  //   try {
+  //     await db.update(farms).set({ name: "__UNSET__" });
+  //     return { success: true };
+  //   } catch (e) {
+  //     if (e instanceof Error) {
+  //       set.status = 400;
+  //       return e.message;
+  //     }
+  //     set.status = 500;
+  //     return "Internal Server Error";
+  //   }
+  // })
   .get(
     "/random-farm-name",
     async ({ set, query }) => {
