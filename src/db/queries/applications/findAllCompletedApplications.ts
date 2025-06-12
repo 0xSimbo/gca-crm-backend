@@ -4,6 +4,60 @@ import { Documents, applications } from "../../schema";
 import { formatUnits } from "viem";
 import { ApplicationStatusEnum } from "../../../types/api-types/Application";
 
+function stringifyApplicationFields(
+  application: any,
+  enquiryFieldsCRS?: any,
+  auditFieldsCRS?: any
+) {
+  return {
+    ...application,
+    finalProtocolFee: formatUnits(
+      (application.finalProtocolFee || BigInt(0)) as bigint,
+      6
+    ),
+    ...enquiryFieldsCRS,
+    ...auditFieldsCRS,
+    lat:
+      enquiryFieldsCRS?.lat !== undefined && enquiryFieldsCRS?.lat !== null
+        ? enquiryFieldsCRS.lat.toString()
+        : undefined,
+    lng:
+      enquiryFieldsCRS?.lng !== undefined && enquiryFieldsCRS?.lng !== null
+        ? enquiryFieldsCRS.lng.toString()
+        : undefined,
+    estimatedCostOfPowerPerKWh:
+      enquiryFieldsCRS?.estimatedCostOfPowerPerKWh !== undefined &&
+      enquiryFieldsCRS?.estimatedCostOfPowerPerKWh !== null
+        ? enquiryFieldsCRS.estimatedCostOfPowerPerKWh.toString()
+        : undefined,
+    averageSunlightHoursPerDay:
+      auditFieldsCRS?.averageSunlightHoursPerDay !== undefined &&
+      auditFieldsCRS?.averageSunlightHoursPerDay !== null
+        ? auditFieldsCRS.averageSunlightHoursPerDay.toString()
+        : undefined,
+    finalEnergyCost:
+      auditFieldsCRS?.finalEnergyCost !== undefined &&
+      auditFieldsCRS?.finalEnergyCost !== null
+        ? auditFieldsCRS.finalEnergyCost.toString()
+        : undefined,
+    adjustedWeeklyCarbonCredits:
+      auditFieldsCRS?.adjustedWeeklyCarbonCredits !== undefined &&
+      auditFieldsCRS?.adjustedWeeklyCarbonCredits !== null
+        ? auditFieldsCRS.adjustedWeeklyCarbonCredits.toString()
+        : undefined,
+    weeklyTotalCarbonDebt:
+      auditFieldsCRS?.weeklyTotalCarbonDebt !== undefined &&
+      auditFieldsCRS?.weeklyTotalCarbonDebt !== null
+        ? auditFieldsCRS.weeklyTotalCarbonDebt.toString()
+        : undefined,
+    netCarbonCreditEarningWeekly:
+      auditFieldsCRS?.netCarbonCreditEarningWeekly !== undefined &&
+      auditFieldsCRS?.netCarbonCreditEarningWeekly !== null
+        ? auditFieldsCRS.netCarbonCreditEarningWeekly.toString()
+        : undefined,
+  };
+}
+
 export const findAllCompletedApplications = async (withDocuments?: boolean) => {
   const applicationsDb = await db.query.applications.findMany({
     where: and(
@@ -89,15 +143,9 @@ export const findAllCompletedApplications = async (withDocuments?: boolean) => {
     },
   });
   return applicationsDb
-    .map(({ enquiryFieldsCRS, auditFieldsCRS, ...application }) => ({
-      ...application,
-      finalProtocolFee: formatUnits(
-        (application.finalProtocolFee || BigInt(0)) as bigint,
-        6
-      ),
-      ...enquiryFieldsCRS,
-      ...auditFieldsCRS,
-    }))
+    .map(({ enquiryFieldsCRS, auditFieldsCRS, ...application }) =>
+      stringifyApplicationFields(application, enquiryFieldsCRS, auditFieldsCRS)
+    )
     .sort(
       (a, b) =>
         b.farm!!.auditCompleteDate.getTime() -
@@ -224,13 +272,9 @@ export const findCompletedApplication = async ({
   });
   if (!applicationsDb) return undefined;
   const { enquiryFieldsCRS, auditFieldsCRS, ...application } = applicationsDb;
-  return {
-    ...application,
-    finalProtocolFee: formatUnits(
-      (applicationsDb.finalProtocolFee || BigInt(0)) as bigint,
-      6
-    ),
-    ...enquiryFieldsCRS,
-    ...auditFieldsCRS,
-  };
+  return stringifyApplicationFields(
+    application,
+    enquiryFieldsCRS,
+    auditFieldsCRS
+  );
 };
