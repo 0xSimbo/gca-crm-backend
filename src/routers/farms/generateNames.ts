@@ -1,5 +1,5 @@
 /*  ──────────────────────────────────────────────────────────────
-    DESCRIPTIVE ADJECTIVES   –  no duplicates with other lists
+    DESCRIPTIVE ADJECTIVES 
    ────────────────────────────────────────────────────────────── */
 export const adjectives = [
   "Aetheric",
@@ -113,7 +113,6 @@ export const colors = [
   "Citrine",
   "Dawn",
   "Denim",
-  "Eggshell",
   "Flint",
   "Fog",
   "Frost",
@@ -177,21 +176,21 @@ export const natureNouns = [
   "Arbor",
   "Bank",
   "Basin",
-  "Bay",
+
   "Bayou",
   "Bloom",
   "Brook",
   "Canopy",
   "Canyon",
-  "Cascade",
+
   "Cedar",
   "Chasm",
   "Clearing",
   "Cliff",
-  "Copse",
+
   "Cove",
   "Cradle",
-  "Creek",
+
   "Crossing",
   "Cypress",
   "Dale",
@@ -199,48 +198,38 @@ export const natureNouns = [
   "Dell",
   "Divide",
   "Drift",
-  "Dunes",
-  "Eagle",
-  "Echo",
+
   "Embankment",
-  "Estuary",
-  "Falls",
-  "Fen",
+
   "Field",
   "Fjord",
   "Flats",
-  "Flume",
+
   "Frontier",
   "Glen",
-  "Gorge",
+
   "Grange",
   "Grove",
-  "Harbor",
+
   "Haven",
   "Headland",
-  "Heath",
+
   "Hillock",
   "Hills",
   "Hollow",
   "Horizon",
-  "Inlet",
+
   "Island",
-  "Isthmus",
-  "Jetty",
+
   "Knoll",
-  "Lagoon",
-  "Lakes",
+
   "Landfall",
   "Ledge",
-  "Light",
+
   "Mangrove",
-  "Mariner",
-  "Marsh",
+
   "Meadow",
-  "Mesa",
-  "Mist",
-  "Moraine",
-  "Oasis",
+
   "Orchard",
   "Outpost",
   "Overlook",
@@ -252,43 +241,33 @@ export const natureNouns = [
   "Pinnacle",
   "Plateau",
   "Point",
-  "Pond",
+
   "Prairie",
   "Quarry",
-  "Rapids",
-  "Ravine",
-  "Reach",
-  "Reef",
-  "Reservoir",
+
   "Ridge",
-  "Rill",
-  "River",
+
   "Run",
-  "Saddle",
+
   "Sanctuary",
-  "Savanna",
-  "Seafront",
-  "Shoals",
-  "Shore",
+
   "Slope",
-  "Sound",
+
   "Spire",
-  "Springs",
+
   "Summit",
   "Terrace",
   "Thicket",
   "Timber",
   "Trail",
-  "Tundra",
+
   "Vale",
   "Valley",
   "Vista",
-  "Waters",
-  "Well",
+
   "Wharf",
   "Wilds",
   "Wildwood",
-  "Windbreak",
 ] as const;
 
 /*  ──────────────────────────────────────────────────────────────
@@ -329,7 +308,7 @@ export const techPrefixes = [
   "Photon",
   "Photonix",
   "Power",
-  "Pulse",
+
   "Quantum",
   "Solara",
   "Solar",
