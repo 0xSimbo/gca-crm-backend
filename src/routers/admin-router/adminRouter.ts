@@ -125,44 +125,6 @@ export const adminRouter = new Elysia({ prefix: "/admin" })
       return { message: "error" };
     }
   })
-  .get("/anonymize-users-and-installers", async ({ set }) => {
-    try {
-      await db.transaction(async (tx) => {
-        // Anonymize users
-        const allUsers = await tx.query.users.findMany();
-        for (const user of allUsers) {
-          await updateUser(
-            {
-              firstName: "Anon",
-              lastName: "User",
-              email: `anon+${user.id}@example.com`,
-              companyName: "Anon Corp",
-              companyAddress: "123 Anon St",
-            },
-            user.id
-          );
-        }
-
-        // Anonymize installers
-        const allInstallers = await tx.query.installers.findMany();
-        for (const installer of allInstallers) {
-          await updateInstaller(
-            {
-              name: "Anon Installer",
-              email: `anon+${installer.id}@example.com`,
-              companyName: "Anon Installers",
-              phone: "000-000-0000",
-            },
-            installer.id
-          );
-        }
-      });
-      return { message: "success" };
-    } catch (error) {
-      console.error("Error anonymizing users and installers", error);
-      return { message: "error" };
-    }
-  })
   .get("/bootstrap-clean-grid-zone", async ({ set }) => {
     try {
       await db.transaction(async (tx) => {
@@ -194,6 +156,44 @@ export const adminRouter = new Elysia({ prefix: "/admin" })
       return { message: "error" };
     }
   });
+// .get("/anonymize-users-and-installers", async ({ set }) => {
+//   try {
+//     await db.transaction(async (tx) => {
+//       // Anonymize users
+//       const allUsers = await tx.query.users.findMany();
+//       for (const user of allUsers) {
+//         await updateUser(
+//           {
+//             firstName: "Anon",
+//             lastName: "User",
+//             email: `anon+${user.id}@example.com`,
+//             companyName: "Anon Corp",
+//             companyAddress: "123 Anon St",
+//           },
+//           user.id
+//         );
+//       }
+
+//       // Anonymize installers
+//       const allInstallers = await tx.query.installers.findMany();
+//       for (const installer of allInstallers) {
+//         await updateInstaller(
+//           {
+//             name: "Anon Installer",
+//             email: `anon+${installer.id}@example.com`,
+//             companyName: "Anon Installers",
+//             phone: "000-000-0000",
+//           },
+//           installer.id
+//         );
+//       }
+//     });
+//     return { message: "success" };
+//   } catch (error) {
+//     console.error("Error anonymizing users and installers", error);
+//     return { message: "error" };
+//   }
+// })
 // .get("/migrate-legacy-applications", async ({ set }) => {
 //   try {
 //     await db.transaction(async (tx) => {
@@ -202,7 +202,6 @@ export const adminRouter = new Elysia({ prefix: "/admin" })
 //         where: (z, { eq }) => eq(z.id, 1),
 //       });
 //       if (!cleanGridZone) throw new Error("Clean-Grid zone not bootstrapped");
-//       const cleanGridZoneId = cleanGridZone.id;
 
 //       /* 2️⃣  Load every legacy application (idempotent re-run is OK) */
 //       const legacyApps = await tx.select().from(applications);
