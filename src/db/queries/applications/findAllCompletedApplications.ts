@@ -126,6 +126,8 @@ export const findAllCompletedApplications = async (withDocuments?: boolean) => {
           id: true,
           auditCompleteDate: true,
           name: true,
+          region: true,
+          regionFullName: true,
         },
       },
       devices: {
