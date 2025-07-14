@@ -88,3 +88,60 @@ export async function createAndUploadJsonFile(
     throw error;
   }
 }
+
+export async function downloadFile(
+  bucketName: string,
+  key: string
+): Promise<Buffer> {
+  try {
+    const response = await s3.getObject({
+      Bucket: bucketName,
+      Key: key,
+    });
+
+    if (!response.Body) {
+      throw new Error("No body in response");
+    }
+
+    // Convert the stream to a buffer
+    const chunks: any[] = [];
+    for await (const chunk of response.Body as any) {
+      chunks.push(chunk);
+    }
+    return Buffer.concat(chunks);
+  } catch (error) {
+    console.error(`Error downloading ${key} from ${bucketName}:`, error);
+    throw error;
+  }
+}
+
+export async function uploadFile(
+  bucketName: string,
+  key: string,
+  body: Buffer,
+  contentType: string
+) {
+  try {
+    const params = {
+      Bucket: bucketName,
+      Key: key,
+      Body: body,
+      ContentType: contentType,
+    };
+
+    const response = await s3.putObject(params);
+
+    if (response.$metadata.httpStatusCode === 200) {
+      // Return the public URL based on the bucket
+      const isPublicBucket =
+        bucketName === process.env.R2_NOT_ENCRYPTED_FILES_BUCKET_NAME;
+      return isPublicBucket
+        ? `https://pub-${process.env.R2_PUB_NOT_ENCRYPTED_BUCKET_ID}.r2.dev/${key}`
+        : `https://pub-65d7379333b140c5a7e4d6e74d173542.r2.dev/${key}`;
+    }
+    throw new Error("Error uploading file");
+  } catch (error) {
+    console.error(`Error uploading ${key}:`, error);
+    throw error;
+  }
+}

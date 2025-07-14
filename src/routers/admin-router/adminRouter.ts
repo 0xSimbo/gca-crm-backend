@@ -1,28 +1,23 @@
-import { Elysia, t } from "elysia";
+import { Elysia } from "elysia";
 import {
-  applications,
-  applicationsAuditFieldsCRS,
-  applicationsEnquiryFieldsCRS,
-  farms,
   requirementSets,
   wallets,
   walletWeeklyRewards,
   zones,
 } from "../../db/schema";
-import { z } from "zod/v4";
 import { db } from "../../db/db";
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { getProtocolWeek } from "../../utils/getProtocolWeek";
 import { updateWalletRewardsForWeek } from "../../crons/update-wallet-rewards";
 import { findAllPermissions } from "../../db/queries/permissions/findAllPermissions";
 import { permissions } from "../../types/api-types/Permissions";
 import { createPermission } from "../../db/mutations/permissions/createPermission";
-import {
-  ApplicationStatusEnum,
-  ApplicationSteps,
-} from "../../types/api-types/Application";
-import { updateInstaller } from "../../db/mutations/installers/updateInstaller";
-import { updateUser } from "../../db/mutations/users/updateUser";
+import { downloadFile, uploadFile } from "../../utils/r2/upload-to-r2";
+import { Documents } from "../../db/schema";
+import convert from "heic-convert";
+import fs from "fs";
+import path from "path";
+import { OpenAI } from "openai";
 
 export const adminRouter = new Elysia({ prefix: "/admin" })
   .get("/update-rewards-for-all-weeks", async () => {
@@ -156,6 +151,447 @@ export const adminRouter = new Elysia({ prefix: "/admin" })
       return { message: "error" };
     }
   });
+// .get("/identify-solar-panels-batch", async ({ set }) => {
+//   try {
+//     // Fetch all after-install pictures that are not HEIC
+//     const afterInstallPictures = await db.query.Documents.findMany({
+//       where: (doc, { and, like, notInArray }) =>
+//         and(
+//           like(doc.name, "%after_install_pictures%"),
+//           notInArray(doc.type, ["heic", "HEIC"])
+//         ),
+//       with: {
+//         application: {
+//           columns: {
+//             id: true,
+//           },
+//         },
+//       },
+//     });
+
+//     if (afterInstallPictures.length === 0) {
+//       set.status = 404;
+//       return {
+//         message: "No after-install pictures found",
+//         total: 0,
+//       };
+//     }
+
+//     console.log(
+//       `Found ${afterInstallPictures.length} after-install pictures to process`
+//     );
+
+//     // Create batch requests for OpenAI
+//     const batchRequests = afterInstallPictures.map((doc, index) => ({
+//       custom_id: `${doc.applicationId}_${index}_${doc.id}`,
+//       method: "POST" as const,
+//       url: "/v1/chat/completions",
+//       body: {
+//         model: "gpt-4o-mini",
+//         temperature: 0,
+//         max_tokens: 10,
+//         messages: [
+//           {
+//             role: "user",
+//             content: [
+//               {
+//                 type: "text",
+//                 text: 'Does this image clearly show one or more solar panels? Reply "yes" or "no" only.',
+//               },
+//               {
+//                 type: "image_url",
+//                 image_url: { url: doc.url },
+//               },
+//             ],
+//           },
+//         ],
+//       },
+//     }));
+
+//     // Save batch requests to file
+//     const requestsFile = `batch-requests-${Date.now()}.jsonl`;
+//     const requestsContent = batchRequests
+//       .map((r) => JSON.stringify(r))
+//       .join("\n");
+
+//     fs.writeFileSync(path.join(process.cwd(), requestsFile), requestsContent);
+//     console.log(`📄 Saved requests to ${requestsFile}`);
+
+//     // Create OpenAI client
+
+//     const openai = new OpenAI({
+//       apiKey: process.env.OPENAI_API_KEY,
+//     });
+
+//     // Upload file to OpenAI
+//     console.log("📤 Uploading batch file...");
+//     const file = await openai.files.create({
+//       file: fs.createReadStream(path.join(process.cwd(), requestsFile)),
+//       purpose: "batch",
+//     });
+//     console.log(`✅ File uploaded: ${file.id}`);
+
+//     // Create batch
+//     console.log("🔄 Creating batch...");
+//     const batch = await openai.batches.create({
+//       input_file_id: file.id,
+//       endpoint: "/v1/chat/completions",
+//       completion_window: "24h",
+//       metadata: {
+//         description: "Solar panel detection batch for after-install pictures",
+//         total_images: batchRequests.length.toString(),
+//       },
+//     });
+
+//     console.log(`✅ Batch created: ${batch.id}`);
+//     console.log(`📋 Status: ${batch.status}`);
+
+//     // Create image map for later reference
+//     const imageMap = afterInstallPictures.reduce((acc, doc, index) => {
+//       const customId = `${doc.applicationId}_${index}_${doc.id}`;
+//       acc[customId] = {
+//         documentId: doc.id,
+//         applicationId: doc.applicationId,
+//         url: doc.url,
+//         name: doc.name,
+//       };
+//       return acc;
+//     }, {} as Record<string, { documentId: string; applicationId: string; url: string; name: string }>);
+
+//     // Save batch info for later retrieval
+//     const batchInfo = {
+//       batchId: batch.id,
+//       fileId: file.id,
+//       imageMap,
+//       createdAt: new Date().toISOString(),
+//       totalRequests: batchRequests.length,
+//     };
+
+//     fs.writeFileSync(
+//       path.join(process.cwd(), `batch-info-${batch.id}.json`),
+//       JSON.stringify(batchInfo, null, 2)
+//     );
+//     console.log(`💾 Batch info saved to batch-info-${batch.id}.json`);
+
+//     // Clean up temporary file
+//     fs.unlinkSync(path.join(process.cwd(), requestsFile));
+
+//     set.status = 200;
+//     return {
+//       message: "Batch processing initiated successfully",
+//       batchId: batch.id,
+//       status: batch.status,
+//       totalImages: afterInstallPictures.length,
+//       estimatedCost: `~$${(afterInstallPictures.length * 0.00015).toFixed(
+//         4
+//       )} (with 50% batch discount)`,
+//       nextSteps: [
+//         "Wait for batch completion (up to 24 hours)",
+//         `Check status at GET /admin/check-solar-panels-batch-status/${batch.id}`,
+//         `Retrieve results at GET /admin/retrieve-solar-panels-batch-results/${batch.id}`,
+//       ],
+//     };
+//   } catch (error) {
+//     console.error("Error in solar panel batch processing:", error);
+//     set.status = 500;
+//     return {
+//       message: "Error initiating batch processing",
+//       error: error instanceof Error ? error.message : "Unknown error",
+//     };
+//   }
+// })
+// .get("/check-solar-panels-batch-status/:batchId", async ({ params, set }) => {
+//   try {
+//     const openai = new OpenAI({
+//       apiKey: process.env.OPENAI_API_KEY,
+//     });
+
+//     const batch = await openai.batches.retrieve(params.batchId);
+
+//     set.status = 200;
+//     return {
+//       batchId: batch.id,
+//       status: batch.status,
+//       createdAt: batch.created_at,
+//       inProgressAt: batch.in_progress_at,
+//       completedAt: batch.completed_at,
+//       failedAt: batch.failed_at,
+//       requestCounts: batch.request_counts,
+//       metadata: batch.metadata,
+//     };
+//   } catch (error) {
+//     console.error("Error checking batch status:", error);
+//     set.status = 500;
+//     return {
+//       message: "Error checking batch status",
+//       error: error instanceof Error ? error.message : "Unknown error",
+//     };
+//   }
+// })
+// .get(
+//   "/retrieve-solar-panels-batch-results/:batchId",
+//   async ({ params, set }) => {
+//     try {
+//       // Load batch info
+//       const batchInfoPath = path.join(
+//         process.cwd(),
+//         `batch-info-${params.batchId}.json`
+//       );
+//       if (!fs.existsSync(batchInfoPath)) {
+//         set.status = 404;
+//         return { message: "Batch info not found" };
+//       }
+
+//       const batchInfo = JSON.parse(fs.readFileSync(batchInfoPath, "utf8"));
+
+//       const openai = new OpenAI({
+//         apiKey: process.env.OPENAI_API_KEY,
+//       });
+
+//       // Check batch status
+//       const batch = await openai.batches.retrieve(params.batchId);
+
+//       if (batch.status !== "completed") {
+//         set.status = 202;
+//         return {
+//           message: `Batch is still ${batch.status}`,
+//           status: batch.status,
+//           requestCounts: batch.request_counts,
+//         };
+//       }
+
+//       if (!batch.output_file_id) {
+//         set.status = 404;
+//         return { message: "Batch output file not found" };
+//       }
+
+//       // Retrieve the output file
+//       const fileResponse = await openai.files.content(batch.output_file_id);
+//       const fileContent = await fileResponse.text();
+
+//       // Parse results
+//       const results = fileContent
+//         .split("\n")
+//         .filter((line) => line.trim())
+//         .map((line) => JSON.parse(line));
+
+//       // Process results
+//       const processedResults = results.map((result) => {
+//         const imageInfo = batchInfo.imageMap[result.custom_id];
+//         const hasSolarPanels =
+//           result.response?.body?.choices?.[0]?.message?.content
+//             ?.toLowerCase()
+//             .includes("yes");
+
+//         return {
+//           documentId: imageInfo.documentId,
+//           applicationId: imageInfo.applicationId,
+//           documentName: imageInfo.name,
+//           url: imageInfo.url,
+//           hasSolarPanels,
+//           response: result.response?.body?.choices?.[0]?.message?.content,
+//         };
+//       });
+
+//       // Update documents in database for those showing solar panels
+//       const documentsWithSolarPanels = processedResults.filter(
+//         (r) => r.hasSolarPanels
+//       );
+
+//       if (documentsWithSolarPanels.length > 0) {
+//         console.log(
+//           `Updating ${documentsWithSolarPanels.length} documents with solar panels...`
+//         );
+
+//         // Update each document that has solar panels
+//         await db.transaction(async (tx) => {
+//           for (const doc of documentsWithSolarPanels) {
+//             await tx
+//               .update(Documents)
+//               .set({
+//                 isShowingSolarPanels: true,
+//                 updatedAt: new Date(),
+//               })
+//               .where(eq(Documents.id, doc.documentId));
+//           }
+//         });
+
+//         console.log(
+//           `✅ Updated ${documentsWithSolarPanels.length} documents`
+//         );
+//       }
+
+//       // Summary statistics
+//       const summary = {
+//         total: processedResults.length,
+//         withSolarPanels: processedResults.filter((r) => r.hasSolarPanels)
+//           .length,
+//         withoutSolarPanels: processedResults.filter((r) => !r.hasSolarPanels)
+//           .length,
+//         databaseUpdated: documentsWithSolarPanels.length,
+//       };
+
+//       // Save results
+//       const resultsPath = path.join(
+//         process.cwd(),
+//         `solar-panels-results-${params.batchId}.json`
+//       );
+//       fs.writeFileSync(
+//         resultsPath,
+//         JSON.stringify(
+//           {
+//             batchId: params.batchId,
+//             processedAt: new Date().toISOString(),
+//             summary,
+//             results: processedResults,
+//           },
+//           null,
+//           2
+//         )
+//       );
+
+//       // Clean up batch info file
+//       fs.unlinkSync(batchInfoPath);
+
+//       set.status = 200;
+//       return {
+//         message: "Batch results retrieved and database updated successfully",
+//         batchId: params.batchId,
+//         summary,
+//         resultsFile: `solar-panels-results-${params.batchId}.json`,
+//         results: processedResults,
+//       };
+//     } catch (error) {
+//       console.error("Error retrieving batch results:", error);
+//       set.status = 500;
+//       return {
+//         message: "Error retrieving batch results",
+//         error: error instanceof Error ? error.message : "Unknown error",
+//       };
+//     }
+//   }
+// );
+// .get("/convert-heic-to-jpeg", async ({ set }) => {
+//   try {
+//     // Find all HEIC documents
+//     const heicDocuments = await db.query.Documents.findMany({
+//       where: (doc, { eq }) => eq(doc.type, "heic"),
+//       with: {
+//         application: {
+//           columns: {
+//             id: true,
+//           },
+//         },
+//       },
+//     });
+
+//     if (heicDocuments.length === 0) {
+//       return { message: "No HEIC documents found", converted: 0 };
+//     }
+
+//     console.log(`Found ${heicDocuments.length} HEIC documents to convert`);
+
+//     let converted = 0;
+//     const errors: Array<{ documentId: string; error: string }> = [];
+
+//     for (const doc of heicDocuments) {
+//       try {
+//         console.log(`Converting document ${doc.id} - ${doc.name}`);
+
+//         if (!doc.url.includes("heic")) {
+//           // const extension = doc.url.split(".").pop();
+//           // if (!extension) {
+//           //   console.log(`Document ${doc.id} has no extension`);
+//           //   continue;
+//           // }
+//           // if (extension !== "jpg" && extension !== "jpeg") {
+//           //   console.log(
+//           //     `Document ${doc.id} has invalid extension: ${extension}`
+//           //   );
+//           //   continue;
+//           // }
+//           // await db
+//           //   .update(Documents)
+//           //   .set({
+//           //     type: extension,
+//           //     updatedAt: new Date(),
+//           //   })
+//           //   .where(eq(Documents.id, doc.id));
+//           // console.log(`Document ${doc.id} has been updated to ${extension}`);
+//           continue;
+//         }
+//         const bucketId = doc.application.id;
+
+//         console.log("Original URL:", doc.url);
+
+//         // Determine the bucket based on the URL pattern
+//         const bucketName = "gca-crm-public-prod";
+//         const key = `${bucketId}/${doc.name}.heic`;
+//         // Download the HEIC file
+//         console.log(`Downloading from bucket: ${bucketName}, key: ${key}`);
+//         const heicBuffer = await downloadFile(bucketName, key);
+
+//         // Convert HEIC to jpeg
+//         console.log(`Converting HEIC to jpeg...`);
+//         const jpegBuffer = await convert({
+//           buffer: heicBuffer,
+//           format: "JPEG",
+//           quality: 0.9, // High quality
+//         });
+
+//         // Create new key for jpeg file (replace .heic with .jpeg)
+//         const newKey = `${bucketId}/${doc.name}-converted.jpeg`;
+
+//         // Upload the jpeg file to the same bucket
+//         console.log(
+//           `Uploading jpeg to bucket: ${bucketName}, key: ${newKey}`
+//         );
+
+//         await uploadFile(bucketName, newKey, jpegBuffer, "image/jpeg");
+//         const newUrl = `https://pub-e71c2d06062242109db2bdd6b0bb5ee0.r2.dev/${newKey}`;
+//         const newDocument = {
+//           name: `${doc.name}-converted`,
+//           applicationId: doc.application.id,
+//           createdAt: doc.createdAt,
+//           step: doc.step,
+//           url: newUrl,
+//           type: "jpeg",
+//           updatedAt: new Date(),
+//         };
+//         const newDocumentId = await db
+//           .insert(Documents)
+//           .values(newDocument)
+//           .returning({ id: Documents.id });
+//         console.log("newDocumentId", newDocumentId);
+
+//         console.log(`Successfully converted document ${doc.id}`);
+//         converted++;
+//       } catch (error) {
+//         console.error(`Error converting document ${doc.id}:`, error);
+//         errors.push({
+//           documentId: doc.id,
+//           error: error instanceof Error ? error.message : "Unknown error",
+//         });
+//       }
+//     }
+
+//     set.status = 200;
+//     return {
+//       message: `Conversion completed. Converted ${converted} out of ${heicDocuments.length} documents.`,
+//       total: heicDocuments.length,
+//       converted,
+//       failed: errors.length,
+//       errors: errors.length > 0 ? errors : undefined,
+//     };
+//   } catch (error) {
+//     console.error("Error in HEIC conversion process:", error);
+//     set.status = 500;
+//     return {
+//       message: "Error converting HEIC images",
+//       error: error instanceof Error ? error.message : "Unknown error",
+//     };
+//   }
+// });
 // .get("/anonymize-users-and-installers", async ({ set }) => {
 //   try {
 //     await db.transaction(async (tx) => {

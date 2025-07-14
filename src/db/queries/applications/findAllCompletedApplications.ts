@@ -148,6 +148,7 @@ export const findAllCompletedApplications = async (withDocuments?: boolean) => {
               url: true,
               annotation: true,
               createdAt: true,
+              isShowingSolarPanels: true,
             }
           : { id: true },
       },

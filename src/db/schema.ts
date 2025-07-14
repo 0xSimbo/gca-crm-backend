@@ -1282,6 +1282,9 @@ export const Documents = pgTable("documents", {
     .$type<EncryptedMasterKeySet>()
     .array(),
   isOverWritten: boolean("over_written").notNull().default(false),
+  isShowingSolarPanels: boolean("is_showing_solar_panels")
+    .notNull()
+    .default(false),
 });
 
 export type DocumentsType = InferSelectModel<typeof Documents>;
