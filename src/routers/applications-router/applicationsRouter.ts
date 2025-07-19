@@ -311,6 +311,8 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
             paymentDate: forwarderData.paymentDate,
           });
         }
+
+        return application;
       } catch (e) {
         if (e instanceof Error) {
           set.status = 400;
