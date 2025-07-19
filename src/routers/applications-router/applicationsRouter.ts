@@ -8,7 +8,10 @@ import {
   ApplicationSteps,
   RoundRobinStatusEnum,
 } from "../../types/api-types/Application";
-import { FindFirstApplicationById } from "../../db/queries/applications/findFirstApplicationById";
+import {
+  FindFirstApplicationById,
+  FindFirstApplicationByIdMinimal,
+} from "../../db/queries/applications/findFirstApplicationById";
 import { findAllApplicationsByUserId } from "../../db/queries/applications/findAllApplicationsByUserId";
 import { bearerGuard } from "../../guards/bearerGuard";
 import { jwtHandler } from "../../handlers/jwtHandler";
@@ -97,6 +100,7 @@ import {
   ApproveOrAskForChangesQueryBody,
 } from "./query-schemas";
 import { findFirstApplicationDraftByUserId } from "../../db/queries/applications/findFirstApplicationDraftByUserId";
+import { getForwarderDataFromTxHashReceipt } from "../../utils/getForwarderDataFromTxHashReceipt";
 
 export const applicationsRouter = new Elysia({ prefix: "/applications" })
   .use(bearerplugin())
@@ -167,6 +171,162 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
         summary:
           "Get one completed application by farmId, publicKey, or shortId",
         description: `Returns a completed application for a farm or device. Prioritizes: publicKey > shortId > farmId.`,
+        tags: [TAG.APPLICATIONS],
+      },
+    }
+  )
+  .get(
+    "/by-application-id",
+    async ({ query, set }) => {
+      try {
+        const { applicationId } = query;
+        if (!applicationId) {
+          set.status = 400;
+          return "You must provide an applicationId";
+        }
+        const application = await FindFirstApplicationByIdMinimal(
+          applicationId
+        );
+        if (!application) {
+          set.status = 404;
+          return "Application not found";
+        }
+        const {
+          finalProtocolFee,
+          status,
+          currentStep,
+          isCancelled,
+          createdAt,
+          zone,
+          user,
+          gca,
+        } = application;
+        return {
+          finalProtocolFee,
+          status,
+          currentStep,
+          isCancelled,
+          createdAt,
+          zone,
+          walletAddress: user.id,
+          gcaAddress: gca?.id,
+        };
+      } catch (e) {
+        if (e instanceof Error) {
+          set.status = 400;
+          return e.message;
+        }
+        set.status = 500;
+        return "Internal Server Error";
+      }
+    },
+    {
+      query: t.Object({
+        applicationId: t.String(),
+      }),
+      detail: {
+        summary: "Get one application by applicationId",
+        description: `Returns a application by applicationId`,
+        tags: [TAG.APPLICATIONS],
+      },
+    }
+  )
+  .post(
+    "/finalize-payment",
+    async ({ body, set, headers }) => {
+      try {
+        const apiKey = headers["x-api-key"];
+        if (!apiKey) {
+          set.status = 400;
+          return "API Key is required";
+        }
+        if (apiKey !== process.env.GUARDED_API_KEY) {
+          set.status = 401;
+          return "Unauthorized";
+        }
+
+        const usedTxHash = await findUsedTxHash(body.txHash);
+
+        if (usedTxHash) {
+          set.status = 400;
+          return "Transaction hash already been used";
+        }
+
+        const forwarderData = await getForwarderDataFromTxHashReceipt(
+          body.txHash
+        );
+
+        const applicationId = forwarderData.message;
+
+        const application = await FindFirstApplicationByIdMinimal(
+          applicationId
+        );
+
+        if (!application) {
+          set.status = 404;
+          return `Application not found: ${applicationId}`;
+        }
+
+        if (application.status !== ApplicationStatusEnum.waitingForPayment) {
+          set.status = 400;
+          return "Application is not waiting for payment";
+        }
+
+        if (BigInt(application.finalProtocolFee) === BigInt(0)) {
+          set.status = 400;
+          return "Final Protocol Fee is not set";
+        }
+
+        if (
+          BigInt(forwarderData.amount) < BigInt(application.finalProtocolFee)
+        ) {
+          set.status = 400;
+          return "Invalid Amount";
+        }
+        if (process.env.NODE_ENV === "production") {
+          const emitter = createGlowEventEmitter({
+            username: process.env.RABBITMQ_ADMIN_USER!,
+            password: process.env.RABBITMQ_ADMIN_PASSWORD!,
+            zoneId: 1,
+          });
+
+          emitter
+            .emit({
+              eventType: eventTypes.auditPfeesPaid,
+              schemaVersion: "v1",
+              payload: {
+                applicationId: applicationId,
+                payer: forwarderData.from,
+                amount_12Decimals: forwarderData.amount,
+                txHash: body.txHash,
+              },
+            })
+            .catch((e) => {
+              console.error("error with audit.pfees.paid event", e);
+            });
+
+          await updateApplication(applicationId, {
+            status: ApplicationStatusEnum.paymentConfirmed,
+            paymentTxHash: body.txHash,
+            paymentDate: forwarderData.paymentDate,
+          });
+        }
+      } catch (e) {
+        if (e instanceof Error) {
+          set.status = 400;
+          return e.message;
+        }
+        console.log("[applicationsRouter] finalize-payment", e);
+        throw new Error("Error Occured");
+      }
+    },
+    {
+      body: t.Object({
+        txHash: t.String(),
+      }),
+      detail: {
+        summary: "Finalize Payment",
+        description: `Finalize Payment and update the application status to paymentConfirmed`,
         tags: [TAG.APPLICATIONS],
       },
     }

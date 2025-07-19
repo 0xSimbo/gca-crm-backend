@@ -2,8 +2,6 @@ import { eq } from "drizzle-orm";
 import { db } from "../../db";
 import { applications } from "../../schema";
 import { formatUnits } from "viem";
-import { requirementSetCodes, requirementSetMap } from "../../zones";
-import { getZoneRequirementFields } from "./zoneRequirementsUtil";
 
 export const FindFirstApplicationById = async (id: string) => {
   const applicationDb = await db.query.applications.findFirst({
@@ -57,6 +55,41 @@ export const FindFirstApplicationById = async (id: string) => {
     ),
     enquiryFields: enquiryFieldsCRS,
     auditFields: auditFieldsCRS,
+    zone: zone,
+  };
+};
+
+export const FindFirstApplicationByIdMinimal = async (id: string) => {
+  const applicationDb = await db.query.applications.findFirst({
+    where: eq(applications.id, id),
+    with: {
+      gca: {
+        columns: {
+          id: true,
+        },
+      },
+      user: {
+        columns: {
+          id: true,
+        },
+      },
+      zone: {
+        with: {
+          requirementSet: true,
+        },
+      },
+    },
+  });
+
+  if (!applicationDb) {
+    return null;
+  }
+
+  const { zone, ...application } = applicationDb;
+
+  return {
+    ...application,
+    finalProtocolFee: application.finalProtocolFee.toString(),
     zone: zone,
   };
 };
