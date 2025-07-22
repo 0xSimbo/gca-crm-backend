@@ -309,6 +309,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
             status: ApplicationStatusEnum.paymentConfirmed,
             paymentTxHash: body.txHash,
             paymentDate: forwarderData.paymentDate,
+            paymentCurrency: "GCTL",
           });
         }
 
@@ -2045,6 +2046,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               paymentDate: protocolFeeData
                 ? protocolFeeData.paymentDate
                 : new Date(),
+              paymentCurrency: "USDG",
             });
           } catch (e) {
             if (e instanceof Error) {

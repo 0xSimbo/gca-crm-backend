@@ -886,6 +886,9 @@ export const applications = pgTable("applications", {
   additionalPaymentTxHash: varchar("additional_payment_tx_hash", {
     length: 66,
   }),
+  paymentCurrency: varchar("payment_currency", { length: 20 })
+    .notNull()
+    .default("USDG"), // USDG or GCTL
   // gca assignement fields
   gcaAssignedTimestamp: timestamp("gca_assigned_timestamp"),
   gcaAcceptanceTimestamp: timestamp("gca_acceptance_timestamp"),
