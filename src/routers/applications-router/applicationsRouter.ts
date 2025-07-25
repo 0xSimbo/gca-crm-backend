@@ -256,7 +256,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
           body.txHash
         );
 
-        const applicationId = forwarderData.message;
+        const applicationId = forwarderData.applicationId;
 
         const application = await FindFirstApplicationByIdMinimal(
           applicationId

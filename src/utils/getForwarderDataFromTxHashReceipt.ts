@@ -11,6 +11,12 @@ export const forwarderABI = [
       { indexed: true, internalType: "address", name: "from", type: "address" },
       { indexed: true, internalType: "address", name: "to", type: "address" },
       {
+        indexed: true,
+        internalType: "address",
+        name: "token",
+        type: "address",
+      },
+      {
         indexed: false,
         internalType: "uint256",
         name: "amount",
@@ -39,7 +45,31 @@ export interface GetForwarderDataFromTxHashReceipt {
   from: string;
   /** Recipient address (forward target) */
   to: string;
+  /** Token address */
+  token: string;
+  /** Event type extracted from message */
+  eventType: string;
+  /** Application ID extracted from message */
+  applicationId: string;
 }
+
+/**
+ * Parse message in format "EventType::ApplicationId" and extract components
+ */
+const parseForwardMessage = (
+  message: string
+): { eventType: string; applicationId: string } => {
+  const parts = message.split("::");
+  if (parts.length !== 2) {
+    throw new Error(
+      `Invalid message format. Expected "EventType::ApplicationId", got: ${message}`
+    );
+  }
+  return {
+    eventType: parts[0],
+    applicationId: parts[1],
+  };
+};
 
 /**
  * Decode a transaction hash and return the data embedded in the `Forward`
@@ -97,6 +127,14 @@ export const getForwarderDataFromTxHashReceipt = async (
   const message = parsed.args["message"] as string;
   const from = parsed.args["from"] as string;
   const to = parsed.args["to"] as string;
+  const token = parsed.args["token"] as string;
+
+  const { eventType, applicationId } = parseForwardMessage(message);
+
+  // Validate that this is a PayProtocolFee event
+  if (eventType !== "PayProtocolFee") {
+    throw new Error(`Expected PayProtocolFee event, but got: ${eventType}`);
+  }
 
   return {
     amount,
@@ -104,5 +142,8 @@ export const getForwarderDataFromTxHashReceipt = async (
     paymentDate: new Date(block.timestamp * 1000),
     from,
     to,
+    token,
+    eventType,
+    applicationId,
   };
 };
