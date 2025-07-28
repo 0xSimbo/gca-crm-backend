@@ -1,3 +1,4 @@
+import { addresses } from "@glowlabs-org/guarded-launch-ethers-sdk";
 import { ethers } from "ethers";
 // --------------------------------------------------
 // Forwarder event utility
@@ -34,6 +35,8 @@ export const forwarderABI = [
   },
 ] as const;
 
+export type PaymentCurrency = "GCTL" | "USDC" | "USDG" | `0x${string}`;
+
 export interface GetForwarderDataFromTxHashReceipt {
   /** Raw USDC amount (6-decimals) */
   amount: string;
@@ -51,6 +54,8 @@ export interface GetForwarderDataFromTxHashReceipt {
   eventType: string;
   /** Application ID extracted from message */
   applicationId: string;
+  /** Currency paid (GCTL or USDC) */
+  paymentCurrency: PaymentCurrency;
 }
 
 /**
@@ -82,6 +87,15 @@ export const getForwarderDataFromTxHashReceipt = async (
   if (!process.env.MAINNET_RPC_URL) {
     throw new Error("MAINNET_RPC_URL is not set");
   }
+
+  const USDC_ADDRESS_MAINNET =
+    "0xa0b86991c6218b36b1d19d4a2e9eb0ce3606eb48" as `0x${string}`;
+  const USDC_ADDRESS_SEPOLIA =
+    "0x93c898be98cd2618ba84a6dccf5003d3bbe40356" as `0x${string}`;
+  const USDC_ADDRESS =
+    process.env.NODE_ENV === "production"
+      ? USDC_ADDRESS_MAINNET
+      : USDC_ADDRESS_SEPOLIA;
 
   const provider = new ethers.providers.StaticJsonRpcProvider({
     url:
@@ -129,11 +143,29 @@ export const getForwarderDataFromTxHashReceipt = async (
   const to = parsed.args["to"] as string;
   const token = parsed.args["token"] as string;
 
+  if (token !== addresses.usdg && token !== USDC_ADDRESS) {
+    throw new Error(`Invalid token: ${token}`);
+  }
+
   const { eventType, applicationId } = parseForwardMessage(message);
 
-  // Validate that this is a PayProtocolFee event
-  if (eventType !== "PayProtocolFee") {
-    throw new Error(`Expected PayProtocolFee event, but got: ${eventType}`);
+  // Map eventType to currency; validate allowed events
+  const paymentCurrencyMap: Record<string, PaymentCurrency> = {
+    PayProtocolFee: "GCTL",
+    PayProtocolFeeAndMintAndStake:
+      token === addresses.usdg
+        ? "USDG"
+        : token === USDC_ADDRESS
+        ? "USDC"
+        : token,
+  };
+
+  const paymentCurrency = paymentCurrencyMap[eventType];
+
+  if (!paymentCurrency) {
+    throw new Error(
+      `Unsupported eventType for protocol fee payment: ${eventType}`
+    );
   }
 
   return {
@@ -145,5 +177,6 @@ export const getForwarderDataFromTxHashReceipt = async (
     token,
     eventType,
     applicationId,
+    paymentCurrency,
   };
 };

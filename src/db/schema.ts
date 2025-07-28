@@ -1202,6 +1202,7 @@ export const installers = pgTable("installers", {
   email: varchar("email", { length: 255 }).notNull(),
   companyName: varchar("company_name", { length: 255 }).notNull(),
   phone: varchar("phone", { length: 255 }).notNull(),
+  isCertified: boolean("is_certified").notNull().default(false),
 });
 
 export type InstallerType = InferSelectModel<typeof installers>;

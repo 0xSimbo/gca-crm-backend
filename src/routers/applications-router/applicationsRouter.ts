@@ -49,7 +49,14 @@ import { roundRobinAssignement } from "../../db/queries/gcas/roundRobinAssigneme
 import { BigNumber, ethers } from "ethers";
 import { handleCreateWithoutPIIDocumentsAndCompleteApplication } from "./steps/gca-application-completion";
 import { db } from "../../db/db";
-import { OrganizationUsers, applicationsDraft } from "../../db/schema";
+import {
+  OrganizationUsers,
+  applicationsDraft,
+  zones,
+  applications,
+  applicationsEnquiryFieldsCRS,
+  RewardSplits,
+} from "../../db/schema";
 
 import { convertKWhToMWh } from "../../utils/format/convertKWhToMWh";
 import { findFirstUserById } from "../../db/queries/users/findFirstUserById";
@@ -101,6 +108,8 @@ import {
 } from "./query-schemas";
 import { findFirstApplicationDraftByUserId } from "../../db/queries/applications/findFirstApplicationDraftByUserId";
 import { getForwarderDataFromTxHashReceipt } from "../../utils/getForwarderDataFromTxHashReceipt";
+import { findFirstInstallerById } from "../../db/queries/installers/findFirstInstallerById";
+import { randomUUID } from "crypto";
 
 export const applicationsRouter = new Elysia({ prefix: "/applications" })
   .use(bearerplugin())
@@ -252,6 +261,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
           return "Transaction hash already been used";
         }
 
+        //TODO for prod check forwarder contract address.
         const forwarderData = await getForwarderDataFromTxHashReceipt(
           body.txHash
         );
@@ -283,11 +293,17 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
           set.status = 400;
           return "Invalid Amount";
         }
+
+        if (!application.zoneId) {
+          set.status = 400;
+          return "Zone is not set";
+        }
+
         if (process.env.NODE_ENV === "production") {
           const emitter = createGlowEventEmitter({
             username: process.env.RABBITMQ_ADMIN_USER!,
             password: process.env.RABBITMQ_ADMIN_PASSWORD!,
-            zoneId: 1,
+            zoneId: application.zoneId,
           });
 
           emitter
@@ -304,15 +320,13 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
             .catch((e) => {
               console.error("error with audit.pfees.paid event", e);
             });
-
-          await updateApplication(applicationId, {
-            status: ApplicationStatusEnum.paymentConfirmed,
-            paymentTxHash: body.txHash,
-            paymentDate: forwarderData.paymentDate,
-            paymentCurrency: "GCTL",
-          });
         }
-
+        await updateApplication(applicationId, {
+          status: ApplicationStatusEnum.paymentConfirmed,
+          paymentTxHash: body.txHash,
+          paymentDate: forwarderData.paymentDate,
+          paymentCurrency: forwarderData.paymentCurrency,
+        });
         return application;
       } catch (e) {
         if (e instanceof Error) {
@@ -330,6 +344,136 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
       detail: {
         summary: "Finalize Payment",
         description: `Finalize Payment and update the application status to paymentConfirmed`,
+        tags: [TAG.APPLICATIONS],
+      },
+    }
+  )
+  .post(
+    "/dev-create-application",
+    async ({ body, headers, set }) => {
+      try {
+        // Only accessible in non-production environments
+        if (process.env.NODE_ENV === "production") {
+          set.status = 404;
+          return "Not allowed";
+        }
+
+        // API key validation
+        const apiKey = headers["x-api-key"];
+        if (!apiKey) {
+          set.status = 400;
+          return "API Key is required";
+        }
+        if (apiKey !== process.env.GUARDED_API_KEY) {
+          set.status = 401;
+          return "Unauthorized";
+        }
+
+        const applicationId = await db.transaction(async (tx) => {
+          const [applicationDraft] = await tx
+            .insert(applicationsDraft)
+            .values({
+              createdAt: new Date(),
+              userId: "0x5252FdA14A149c01EA5A1D6514a9c1369E4C70b4",
+            })
+            .returning();
+
+          await tx.insert(applications).values({
+            id: applicationDraft.id,
+            userId: "0x5252FdA14A149c01EA5A1D6514a9c1369E4C70b4",
+            zoneId: body.zoneId,
+            createdAt: new Date(),
+            currentStep: ApplicationSteps.payment,
+            roundRobinStatus: RoundRobinStatusEnum.assigned,
+            status: ApplicationStatusEnum.waitingForPayment,
+            isCancelled: false,
+            isDocumentsCorrupted: true,
+            gcaAcceptanceSignature: null,
+            gcaAddress: "0x63a74612274FbC6ca3f7096586aF01Fd986d69cE",
+            gcaAssignedTimestamp: new Date(),
+            gcaAcceptanceTimestamp: new Date(),
+            installFinishedDate: new Date(),
+            revisedCostOfPowerPerKWh: "0.13",
+            revisedKwhGeneratedPerYear: "7.51",
+            finalQuotePerWatt: "0.13",
+            estimatedInstallDate: new Date(),
+            preInstallVisitDate: new Date(),
+            preInstallVisitDateConfirmedTimestamp: new Date(),
+            afterInstallVisitDate: new Date(),
+            afterInstallVisitDateConfirmedTimestamp: new Date(),
+            finalProtocolFee: BigInt(23040000000),
+            revisedEstimatedProtocolFees: "23040",
+          });
+
+          await tx.insert(applicationsEnquiryFieldsCRS).values({
+            applicationId: applicationDraft.id,
+            address: "sentinel-address",
+            farmOwnerName: "sentinel-owner",
+            farmOwnerEmail: "owner@example.com",
+            farmOwnerPhone: "0000000000",
+            lat: "0",
+            lng: "0",
+            estimatedCostOfPowerPerKWh: "0.13",
+            estimatedKWhGeneratedPerYear: "7.51",
+            enquiryEstimatedFees: "2216207000",
+            enquiryEstimatedQuotePerWatt: "0.13",
+            installerName: "sentinel-installer",
+            installerCompanyName: "sentinel-company",
+            installerEmail: "installer@example.com",
+            installerPhone: "0000000000",
+          });
+
+          await tx.insert(RewardSplits).values({
+            applicationId: applicationDraft.id,
+            walletAddress: "0x5252FdA14A149c01EA5A1D6514a9c1369E4C70b4",
+            usdgSplitPercent: "1",
+            glowSplitPercent: "1",
+          });
+
+          await tx.insert(weeklyProduction).values({
+            applicationId: applicationDraft.id,
+            powerOutputMWH: "0.012",
+            createdAt: new Date(),
+            hoursOfSunlightPerDay: "5.5",
+            carbonOffsetsPerMWH: "0.54",
+            weeklyPowerProductionMWh: "0.012",
+            weeklyCarbonCredits: "0.32",
+            adjustedWeeklyCarbonCredits: "0.25",
+            adjustmentDueToUncertainty: "0.07",
+          });
+
+          await tx.insert(weeklyCarbonDebt).values({
+            applicationId: applicationDraft.id,
+            createdAt: new Date(),
+            weeklyTotalCarbonDebt: "0.25",
+            totalCarbonDebtAdjustedKWh: "0.25",
+            convertToKW: "0.25",
+            totalCarbonDebtProduced: "0.25",
+            disasterRisk: "0.25",
+            commitmentPeriod: 10,
+            adjustedTotalCarbonDebt: "0.25",
+          });
+
+          return applicationDraft.id;
+        });
+
+        return { applicationId };
+      } catch (e) {
+        if (e instanceof Error) {
+          set.status = 400;
+          return e.message;
+        }
+        console.log("[applicationsRouter] dev-create-application", e);
+        throw new Error("Error Occured");
+      }
+    },
+    {
+      body: t.Object({
+        zoneId: t.Numeric(),
+      }),
+      detail: {
+        summary: "Dev-only: Create application at waiting-for-payment step",
+        description: `Create a new application pre-populated with sentinel values and immediately set to waiting-for-payment. Accessible only when NODE_ENV is not production and with a valid x-api-key.`,
         tags: [TAG.APPLICATIONS],
       },
     }
@@ -1686,11 +1830,26 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                       .declarationOfIntentionVersion,
                 }
               );
+
+              if (!body.zoneId) {
+                set.status = 400;
+                return "Zone is not set";
+              }
+
+              const zone = await db.query.zones.findFirst({
+                where: eq(zones.id, body.zoneId),
+              });
+
+              if (!zone) {
+                set.status = 400;
+                return "Zone not found";
+              }
+
               if (process.env.NODE_ENV === "production") {
                 const emitter = createGlowEventEmitter({
                   username: process.env.RABBITMQ_ADMIN_USER!,
                   password: process.env.RABBITMQ_ADMIN_PASSWORD!,
-                  zoneId: 1,
+                  zoneId: body.zoneId,
                 });
 
                 emitter
@@ -1953,6 +2112,11 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               return "Application is not waiting for payment";
             }
 
+            if (!application.zoneId) {
+              set.status = 400;
+              return "Zone is not set";
+            }
+
             if (process.env.NODE_ENV === "production") {
               protocolFeeData = await getProtocolFeePaymentFromTxHashReceipt(
                 body.txHash
@@ -2021,7 +2185,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               const emitter = createGlowEventEmitter({
                 username: process.env.RABBITMQ_ADMIN_USER!,
                 password: process.env.RABBITMQ_ADMIN_PASSWORD!,
-                zoneId: 1,
+                zoneId: application.zoneId,
               });
 
               emitter
@@ -2419,7 +2583,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               const emitter = createGlowEventEmitter({
                 username: process.env.RABBITMQ_ADMIN_USER!,
                 password: process.env.RABBITMQ_ADMIN_PASSWORD!,
-                zoneId: 1,
+                zoneId: application.zoneId,
               });
               const protocolFeeUSDPrice_12Decimals = BigNumber.from(
                 application.finalProtocolFee
