@@ -1,5 +1,6 @@
 import { addresses } from "@glowlabs-org/guarded-launch-ethers-sdk";
 import { ethers } from "ethers";
+import { checksumAddress } from "viem";
 // --------------------------------------------------
 // Forwarder event utility
 // --------------------------------------------------
@@ -143,7 +144,10 @@ export const getForwarderDataFromTxHashReceipt = async (
   const to = parsed.args["to"] as string;
   const token = parsed.args["token"] as string;
 
-  if (token !== addresses.usdg && token !== USDC_ADDRESS) {
+  if (
+    token.toLowerCase() !== addresses.usdg.toLowerCase() &&
+    token.toLowerCase() !== USDC_ADDRESS.toLowerCase()
+  ) {
     throw new Error(`Invalid token: ${token}`);
   }
 
@@ -157,7 +161,7 @@ export const getForwarderDataFromTxHashReceipt = async (
         ? "USDG"
         : token === USDC_ADDRESS
         ? "USDC"
-        : token,
+        : checksumAddress(token as `0x${string}`),
   };
 
   const paymentCurrency = paymentCurrencyMap[eventType];
