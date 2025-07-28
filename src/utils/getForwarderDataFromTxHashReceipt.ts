@@ -36,7 +36,7 @@ export const forwarderABI = [
   },
 ] as const;
 
-export type PaymentCurrency = "GCTL" | "USDC" | "USDG" | `0x${string}`;
+export type PaymentCurrency = "GCTL" | "USDC" | "USDG";
 
 export interface GetForwarderDataFromTxHashReceipt {
   /** Raw USDC amount (6-decimals) */
@@ -157,11 +157,7 @@ export const getForwarderDataFromTxHashReceipt = async (
   const paymentCurrencyMap: Record<string, PaymentCurrency> = {
     PayProtocolFee: "GCTL",
     PayProtocolFeeAndMintGCTLAndStake:
-      token === addresses.usdg
-        ? "USDG"
-        : token === USDC_ADDRESS
-        ? "USDC"
-        : checksumAddress(token as `0x${string}`),
+      token === addresses.usdg ? "USDG" : "USDC",
   };
 
   const paymentCurrency = paymentCurrencyMap[eventType];

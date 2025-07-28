@@ -888,7 +888,7 @@ export const applications = pgTable("applications", {
   }),
   paymentCurrency: varchar("payment_currency", { length: 20 })
     .notNull()
-    .default("USDG"), // USDG or GCTL
+    .default("USDG"), // USDG or GCTL or USDC and maybe GLOW in the future
   // gca assignement fields
   gcaAssignedTimestamp: timestamp("gca_assigned_timestamp"),
   gcaAcceptanceTimestamp: timestamp("gca_acceptance_timestamp"),
