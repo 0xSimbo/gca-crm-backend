@@ -156,7 +156,7 @@ export const getForwarderDataFromTxHashReceipt = async (
   // Map eventType to currency; validate allowed events
   const paymentCurrencyMap: Record<string, PaymentCurrency> = {
     PayProtocolFee: "GCTL",
-    PayProtocolFeeAndMintAndStake:
+    PayProtocolFeeAndMintGCTLAndStake:
       token === addresses.usdg
         ? "USDG"
         : token === USDC_ADDRESS
