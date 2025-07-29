@@ -1868,7 +1868,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                   payload: {
                     applicationId: body.applicationId,
                     payer: protocolFeeData.user.id,
-                    amount_12Decimals: protocolFeeData.amount,
+                    amount_6Decimals: protocolFeeData.amount,
                     txHash: body.txHash,
                   },
                 })
