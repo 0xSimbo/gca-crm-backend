@@ -20,7 +20,7 @@
     "@elysiajs/cron": "1.0.3",
     "@elysiajs/eden": "1.1.2",
     "@elysiajs/swagger": "1.0.5",
-    "@glowlabs-org/events-sdk": "^1.0.7",
+    "@glowlabs-org/events-sdk": "^1.0.8",
     "@glowlabs-org/guarded-launch-ethers-sdk": "^0.0.3",
     "@glowlabs-org/utils": "^0.0.9",
     "@neondatabase/serverless": "^0.9.4",
