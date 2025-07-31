@@ -109,6 +109,7 @@ import {
 import { findFirstApplicationDraftByUserId } from "../../db/queries/applications/findFirstApplicationDraftByUserId";
 import { getForwarderDataFromTxHashReceipt } from "../../utils/getForwarderDataFromTxHashReceipt";
 import { findFirstInstallerById } from "../../db/queries/installers/findFirstInstallerById";
+import { findAllWaitingForPaymentApplications } from "../../db/queries/applications/findAllWaitingForPaymentApplications";
 import { randomUUID } from "crypto";
 
 export const applicationsRouter = new Elysia({ prefix: "/applications" })
@@ -138,6 +139,41 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
       detail: {
         summary: "Get all completed applications ",
         description: `Get all completed applications `,
+        tags: [TAG.APPLICATIONS],
+      },
+    }
+  )
+  .get(
+    "/waiting-for-payment",
+    async ({ query: { isPublishedOnAuction }, set }) => {
+      try {
+        const applications = await findAllWaitingForPaymentApplications(
+          isPublishedOnAuction === "true"
+            ? true
+            : isPublishedOnAuction === "false"
+            ? false
+            : undefined
+        );
+
+        return applications;
+      } catch (e) {
+        if (e instanceof Error) {
+          set.status = 400;
+          return e.message;
+        }
+        console.log("[applicationsRouter] /waiting-for-payment", e);
+        throw new Error("Error Occured");
+      }
+    },
+    {
+      query: t.Object({
+        isPublishedOnAuction: t.Optional(
+          t.Union([t.Literal("true"), t.Literal("false")])
+        ),
+      }),
+      detail: {
+        summary: "Get all waiting for payment applications",
+        description: `Get all applications that are waiting for payment, optionally filtered by auction publication status. Returns an array of application objects with zone, enquiry fields, reward splits, weekly carbon debt, and weekly production data.`,
         tags: [TAG.APPLICATIONS],
       },
     }
@@ -313,7 +349,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               payload: {
                 applicationId: applicationId,
                 payer: forwarderData.from,
-                amount_12Decimals: forwarderData.amount,
+                amount_6Decimals: forwarderData.amount,
                 txHash: body.txHash,
               },
             })

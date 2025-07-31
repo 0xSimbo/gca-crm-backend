@@ -829,6 +829,10 @@ export const applications = pgTable("applications", {
   isDocumentsCorrupted: boolean("is_documents_corrupted")
     .notNull()
     .default(false),
+  isPublishedOnAuction: boolean("is_published_on_auction")
+    .notNull()
+    .default(false),
+  publishedOnAuctionTimestamp: timestamp("published_on_auction_timestamp"),
   // null if application just got created
   updatedAt: timestamp("updatedAt"),
   // pre-install documents step fields
