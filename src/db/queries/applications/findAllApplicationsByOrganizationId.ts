@@ -47,6 +47,8 @@ export const findAllApplicationsByOrganizationId = async (
               contactValue: true,
             },
           },
+          weeklyCarbonDebt: true,
+          weeklyProduction: true,
         },
       },
     },
