@@ -232,88 +232,90 @@ export const rewardSplitsRouter = new Elysia({ prefix: "/rewardsSplits" })
       .post(
         "/update",
         async ({ body, set, userId }) => {
-          try {
-            const application = await FindFirstApplicationById(
-              body.applicationId
-            );
-            if (!application) {
-              set.status = 404;
-              return "Application not found";
-            }
-            if (application.userId !== userId) {
-              const organizationApplication =
-                await findFirstOrganizationApplicationByApplicationId(
-                  body.applicationId
-                );
+          set.status = 503;
+          return "This endpoint is paused";
+          // try {
+          //   const application = await FindFirstApplicationById(
+          //     body.applicationId
+          //   );
+          //   if (!application) {
+          //     set.status = 404;
+          //     return "Application not found";
+          //   }
+          //   if (application.userId !== userId) {
+          //     const organizationApplication =
+          //       await findFirstOrganizationApplicationByApplicationId(
+          //         body.applicationId
+          //       );
 
-              if (!organizationApplication) {
-                set.status = 400;
-                return "Unauthorized";
-              }
+          //     if (!organizationApplication) {
+          //       set.status = 400;
+          //       return "Unauthorized";
+          //     }
 
-              const isOrganizationOwner =
-                organizationApplication.organization.ownerId === userId;
+          //     const isOrganizationOwner =
+          //       organizationApplication.organization.ownerId === userId;
 
-              const organizationMember = await findOrganizationMemberByUserId(
-                organizationApplication.organization.id,
-                userId
-              );
+          //     const organizationMember = await findOrganizationMemberByUserId(
+          //       organizationApplication.organization.id,
+          //       userId
+          //     );
 
-              const isAuthorized =
-                isOrganizationOwner ||
-                organizationMember?.role.rolePermissions.find(
-                  (p) => p.permission.key === PermissionsEnum.EditRewardSplit
-                );
+          //     const isAuthorized =
+          //       isOrganizationOwner ||
+          //       organizationMember?.role.rolePermissions.find(
+          //         (p) => p.permission.key === PermissionsEnum.EditRewardSplit
+          //       );
 
-              if (!isAuthorized) {
-                set.status = 400;
-                return "Unauthorized";
-              }
-            }
+          //     if (!isAuthorized) {
+          //       set.status = 400;
+          //       return "Unauthorized";
+          //     }
+          //   }
 
-            if (application.status !== ApplicationStatusEnum.completed) {
-              set.status = 400;
-              return "Application is not Completed";
-            }
+          //   if (application.status !== ApplicationStatusEnum.completed) {
+          //     set.status = 400;
+          //     return "Application is not Completed";
+          //   }
 
-            if (!application.farmId) {
-              set.status = 400;
-              return "Farm not found";
-            }
+          //   if (!application.farmId) {
+          //     set.status = 400;
+          //     return "Farm not found";
+          //   }
 
-            const sumGlow = body.splits.reduce((acc, curr) => {
-              return acc + curr.glowSplitPercent;
-            }, 0);
+          //   const sumGlow = body.splits.reduce((acc, curr) => {
+          //     return acc + curr.glowSplitPercent;
+          //   }, 0);
 
-            const sumUsdg = body.splits.reduce((acc, curr) => {
-              return acc + curr.usdgSplitPercent;
-            }, 0);
+          //   const sumUsdg = body.splits.reduce((acc, curr) => {
+          //     return acc + curr.usdgSplitPercent;
+          //   }, 0);
 
-            if (sumGlow !== 100 || sumUsdg !== 100) {
-              set.status = 400;
-              return "Sum of the percentages for each token should be 100";
-            }
+          //   if (sumGlow !== 100 || sumUsdg !== 100) {
+          //     set.status = 400;
+          //     return "Sum of the percentages for each token should be 100";
+          //   }
 
-            await updateSplitsWithHistory(
-              userId,
-              application.id,
-              application.farmId,
-              body.splits.map((split) => ({
-                walletAddress: split.walletAddress,
-                glowSplitPercent: split.glowSplitPercent.toString(),
-                usdgSplitPercent: split.usdgSplitPercent.toString(),
-                applicationId: body.applicationId,
-                updatedAt: new Date(),
-              }))
-            );
-          } catch (e) {
-            if (e instanceof Error) {
-              set.status = 400;
-              return e.message;
-            }
-            console.log("[rewardSplitsRouter] update", e);
-            throw new Error("Error Occured");
-          }
+          //   await updateSplitsWithHistory(
+          //     userId,
+          //     application.id,
+          //     application.farmId,
+          //     body.splits.map((split) => ({
+          //       walletAddress: split.walletAddress,
+          //       glowSplitPercent: split.glowSplitPercent.toString(),
+          //       usdgSplitPercent: split.usdgSplitPercent.toString(),
+          //       applicationId: body.applicationId,
+          //       updatedAt: new Date(),
+          //     }))
+          //   );
+          // } catch (e) {
+          //   if (e instanceof Error) {
+          //     set.status = 400;
+          //     return e.message;
+          //   }
+          //   console.log("[rewardSplitsRouter] update", e);
+          //   throw new Error("Error Occured");
+          // }
         },
         {
           body: t.Object({
