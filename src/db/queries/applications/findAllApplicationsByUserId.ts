@@ -15,7 +15,7 @@ export const findAllApplicationsByUserId = async (userId: string) => {
       currentStep: true,
       roundRobinStatus: true,
       gcaAddress: true,
-
+      revisedKwhGeneratedPerYear: true,
       isCancelled: true,
       preInstallVisitDate: true,
       afterInstallVisitDate: true,

@@ -8,11 +8,11 @@ export const findAllApplications = async () => {
       status: true,
       createdAt: true,
       updatedAt: true,
-
       currentStep: true,
       roundRobinStatus: true,
       gcaAddress: true,
       isCancelled: true,
+      revisedKwhGeneratedPerYear: true,
     },
     with: {
       enquiryFieldsCRS: {

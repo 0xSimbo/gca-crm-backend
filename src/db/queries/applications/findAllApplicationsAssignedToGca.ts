@@ -19,7 +19,7 @@ export const findAllApplicationsAssignedToGca = async (gcaAddress: string) => {
       roundRobinStatus: true,
       gcaAddress: true,
       isCancelled: true,
-
+      revisedKwhGeneratedPerYear: true,
       preInstallVisitDate: true,
       afterInstallVisitDate: true,
     },
