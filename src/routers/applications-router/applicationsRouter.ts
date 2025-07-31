@@ -2195,7 +2195,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                   payload: {
                     applicationId: body.applicationId,
                     payer: protocolFeeData.user.id,
-                    amount_12Decimals: protocolFeeData.amount,
+                    amount_6Decimals: protocolFeeData.amount,
                     txHash: body.txHash,
                   },
                 })
@@ -2585,11 +2585,9 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                 password: process.env.RABBITMQ_ADMIN_PASSWORD!,
                 zoneId: application.zoneId,
               });
-              const protocolFeeUSDPrice_12Decimals = BigNumber.from(
+              const protocolFeeUSDPrice_6Decimals = BigNumber.from(
                 application.finalProtocolFee
-              )
-                .mul(BigNumber.from("1000000")) // 6 -> 12 decimals
-                .toString();
+              ).toString();
 
               const expectedProduction_12Decimals = BigNumber.from(
                 Math.floor(
@@ -2605,7 +2603,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                   schemaVersion: "v1",
                   payload: {
                     farmId,
-                    protocolFeeUSDPrice_12Decimals,
+                    protocolFeeUSDPrice_6Decimals,
                     expectedProduction_12Decimals,
                     txHash: application.paymentTxHash,
                   },
