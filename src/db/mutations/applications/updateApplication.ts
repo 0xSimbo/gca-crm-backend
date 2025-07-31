@@ -32,13 +32,13 @@ export const updateApplicationCRSFields = async (
       .set({
         ...enquiryFields,
       })
-      .where(eq(applications.id, applicationId));
+      .where(eq(applicationsEnquiryFieldsCRS.id, applicationId));
 
     await tx
       .update(applicationsAuditFieldsCRS)
       .set({
         ...auditFields,
       })
-      .where(eq(applications.id, applicationId));
+      .where(eq(applicationsAuditFieldsCRS.id, applicationId));
   });
 };
