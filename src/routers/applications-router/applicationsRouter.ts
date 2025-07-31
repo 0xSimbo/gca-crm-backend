@@ -2933,30 +2933,8 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               Number(application.auditFields?.weeklyTotalCarbonDebt)
             ).toString();
 
-            // Update application with the specified fields
-            await updateApplicationCRSFields(
-              body.applicationId,
-              {
-                lat: body.lat.toString(),
-                lng: body.lng.toString(),
-              },
-              {
-                systemWattageOutput:
-                  body.weeklyCarbonDebt.convertToKW.toString(),
-                netCarbonCreditEarningWeekly:
-                  netCarbonCreditEarningWeekly.toString(),
-                weeklyTotalCarbonDebt:
-                  body.weeklyCarbonDebt.weeklyTotalCarbonDebt.toString(),
-                averageSunlightHoursPerDay:
-                  body.weeklyProduction.hoursOfSunlightPerDay.toString(),
-                adjustedWeeklyCarbonCredits:
-                  body.weeklyProduction.adjustedWeeklyCarbonCredits.toString(),
-              }
-            );
-
-            // Insert into weeklyProduction
-            try {
-              await db
+            await db.transaction(async (tx) => {
+              await tx
                 .insert(weeklyProduction)
                 .values({
                   applicationId: body.applicationId,
@@ -2998,7 +2976,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                 });
 
               // Insert into weeklyCarbonDebt
-              await db
+              await tx
                 .insert(weeklyCarbonDebt)
                 .values({
                   applicationId: body.applicationId,
@@ -3033,14 +3011,28 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                       body.weeklyCarbonDebt.weeklyTotalCarbonDebt.toString(),
                   },
                 });
-            } catch (err) {
-              set.status = 500;
-              return {
-                error: `Failed to upsert weekly production or carbon debt: ${
-                  err instanceof Error ? err.message : String(err)
-                }`,
-              };
-            }
+
+              // Update application with the specified fields
+              await updateApplicationCRSFields(
+                body.applicationId,
+                {
+                  lat: body.lat.toString(),
+                  lng: body.lng.toString(),
+                },
+                {
+                  systemWattageOutput:
+                    body.weeklyCarbonDebt.convertToKW.toString(),
+                  netCarbonCreditEarningWeekly:
+                    netCarbonCreditEarningWeekly.toString(),
+                  weeklyTotalCarbonDebt:
+                    body.weeklyCarbonDebt.weeklyTotalCarbonDebt.toString(),
+                  averageSunlightHoursPerDay:
+                    body.weeklyProduction.hoursOfSunlightPerDay.toString(),
+                  adjustedWeeklyCarbonCredits:
+                    body.weeklyProduction.adjustedWeeklyCarbonCredits.toString(),
+                }
+              );
+            });
 
             return { success: true };
           } catch (e) {
