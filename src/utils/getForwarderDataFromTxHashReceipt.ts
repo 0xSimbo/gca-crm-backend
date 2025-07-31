@@ -1,6 +1,5 @@
-import { addresses } from "@glowlabs-org/guarded-launch-ethers-sdk";
 import { ethers } from "ethers";
-import { checksumAddress } from "viem";
+import { addresses, forwarderAddresses } from "../constants/addresses";
 // --------------------------------------------------
 // Forwarder event utility
 // --------------------------------------------------
@@ -36,7 +35,7 @@ export const forwarderABI = [
   },
 ] as const;
 
-export type PaymentCurrency = "GCTL" | "USDC" | "USDG";
+export type PaymentCurrency = "GCTL" | "USDC" | "USDG" | "GLW";
 
 export interface GetForwarderDataFromTxHashReceipt {
   /** Raw USDC amount (6-decimals) */
@@ -89,15 +88,6 @@ export const getForwarderDataFromTxHashReceipt = async (
     throw new Error("MAINNET_RPC_URL is not set");
   }
 
-  const USDC_ADDRESS_MAINNET =
-    "0xa0b86991c6218b36b1d19d4a2e9eb0ce3606eb48" as `0x${string}`;
-  const USDC_ADDRESS_SEPOLIA =
-    "0x93c898be98cd2618ba84a6dccf5003d3bbe40356" as `0x${string}`;
-  const USDC_ADDRESS =
-    process.env.NODE_ENV === "production"
-      ? USDC_ADDRESS_MAINNET
-      : USDC_ADDRESS_SEPOLIA;
-
   const provider = new ethers.providers.StaticJsonRpcProvider({
     url:
       process.env.NODE_ENV === "production"
@@ -136,6 +126,16 @@ export const getForwarderDataFromTxHashReceipt = async (
     throw new Error("Forward event not found in transaction logs");
   }
 
+  // Ensure the event was emitted by the expected forwarder contract
+  if (
+    forwardLog.address.toLowerCase() !==
+    forwarderAddresses.FORWARDER.toLowerCase()
+  ) {
+    throw new Error(
+      `Invalid forwarder contract: expected ${forwarderAddresses.FORWARDER}, got ${forwardLog.address}`
+    );
+  }
+
   const parsed = iface.parseLog(forwardLog);
 
   const amount = (parsed.args["amount"] as ethers.BigNumber).toString();
@@ -144,27 +144,46 @@ export const getForwarderDataFromTxHashReceipt = async (
   const to = parsed.args["to"] as string;
   const token = parsed.args["token"] as string;
 
-  if (
-    token.toLowerCase() !== addresses.usdg.toLowerCase() &&
-    token.toLowerCase() !== USDC_ADDRESS.toLowerCase()
-  ) {
+  // Normalize the address once to avoid repeated `toLowerCase` calls
+  const normalizedToken = token.toLowerCase();
+
+  // Map each supported token address to its corresponding currency symbol
+  const tokenCurrencyMap: Record<string, PaymentCurrency> = {
+    [addresses.usdg.toLowerCase()]: "USDG",
+    [addresses.usdc.toLowerCase()]: "USDC",
+    [addresses.glow.toLowerCase()]: "GLW",
+  } as const;
+
+  const paymentCurrency = tokenCurrencyMap[normalizedToken];
+
+  if (!paymentCurrency) {
     throw new Error(`Invalid token: ${token}`);
   }
 
   const { eventType, applicationId } = parseForwardMessage(message);
 
-  // Map eventType to currency; validate allowed events
-  const paymentCurrencyMap: Record<string, PaymentCurrency> = {
-    PayProtocolFee: "GCTL",
-    PayProtocolFeeAndMintGCTLAndStake:
-      token === addresses.usdg ? "USDG" : "USDC",
-  };
+  if (
+    eventType !== "PayProtocolFeeAndMintGCTLAndStake" &&
+    eventType !== "PayProtocolFee"
+  ) {
+    throw new Error(`Unsupported eventType: ${eventType}`);
+  }
 
-  const paymentCurrency = paymentCurrencyMap[eventType];
+  // Valid currencies for every supported `eventType`
+  const eventAllowedCurrencies: Record<string, PaymentCurrency[]> = {
+    PayProtocolFee: ["USDG", "USDC", "GLW"],
+    PayProtocolFeeAndMintGCTLAndStake: ["USDG", "USDC"],
+  } as const;
 
-  if (!paymentCurrency) {
+  const allowedCurrencies = eventAllowedCurrencies[eventType];
+
+  if (!allowedCurrencies) {
+    throw new Error(`Unsupported eventType: ${eventType}`);
+  }
+
+  if (!allowedCurrencies.includes(paymentCurrency)) {
     throw new Error(
-      `Unsupported eventType for protocol fee payment: ${eventType}`
+      `Currency ${paymentCurrency} not allowed for eventType ${eventType}`
     );
   }
 

@@ -297,7 +297,6 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
           return "Transaction hash already been used";
         }
 
-        //TODO for prod check forwarder contract address.
         const forwarderData = await getForwarderDataFromTxHashReceipt(
           body.txHash
         );
@@ -335,6 +334,13 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
           return "Zone is not set";
         }
 
+        await updateApplication(applicationId, {
+          status: ApplicationStatusEnum.paymentConfirmed,
+          paymentTxHash: body.txHash,
+          paymentDate: forwarderData.paymentDate,
+          paymentCurrency: forwarderData.paymentCurrency,
+          paymentEventType: forwarderData.eventType,
+        });
         if (process.env.NODE_ENV === "production") {
           const emitter = createGlowEventEmitter({
             username: process.env.RABBITMQ_ADMIN_USER!,
@@ -357,12 +363,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               console.error("error with audit.pfees.paid event", e);
             });
         }
-        await updateApplication(applicationId, {
-          status: ApplicationStatusEnum.paymentConfirmed,
-          paymentTxHash: body.txHash,
-          paymentDate: forwarderData.paymentDate,
-          paymentCurrency: forwarderData.paymentCurrency,
-        });
+
         return application;
       } catch (e) {
         if (e instanceof Error) {
@@ -2083,189 +2084,6 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
           detail: {
             summary: "Create or Update the Inspection and PTO documents",
             description: `insert the Inspection and PTO documents in db + insert documentsMissingWithReason if inspection or pto missing and update the application status to waitingForApproval`,
-            tags: [TAG.APPLICATIONS],
-          },
-        }
-      )
-      .post(
-        "/verify-payment",
-        async ({ body, set, userId }) => {
-          try {
-            let protocolFeeData:
-              | GetProtocolFeePaymentFromTxHashReceipt
-              | undefined;
-            const application = await FindFirstApplicationById(
-              body.applicationId
-            );
-
-            const usedTxHash = await findUsedTxHash(body.txHash);
-
-            if (usedTxHash) {
-              set.status = 400;
-              return "Transaction hash already been used";
-            }
-
-            if (!application) {
-              set.status = 404;
-              return "Application not found";
-            }
-
-            if (application.userId !== userId) {
-              const organizationApplication =
-                await findFirstOrganizationApplicationByApplicationId(
-                  body.applicationId
-                );
-
-              if (!organizationApplication) {
-                set.status = 400;
-                return "Unauthorized";
-              }
-
-              const isOrganizationOwner =
-                organizationApplication.organization.ownerId === userId;
-
-              const organizationMember = await findOrganizationMemberByUserId(
-                organizationApplication.organization.id,
-                userId
-              );
-
-              const isAuthorized =
-                isOrganizationOwner ||
-                organizationMember?.role.rolePermissions.find(
-                  (p) => p.permission.key === PermissionsEnum.ProtocolFeePayment
-                );
-
-              if (!isAuthorized) {
-                set.status = 400;
-                return "Unauthorized";
-              }
-            }
-
-            if (
-              application.status !== ApplicationStatusEnum.waitingForPayment
-            ) {
-              set.status = 400;
-              return "Application is not waiting for payment";
-            }
-
-            if (!application.zoneId) {
-              set.status = 400;
-              return "Zone is not set";
-            }
-
-            if (process.env.NODE_ENV === "production") {
-              protocolFeeData = await getProtocolFeePaymentFromTxHashReceipt(
-                body.txHash
-              );
-              //TODO: handle additionalPaymentTxHash + verify if wallets are allowed to pay for additionalPaymentTxHash wallets
-
-              if (
-                protocolFeeData.user.id.toLowerCase() !== userId.toLowerCase()
-              ) {
-                const organizationApplication =
-                  await findFirstOrganizationApplicationByApplicationId(
-                    body.applicationId
-                  );
-
-                if (!organizationApplication) {
-                  set.status = 400;
-                  return "The transaction hash does not belong to the user";
-                }
-
-                const organizationMembers = await findAllOrganizationMembers(
-                  organizationApplication.organization.id
-                );
-
-                const allowedWallets = organizationMembers
-                  .filter((m) =>
-                    m.role.rolePermissions.find(
-                      (p) =>
-                        p.permission.key === PermissionsEnum.ProtocolFeePayment
-                    )
-                  )
-                  .map((c) => c.userId.toLowerCase());
-
-                if (
-                  !allowedWallets.includes(
-                    protocolFeeData.user.id.toLowerCase()
-                  )
-                ) {
-                  set.status = 400;
-                  return "The transaction hash does not belong to the user or any of the organization members allowed to pay the protocol fee";
-                }
-              }
-
-              if (
-                BigInt(
-                  ethers.utils
-                    .parseUnits(application.finalProtocolFee, 6)
-                    .toString()
-                ) === BigInt(0)
-              ) {
-                set.status = 400;
-                return "Final Protocol Fee is not set";
-              }
-
-              /// TODO: If it's greater, need to check with david what to do on that. For now, let's not change anything
-              if (
-                BigInt(protocolFeeData.amount) <
-                BigInt(
-                  ethers.utils
-                    .parseUnits(application.finalProtocolFee, 6)
-                    .toString()
-                )
-              ) {
-                set.status = 400;
-                return "Invalid Amount";
-              }
-              const emitter = createGlowEventEmitter({
-                username: process.env.RABBITMQ_ADMIN_USER!,
-                password: process.env.RABBITMQ_ADMIN_PASSWORD!,
-                zoneId: application.zoneId,
-              });
-
-              emitter
-                .emit({
-                  eventType: eventTypes.auditPfeesPaid,
-                  schemaVersion: "v1",
-                  payload: {
-                    applicationId: body.applicationId,
-                    payer: protocolFeeData.user.id,
-                    amount_6Decimals: protocolFeeData.amount,
-                    txHash: body.txHash,
-                  },
-                })
-                .catch((e) => {
-                  console.error("error with audit.pfees.paid event", e);
-                });
-            }
-
-            await updateApplication(body.applicationId, {
-              status: ApplicationStatusEnum.paymentConfirmed,
-              paymentTxHash: body.txHash,
-              paymentDate: protocolFeeData
-                ? protocolFeeData.paymentDate
-                : new Date(),
-              paymentCurrency: "USDG",
-            });
-          } catch (e) {
-            if (e instanceof Error) {
-              set.status = 400;
-              return e.message;
-            }
-            console.log("[applicationsRouter] verify-payment", e);
-            throw new Error("Error Occured");
-          }
-        },
-        {
-          body: t.Object({
-            applicationId: t.String(),
-            txHash: t.String(),
-            additionalPaymentTxHash: t.Optional(t.Array(t.String())),
-          }),
-          detail: {
-            summary: "Verify Payment",
-            description: `Verify Payment and update the application status to paymentConfirmed`,
             tags: [TAG.APPLICATIONS],
           },
         }

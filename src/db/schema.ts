@@ -893,6 +893,9 @@ export const applications = pgTable("applications", {
   paymentCurrency: varchar("payment_currency", { length: 20 })
     .notNull()
     .default("USDG"), // USDG or GCTL or USDC and maybe GLOW in the future
+  paymentEventType: varchar("payment_event_type", { length: 20 })
+    .notNull()
+    .default("PayProtocolFee"), // PayProtocolFee or PayProtocolFeeAndMintGCTLAndStake
   // gca assignement fields
   gcaAssignedTimestamp: timestamp("gca_assigned_timestamp"),
   gcaAcceptanceTimestamp: timestamp("gca_acceptance_timestamp"),
