@@ -370,6 +370,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
           paymentDate: forwarderData.paymentDate,
           paymentCurrency: forwarderData.paymentCurrency,
           paymentEventType: forwarderData.eventType,
+          isPublishedOnAuction: false,
         });
         if (process.env.NODE_ENV === "production") {
           const emitter = createGlowEventEmitter({
