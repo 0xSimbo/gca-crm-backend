@@ -20,6 +20,8 @@ export const requirementSetMap = {
       farmOwnerName: true,
       farmOwnerEmail: true,
       farmOwnerPhone: true,
+      lat: true,
+      lng: true,
     },
     audit: applicationsAuditFieldsCRS,
   },

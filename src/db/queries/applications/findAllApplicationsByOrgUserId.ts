@@ -19,7 +19,7 @@ export const findAllApplicationsByOrgUserId = async (
           status: true,
           createdAt: true,
           updatedAt: true,
-
+          revisedKwhGeneratedPerYear: true,
           currentStep: true,
           roundRobinStatus: true,
           gcaAddress: true,

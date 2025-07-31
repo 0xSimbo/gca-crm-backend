@@ -25,7 +25,7 @@ export const findAllApplicationsByOrganizationId = async (
           gcaAddress: true,
 
           isCancelled: true,
-
+          revisedKwhGeneratedPerYear: true,
           finalProtocolFee: true,
           preInstallVisitDate: true,
           afterInstallVisitDate: true,
