@@ -111,6 +111,10 @@ import { getForwarderDataFromTxHashReceipt } from "../../utils/getForwarderDataF
 import { findFirstInstallerById } from "../../db/queries/installers/findFirstInstallerById";
 import { findAllWaitingForPaymentApplications } from "../../db/queries/applications/findAllWaitingForPaymentApplications";
 import { randomUUID } from "crypto";
+import {
+  DECIMALS_BY_CURRENCY,
+  TOKENS_PER_USDC_BY_CURRENCY,
+} from "../../constants/addresses";
 
 export const applicationsRouter = new Elysia({ prefix: "/applications" })
   .use(bearerplugin())
@@ -322,11 +326,37 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
           return "Final Protocol Fee is not set";
         }
 
+        /**
+         * Convert the USDC-denominated `finalProtocolFee` stored on the application
+         * into the raw amount (token-decimals) of the currency actually paid so
+         * we can compare apples-to-apples with the on-chain `amount` captured by
+         * the forwarder.
+         */
+        const currency = forwarderData.paymentCurrency;
+
+        // Guard against unsupported/unknown currencies just in case.
         if (
-          BigInt(forwarderData.amount) < BigInt(application.finalProtocolFee)
+          !(currency in DECIMALS_BY_CURRENCY) ||
+          !(currency in TOKENS_PER_USDC_BY_CURRENCY)
         ) {
           set.status = 400;
-          return "Invalid Amount";
+          return `Unsupported payment currency: ${currency}`;
+        }
+
+        const decimalsDiff = DECIMALS_BY_CURRENCY[currency] - 6; // 6 = USDC decimals
+
+        // Positive diff => more decimals than USDC (e.g. GLW 18), negative diff => less.
+        const scalingFactor =
+          decimalsDiff > 0 ? BigInt(Math.pow(10, decimalsDiff)) : BigInt(1);
+
+        const expectedAmountRaw =
+          BigInt(application.finalProtocolFee) *
+          TOKENS_PER_USDC_BY_CURRENCY[currency] *
+          scalingFactor;
+
+        if (expectedAmountRaw !== BigInt(forwarderData.amount)) {
+          set.status = 400;
+          return `Invalid Amount: expected ${expectedAmountRaw}, got ${forwarderData.amount}`;
         }
 
         if (!application.zoneId) {

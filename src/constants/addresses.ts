@@ -101,3 +101,19 @@ const getAddresses = (): Record<Keys, `0x${string}`> => {
 
 export const addresses = getAddresses();
 export const forwarderAddresses = getForwarderAddresses();
+
+// ---------------------------------------------------------------------------
+// Decimals per currency (on-chain token precision)
+// ---------------------------------------------------------------------------
+
+export const DECIMALS_BY_CURRENCY: Record<string, number> = {
+  USDC: 6,
+  USDG: 6,
+  GLW: 18,
+};
+
+export const TOKENS_PER_USDC_BY_CURRENCY: Record<string, bigint> = {
+  USDC: BigInt(1),
+  USDG: BigInt(1),
+  GLW: BigInt(10), // 1 USDC = 10 GLW (0.1 USDC per GLW)
+};
