@@ -429,16 +429,16 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
             gcaAssignedTimestamp: new Date(),
             gcaAcceptanceTimestamp: new Date(),
             installFinishedDate: new Date(),
-            revisedCostOfPowerPerKWh: "0.13",
-            revisedKwhGeneratedPerYear: "7.51",
-            finalQuotePerWatt: "0.13",
+            revisedCostOfPowerPerKWh: "1.20",
+            revisedKwhGeneratedPerYear: "7.90",
+            finalQuotePerWatt: "1.20",
             estimatedInstallDate: new Date(),
             preInstallVisitDate: new Date(),
             preInstallVisitDateConfirmedTimestamp: new Date(),
             afterInstallVisitDate: new Date(),
             afterInstallVisitDateConfirmedTimestamp: new Date(),
-            finalProtocolFee: BigInt(23040000000),
-            revisedEstimatedProtocolFees: "23040",
+            finalProtocolFee: BigInt(12668490000),
+            revisedEstimatedProtocolFees: "12668",
           });
 
           await tx.insert(applicationsEnquiryFieldsCRS).values({
@@ -447,10 +447,10 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
             farmOwnerName: "sentinel-owner",
             farmOwnerEmail: "owner@example.com",
             farmOwnerPhone: "0000000000",
-            lat: "0",
-            lng: "0",
+            lat: "41.94593",
+            lng: "-111.83126",
             estimatedCostOfPowerPerKWh: "0.13",
-            estimatedKWhGeneratedPerYear: "7.51",
+            estimatedKWhGeneratedPerYear: "7.9",
             enquiryEstimatedFees: "2216207000",
             enquiryEstimatedQuotePerWatt: "0.13",
             installerName: "sentinel-installer",
@@ -468,26 +468,26 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
 
           await tx.insert(weeklyProduction).values({
             applicationId: applicationDraft.id,
-            powerOutputMWH: "0.012",
             createdAt: new Date(),
-            hoursOfSunlightPerDay: "5.5",
-            carbonOffsetsPerMWH: "0.54",
-            weeklyPowerProductionMWh: "0.012",
-            weeklyCarbonCredits: "0.32",
-            adjustedWeeklyCarbonCredits: "0.25",
-            adjustmentDueToUncertainty: "0.07",
+            powerOutputMWH: "0.0079",
+            hoursOfSunlightPerDay: "4.74816609",
+            carbonOffsetsPerMWH: "0.67384823",
+            adjustmentDueToUncertainty: "0.35",
+            weeklyPowerProductionMWh: "0.26257358",
+            weeklyCarbonCredits: "0.17693474",
+            adjustedWeeklyCarbonCredits: "0.11500758",
           });
 
           await tx.insert(weeklyCarbonDebt).values({
             applicationId: applicationDraft.id,
             createdAt: new Date(),
-            weeklyTotalCarbonDebt: "0.25",
-            totalCarbonDebtAdjustedKWh: "0.25",
-            convertToKW: "0.25",
-            totalCarbonDebtProduced: "0.25",
-            disasterRisk: "0.25",
+            totalCarbonDebtAdjustedKWh: "3.1104",
+            convertToKW: "7.9",
+            totalCarbonDebtProduced: "24.57216",
+            disasterRisk: "0.0017",
             commitmentPeriod: 10,
-            adjustedTotalCarbonDebt: "0.25",
+            adjustedTotalCarbonDebt: "24.99309686",
+            weeklyTotalCarbonDebt: "0.04806365",
           });
 
           return applicationDraft.id;
@@ -3424,6 +3424,65 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
             summary: "Patch production and carbon debt for an application",
             description:
               "Update application with systemWattageOutput, netCarbonCreditEarningWeekly, weeklyTotalCarbonDebt, averageSunlightHoursPerDay, lat, lng and insert weeklyProduction and weeklyCarbonDebt records.",
+            tags: [TAG.APPLICATIONS],
+          },
+        }
+      )
+      .post(
+        "/publish-application-to-auction",
+        async ({ body, set, userId }) => {
+          try {
+            const user = await findFirstUserById(userId);
+            if (!user) {
+              set.status = 400;
+              return "Unauthorized";
+            }
+
+            const application = await FindFirstApplicationById(
+              body.applicationId
+            );
+
+            if (!application) {
+              set.status = 404;
+              return "Application not found";
+            }
+
+            if (application.userId !== userId) {
+              set.status = 400;
+              return "User is not the owner of the application";
+            }
+
+            if (
+              application.status !== ApplicationStatusEnum.waitingForPayment
+            ) {
+              set.status = 400;
+              return "Application must be in waiting-for-payment status";
+            }
+
+            await updateApplication(application.id, {
+              isPublishedOnAuction: body.publish,
+              publishedOnAuctionTimestamp: body.publish ? new Date() : null,
+            });
+          } catch (e) {
+            if (e instanceof Error) {
+              set.status = 400;
+              return e.message;
+            }
+            console.log(
+              "[applicationsRouter] /publish-application-to-auction",
+              e
+            );
+            throw new Error("Error Occured");
+          }
+        },
+        {
+          body: t.Object({
+            publish: t.Boolean(),
+            applicationId: t.String(),
+          }),
+          detail: {
+            summary: "Publish or unpublish Application to auction",
+            description: `Toggle isPublishedOnAuction and set/unset publishedOnAuctionTimestamp; accessible only by the application owner while the application is waiting-for-payment.`,
             tags: [TAG.APPLICATIONS],
           },
         }

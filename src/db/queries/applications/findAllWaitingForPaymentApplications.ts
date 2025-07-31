@@ -11,6 +11,7 @@ function stringifyApplicationFields(
   return {
     ...application,
     zone,
+    finalProtocolFee: application.finalProtocolFee.toString(),
     lat:
       enquiryFieldsCRS?.lat !== undefined && enquiryFieldsCRS?.lat !== null
         ? enquiryFieldsCRS.lat.toString()
@@ -50,6 +51,7 @@ export const findAllWaitingForPaymentApplications = async (
       installFinishedDate: true,
       isPublishedOnAuction: true,
       publishedOnAuctionTimestamp: true,
+      finalProtocolFee: true,
     },
     with: {
       zone: {
