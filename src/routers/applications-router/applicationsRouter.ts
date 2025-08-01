@@ -2466,8 +2466,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                 },
                 {
                   applicationId: body.applicationId,
-                  systemWattageOutput:
-                    body.weeklyCarbonDebt?.convertToKW.toString(),
+                  systemWattageOutput: `${body.weeklyCarbonDebt?.convertToKW.toString()} kW-DC`,
                   netCarbonCreditEarningWeekly,
                   weeklyTotalCarbonDebt:
                     body.weeklyCarbonDebt?.weeklyTotalCarbonDebt.toString(),
@@ -3020,8 +3019,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                   lng: body.lng.toString(),
                 },
                 {
-                  systemWattageOutput:
-                    body.weeklyCarbonDebt.convertToKW.toString(),
+                  systemWattageOutput: `${body.weeklyCarbonDebt.convertToKW.toString()} kW-DC`,
                   netCarbonCreditEarningWeekly:
                     netCarbonCreditEarningWeekly.toString(),
                   weeklyTotalCarbonDebt:
