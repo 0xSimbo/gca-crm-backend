@@ -3308,9 +3308,14 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               return "Application must be in waiting-for-payment status";
             }
 
+            if (application.isPublishedOnAuction) {
+              set.status = 400;
+              return "Application is already published on auction";
+            }
+
             await updateApplication(application.id, {
-              isPublishedOnAuction: body.publish,
-              publishedOnAuctionTimestamp: body.publish ? new Date() : null,
+              isPublishedOnAuction: true,
+              publishedOnAuctionTimestamp: new Date(),
             });
           } catch (e) {
             if (e instanceof Error) {
@@ -3326,12 +3331,11 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
         },
         {
           body: t.Object({
-            publish: t.Boolean(),
             applicationId: t.String(),
           }),
           detail: {
-            summary: "Publish or unpublish Application to auction",
-            description: `Toggle isPublishedOnAuction and set/unset publishedOnAuctionTimestamp; accessible only by the application owner while the application is waiting-for-payment.`,
+            summary: "Publish Application to auction",
+            description: `Toggle isPublishedOnAuction and set publishedOnAuctionTimestamp; accessible only by the application owner while the application is waiting-for-payment.`,
             tags: [TAG.APPLICATIONS],
           },
         }
