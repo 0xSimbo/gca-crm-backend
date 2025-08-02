@@ -113,7 +113,7 @@ import { findAllWaitingForPaymentApplications } from "../../db/queries/applicati
 import { randomUUID } from "crypto";
 import {
   DECIMALS_BY_CURRENCY,
-  TOKENS_PER_USDC_BY_CURRENCY,
+  getTokensPerUsdcByCurrency,
 } from "../../constants/addresses";
 
 export const applicationsRouter = new Elysia({ prefix: "/applications" })
@@ -335,10 +335,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
         const currency = forwarderData.paymentCurrency;
 
         // Guard against unsupported/unknown currencies just in case.
-        if (
-          !(currency in DECIMALS_BY_CURRENCY) ||
-          !(currency in TOKENS_PER_USDC_BY_CURRENCY)
-        ) {
+        if (!(currency in DECIMALS_BY_CURRENCY)) {
           set.status = 400;
           return `Unsupported payment currency: ${currency}`;
         }
@@ -349,9 +346,21 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
         const scalingFactor =
           decimalsDiff > 0 ? BigInt(Math.pow(10, decimalsDiff)) : BigInt(1);
 
+        const tokensPerUsdc = await getTokensPerUsdcByCurrency(currency);
+
+        if (tokensPerUsdc === undefined) {
+          set.status = 400;
+          return `Unsupported payment currency: ${currency}`;
+        }
+
+        if (tokensPerUsdc === 0) {
+          set.status = 400;
+          return `Invalid tokens per USDC: ${tokensPerUsdc}`;
+        }
+
         const expectedAmountRaw =
           BigInt(application.finalProtocolFee) *
-          TOKENS_PER_USDC_BY_CURRENCY[currency] *
+          BigInt(Math.round(tokensPerUsdc)) *
           scalingFactor;
 
         if (expectedAmountRaw !== BigInt(forwarderData.amount)) {

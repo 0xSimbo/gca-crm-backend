@@ -1,3 +1,5 @@
+import { ControlRouter } from "@glowlabs-org/utils";
+
 let CHAIN_ID = 1;
 
 type Keys =
@@ -70,6 +72,10 @@ if (process.env.NODE_ENV === "production") {
   CHAIN_ID = 11155111;
 }
 
+if (!process.env.CONTROL_API_URL) {
+  throw new Error("CONTROL_API_URL is not set");
+}
+
 const getForwarderAddresses = (): Record<ForwarderKeys, `0x${string}`> => {
   switch (CHAIN_ID) {
     case 1:
@@ -112,8 +118,32 @@ export const DECIMALS_BY_CURRENCY: Record<string, number> = {
   GLW: 18,
 };
 
-export const TOKENS_PER_USDC_BY_CURRENCY: Record<string, bigint> = {
-  USDC: BigInt(1),
-  USDG: BigInt(1),
-  GLW: BigInt(10), // 1 USDC = 10 GLW (0.1 USDC per GLW)
-};
+/**
+ * Returns the number of tokens obtained for 1 USDC of the provided currency.
+ * For USDC & USDG this is a fixed 1:1 ratio.
+ * For GLW we fetch the current price from the Control API and invert it
+ * (tokens per USDC) before rounding to the nearest integer.
+ */
+export async function getTokensPerUsdcByCurrency(
+  currency: string
+): Promise<number> {
+  switch (currency) {
+    case "USDC":
+    case "USDG":
+      return 1;
+    case "GLW": {
+      const glwPriceInUsdc = await ControlRouter(
+        process.env.CONTROL_API_URL!
+      ).fetchGlwPrice();
+
+      if (glwPriceInUsdc <= 0) {
+        throw new Error("Invalid GLW price returned from Control API");
+      }
+
+      // We need `tokens / USDC`, hence we take the inverse and round to the nearest integer.
+      return Math.round(1 / glwPriceInUsdc);
+    }
+    default:
+      throw new Error(`Unsupported currency: ${currency}`);
+  }
+}
