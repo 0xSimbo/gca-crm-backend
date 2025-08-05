@@ -23,7 +23,7 @@ export const findAllApplicationsByOrgUserId = async (
           currentStep: true,
           roundRobinStatus: true,
           gcaAddress: true,
-
+          allowedZones: true,
           isCancelled: true,
           finalProtocolFee: true,
           preInstallVisitDate: true,
