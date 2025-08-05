@@ -121,7 +121,6 @@ export const EnquiryQueryBody = t.Object({
     minimum: -180,
     maximum: 180,
   }),
-  zoneId: t.Number(),
 });
 
 export const DeclarationOfIntentionMissingQueryBody = t.Object({
@@ -141,6 +140,7 @@ export const PreInstallDocumentsQueryBody = t.Object({
   applicationId: t.String(),
   estimatedInstallDate: t.Date(),
   contractAgreement: encryptedFileUpload,
+  zoneId: t.Number(),
 });
 
 export const PermitDocumentationQueryBody = t.Object({

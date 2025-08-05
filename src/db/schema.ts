@@ -901,6 +901,11 @@ export const applications = pgTable("applications", {
   gcaAcceptanceTimestamp: timestamp("gca_acceptance_timestamp"),
   gcaAddress: varchar("gca_address", { length: 42 }),
   gcaAcceptanceSignature: varchar("gca_acceptance_signature", { length: 255 }),
+  // allowed zones for the application. 1 is zone CGP, 2 is zone UTAH, etc.
+  allowedZones: integer("allowed_zones")
+    .array()
+    .notNull()
+    .default(sql`'{}'::integer[]`),
 });
 
 /**

@@ -1205,6 +1205,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                 {
                   status: ApplicationStatusEnum.draft,
                   currentStep: body.stepIndex + 1,
+                  allowedZones: body.allowedZones,
                 }
               );
             } else {
@@ -1226,7 +1227,12 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
           }
         },
         {
-          body: t.Object(ApproveOrAskForChangesQueryBody),
+          body: t.Object({
+            ...ApproveOrAskForChangesQueryBody,
+            allowedZones: t.Array(t.Number(), {
+              minItems: 1,
+            }),
+          }),
           detail: {
             summary: "Gca Approve or Ask for Changes after step submission",
             description: `Approve or Ask for Changes. If the user is not a GCA, it will throw an error. If the deadline is in the past, it will throw an error. If the deadline is more than 10 minutes in the future, it will throw an error.`,
@@ -1864,7 +1870,6 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                 {
                   id: body.applicationId,
                   userId,
-                  zoneId: body.zoneId,
                   farmId: null,
                   createdAt: new Date(),
                   currentStep: 1,
@@ -1908,25 +1913,12 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                 }
               );
 
-              if (!body.zoneId) {
-                set.status = 400;
-                return "Zone is not set";
-              }
-
-              const zone = await db.query.zones.findFirst({
-                where: eq(zones.id, body.zoneId),
-              });
-
-              if (!zone) {
-                set.status = 400;
-                return "Zone not found";
-              }
-
               if (process.env.NODE_ENV === "production") {
+                //TODO: update eventEmitter to not have a zoneId here
                 const emitter = createGlowEventEmitter({
                   username: process.env.RABBITMQ_ADMIN_USER!,
                   password: process.env.RABBITMQ_ADMIN_PASSWORD!,
-                  zoneId: body.zoneId,
+                  zoneId: 0,
                 });
 
                 emitter
@@ -2019,6 +2011,20 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
             if (errorChecks) {
               set.status = errorChecks.errorCode;
               return errorChecks.errorMessage;
+            }
+
+            if (!application.allowedZones.includes(body.zoneId)) {
+              set.status = 400;
+              return "Zone not allowed";
+            }
+
+            const zone = await db.query.zones.findFirst({
+              where: eq(zones.id, body.zoneId),
+            });
+
+            if (!zone) {
+              set.status = 400;
+              return "Zone not found";
             }
 
             await handleCreateOrUpdatePreIntallDocuments(
