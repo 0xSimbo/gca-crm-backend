@@ -1,4 +1,7 @@
-import { ControlRouter } from "@glowlabs-org/utils";
+import {
+  ControlRouter,
+  getAddresses as getSDKAddresses,
+} from "@glowlabs-org/utils/browser";
 
 let CHAIN_ID = 1;
 
@@ -53,19 +56,6 @@ const sepoliaAddresses: Record<Keys, `0x${string}`> = {
   carbonCreditAuction: "0x85fbB04DEBBDEa052a6422E74bFeA57B17e50A80",
 };
 
-// Forwarder-specific addresses
-const mainnetForwarderAddresses: Record<ForwarderKeys, `0x${string}`> = {
-  USDC: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
-  FORWARDER: "0x0000000000000000000000000000000000000000", // TODO: Update with actual mainnet forwarder address
-  FOUNDATION_WALLET: "0x0000000000000000000000000000000000000000", // TODO: Update with actual mainnet foundation wallet
-};
-
-const sepoliaForwarderAddresses: Record<ForwarderKeys, `0x${string}`> = {
-  USDC: sepoliaAddresses.usdc,
-  FORWARDER: "0x9c1d61303D46BFAb1eC5F25c12A1Bf4cB3d06416",
-  FOUNDATION_WALLET: "0x5e230FED487c86B90f6508104149F087d9B1B0A7",
-};
-
 if (process.env.NODE_ENV === "production") {
   CHAIN_ID = 1;
 } else {
@@ -75,20 +65,6 @@ if (process.env.NODE_ENV === "production") {
 if (!process.env.CONTROL_API_URL) {
   throw new Error("CONTROL_API_URL is not set");
 }
-
-const getForwarderAddresses = (): Record<ForwarderKeys, `0x${string}`> => {
-  switch (CHAIN_ID) {
-    case 1:
-      return mainnetForwarderAddresses;
-    case 11155111:
-      return sepoliaForwarderAddresses;
-    default:
-      console.warn(
-        `Unsupported chain ID: ${CHAIN_ID}, falling back to mainnet forwarder addresses`
-      );
-      return mainnetForwarderAddresses;
-  }
-};
 
 // Dynamic address selection based on chain ID
 const getAddresses = (): Record<Keys, `0x${string}`> => {
@@ -106,7 +82,7 @@ const getAddresses = (): Record<Keys, `0x${string}`> => {
 };
 
 export const addresses = getAddresses();
-export const forwarderAddresses = getForwarderAddresses();
+export const forwarderAddresses = getSDKAddresses(CHAIN_ID);
 
 // ---------------------------------------------------------------------------
 // Decimals per currency (on-chain token precision)
