@@ -13,6 +13,7 @@ export const findAllApplications = async () => {
       gcaAddress: true,
       isCancelled: true,
       revisedKwhGeneratedPerYear: true,
+      allowedZones: true,
     },
     with: {
       enquiryFieldsCRS: {
