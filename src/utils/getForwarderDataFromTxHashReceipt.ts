@@ -1,39 +1,9 @@
 import { ethers } from "ethers";
 import { addresses, forwarderAddresses } from "../constants/addresses";
+import { FORWARDER_ABI } from "@glowlabs-org/utils/browser";
 // --------------------------------------------------
 // Forwarder event utility
 // --------------------------------------------------
-
-// The `Forward` event emitted by the on-chain forwarder contract.
-export const forwarderABI = [
-  {
-    anonymous: false,
-    inputs: [
-      { indexed: true, internalType: "address", name: "from", type: "address" },
-      { indexed: true, internalType: "address", name: "to", type: "address" },
-      {
-        indexed: true,
-        internalType: "address",
-        name: "token",
-        type: "address",
-      },
-      {
-        indexed: false,
-        internalType: "uint256",
-        name: "amount",
-        type: "uint256",
-      },
-      {
-        indexed: false,
-        internalType: "string",
-        name: "message",
-        type: "string",
-      },
-    ],
-    name: "Forward",
-    type: "event",
-  },
-] as const;
 
 export type PaymentCurrency = "GCTL" | "USDC" | "USDG" | "GLW";
 
@@ -109,7 +79,7 @@ export const getForwarderDataFromTxHashReceipt = async (
   }
 
   const iface = new ethers.utils.Interface(
-    forwarderABI as unknown as ethers.utils.Fragment[]
+    FORWARDER_ABI as unknown as ethers.utils.Fragment[]
   );
 
   // Find the first log that successfully decodes to the `Forward` event.
