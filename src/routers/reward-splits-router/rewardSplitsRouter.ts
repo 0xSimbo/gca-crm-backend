@@ -91,9 +91,11 @@ export const rewardSplitsRouter = new Elysia({ prefix: "/rewardsSplits" })
                 userId,
                 allOrgsApplications.map((app) => app.id)
               );
-            return allUserApplications
+            const rewardSplits = allUserApplications
               .concat(allOrgsApplications)
-              .map((app) => app.rewardSplits);
+              .map((app) => app.rewardSplits)
+              .flat();
+            return rewardSplits;
           } catch (e) {
             if (e instanceof Error) {
               set.status = 400;
