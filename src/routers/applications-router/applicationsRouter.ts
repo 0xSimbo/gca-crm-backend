@@ -2691,8 +2691,9 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                 body.stepIndex,
                 body.signature,
                 {
-                  status: ApplicationStatusEnum.auditInProgress,
+                  status: ApplicationStatusEnum.waitingForApproval,
                   afterInstallVisitDateConfirmedTimestamp: new Date(),
+                  currentStep: body.stepIndex + 1,
                   finalProtocolFee: ethers.utils
                     .parseUnits(body.finalProtocolFee!!, 6)
                     .toBigInt(),
