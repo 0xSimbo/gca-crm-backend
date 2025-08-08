@@ -39,6 +39,7 @@ export const handleCreateWithoutPIIDocumentsAndCompleteApplicationAudit =
         publicUrl: string;
         documentName: string;
         extension: string;
+        isShowingSolarPanels: boolean;
       }[];
       applicationAuditFields: ApplicationAuditFieldsType;
     }
@@ -189,6 +190,7 @@ export const handleCreateWithoutPIIDocumentsAndCompleteApplicationAudit =
           step: step,
           encryptedMasterKeys: [],
           createdAt: new Date(),
+          isShowingSolarPanels: misc.isShowingSolarPanels,
         }))
       );
     }

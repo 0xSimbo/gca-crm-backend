@@ -1534,8 +1534,8 @@ export const ApplicationStepApprovalsRelations = relations(
 
 /**
  * @dev Tracks GCA-issued price-per-asset quotes at audit completion.
- *      Stored as strings representing integer amounts with their respective decimals
- *      (USD/USDC/USDG/GCLT in 6 decimals, GLW in 18 decimals).
+ *      Stored as strings representing integer amounts with 6 decimals.
+ *      (USD/USDC/USDG/GCTL).
  */
 export const ApplicationPriceQuotes = pgTable("application_price_quotes", {
   id: text("application_price_quote_id")
