@@ -16,6 +16,7 @@ function stringifyApplicationFields(
       (application.finalProtocolFee || BigInt(0)) as bigint,
       6
     ),
+    finalProtocolFeeBigInt: application.finalProtocolFee.toString(),
     ...enquiryFieldsCRS,
     ...auditFieldsCRS,
     zone,

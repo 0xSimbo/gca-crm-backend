@@ -58,6 +58,7 @@ export const FindFirstApplicationById = async (id: string) => {
       (application?.finalProtocolFee || BigInt(0)) as bigint,
       6
     ),
+    finalProtocolFeeBigInt: application.finalProtocolFee.toString(),
     enquiryFields: enquiryFieldsCRS,
     auditFields: auditFieldsCRS,
     zone: zone,
