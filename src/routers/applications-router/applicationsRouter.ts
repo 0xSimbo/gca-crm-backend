@@ -25,7 +25,7 @@ import {
 } from "../../constants/typed-data/deferment";
 import { deferApplicationAssignement } from "../../db/mutations/applications/deferApplicationAssignement";
 import {
-  applicationCompletedWithPaymentTypes,
+  applicationCompletedWithPaymentV2Types,
   stepApprovedTypes,
   stepApprovedWithFinalProtocolFeeTypes,
 } from "../../constants/typed-data/step-approval";
@@ -47,7 +47,7 @@ import {
 import { roundRobinAssignement } from "../../db/queries/gcas/roundRobinAssignement";
 
 import { BigNumber, ethers } from "ethers";
-import { handleCreateWithoutPIIDocumentsAndCompleteApplication } from "./steps/gca-application-completion";
+import { handleCreateWithoutPIIDocumentsAndCompleteApplicationAudit } from "./steps/gca-application-audit-completion";
 import { db } from "../../db/db";
 import {
   OrganizationUsers,
@@ -57,6 +57,7 @@ import {
   applicationsEnquiryFieldsCRS,
   RewardSplits,
   ApplicationsEncryptedMasterKeys,
+  ApplicationPriceQuotes,
 } from "../../db/schema";
 
 import { convertKWhToMWh } from "../../utils/format/convertKWhToMWh";
@@ -82,10 +83,6 @@ import {
 import { findAllApplicationsWithoutMasterKey } from "../../db/queries/applications/findAllApplicationsWithoutMasterKey";
 import { createApplicationEncryptedMasterKeysForUsers } from "../../db/mutations/applications/createApplicationEncryptedMasterKeysForUsers";
 import { findAllApplications } from "../../db/queries/applications/findAllApplications";
-import {
-  GetProtocolFeePaymentFromTxHashReceipt,
-  getProtocolFeePaymentFromTxHashReceipt,
-} from "../../utils/getProtocolFeePaymentFromTxHashReceipt";
 import { findAllApplicationsOwnersByIds } from "../../db/queries/applications/findAllApplicationsOwnersByIds";
 import { createOrganizationApplicationBatch } from "../../db/mutations/organizations/createOrganizationApplicationBatch";
 import { deleteOrganizationApplicationBatch } from "../../db/mutations/organizations/deleteOrganizationApplicationBatch";
@@ -2394,7 +2391,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
         }
       )
       .post(
-        "/gca-complete-application",
+        "/gca-complete-audit",
         async ({ body, set, userId: gcaId }) => {
           try {
             const account = await findFirstAccountById(gcaId);
@@ -2426,16 +2423,26 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               return "After Install Visit Date is not set";
             }
 
-            const approvedValues = {
+            // build V2 payload with canonical JSON (sorted keys)
+            const sortedEntries = Object.entries(body.pricePerAssets).sort(
+              ([a], [b]) => a.localeCompare(b)
+            );
+            const canonicalPricesJson = JSON.stringify(
+              Object.fromEntries(sortedEntries)
+            );
+
+            const signedValues = {
               applicationId: body.applicationId,
               deadline: body.deadline,
-              devices: body.devices.map((device) => device.publicKey),
+              devices: body.devices.map((d) => d.publicKey),
+              pricePerAssetsJson: canonicalPricesJson,
+              typesVersion: "v2",
               // nonce is fetched from user account. nonce is updated for every new next-auth session
             };
 
-            const recoveredAddress = await recoverAddressHandler(
-              applicationCompletedWithPaymentTypes,
-              approvedValues,
+            let recoveredAddress = await recoverAddressHandler(
+              applicationCompletedWithPaymentV2Types,
+              signedValues,
               body.signature,
               gcaId
             );
@@ -2460,29 +2467,29 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               return "Application is not completed, adjustedWeeklyCarbonCredits is not set";
             }
 
-            const farmId =
-              await handleCreateWithoutPIIDocumentsAndCompleteApplication(
-                application,
-                gcaId,
-                body.signature,
-                ApplicationSteps.payment,
-                body.annotation,
-                {
-                  finalAuditReport: body.finalAuditReport,
-                  ...body.withoutPIIdocuments,
-                  miscDocuments: body.miscDocuments,
-                  devices: body.devices,
-                  applicationAuditFields: {
-                    finalEnergyCost: body.finalEnergyCost,
-                    solarPanelsQuantity: body.solarPanelsQuantity,
-                    solarPanelsBrandAndModel: body.solarPanelsBrandAndModel,
-                    solarPanelsWarranty: body.solarPanelsWarranty,
-                    ptoObtainedDate: body.ptoObtainedDate,
-                    locationWithoutPII: body.locationWithoutPII,
-                    revisedInstallFinishedDate: body.revisedInstallFinishedDate,
-                  },
-                }
-              );
+            await handleCreateWithoutPIIDocumentsAndCompleteApplicationAudit(
+              application,
+              gcaId,
+              body.signature,
+              canonicalPricesJson,
+              ApplicationSteps.payment,
+              body.annotation,
+              {
+                finalAuditReport: body.finalAuditReport,
+                ...body.withoutPIIdocuments,
+                miscDocuments: body.miscDocuments,
+                devices: body.devices,
+                applicationAuditFields: {
+                  finalEnergyCost: body.finalEnergyCost,
+                  solarPanelsQuantity: body.solarPanelsQuantity,
+                  solarPanelsBrandAndModel: body.solarPanelsBrandAndModel,
+                  solarPanelsWarranty: body.solarPanelsWarranty,
+                  ptoObtainedDate: body.ptoObtainedDate,
+                  locationWithoutPII: body.locationWithoutPII,
+                  revisedInstallFinishedDate: body.revisedInstallFinishedDate,
+                },
+              }
+            );
 
             //TODO: change event version
             // if (
@@ -2579,6 +2586,20 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
             }),
             zoneId: t.Number({
               minimum: 1,
+            }),
+            pricePerAssets: t.Object({
+              USDC: t.String({
+                minLength: 1, // in bigint 6 decimals
+              }),
+              USDG: t.String({
+                minLength: 1, // in bigint 6 decimals
+              }),
+              GCLT: t.String({
+                minLength: 1, // in bigint 6 decimals
+              }),
+              GLW: t.String({
+                minLength: 1, // in bigint 18 decimals
+              }),
             }),
           }),
           detail: {

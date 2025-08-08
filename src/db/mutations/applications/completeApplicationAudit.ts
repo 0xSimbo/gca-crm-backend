@@ -1,6 +1,7 @@
 import { and, count, eq, isNotNull, ne } from "drizzle-orm";
 import { db } from "../../db";
 import {
+  ApplicationPriceQuotes,
   ApplicationStepApprovals,
   DeviceInsertType,
   Devices,
@@ -48,6 +49,7 @@ export const completeApplicationAudit = async (
   applicationId: string,
   gcaId: string,
   signature: string,
+  canonicalPricesJson: string,
   documents: DocumentsInsertType[],
   devices: { publicKey: string; shortId: string }[],
   stepAnnotation: string | null,
@@ -171,6 +173,14 @@ export const completeApplicationAudit = async (
         devices: devices,
       })
       .where(eq(applicationsAuditFieldsCRS.applicationId, applicationId));
+
+    await tx.insert(ApplicationPriceQuotes).values({
+      applicationId: applicationId,
+      gcaAddress: gcaId,
+      prices: JSON.parse(canonicalPricesJson) as Record<string, string>,
+      typesVersion: "v2",
+      signature: signature,
+    });
 
     await tx.insert(ApplicationStepApprovals).values({
       applicationId: applicationId,

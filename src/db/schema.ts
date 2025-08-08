@@ -1532,6 +1532,33 @@ export const ApplicationStepApprovalsRelations = relations(
   })
 );
 
+/**
+ * @dev Tracks GCA-issued price-per-asset quotes at audit completion.
+ *      Stored as strings representing integer amounts with their respective decimals
+ *      (USD/USDC/USDG/GCLT in 6 decimals, GLW in 18 decimals).
+ */
+export const ApplicationPriceQuotes = pgTable("application_price_quotes", {
+  id: text("application_price_quote_id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  applicationId: text("application_id")
+    .notNull()
+    .references(() => applications.id, { onDelete: "cascade" }),
+  gcaAddress: varchar("gca_address", { length: 42 }).notNull(),
+  prices: json("prices").$type<Record<string, string>>().notNull(),
+  typesVersion: varchar("types_version", { length: 16 })
+    .notNull()
+    .default("v1"),
+  signature: varchar("signature", { length: 255 }).notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export type ApplicationPriceQuoteType = InferSelectModel<
+  typeof ApplicationPriceQuotes
+>;
+export type ApplicationPriceQuoteInsertType =
+  typeof ApplicationPriceQuotes.$inferInsert;
+
 export const DeclarationOfIntentionMerkleRoots = pgTable(
   "declaration_of_intention_merkle_roots",
   {

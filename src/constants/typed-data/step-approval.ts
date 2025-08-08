@@ -24,6 +24,18 @@ export const applicationCompletedWithPaymentTypes = {
     { name: "applicationId", type: "string" },
     { name: "deadline", type: "uint256" },
     { name: "devices", type: "string[]" }, // array of devices public keys
+    { name: "txHash", type: "string" },
+    { name: "nonce", type: "string" },
+  ],
+};
+
+export const applicationCompletedWithPaymentV2Types = {
+  Application: [
+    { name: "applicationId", type: "string" },
+    { name: "deadline", type: "uint256" },
+    { name: "devices", type: "string[]" }, // array of devices public keys
+    { name: "pricePerAssetsJson", type: "string" }, // canonical sorted JSON of { [symbol]: string }
+    { name: "typesVersion", type: "string" }, // "v2"
     { name: "nonce", type: "string" },
   ],
 };
