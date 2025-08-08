@@ -7,7 +7,10 @@ import {
   applications,
   applicationsAuditFieldsCRS,
 } from "../../schema";
-import { ApplicationStatusEnum } from "../../../types/api-types/Application";
+import {
+  ApplicationStatusEnum,
+  ApplicationSteps,
+} from "../../../types/api-types/Application";
 
 export const approveApplicationStep = async (
   applicationId: string,
@@ -19,23 +22,13 @@ export const approveApplicationStep = async (
   applicationAuditFields?: ApplicationAuditFieldsCRSInsertType
 ) => {
   return db.transaction(async (tx) => {
-    const res = await tx
+    await tx
       .update(applications)
       .set({
         ...applicationFields,
       })
       .where(and(eq(applications.id, applicationId)))
       .returning({ status: applications.status });
-
-    if (
-      !res.every(
-        ({ status }) =>
-          status === ApplicationStatusEnum.approved ||
-          status === ApplicationStatusEnum.draft
-      )
-    ) {
-      tx.rollback(); // if fails will rollback and don't reach second tx
-    }
 
     if (applicationAuditFields) {
       await tx.insert(applicationsAuditFieldsCRS).values({

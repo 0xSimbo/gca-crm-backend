@@ -1031,6 +1031,7 @@ export const applicationsAuditFieldsCRS = pgTable(
     ptoObtainedDate: timestamp("pto_date"),
     locationWithoutPII: varchar("location_without_pii", { length: 255 }),
     revisedInstallFinishedDate: timestamp("revised_install_finished_date"),
+    devices: json("devices").$type<{ publicKey: string; shortId: string }[]>(),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at"),
   }

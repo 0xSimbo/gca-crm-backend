@@ -2402,7 +2402,6 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               return { errorCode: 404, errorMessage: "Account not found" };
             }
 
-            //TODO: rename function when time
             const errorChecks = await approveOrAskForChangesCheckHandler(
               ApplicationSteps.payment,
               body.applicationId,
@@ -2417,16 +2416,20 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               return errorChecks.errorMessage;
             }
 
-            if (!application.paymentTxHash) {
+            if (!application.finalProtocolFee) {
               set.status = 400;
-              return "No payment has been made yet";
+              return "No final protocol fee has been set yet";
+            }
+
+            if (!application.afterInstallVisitDate) {
+              set.status = 400;
+              return "After Install Visit Date is not set";
             }
 
             const approvedValues = {
               applicationId: body.applicationId,
               deadline: body.deadline,
               devices: body.devices.map((device) => device.publicKey),
-              txHash: application.paymentTxHash,
               // nonce is fetched from user account. nonce is updated for every new next-auth session
             };
 
@@ -2481,42 +2484,43 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                 }
               );
 
-            if (
-              process.env.NODE_ENV === "production" &&
-              typeof farmId === "string"
-            ) {
-              const emitter = createGlowEventEmitter({
-                username: process.env.RABBITMQ_ADMIN_USER!,
-                password: process.env.RABBITMQ_ADMIN_PASSWORD!,
-                zoneId: application.zoneId,
-              });
-              const protocolFeeUSDPrice_6Decimals = BigNumber.from(
-                application.finalProtocolFee
-              ).toString();
+            //TODO: change event version
+            // if (
+            //   process.env.NODE_ENV === "production" &&
+            //   typeof farmId === "string"
+            // ) {
+            //   const emitter = createGlowEventEmitter({
+            //     username: process.env.RABBITMQ_ADMIN_USER!,
+            //     password: process.env.RABBITMQ_ADMIN_PASSWORD!,
+            //     zoneId: application.zoneId,
+            //   });
+            //   const protocolFeeUSDPrice_6Decimals = BigNumber.from(
+            //     application.finalProtocolFee
+            //   ).toString();
 
-              const expectedProduction_12Decimals = BigNumber.from(
-                Math.floor(
-                  Number(application.auditFields.adjustedWeeklyCarbonCredits) *
-                    1e6
-                )
-              ) // convert to int, 6 decimals
-                .mul(BigNumber.from("1000000")) // 6 -> 12 decimals
-                .toString();
-              emitter
-                .emit({
-                  eventType: eventTypes.auditPushed,
-                  schemaVersion: "v1",
-                  payload: {
-                    farmId,
-                    protocolFeeUSDPrice_6Decimals,
-                    expectedProduction_12Decimals,
-                    txHash: application.paymentTxHash,
-                  },
-                })
-                .catch((e) => {
-                  console.error("error with audit.pushed event", e);
-                });
-            }
+            //   const expectedProduction_12Decimals = BigNumber.from(
+            //     Math.floor(
+            //       Number(application.auditFields.adjustedWeeklyCarbonCredits) *
+            //         1e6
+            //     )
+            //   ) // convert to int, 6 decimals
+            //     .mul(BigNumber.from("1000000")) // 6 -> 12 decimals
+            //     .toString();
+            //   emitter
+            //     .emit({
+            //       eventType: eventTypes.auditPushed,
+            //       schemaVersion: "v1",
+            //       payload: {
+            //         farmId,
+            //         protocolFeeUSDPrice_6Decimals,
+            //         expectedProduction_12Decimals,
+            //         txHash: application.paymentTxHash,
+            //       },
+            //     })
+            //     .catch((e) => {
+            //       console.error("error with audit.pushed event", e);
+            //     });
+            // }
           } catch (e) {
             if (e instanceof Error) {
               set.status = 400;

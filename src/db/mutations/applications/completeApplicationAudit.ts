@@ -44,21 +44,14 @@ export type ApplicationAuditFieldsType = {
  * @param documents - The documents to insert.
  * @param devices - An array of devices to create and link to the farm.
  */
-export const completeApplicationWithDocumentsAndCreateFarmWithDevices = async (
+export const completeApplicationAudit = async (
   applicationId: string,
   gcaId: string,
-  userId: string,
   signature: string,
   documents: DocumentsInsertType[],
   devices: { publicKey: string; shortId: string }[],
-  protocolFee: bigint,
-  protocolFeePaymentHash: string,
-  protocolFeeAdditionalPaymentTxHash: string | null,
   stepAnnotation: string | null,
-  applicationAuditFields: ApplicationAuditFieldsType,
-  lat: string,
-  lng: string,
-  farmName: string
+  applicationAuditFields: ApplicationAuditFieldsType
 ) => {
   if (!process.env.R2_NOT_ENCRYPTED_FILES_BUCKET_NAME) {
     throw new Error("R2_NOT_ENCRYPTED_FILES_BUCKET_NAME is not defined");
@@ -100,13 +93,6 @@ export const completeApplicationWithDocumentsAndCreateFarmWithDevices = async (
     )
   );
 
-  // const encryptionKeysTxtPromises = applicationEncryptedDocuments.map((doc) =>
-  //   createAndUploadJsonFile(
-  //     process.env.R2_NOT_ENCRYPTED_FILES_BUCKET_NAME!!,
-  //     `${applicationId}/${doc.name}_encryption_keys.json`,
-  //     doc.encryptedMasterKeys
-  //   )
-  // );
   let defermentsTxtPromises: Promise<string> | undefined;
   if (applicationDeferments.length) {
     defermentsTxtPromises = createAndUploadJsonFile(
@@ -126,11 +112,7 @@ export const completeApplicationWithDocumentsAndCreateFarmWithDevices = async (
     )
   );
 
-  const uploadsArr = [
-    ...annotationsTxtPromises,
-    // ...encryptionKeysTxtPromises,
-    ...extraThoughtsTxtPromises,
-  ];
+  const uploadsArr = [...annotationsTxtPromises, ...extraThoughtsTxtPromises];
 
   if (defermentsTxtPromises) {
     uploadsArr.push(defermentsTxtPromises);
@@ -162,9 +144,6 @@ export const completeApplicationWithDocumentsAndCreateFarmWithDevices = async (
     })),
   ];
 
-  // get region from lat and lng and store in newly created farm
-  const region = await getRegionFromLatAndLng(lat, lng);
-
   return db.transaction(async (tx) => {
     if (documents.length) {
       const documentsInsert = await tx
@@ -177,58 +156,10 @@ export const completeApplicationWithDocumentsAndCreateFarmWithDevices = async (
       }
     }
 
-    const farmInsert = await tx
-      .insert(farms)
-      .values({
-        gcaId: gcaId,
-        userId: userId,
-        createdAt: new Date(),
-        auditCompleteDate: new Date(),
-        protocolFee,
-        protocolFeePaymentHash,
-        protocolFeeAdditionalPaymentTxHash,
-        region: region.region,
-        regionFullName: region.regionFullName,
-        signalType: region.signalType,
-        name: farmName,
-      })
-      .returning({ farmId: applications.farmId });
-
-    if (!farmInsert[0].farmId || farmInsert[0].farmId === null) {
-      tx.rollback();
-    }
-
-    const devicesInsert = await tx
-      .insert(Devices)
-      .values(
-        devices.map((device) => ({
-          ...device,
-          farmId: farmInsert[0].farmId!!,
-        }))
-      )
-      .returning({ id: Devices.id });
-
-    if (devicesInsert.length !== devices.length) {
-      tx.rollback();
-    }
-
-    const rewardSplitsUpdate = await tx
-      .update(RewardSplits)
-      .set({ farmId: farmInsert[0].farmId })
-      .where(eq(RewardSplits.applicationId, applicationId))
-      .returning({ farmId: RewardSplits.farmId });
-
-    if (
-      !rewardSplitsUpdate.every(({ farmId }) => farmId === farmInsert[0].farmId)
-    ) {
-      tx.rollback();
-    }
-
-    const applicationUpdateStatus = await tx
+    await tx
       .update(applications)
       .set({
-        status: ApplicationStatusEnum.completed,
-        farmId: farmInsert[0].farmId,
+        status: ApplicationStatusEnum.waitingForPayment,
       })
       .where(and(eq(applications.id, applicationId)))
       .returning({ status: applications.status });
@@ -237,32 +168,17 @@ export const completeApplicationWithDocumentsAndCreateFarmWithDevices = async (
       .update(applicationsAuditFieldsCRS)
       .set({
         ...applicationAuditFields,
+        devices: devices,
       })
       .where(eq(applicationsAuditFieldsCRS.applicationId, applicationId));
 
-    if (
-      !applicationUpdateStatus.every(
-        ({ status }) => status === ApplicationStatusEnum.completed
-      )
-    ) {
-      tx.rollback();
-    }
-
-    const approval = await tx
-      .insert(ApplicationStepApprovals)
-      .values({
-        applicationId: applicationId,
-        gcaAddress: gcaId,
-        step: ApplicationSteps.payment,
-        approvedAt: new Date(),
-        signature,
-        annotation: stepAnnotation,
-      })
-      .returning({ id: ApplicationStepApprovals.id });
-
-    if (!approval[0].id) {
-      tx.rollback();
-    }
-    return farmInsert[0].farmId;
+    await tx.insert(ApplicationStepApprovals).values({
+      applicationId: applicationId,
+      gcaAddress: gcaId,
+      step: ApplicationSteps.payment,
+      approvedAt: new Date(),
+      signature,
+      annotation: stepAnnotation,
+    });
   });
 };

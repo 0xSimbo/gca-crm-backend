@@ -1,8 +1,8 @@
 import { ethers } from "ethers";
 import {
   ApplicationAuditFieldsType,
-  completeApplicationWithDocumentsAndCreateFarmWithDevices,
-} from "../../../db/mutations/applications/completeApplicationWithDocumentsAndCreateFarm";
+  completeApplicationAudit,
+} from "../../../db/mutations/applications/completeApplicationAudit";
 import { ApplicationType, DocumentsInsertType } from "../../../db/schema";
 import {
   ApplicationSteps,
@@ -191,9 +191,6 @@ export const handleCreateWithoutPIIDocumentsAndCompleteApplication = async (
     );
   }
 
-  if (!application.paymentTxHash) {
-    throw new Error("Payment transaction hash is missing");
-  }
   const formatKey = (key: string) =>
     key
       .replace(/\(\d+\)/, "")
@@ -254,20 +251,13 @@ export const handleCreateWithoutPIIDocumentsAndCompleteApplication = async (
     throw new Error("Failed to get a unique farm name");
   }
 
-  return await completeApplicationWithDocumentsAndCreateFarmWithDevices(
+  return await completeApplicationAudit(
     application.id,
     gcaId,
-    application.userId,
     signature,
     documents,
     args.devices,
-    BigInt(ethers.utils.parseUnits(application.finalProtocolFee, 6).toString()),
-    application.paymentTxHash,
-    application.additionalPaymentTxHash,
     stepAnnotation,
-    args.applicationAuditFields,
-    application.enquiryFields.lat,
-    application.enquiryFields.lng,
-    farmName
+    args.applicationAuditFields
   );
 };
