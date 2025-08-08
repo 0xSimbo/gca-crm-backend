@@ -14,6 +14,7 @@ export const applicationStatus = [
   "waiting-for-visit",
   "waiting-for-payment",
   "payment-confirmed",
+  "audit-in-progress",
 ] as const;
 
 export enum ApplicationStatusEnum {
@@ -24,6 +25,7 @@ export enum ApplicationStatusEnum {
   completed = "completed",
   quoteRejected = "quote-rejected",
   waitingForInformation = "waiting-for-information",
+  auditInProgress = "audit-in-progress",
   waitingForVisit = "waiting-for-visit",
   waitingForPayment = "waiting-for-payment",
   paymentConfirmed = "payment-confirmed",

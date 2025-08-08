@@ -56,6 +56,7 @@ import {
   applications,
   applicationsEnquiryFieldsCRS,
   RewardSplits,
+  ApplicationsEncryptedMasterKeys,
 } from "../../db/schema";
 
 import { convertKWhToMWh } from "../../utils/format/convertKWhToMWh";
@@ -425,9 +426,9 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
       },
     }
   )
-  .post(
+  .get(
     "/dev-create-application",
-    async ({ body, headers, set }) => {
+    async ({ headers, set }) => {
       try {
         // Only accessible in non-production environments
         if (process.env.NODE_ENV === "production") {
@@ -458,11 +459,11 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
           await tx.insert(applications).values({
             id: applicationDraft.id,
             userId: "0x5252FdA14A149c01EA5A1D6514a9c1369E4C70b4",
-            zoneId: body.zoneId,
+            zoneId: 1,
             createdAt: new Date(),
-            currentStep: ApplicationSteps.payment,
+            currentStep: ApplicationSteps.inspectionAndPtoDocuments,
             roundRobinStatus: RoundRobinStatusEnum.assigned,
-            status: ApplicationStatusEnum.waitingForPayment,
+            status: ApplicationStatusEnum.draft,
             isCancelled: false,
             isDocumentsCorrupted: true,
             gcaAcceptanceSignature: null,
@@ -480,6 +481,13 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
             afterInstallVisitDateConfirmedTimestamp: new Date(),
             finalProtocolFee: BigInt(12668490000),
             revisedEstimatedProtocolFees: "12668",
+          });
+
+          await tx.insert(ApplicationsEncryptedMasterKeys).values({
+            applicationId: applicationDraft.id,
+            userId: "0x5252FdA14A149c01EA5A1D6514a9c1369E4C70b4",
+            encryptedMasterKey:
+              "Il7u5piKaYbRYY6HGNxzabsb25Bb/hcTZwoprPv6cWqlsXfXeXeJ4FQrPmca2n6imFkfXGkmETSjtYJ3i2LurLA9tpYACOfzCqDubFe7sBKeYBQm4gf3kTS3zn6UIsFglpUAtYLewhBicYkTKq2wkfmDJqxc4hn4VASo3cTNnKCq43ecPWLTPqXn6LHfIy3l3yPaPeW/bx/Y0Y9eA+aZAR19EqfmGL57MJE+jvEdh7VPo7Z6kAG0WdYn4eGyzLbcsl/j8kQYxHpONs9SDLjXrUY0ILN9ul0LSDuOzwJYWn8k6JaKH+mdoFTdYybJ7OzzsdmxD11Sxu2b8gwRFVJntg==",
           });
 
           await tx.insert(applicationsEnquiryFieldsCRS).values({
@@ -500,12 +508,12 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
             installerPhone: "0000000000",
           });
 
-          await tx.insert(RewardSplits).values({
-            applicationId: applicationDraft.id,
-            walletAddress: "0x5252FdA14A149c01EA5A1D6514a9c1369E4C70b4",
-            usdgSplitPercent: "1",
-            glowSplitPercent: "1",
-          });
+          // await tx.insert(RewardSplits).values({
+          //   applicationId: applicationDraft.id,
+          //   walletAddress: "0x5252FdA14A149c01EA5A1D6514a9c1369E4C70b4",
+          //   usdgSplitPercent: "1",
+          //   glowSplitPercent: "1",
+          // });
 
           await tx.insert(weeklyProduction).values({
             applicationId: applicationDraft.id,
@@ -545,9 +553,6 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
       }
     },
     {
-      body: t.Object({
-        zoneId: t.Numeric(),
-      }),
       detail: {
         summary: "Dev-only: Create application at waiting-for-payment step",
         description: `Create a new application pre-populated with sentinel values and immediately set to waiting-for-payment. Accessible only when NODE_ENV is not production and with a valid x-api-key.`,
@@ -2686,7 +2691,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                 body.stepIndex,
                 body.signature,
                 {
-                  status: ApplicationStatusEnum.approved,
+                  status: ApplicationStatusEnum.auditInProgress,
                   afterInstallVisitDateConfirmedTimestamp: new Date(),
                   finalProtocolFee: ethers.utils
                     .parseUnits(body.finalProtocolFee!!, 6)
@@ -3312,13 +3317,6 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
             if (application.userId !== userId) {
               set.status = 400;
               return "User is not the owner of the application";
-            }
-
-            if (
-              application.status !== ApplicationStatusEnum.waitingForPayment
-            ) {
-              set.status = 400;
-              return "Application must be in waiting-for-payment status";
             }
 
             if (application.isPublishedOnAuction) {

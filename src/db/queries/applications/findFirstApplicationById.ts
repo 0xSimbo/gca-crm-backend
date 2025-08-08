@@ -44,8 +44,13 @@ export const FindFirstApplicationById = async (id: string) => {
     return null;
   }
 
-  const { enquiryFieldsCRS, auditFieldsCRS, zone, ...application } =
-    applicationDb;
+  const {
+    enquiryFieldsCRS,
+    auditFieldsCRS,
+    zone,
+    rewardSplits,
+    ...application
+  } = applicationDb;
 
   return {
     ...application,
@@ -56,6 +61,7 @@ export const FindFirstApplicationById = async (id: string) => {
     enquiryFields: enquiryFieldsCRS,
     auditFields: auditFieldsCRS,
     zone: zone,
+    rewardSplits: rewardSplits,
   };
 };
 
