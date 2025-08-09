@@ -288,28 +288,21 @@ export const publicApplicationsRoutes = new Elysia()
         // prices are stored with 6-decimal precision; finalProtocolFee is 6 decimals (USDC)
         // Normalize to token base units:
         // expected = finalFee(1e6) * tokensPerUsdc(1e6) * 10^(tokenDecimals - 12)
+        const finalFee = BigInt(application.finalProtocolFee);
+        const tokensPerUsdcBig = BigInt(tokensPerUsdc);
+        const product = finalFee * tokensPerUsdcBig; // 1e12 scale
+        const shift = tokenDecimals - 12; // bring from 1e12 to token base units
         const expectedAmountRaw =
-          BigInt(application.finalProtocolFee) / BigInt(tokensPerUsdc);
+          shift >= 0
+            ? product * BigInt(10 ** shift)
+            : product / BigInt(10 ** -shift);
 
-        const expectedAmountRawToScale =
-          expectedAmountRaw * BigInt(10 ** (tokenDecimals - 12));
-
-        console.log(
-          "expectedAmountRawToScale",
-          expectedAmountRawToScale.toString()
-        );
+        console.log("expectedAmountRaw", expectedAmountRaw.toString());
         console.log("forwarderData.amount", forwarderData.amount);
-        console.log("expectedAmountRaw", expectedAmountRaw);
-        console.log("tokenDecimals", tokenDecimals);
-        console.log("tokensPerUsdc", tokensPerUsdc);
-        console.log(
-          "application.finalProtocolFee",
-          application.finalProtocolFee
-        );
 
-        if (expectedAmountRawToScale !== BigInt(forwarderData.amount)) {
+        if (expectedAmountRaw !== BigInt(forwarderData.amount)) {
           set.status = 400;
-          return `Invalid Amount: expected ${expectedAmountRawToScale}, got ${forwarderData.amount}`;
+          return `Invalid Amount: expected ${expectedAmountRaw}, got ${forwarderData.amount}`;
         }
 
         if (!application.zoneId) {
