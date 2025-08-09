@@ -300,6 +300,12 @@ export const publicApplicationsRoutes = new Elysia()
         );
         console.log("forwarderData.amount", forwarderData.amount);
         console.log("expectedAmountRaw", expectedAmountRaw);
+        console.log("tokenDecimals", tokenDecimals);
+        console.log("tokensPerUsdc", tokensPerUsdc);
+        console.log(
+          "application.finalProtocolFee",
+          application.finalProtocolFee
+        );
 
         if (expectedAmountRawToScale !== BigInt(forwarderData.amount)) {
           set.status = 400;
