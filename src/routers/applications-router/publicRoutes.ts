@@ -274,28 +274,30 @@ export const publicApplicationsRoutes = new Elysia()
 
         const prices = latestQuote.prices;
 
-        const tokensPerUsdc = prices[currency];
+        const pricePerTokenScaled6 = prices[currency];
 
         if (
-          tokensPerUsdc === undefined ||
-          tokensPerUsdc === "" ||
-          BigInt(tokensPerUsdc) === BigInt(0)
+          pricePerTokenScaled6 === undefined ||
+          pricePerTokenScaled6 === "" ||
+          BigInt(pricePerTokenScaled6) === BigInt(0)
         ) {
           set.status = 400;
-          return `Invalid tokens per USDC: ${tokensPerUsdc}`;
+          return `Invalid price per token (scaled 1e6): ${pricePerTokenScaled6}`;
         }
 
-        // prices are stored with 6-decimal precision; finalProtocolFee is 6 decimals (USDC)
-        // Normalize to token base units:
-        // expected = finalFee(1e6) * tokensPerUsdc(1e6) * 10^(tokenDecimals - 12)
+        // prices are stored as USDC-per-token with 6 decimals
+        // finalProtocolFee is 6 decimals (USDC)
+        // Normalize to token base units (10^tokenDecimals):
+        // expected = (finalFee(1e6) * 10^tokenDecimals) / pricePerToken(1e6)
+        function pow10BigInt(n: number): bigint {
+          let result = BigInt(1);
+          for (let i = 0; i < n; i++) result *= BigInt(10);
+          return result;
+        }
         const finalFee = BigInt(application.finalProtocolFee);
-        const tokensPerUsdcBig = BigInt(tokensPerUsdc);
-        const product = finalFee * tokensPerUsdcBig; // 1e12 scale
-        const shift = tokenDecimals - 12; // bring from 1e12 to token base units
+        const pricePerToken = BigInt(pricePerTokenScaled6);
         const expectedAmountRaw =
-          shift >= 0
-            ? product * BigInt(10 ** shift)
-            : product / BigInt(10 ** -shift);
+          (finalFee * pow10BigInt(tokenDecimals)) / pricePerToken;
 
         console.log("expectedAmountRaw", expectedAmountRaw.toString());
         console.log("forwarderData.amount", forwarderData.amount);
