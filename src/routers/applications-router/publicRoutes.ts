@@ -245,10 +245,7 @@ export const publicApplicationsRoutes = new Elysia()
           return `Unsupported payment currency: ${currency}`;
         }
 
-        const decimalsDiff = DECIMALS_BY_CURRENCY[currency] - 6; // 6 = USDC decimals
-
-        const scalingFactor =
-          decimalsDiff > 0 ? BigInt(Math.pow(10, decimalsDiff)) : BigInt(1);
+        const tokenDecimals = DECIMALS_BY_CURRENCY[currency];
 
         const quotes = await db
           .select()
@@ -288,12 +285,16 @@ export const publicApplicationsRoutes = new Elysia()
           return `Invalid tokens per USDC: ${tokensPerUsdc}`;
         }
 
+        // prices are stored with 6-decimal precision; finalProtocolFee is 6 decimals (USDC)
+        // Normalize to token base units:
+        // expected = finalFee(1e6) * tokensPerUsdc(1e6) * 10^(tokenDecimals - 12)
+        const product =
+          BigInt(application.finalProtocolFee) * BigInt(tokensPerUsdc);
+        const shift = tokenDecimals - 12; // both inputs are 6 decimals each
         const expectedAmountRaw =
-          BigInt(application.finalProtocolFee) *
-          BigInt(tokensPerUsdc) *
-          scalingFactor;
-
-        console.log("expectedAmountRaw", expectedAmountRaw.toString());
+          shift >= 0
+            ? product * BigInt(10 ** shift)
+            : product / BigInt(10 ** -shift);
 
         if (expectedAmountRaw !== BigInt(forwarderData.amount)) {
           set.status = 400;
