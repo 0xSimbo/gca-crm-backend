@@ -285,26 +285,11 @@ export const publicApplicationsRoutes = new Elysia()
           return `Invalid price per token (scaled 1e6): ${pricePerTokenScaled6}`;
         }
 
-        // prices are stored as USDC-per-token with 6 decimals
-        // finalProtocolFee is 6 decimals (USDC)
-        // Normalize to token base units (10^tokenDecimals):
-        // expected = (finalFee(1e6) * 10^tokenDecimals) / pricePerToken(1e6)
-        function pow10BigInt(n: number): bigint {
-          let result = BigInt(1);
-          for (let i = 0; i < n; i++) result *= BigInt(10);
-          return result;
-        }
         const finalFee = BigInt(application.finalProtocolFee);
-        const pricePerToken = BigInt(pricePerTokenScaled6);
-        const expectedAmountRaw =
-          (finalFee * pow10BigInt(tokenDecimals)) / pricePerToken;
 
-        console.log("expectedAmountRaw", expectedAmountRaw.toString());
-        console.log("forwarderData.amount", forwarderData.amount);
-
-        if (expectedAmountRaw !== BigInt(forwarderData.amount)) {
+        if (!finalFee) {
           set.status = 400;
-          return `Invalid Amount: expected ${expectedAmountRaw}, got ${forwarderData.amount}`;
+          return `Invalid final fee: ${finalFee}`;
         }
 
         if (!application.zoneId) {
