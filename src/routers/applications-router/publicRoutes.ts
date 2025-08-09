@@ -250,28 +250,35 @@ export const publicApplicationsRoutes = new Elysia()
         const scalingFactor =
           decimalsDiff > 0 ? BigInt(Math.pow(10, decimalsDiff)) : BigInt(1);
 
-        let tokensPerUsdc = "1000000";
-        if (currency !== "USDC" && currency !== "USDG") {
-          const quotes = await db
-            .select()
-            .from(ApplicationPriceQuotes)
-            .where(eq(ApplicationPriceQuotes.applicationId, applicationId));
+        const quotes = await db
+          .select()
+          .from(ApplicationPriceQuotes)
+          .where(eq(ApplicationPriceQuotes.applicationId, applicationId));
 
-          if (quotes.length === 0) {
-            set.status = 400;
-            return `No price quotes found for application: ${applicationId}`;
-          }
-
-          const latestQuote = quotes.sort((a, b) => {
-            return (
-              new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-            );
-          })[0];
-
-          const prices = latestQuote.prices;
-
-          tokensPerUsdc = prices[currency];
+        if (quotes.length === 0) {
+          set.status = 400;
+          return `No price quotes found for application: ${applicationId}`;
         }
+
+        const latestQuote = quotes.sort((a, b) => {
+          return (
+            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+          );
+        })[0];
+
+        // Reject stale quotes (>= 16 weeks old)
+        const sixteenWeeksInMs = 16 * 7 * 24 * 60 * 60 * 1000;
+        const quoteAgeMs =
+          Date.now() - new Date(latestQuote.createdAt).getTime();
+        if (quoteAgeMs >= sixteenWeeksInMs) {
+          set.status = 400;
+          return "Latest price quote is stale (>= 16 weeks) and must be requoted by the GVE";
+        }
+
+        const prices = latestQuote.prices;
+
+        const tokensPerUsdc = prices[currency];
+
         if (
           tokensPerUsdc === undefined ||
           tokensPerUsdc === "" ||
