@@ -12,10 +12,7 @@ import {
   ApplicationSteps,
   RoundRobinStatusEnum,
 } from "../../types/api-types/Application";
-import {
-  DECIMALS_BY_CURRENCY,
-  getTokensPerUsdcByCurrency,
-} from "../../constants/addresses";
+import { DECIMALS_BY_CURRENCY } from "../../constants/addresses";
 import { updateApplication } from "../../db/mutations/applications/updateApplication";
 import { createGlowEventEmitter, eventTypes } from "@glowlabs-org/events-sdk";
 import { findUsedTxHash } from "../../db/queries/applications/findUsedTxHash";
@@ -162,6 +159,7 @@ export const publicApplicationsRoutes = new Elysia()
           zone,
           user,
           gca,
+          applicationPriceQuotes,
         } = application;
         return {
           finalProtocolFee,
@@ -172,6 +170,7 @@ export const publicApplicationsRoutes = new Elysia()
           zone,
           walletAddress: user.id,
           gcaAddress: gca?.id,
+          applicationPriceQuotes,
         };
       } catch (e) {
         if (e instanceof Error) {
@@ -251,22 +250,43 @@ export const publicApplicationsRoutes = new Elysia()
         const scalingFactor =
           decimalsDiff > 0 ? BigInt(Math.pow(10, decimalsDiff)) : BigInt(1);
 
-        const tokensPerUsdc = await getTokensPerUsdcByCurrency(currency);
+        let tokensPerUsdc = "1000000";
+        if (currency !== "USDC" && currency !== "USDG") {
+          const quotes = await db
+            .select()
+            .from(ApplicationPriceQuotes)
+            .where(eq(ApplicationPriceQuotes.applicationId, applicationId));
 
-        if (tokensPerUsdc === undefined) {
-          set.status = 400;
-          return `Unsupported payment currency: ${currency}`;
+          if (quotes.length === 0) {
+            set.status = 400;
+            return `No price quotes found for application: ${applicationId}`;
+          }
+
+          const latestQuote = quotes.sort((a, b) => {
+            return (
+              new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+            );
+          })[0];
+
+          const prices = latestQuote.prices;
+
+          tokensPerUsdc = prices[currency];
         }
-
-        if (tokensPerUsdc === 0) {
+        if (
+          tokensPerUsdc === undefined ||
+          tokensPerUsdc === "" ||
+          BigInt(tokensPerUsdc) === BigInt(0)
+        ) {
           set.status = 400;
           return `Invalid tokens per USDC: ${tokensPerUsdc}`;
         }
 
         const expectedAmountRaw =
           BigInt(application.finalProtocolFee) *
-          BigInt(Math.round(tokensPerUsdc)) *
+          BigInt(tokensPerUsdc) *
           scalingFactor;
+
+        console.log("expectedAmountRaw", expectedAmountRaw.toString());
 
         if (expectedAmountRaw !== BigInt(forwarderData.amount)) {
           set.status = 400;
@@ -284,7 +304,6 @@ export const publicApplicationsRoutes = new Elysia()
           paymentDate: forwarderData.paymentDate,
           paymentCurrency: forwarderData.paymentCurrency,
           paymentEventType: forwarderData.eventType,
-          isPublishedOnAuction: false,
         });
         if (process.env.NODE_ENV === "production") {
           const emitter = createGlowEventEmitter({

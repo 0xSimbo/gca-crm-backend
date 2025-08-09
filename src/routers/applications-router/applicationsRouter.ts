@@ -1103,9 +1103,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
       )
       .post(
         "/next-step",
-        async (ctx) => {
-          const { query, set } = ctx as any;
-          const userId = (ctx as any).userId as string;
+        async ({ query, set, userId }) => {
           try {
             const application = await FindFirstApplicationById(
               query.applicationId
@@ -1148,9 +1146,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
       )
       .post(
         "/reject-final-quote-per-watt",
-        async (ctx) => {
-          const { query, set } = ctx as any;
-          const userId = (ctx as any).userId as string;
+        async ({ query, set, userId }) => {
           try {
             const application = await FindFirstApplicationById(
               query.applicationId
@@ -1200,9 +1196,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
       )
       .post(
         "/gca-resume-quote-rejected",
-        async (ctx) => {
-          const { query, set } = ctx as any;
-          const userId = (ctx as any).userId as string;
+        async ({ query, set, userId }) => {
           try {
             const application = await FindFirstApplicationById(
               query.applicationId
@@ -1261,9 +1255,8 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
       )
       .post(
         "/gca-complete-audit",
-        async (ctx) => {
-          const { body, set } = ctx as any;
-          const gcaId = (ctx as any).userId as string;
+        async ({ body, set, userId }) => {
+          const gcaId = userId;
           try {
             const account = await findFirstAccountById(gcaId);
             if (!account) {
@@ -1485,516 +1478,535 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
           },
         }
       )
-  )
-  .post(
-    "/gca-pre-install-visit",
-    async (ctx) => {
-      const { body, set } = ctx as any;
-      const gcaId = (ctx as any).userId as string;
-      try {
-        const account = await findFirstAccountById(gcaId);
-        if (!account) {
-          return { errorCode: 404, errorMessage: "Account not found" };
-        }
-        const application = await FindFirstApplicationById(body.applicationId);
-
-        if (!application) {
-          set.status = 404;
-          return "Application not found";
-        }
-
-        if (application.currentStep !== ApplicationSteps.permitDocumentation) {
-          set.status = 400;
-          return "Application is not in the correct step";
-        }
-
-        if (application.status !== ApplicationStatusEnum.waitingForApproval) {
-          set.status = 400;
-          return "Application is not in the correct status";
-        }
-
-        if (application.gcaAddress !== account.id) {
-          set.status = 400;
-          return "You are not assigned to this application";
-        }
-
-        const preInstallVisitDate = new Date(body.preInstallVisitDate);
-
-        if (isNaN(preInstallVisitDate.getTime())) {
-          set.status = 400;
-          return "Invalid date format";
-        }
-
-        if (!application.estimatedInstallDate) {
-          set.status = 400;
-          return "Estimated Install Date is not set";
-        }
-
-        const today = new Date(
-          new Date().getFullYear(),
-          new Date().getMonth(),
-          new Date().getDate()
-        );
-        const tomorrowTime = new Date(today.getTime() + 86400000).getTime();
-
-        //TODO: Uncomment this after finishing migrating old farms
-        // if (
-        //   preInstallVisitDate.getTime() <= tomorrowTime ||
-        //   preInstallVisitDate.getTime() >=
-        //     application.estimatedInstallDate.getTime()
-        // ) {
-        //   set.status = 400;
-        //   return "Invalid date";
-        // }
-
-        await updateApplicationPreInstallVisitDate(
-          body.applicationId,
-          preInstallVisitDate
-        );
-      } catch (e) {
-        if (e instanceof Error) {
-          set.status = 400;
-          return e.message;
-        }
-        console.log("[applicationsRouter] gca-pre-install-visit", e);
-        throw new Error("Error Occured");
-      }
-    },
-    {
-      body: t.Object({
-        applicationId: t.String(),
-        preInstallVisitDate: t.Date(),
-      }),
-
-      detail: {
-        summary: "GCA Pre Install Visit",
-        description: `Set the pre install visit dates`,
-        tags: [TAG.APPLICATIONS],
-      },
-    }
-  )
-  .post(
-    "/gca-after-install-visit",
-    async (ctx) => {
-      const { body, set } = ctx as any;
-      const gcaId = (ctx as any).userId as string;
-      try {
-        const account = await findFirstAccountById(gcaId);
-        if (!account) {
-          return { errorCode: 404, errorMessage: "Account not found" };
-        }
-        const application = await FindFirstApplicationById(body.applicationId);
-
-        if (!application) {
-          set.status = 404;
-          return "Application not found";
-        }
-
-        if (
-          application.currentStep !== ApplicationSteps.inspectionAndPtoDocuments
-        ) {
-          set.status = 400;
-          return "Application is not in the correct step";
-        }
-
-        if (application.status !== ApplicationStatusEnum.waitingForApproval) {
-          set.status = 400;
-          return "Application is not in the correct status";
-        }
-
-        if (application.gcaAddress !== account.id) {
-          set.status = 400;
-          return "You are not assigned to this application";
-        }
-
-        const afterInstallVisitDate = new Date(body.afterInstallVisitDate);
-
-        if (isNaN(afterInstallVisitDate.getTime())) {
-          set.status = 400;
-          return "Invalid date format";
-        }
-
-        if (!application.installFinishedDate) {
-          set.status = 400;
-          return "Install Finished Date is not set";
-        }
-
-        // Calculate the day after the install finished date
-        const dayAfterInstallFinishedDate = new Date(
-          application.installFinishedDate.getTime()
-        );
-
-        if (
-          afterInstallVisitDate.getTime() <
-          dayAfterInstallFinishedDate.getTime()
-        ) {
-          set.status = 400;
-          return "Invalid date";
-        }
-
-        await updateApplicationAfterInstallVisitDate(
-          body.applicationId,
-          new Date(body.afterInstallVisitDate)
-        );
-      } catch (e) {
-        if (e instanceof Error) {
-          set.status = 400;
-          return e.message;
-        }
-        console.log("[applicationsRouter] gca-pre-install-visit", e);
-        throw new Error("Error Occured");
-      }
-    },
-    {
-      body: t.Object({
-        applicationId: t.String(),
-        afterInstallVisitDate: t.Date(),
-      }),
-
-      detail: {
-        summary: "GCA After Install Visit",
-        description: `Set the after install visit dates. If confirmed is true, it will set the confirmed timestamp`,
-        tags: [TAG.APPLICATIONS],
-      },
-    }
-  )
-  .post(
-    "/create-application-encrypted-master-keys",
-    async (ctx) => {
-      const { body, set } = ctx as any;
-      const gcaId = (ctx as any).userId as string;
-      const account = await findFirstAccountById(gcaId);
-      if (!account) {
-        return { errorCode: 404, errorMessage: "Account not found" };
-      }
-      try {
-        const application = await FindFirstApplicationById(body.applicationId);
-
-        if (!application) {
-          set.status = 404;
-          return "Application not found";
-        }
-
-        await createApplicationEncryptedMasterKeysForUsers(
-          body.applicationEncryptedMasterKeys.map(
-            (key: {
-              publicKey?: string;
-              userId: string;
-              encryptedMasterKey: string;
-            }) => ({
-              ...key,
-              applicationId: body.applicationId,
-            })
-          )
-        );
-        await updateApplication(body.applicationId, {
-          isDocumentsCorrupted: body.isDocumentsCorrupted,
-        });
-      } catch (e) {
-        if (e instanceof Error) {
-          set.status = 400;
-          return e.message;
-        }
-        console.log(
-          "[applicationsRouter] create-application-encrypted-master-keys",
-          e
-        );
-        throw new Error("Error Occured");
-      }
-    },
-    {
-      body: t.Object({
-        applicationId: t.String(),
-        isDocumentsCorrupted: t.Boolean(),
-        applicationEncryptedMasterKeys: t.Array(
-          t.Object({
-            publicKey: t.Optional(t.String()),
-            userId: t.String(),
-            encryptedMasterKey: t.String(),
-          })
-        ),
-      }),
-      detail: {
-        summary: "Create Application Encrypted Master Keys",
-        description: `Create Application Encrypted Master Keys. If the user is not a GCA, it will throw an error.`,
-        tags: [TAG.APPLICATIONS],
-      },
-    }
-  )
-  .post(
-    "/patch-declaration-of-intention",
-    async (ctx) => {
-      const { body, set } = ctx as any;
-      const userId = (ctx as any).userId as string;
-      try {
-        const application = await FindFirstApplicationById(body.applicationId);
-
-        if (!application) {
-          set.status = 404;
-          return "Application not found";
-        }
-
-        if (application.userId !== userId) {
-          set.status = 403;
-          return "Unauthorized";
-        }
-
-        if (application.declarationOfIntentionSignature) {
-          set.status = 400;
-          return "Declaration of intention already exists for this application";
-        }
-
-        await patchDeclarationOfIntention(
-          application.id,
-          body.declarationOfIntention,
-          body.declarationOfIntentionSignature,
-          body.declarationOfIntentionFieldsValue,
-          body.declarationOfIntentionVersion
-        );
-
-        return { success: true };
-      } catch (e) {
-        if (e instanceof Error) {
-          set.status = 400;
-          return e.message;
-        }
-        console.log("[applicationsRouter] patch-declaration-of-intention", e);
-        throw new Error("Error Occurred");
-      }
-    },
-    {
-      body: DeclarationOfIntentionMissingQueryBody,
-      detail: {
-        summary: "Patch missing declaration of intention",
-        description:
-          "Add declaration of intention to an application where it's missing",
-        tags: [TAG.APPLICATIONS],
-      },
-    }
-  )
-  .post(
-    "/patch-production-and-carbon-debt",
-    async (ctx) => {
-      const { body, set } = ctx as any;
-      const gcaId = (ctx as any).userId as string;
-      try {
-        const account = await findFirstAccountById(gcaId);
-        if (!account) {
-          return { errorCode: 404, errorMessage: "Account not found" };
-        }
-
-        if (account.role !== "GCA") {
-          return {
-            errorCode: 403,
-            errorMessage: "Unauthorized",
-          };
-        }
-
-        // Validate application exists
-        const application = await FindFirstApplicationById(body.applicationId);
-        if (!application) {
-          set.status = 404;
-          return { error: "Application not found" };
-        }
-
-        if (application.status === ApplicationStatusEnum.completed) {
-          return {
-            errorCode: 400,
-            errorMessage: "Application is already completed",
-          };
-        }
-
-        if (application.gcaAddress !== account.id) {
-          return {
-            errorCode: 403,
-            errorMessage:
-              "Unauthorized, you are not assigned to this application",
-          };
-        }
-
-        const netCarbonCreditEarningWeekly = (
-          Number(application.auditFields?.adjustedWeeklyCarbonCredits) -
-          Number(application.auditFields?.weeklyTotalCarbonDebt)
-        ).toString();
-
-        await db.transaction(async (tx) => {
-          await tx
-            .insert(weeklyProduction)
-            .values({
-              applicationId: body.applicationId,
-              createdAt: new Date(),
-              powerOutputMWH: body.weeklyProduction.powerOutputMWH.toString(),
-              hoursOfSunlightPerDay:
-                body.weeklyProduction.hoursOfSunlightPerDay.toString(),
-              carbonOffsetsPerMWH:
-                body.weeklyProduction.carbonOffsetsPerMWH.toString(),
-              adjustmentDueToUncertainty:
-                body.weeklyProduction.adjustmentDueToUncertainty.toString(),
-              weeklyPowerProductionMWh:
-                body.weeklyProduction.weeklyPowerProductionMWh.toString(),
-              weeklyCarbonCredits:
-                body.weeklyProduction.weeklyCarbonCredits.toString(),
-              adjustedWeeklyCarbonCredits:
-                body.weeklyProduction.adjustedWeeklyCarbonCredits.toString(),
-            } as any)
-            .onConflictDoUpdate({
-              target: [weeklyProduction.applicationId],
-              set: {
-                createdAt: new Date(),
-                powerOutputMWH: body.weeklyProduction.powerOutputMWH.toString(),
-                hoursOfSunlightPerDay:
-                  body.weeklyProduction.hoursOfSunlightPerDay.toString(),
-                carbonOffsetsPerMWH:
-                  body.weeklyProduction.carbonOffsetsPerMWH.toString(),
-                adjustmentDueToUncertainty:
-                  body.weeklyProduction.adjustmentDueToUncertainty.toString(),
-                weeklyPowerProductionMWh:
-                  body.weeklyProduction.weeklyPowerProductionMWh.toString(),
-                weeklyCarbonCredits:
-                  body.weeklyProduction.weeklyCarbonCredits.toString(),
-                adjustedWeeklyCarbonCredits:
-                  body.weeklyProduction.adjustedWeeklyCarbonCredits.toString(),
-              },
-            });
-
-          // Insert into weeklyCarbonDebt
-          await tx
-            .insert(weeklyCarbonDebt)
-            .values({
-              applicationId: body.applicationId,
-              createdAt: new Date(),
-              totalCarbonDebtAdjustedKWh:
-                body.weeklyCarbonDebt.totalCarbonDebtAdjustedKWh.toString(),
-              convertToKW: body.weeklyCarbonDebt.convertToKW.toString(),
-              totalCarbonDebtProduced:
-                body.weeklyCarbonDebt.totalCarbonDebtProduced.toString(),
-              disasterRisk: body.weeklyCarbonDebt.disasterRisk.toString(),
-              commitmentPeriod:
-                body.weeklyCarbonDebt.commitmentPeriod.toString(),
-              adjustedTotalCarbonDebt:
-                body.weeklyCarbonDebt.adjustedTotalCarbonDebt.toString(),
-              weeklyTotalCarbonDebt:
-                body.weeklyCarbonDebt.weeklyTotalCarbonDebt.toString(),
-            } as any)
-            .onConflictDoUpdate({
-              target: [weeklyCarbonDebt.applicationId],
-              set: {
-                createdAt: new Date(),
-                totalCarbonDebtAdjustedKWh:
-                  body.weeklyCarbonDebt.totalCarbonDebtAdjustedKWh.toString(),
-                convertToKW: body.weeklyCarbonDebt.convertToKW.toString(),
-                totalCarbonDebtProduced:
-                  body.weeklyCarbonDebt.totalCarbonDebtProduced.toString(),
-                disasterRisk: body.weeklyCarbonDebt.disasterRisk.toString(),
-                commitmentPeriod: body.weeklyCarbonDebt.commitmentPeriod,
-                adjustedTotalCarbonDebt:
-                  body.weeklyCarbonDebt.adjustedTotalCarbonDebt.toString(),
-                weeklyTotalCarbonDebt:
-                  body.weeklyCarbonDebt.weeklyTotalCarbonDebt.toString(),
-              },
-            });
-
-          // Update application with the specified fields
-          await updateApplicationCRSFields(
-            body.applicationId,
-            {
-              lat: body.lat.toString(),
-              lng: body.lng.toString(),
-            },
-            {
-              systemWattageOutput: `${body.weeklyCarbonDebt.convertToKW.toString()} kW-DC`,
-              netCarbonCreditEarningWeekly:
-                netCarbonCreditEarningWeekly.toString(),
-              weeklyTotalCarbonDebt:
-                body.weeklyCarbonDebt.weeklyTotalCarbonDebt.toString(),
-              averageSunlightHoursPerDay:
-                body.weeklyProduction.hoursOfSunlightPerDay.toString(),
-              adjustedWeeklyCarbonCredits:
-                body.weeklyProduction.adjustedWeeklyCarbonCredits.toString(),
+      .post(
+        "/gca-pre-install-visit",
+        async ({ body, set, userId }) => {
+          const gcaId = userId;
+          try {
+            const account = await findFirstAccountById(gcaId);
+            if (!account) {
+              return { errorCode: 404, errorMessage: "Account not found" };
             }
-          );
-        });
+            const application = await FindFirstApplicationById(
+              body.applicationId
+            );
 
-        return { success: true };
-      } catch (e) {
-        set.status = 500;
-        return { error: e instanceof Error ? e.message : String(e) };
-      }
-    },
-    {
-      body: t.Object({
-        applicationId: t.String(),
-        weeklyProduction: t.Object(WeeklyProductionSchema),
-        weeklyCarbonDebt: t.Object(WeeklyCarbonDebtSchema),
-        lat: t.Numeric({
-          example: 38.234242,
-          minimum: -90,
-          maximum: 90,
-        }),
-        lng: t.Numeric({
-          example: -111.123412,
-          minimum: -180,
-          maximum: 180,
-        }),
-      }),
-      detail: {
-        summary: "Patch production and carbon debt for an application",
-        description:
-          "Update application with systemWattageOutput, netCarbonCreditEarningWeekly, weeklyTotalCarbonDebt, averageSunlightHoursPerDay, lat, lng and insert weeklyProduction and weeklyCarbonDebt records.",
-        tags: [TAG.APPLICATIONS],
-      },
-    }
-  )
-  .post(
-    "/publish-application-to-auction",
-    async (ctx) => {
-      const { body, set } = ctx as any;
-      const userId = (ctx as any).userId as string;
-      try {
-        const user = await findFirstUserById(userId);
-        if (!user) {
-          set.status = 400;
-          return "Unauthorized";
+            if (!application) {
+              set.status = 404;
+              return "Application not found";
+            }
+
+            if (
+              application.currentStep !== ApplicationSteps.permitDocumentation
+            ) {
+              set.status = 400;
+              return "Application is not in the correct step";
+            }
+
+            if (
+              application.status !== ApplicationStatusEnum.waitingForApproval
+            ) {
+              set.status = 400;
+              return "Application is not in the correct status";
+            }
+
+            if (application.gcaAddress !== account.id) {
+              set.status = 400;
+              return "You are not assigned to this application";
+            }
+
+            const preInstallVisitDate = new Date(body.preInstallVisitDate);
+
+            if (isNaN(preInstallVisitDate.getTime())) {
+              set.status = 400;
+              return "Invalid date format";
+            }
+
+            if (!application.estimatedInstallDate) {
+              set.status = 400;
+              return "Estimated Install Date is not set";
+            }
+
+            const today = new Date(
+              new Date().getFullYear(),
+              new Date().getMonth(),
+              new Date().getDate()
+            );
+            const tomorrowTime = new Date(today.getTime() + 86400000).getTime();
+
+            //TODO: Uncomment this after finishing migrating old farms
+            // if (
+            //   preInstallVisitDate.getTime() <= tomorrowTime ||
+            //   preInstallVisitDate.getTime() >=
+            //     application.estimatedInstallDate.getTime()
+            // ) {
+            //   set.status = 400;
+            //   return "Invalid date";
+            // }
+
+            await updateApplicationPreInstallVisitDate(
+              body.applicationId,
+              preInstallVisitDate
+            );
+          } catch (e) {
+            if (e instanceof Error) {
+              set.status = 400;
+              return e.message;
+            }
+            console.log("[applicationsRouter] gca-pre-install-visit", e);
+            throw new Error("Error Occured");
+          }
+        },
+        {
+          body: t.Object({
+            applicationId: t.String(),
+            preInstallVisitDate: t.Date(),
+          }),
+
+          detail: {
+            summary: "GCA Pre Install Visit",
+            description: `Set the pre install visit dates`,
+            tags: [TAG.APPLICATIONS],
+          },
         }
+      )
+      .post(
+        "/gca-after-install-visit",
+        async ({ body, set, userId }) => {
+          const gcaId = userId;
+          try {
+            const account = await findFirstAccountById(gcaId);
+            if (!account) {
+              return { errorCode: 404, errorMessage: "Account not found" };
+            }
+            const application = await FindFirstApplicationById(
+              body.applicationId
+            );
 
-        const application = await FindFirstApplicationById(body.applicationId);
+            if (!application) {
+              set.status = 404;
+              return "Application not found";
+            }
 
-        if (!application) {
-          set.status = 404;
-          return "Application not found";
+            if (
+              application.currentStep !==
+              ApplicationSteps.inspectionAndPtoDocuments
+            ) {
+              set.status = 400;
+              return "Application is not in the correct step";
+            }
+
+            if (
+              application.status !== ApplicationStatusEnum.waitingForApproval
+            ) {
+              set.status = 400;
+              return "Application is not in the correct status";
+            }
+
+            if (application.gcaAddress !== account.id) {
+              set.status = 400;
+              return "You are not assigned to this application";
+            }
+
+            const afterInstallVisitDate = new Date(body.afterInstallVisitDate);
+
+            if (isNaN(afterInstallVisitDate.getTime())) {
+              set.status = 400;
+              return "Invalid date format";
+            }
+
+            if (!application.installFinishedDate) {
+              set.status = 400;
+              return "Install Finished Date is not set";
+            }
+
+            // Calculate the day after the install finished date
+            const dayAfterInstallFinishedDate = new Date(
+              application.installFinishedDate.getTime()
+            );
+
+            if (
+              afterInstallVisitDate.getTime() <
+              dayAfterInstallFinishedDate.getTime()
+            ) {
+              set.status = 400;
+              return "Invalid date";
+            }
+
+            await updateApplicationAfterInstallVisitDate(
+              body.applicationId,
+              new Date(body.afterInstallVisitDate)
+            );
+          } catch (e) {
+            if (e instanceof Error) {
+              set.status = 400;
+              return e.message;
+            }
+            console.log("[applicationsRouter] gca-pre-install-visit", e);
+            throw new Error("Error Occured");
+          }
+        },
+        {
+          body: t.Object({
+            applicationId: t.String(),
+            afterInstallVisitDate: t.Date(),
+          }),
+
+          detail: {
+            summary: "GCA After Install Visit",
+            description: `Set the after install visit dates. If confirmed is true, it will set the confirmed timestamp`,
+            tags: [TAG.APPLICATIONS],
+          },
         }
+      )
+      .post(
+        "/create-application-encrypted-master-keys",
+        async ({ body, set, userId }) => {
+          const gcaId = userId;
+          const account = await findFirstAccountById(gcaId);
+          if (!account) {
+            return { errorCode: 404, errorMessage: "Account not found" };
+          }
+          try {
+            const application = await FindFirstApplicationById(
+              body.applicationId
+            );
 
-        if (application.userId !== userId) {
-          set.status = 400;
-          return "User is not the owner of the application";
-        }
+            if (!application) {
+              set.status = 404;
+              return "Application not found";
+            }
 
-        if (application.isPublishedOnAuction) {
-          set.status = 400;
-          return "Application is already published on auction";
+            await createApplicationEncryptedMasterKeysForUsers(
+              body.applicationEncryptedMasterKeys.map(
+                (key: {
+                  publicKey?: string;
+                  userId: string;
+                  encryptedMasterKey: string;
+                }) => ({
+                  ...key,
+                  applicationId: body.applicationId,
+                })
+              )
+            );
+            await updateApplication(body.applicationId, {
+              isDocumentsCorrupted: body.isDocumentsCorrupted,
+            });
+          } catch (e) {
+            if (e instanceof Error) {
+              set.status = 400;
+              return e.message;
+            }
+            console.log(
+              "[applicationsRouter] create-application-encrypted-master-keys",
+              e
+            );
+            throw new Error("Error Occured");
+          }
+        },
+        {
+          body: t.Object({
+            applicationId: t.String(),
+            isDocumentsCorrupted: t.Boolean(),
+            applicationEncryptedMasterKeys: t.Array(
+              t.Object({
+                publicKey: t.Optional(t.String()),
+                userId: t.String(),
+                encryptedMasterKey: t.String(),
+              })
+            ),
+          }),
+          detail: {
+            summary: "Create Application Encrypted Master Keys",
+            description: `Create Application Encrypted Master Keys. If the user is not a GCA, it will throw an error.`,
+            tags: [TAG.APPLICATIONS],
+          },
         }
+      )
+      .post(
+        "/patch-declaration-of-intention",
+        async ({ body, set, userId }) => {
+          try {
+            const application = await FindFirstApplicationById(
+              body.applicationId
+            );
 
-        await updateApplication(application.id, {
-          isPublishedOnAuction: true,
-          publishedOnAuctionTimestamp: new Date(),
-        });
-      } catch (e) {
-        if (e instanceof Error) {
-          set.status = 400;
-          return e.message;
+            if (!application) {
+              set.status = 404;
+              return "Application not found";
+            }
+
+            if (application.userId !== userId) {
+              set.status = 403;
+              return "Unauthorized";
+            }
+
+            if (application.declarationOfIntentionSignature) {
+              set.status = 400;
+              return "Declaration of intention already exists for this application";
+            }
+
+            await patchDeclarationOfIntention(
+              application.id,
+              body.declarationOfIntention,
+              body.declarationOfIntentionSignature,
+              body.declarationOfIntentionFieldsValue,
+              body.declarationOfIntentionVersion
+            );
+
+            return { success: true };
+          } catch (e) {
+            if (e instanceof Error) {
+              set.status = 400;
+              return e.message;
+            }
+            console.log(
+              "[applicationsRouter] patch-declaration-of-intention",
+              e
+            );
+            throw new Error("Error Occurred");
+          }
+        },
+        {
+          body: DeclarationOfIntentionMissingQueryBody,
+          detail: {
+            summary: "Patch missing declaration of intention",
+            description:
+              "Add declaration of intention to an application where it's missing",
+            tags: [TAG.APPLICATIONS],
+          },
         }
-        console.log("[applicationsRouter] /publish-application-to-auction", e);
-        throw new Error("Error Occured");
-      }
-    },
-    {
-      body: t.Object({
-        applicationId: t.String(),
-      }),
-      detail: {
-        summary: "Publish Application to auction",
-        description: `Toggle isPublishedOnAuction and set publishedOnAuctionTimestamp; accessible only by the application owner while the application is waiting-for-payment.`,
-        tags: [TAG.APPLICATIONS],
-      },
-    }
+      )
+      .post(
+        "/patch-production-and-carbon-debt",
+        async ({ body, set, userId }) => {
+          const gcaId = userId;
+          try {
+            const account = await findFirstAccountById(gcaId);
+            if (!account) {
+              return { errorCode: 404, errorMessage: "Account not found" };
+            }
+
+            if (account.role !== "GCA") {
+              return {
+                errorCode: 403,
+                errorMessage: "Unauthorized",
+              };
+            }
+
+            // Validate application exists
+            const application = await FindFirstApplicationById(
+              body.applicationId
+            );
+            if (!application) {
+              set.status = 404;
+              return { error: "Application not found" };
+            }
+
+            if (application.status === ApplicationStatusEnum.completed) {
+              return {
+                errorCode: 400,
+                errorMessage: "Application is already completed",
+              };
+            }
+
+            if (application.gcaAddress !== account.id) {
+              return {
+                errorCode: 403,
+                errorMessage:
+                  "Unauthorized, you are not assigned to this application",
+              };
+            }
+
+            const netCarbonCreditEarningWeekly = (
+              Number(application.auditFields?.adjustedWeeklyCarbonCredits) -
+              Number(application.auditFields?.weeklyTotalCarbonDebt)
+            ).toString();
+
+            await db.transaction(async (tx) => {
+              await tx
+                .insert(weeklyProduction)
+                .values({
+                  applicationId: body.applicationId,
+                  createdAt: new Date(),
+                  powerOutputMWH:
+                    body.weeklyProduction.powerOutputMWH.toString(),
+                  hoursOfSunlightPerDay:
+                    body.weeklyProduction.hoursOfSunlightPerDay.toString(),
+                  carbonOffsetsPerMWH:
+                    body.weeklyProduction.carbonOffsetsPerMWH.toString(),
+                  adjustmentDueToUncertainty:
+                    body.weeklyProduction.adjustmentDueToUncertainty.toString(),
+                  weeklyPowerProductionMWh:
+                    body.weeklyProduction.weeklyPowerProductionMWh.toString(),
+                  weeklyCarbonCredits:
+                    body.weeklyProduction.weeklyCarbonCredits.toString(),
+                  adjustedWeeklyCarbonCredits:
+                    body.weeklyProduction.adjustedWeeklyCarbonCredits.toString(),
+                } as any)
+                .onConflictDoUpdate({
+                  target: [weeklyProduction.applicationId],
+                  set: {
+                    createdAt: new Date(),
+                    powerOutputMWH:
+                      body.weeklyProduction.powerOutputMWH.toString(),
+                    hoursOfSunlightPerDay:
+                      body.weeklyProduction.hoursOfSunlightPerDay.toString(),
+                    carbonOffsetsPerMWH:
+                      body.weeklyProduction.carbonOffsetsPerMWH.toString(),
+                    adjustmentDueToUncertainty:
+                      body.weeklyProduction.adjustmentDueToUncertainty.toString(),
+                    weeklyPowerProductionMWh:
+                      body.weeklyProduction.weeklyPowerProductionMWh.toString(),
+                    weeklyCarbonCredits:
+                      body.weeklyProduction.weeklyCarbonCredits.toString(),
+                    adjustedWeeklyCarbonCredits:
+                      body.weeklyProduction.adjustedWeeklyCarbonCredits.toString(),
+                  },
+                });
+
+              // Insert into weeklyCarbonDebt
+              await tx
+                .insert(weeklyCarbonDebt)
+                .values({
+                  applicationId: body.applicationId,
+                  createdAt: new Date(),
+                  totalCarbonDebtAdjustedKWh:
+                    body.weeklyCarbonDebt.totalCarbonDebtAdjustedKWh.toString(),
+                  convertToKW: body.weeklyCarbonDebt.convertToKW.toString(),
+                  totalCarbonDebtProduced:
+                    body.weeklyCarbonDebt.totalCarbonDebtProduced.toString(),
+                  disasterRisk: body.weeklyCarbonDebt.disasterRisk.toString(),
+                  commitmentPeriod:
+                    body.weeklyCarbonDebt.commitmentPeriod.toString(),
+                  adjustedTotalCarbonDebt:
+                    body.weeklyCarbonDebt.adjustedTotalCarbonDebt.toString(),
+                  weeklyTotalCarbonDebt:
+                    body.weeklyCarbonDebt.weeklyTotalCarbonDebt.toString(),
+                } as any)
+                .onConflictDoUpdate({
+                  target: [weeklyCarbonDebt.applicationId],
+                  set: {
+                    createdAt: new Date(),
+                    totalCarbonDebtAdjustedKWh:
+                      body.weeklyCarbonDebt.totalCarbonDebtAdjustedKWh.toString(),
+                    convertToKW: body.weeklyCarbonDebt.convertToKW.toString(),
+                    totalCarbonDebtProduced:
+                      body.weeklyCarbonDebt.totalCarbonDebtProduced.toString(),
+                    disasterRisk: body.weeklyCarbonDebt.disasterRisk.toString(),
+                    commitmentPeriod: body.weeklyCarbonDebt.commitmentPeriod,
+                    adjustedTotalCarbonDebt:
+                      body.weeklyCarbonDebt.adjustedTotalCarbonDebt.toString(),
+                    weeklyTotalCarbonDebt:
+                      body.weeklyCarbonDebt.weeklyTotalCarbonDebt.toString(),
+                  },
+                });
+
+              // Update application with the specified fields
+              await updateApplicationCRSFields(
+                body.applicationId,
+                {
+                  lat: body.lat.toString(),
+                  lng: body.lng.toString(),
+                },
+                {
+                  systemWattageOutput: `${body.weeklyCarbonDebt.convertToKW.toString()} kW-DC`,
+                  netCarbonCreditEarningWeekly:
+                    netCarbonCreditEarningWeekly.toString(),
+                  weeklyTotalCarbonDebt:
+                    body.weeklyCarbonDebt.weeklyTotalCarbonDebt.toString(),
+                  averageSunlightHoursPerDay:
+                    body.weeklyProduction.hoursOfSunlightPerDay.toString(),
+                  adjustedWeeklyCarbonCredits:
+                    body.weeklyProduction.adjustedWeeklyCarbonCredits.toString(),
+                }
+              );
+            });
+
+            return { success: true };
+          } catch (e) {
+            set.status = 500;
+            return { error: e instanceof Error ? e.message : String(e) };
+          }
+        },
+        {
+          body: t.Object({
+            applicationId: t.String(),
+            weeklyProduction: t.Object(WeeklyProductionSchema),
+            weeklyCarbonDebt: t.Object(WeeklyCarbonDebtSchema),
+            lat: t.Numeric({
+              example: 38.234242,
+              minimum: -90,
+              maximum: 90,
+            }),
+            lng: t.Numeric({
+              example: -111.123412,
+              minimum: -180,
+              maximum: 180,
+            }),
+          }),
+          detail: {
+            summary: "Patch production and carbon debt for an application",
+            description:
+              "Update application with systemWattageOutput, netCarbonCreditEarningWeekly, weeklyTotalCarbonDebt, averageSunlightHoursPerDay, lat, lng and insert weeklyProduction and weeklyCarbonDebt records.",
+            tags: [TAG.APPLICATIONS],
+          },
+        }
+      )
+      .post(
+        "/publish-application-to-auction",
+        async ({ body, set, userId }) => {
+          try {
+            const user = await findFirstUserById(userId);
+            if (!user) {
+              set.status = 400;
+              return "Unauthorized";
+            }
+
+            const application = await FindFirstApplicationById(
+              body.applicationId
+            );
+
+            if (!application) {
+              set.status = 404;
+              return "Application not found";
+            }
+
+            if (application.userId !== userId) {
+              set.status = 400;
+              return "User is not the owner of the application";
+            }
+
+            if (application.isPublishedOnAuction) {
+              set.status = 400;
+              return "Application is already published on auction";
+            }
+
+            await updateApplication(application.id, {
+              isPublishedOnAuction: true,
+              publishedOnAuctionTimestamp: new Date(),
+            });
+          } catch (e) {
+            if (e instanceof Error) {
+              set.status = 400;
+              return e.message;
+            }
+            console.log(
+              "[applicationsRouter] /publish-application-to-auction",
+              e
+            );
+            throw new Error("Error Occured");
+          }
+        },
+        {
+          body: t.Object({
+            applicationId: t.String(),
+          }),
+          detail: {
+            summary: "Publish Application to auction",
+            description: `Toggle isPublishedOnAuction and set publishedOnAuctionTimestamp; accessible only by the application owner while the application is waiting-for-payment.`,
+            tags: [TAG.APPLICATIONS],
+          },
+        }
+      )
   );

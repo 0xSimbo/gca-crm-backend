@@ -75,6 +75,7 @@ export const FindFirstApplicationByIdMinimal = async (id: string) => {
           id: true,
         },
       },
+      applicationPriceQuotes: true,
       user: {
         columns: {
           id: true,

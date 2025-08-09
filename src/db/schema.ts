@@ -1130,6 +1130,7 @@ export const applicationsRelations = relations(
       fields: [applications.id],
       references: [applicationsAuditFieldsCRS.applicationId],
     }),
+    applicationPriceQuotes: many(ApplicationPriceQuotes),
   })
 );
 
@@ -1558,6 +1559,16 @@ export type ApplicationPriceQuoteType = InferSelectModel<
 >;
 export type ApplicationPriceQuoteInsertType =
   typeof ApplicationPriceQuotes.$inferInsert;
+
+export const ApplicationPriceQuotesRelations = relations(
+  ApplicationPriceQuotes,
+  ({ one }) => ({
+    application: one(applications, {
+      fields: [ApplicationPriceQuotes.applicationId],
+      references: [applications.id],
+    }),
+  })
+);
 
 export const DeclarationOfIntentionMerkleRoots = pgTable(
   "declaration_of_intention_merkle_roots",

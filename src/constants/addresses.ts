@@ -93,33 +93,3 @@ export const DECIMALS_BY_CURRENCY: Record<string, number> = {
   USDG: 6,
   GLW: 18,
 };
-
-/**
- * Returns the number of tokens obtained for 1 USDC of the provided currency.
- * For USDC & USDG this is a fixed 1:1 ratio.
- * For GLW we fetch the current price from the Control API and invert it
- * (tokens per USDC) before rounding to the nearest integer.
- */
-export async function getTokensPerUsdcByCurrency(
-  currency: string
-): Promise<number> {
-  switch (currency) {
-    case "USDC":
-    case "USDG":
-      return 1;
-    case "GLW": {
-      const glwPriceInUsdc = await ControlRouter(
-        process.env.CONTROL_API_URL!
-      ).fetchGlwPrice();
-
-      if (glwPriceInUsdc <= 0) {
-        throw new Error("Invalid GLW price returned from Control API");
-      }
-
-      // We need `tokens / USDC`, hence we take the inverse and round to the nearest integer.
-      return Math.round(1 / glwPriceInUsdc);
-    }
-    default:
-      throw new Error(`Unsupported currency: ${currency}`);
-  }
-}
