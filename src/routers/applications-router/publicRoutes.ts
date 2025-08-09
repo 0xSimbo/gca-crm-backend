@@ -27,7 +27,6 @@ import {
   ApplicationPriceQuotes,
 } from "../../db/schema";
 import { eq } from "drizzle-orm";
-import { formatUnits } from "viem";
 
 export const publicApplicationsRoutes = new Elysia()
   .get(
@@ -292,14 +291,19 @@ export const publicApplicationsRoutes = new Elysia()
         const expectedAmountRaw =
           BigInt(application.finalProtocolFee) / BigInt(tokensPerUsdc);
 
-        const formatedForwarderAmount = formatUnits(
-          BigInt(forwarderData.amount),
-          tokenDecimals
-        );
+        const expectedAmountRawToScale =
+          expectedAmountRaw * BigInt(10 ** (tokenDecimals - 12));
 
-        if (expectedAmountRaw !== BigInt(formatedForwarderAmount)) {
+        console.log(
+          "expectedAmountRawToScale",
+          expectedAmountRawToScale.toString()
+        );
+        console.log("forwarderData.amount", forwarderData.amount);
+        console.log("expectedAmountRaw", expectedAmountRaw);
+
+        if (expectedAmountRawToScale !== BigInt(forwarderData.amount)) {
           set.status = 400;
-          return `Invalid Amount: expected ${expectedAmountRaw}, got ${formatedForwarderAmount}`;
+          return `Invalid Amount: expected ${expectedAmountRawToScale}, got ${forwarderData.amount}`;
         }
 
         if (!application.zoneId) {
