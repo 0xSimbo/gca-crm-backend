@@ -288,13 +288,8 @@ export const publicApplicationsRoutes = new Elysia()
         // prices are stored with 6-decimal precision; finalProtocolFee is 6 decimals (USDC)
         // Normalize to token base units:
         // expected = finalFee(1e6) * tokensPerUsdc(1e6) * 10^(tokenDecimals - 12)
-        const product =
-          BigInt(application.finalProtocolFee) * BigInt(tokensPerUsdc);
-        const shift = tokenDecimals - 12; // both inputs are 6 decimals each
         const expectedAmountRaw =
-          shift >= 0
-            ? product * BigInt(10 ** shift)
-            : product / BigInt(10 ** -shift);
+          BigInt(application.finalProtocolFee) / BigInt(tokensPerUsdc);
 
         if (expectedAmountRaw !== BigInt(forwarderData.amount)) {
           set.status = 400;
