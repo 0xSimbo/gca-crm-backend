@@ -12,6 +12,8 @@ import {
   applicationsAuditFieldsCRS,
   deferments,
   farms,
+  weeklyCarbonDebt,
+  weeklyProduction,
 } from "../../schema";
 import {
   ApplicationStatusEnum,
@@ -166,13 +168,50 @@ export const completeApplicationAudit = async (
       .where(and(eq(applications.id, applicationId)))
       .returning({ status: applications.status });
 
-    await tx
-      .update(applicationsAuditFieldsCRS)
-      .set({
+    const applicationsAuditFieldsCRSExists =
+      await tx.query.applicationsAuditFieldsCRS.findFirst({
+        where: eq(applicationsAuditFieldsCRS.applicationId, applicationId),
+      });
+
+    if (applicationsAuditFieldsCRSExists) {
+      await tx
+        .update(applicationsAuditFieldsCRS)
+        .set({
+          ...applicationAuditFields,
+          devices: devices,
+        })
+        .where(eq(applicationsAuditFieldsCRS.applicationId, applicationId));
+    } else {
+      const applicationWeeklyProduction =
+        await tx.query.weeklyProduction.findFirst({
+          where: eq(weeklyProduction.applicationId, applicationId),
+        });
+      const applicationWeeklyCarbonDebt =
+        await tx.query.weeklyCarbonDebt.findFirst({
+          where: eq(weeklyCarbonDebt.applicationId, applicationId),
+        });
+      if (!applicationWeeklyProduction) {
+        throw new Error("Application weekly production not found");
+      }
+      if (!applicationWeeklyCarbonDebt) {
+        throw new Error("Application weekly carbon debt not found");
+      }
+
+      await tx.insert(applicationsAuditFieldsCRS).values({
+        applicationId: applicationId,
         ...applicationAuditFields,
         devices: devices,
-      })
-      .where(eq(applicationsAuditFieldsCRS.applicationId, applicationId));
+        systemWattageOutput: `${applicationWeeklyCarbonDebt.convertToKW.toString()} kW-DC`,
+        netCarbonCreditEarningWeekly:
+          applicationWeeklyProduction.adjustedWeeklyCarbonCredits.toString(),
+        weeklyTotalCarbonDebt:
+          applicationWeeklyCarbonDebt.weeklyTotalCarbonDebt.toString(),
+        averageSunlightHoursPerDay:
+          applicationWeeklyProduction.hoursOfSunlightPerDay.toString(),
+        adjustedWeeklyCarbonCredits:
+          applicationWeeklyProduction.adjustedWeeklyCarbonCredits.toString(),
+      });
+    }
 
     await tx.insert(ApplicationPriceQuotes).values({
       applicationId: applicationId,

@@ -1068,6 +1068,7 @@ export type ApplicationType = Omit<
   "finalProtocolFee" | "auditFees"
 > & {
   finalProtocolFee: string;
+  finalProtocolFeeBigInt: string;
   enquiryFields: ApplicationEnquiryFieldsCRSInsertType | null;
   auditFields: ApplicationAuditFieldsCRSInsertType | null;
   auditFees: string;

@@ -7,10 +7,6 @@ import {
   applications,
   applicationsAuditFieldsCRS,
 } from "../../schema";
-import {
-  ApplicationStatusEnum,
-  ApplicationSteps,
-} from "../../../types/api-types/Application";
 
 export const approveApplicationStep = async (
   applicationId: string,

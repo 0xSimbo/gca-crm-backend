@@ -1,12 +1,13 @@
 import { Elysia } from "elysia";
 import {
+  applications,
   requirementSets,
   wallets,
   walletWeeklyRewards,
   zones,
 } from "../../db/schema";
 import { db } from "../../db/db";
-import { eq } from "drizzle-orm";
+import { and, eq, not, or } from "drizzle-orm";
 import { getProtocolWeek } from "../../utils/getProtocolWeek";
 import { updateWalletRewardsForWeek } from "../../crons/update-wallet-rewards";
 import { findAllPermissions } from "../../db/queries/permissions/findAllPermissions";
@@ -18,6 +19,12 @@ import convert from "heic-convert";
 import fs from "fs";
 import path from "path";
 import { OpenAI } from "openai";
+import { updateUser } from "../../db/mutations/users/updateUser";
+import { updateInstaller } from "../../db/mutations/installers/updateInstaller";
+import {
+  ApplicationStatusEnum,
+  ApplicationSteps,
+} from "../../types/api-types/Application";
 
 export const adminRouter = new Elysia({ prefix: "/admin" })
   .get("/update-rewards-for-all-weeks", async () => {
@@ -148,6 +155,75 @@ export const adminRouter = new Elysia({ prefix: "/admin" })
       return { message: "Zone and steps with JSON Schemas created" };
     } catch (error) {
       console.error("Error bootstrapping clean grid zone", error);
+      return { message: "error" };
+    }
+  })
+  .get("/migrate-applications-too-advanced-step", async ({ set }) => {
+    try {
+      await db.transaction(async (tx) => {
+        await tx
+          .update(applications)
+          .set({
+            status: ApplicationStatusEnum.waitingForApproval,
+          })
+          .where(
+            and(
+              eq(applications.currentStep, ApplicationSteps.payment),
+              or(
+                eq(applications.status, ApplicationStatusEnum.paymentConfirmed),
+                eq(applications.status, ApplicationStatusEnum.waitingForPayment)
+              )
+            )
+          );
+      });
+      return { message: "success" };
+    } catch (error) {
+      console.error("Error anonymizing users and installers", error);
+      return { message: "error" };
+    }
+  })
+  .get("/anonymize-users-and-installers", async ({ set }) => {
+    try {
+      await db.transaction(async (tx) => {
+        // Anonymize users
+        // const allUsers = await tx.query.users.findMany();
+        // for (const user of allUsers) {
+        //   await updateUser(
+        //     {
+        //       firstName: "Anon",
+        //       lastName: "User",
+        //       email: `anon+${user.id}@example.com`,
+        //       companyName: "Anon Corp",
+        //       companyAddress: "123 Anon St",
+        //     },
+        //     user.id
+        //   );
+        // }
+
+        // // Anonymize installers
+        // const allInstallers = await tx.query.installers.findMany();
+        // for (const installer of allInstallers) {
+        //   await updateInstaller(
+        //     {
+        //       name: "Anon Installer",
+        //       email: `anon+${installer.id}@example.com`,
+        //       companyName: "Anon Installers",
+        //       phone: "000-000-0000",
+        //     },
+        //     installer.id
+        //   );
+        // }
+
+        await tx
+          .update(applications)
+          .set({
+            userId: "0x5252FdA14A149c01EA5A1D6514a9c1369E4C70b4",
+          })
+          .where(not(eq(applications.status, ApplicationStatusEnum.completed)));
+      });
+      return { message: "success" };
+    } catch (error) {
+      console.error("Error anonymizing users and installers", error);
       return { message: "error" };
     }
   });
@@ -592,44 +668,6 @@ export const adminRouter = new Elysia({ prefix: "/admin" })
 //     };
 //   }
 // });
-// .get("/anonymize-users-and-installers", async ({ set }) => {
-//   try {
-//     await db.transaction(async (tx) => {
-//       // Anonymize users
-//       const allUsers = await tx.query.users.findMany();
-//       for (const user of allUsers) {
-//         await updateUser(
-//           {
-//             firstName: "Anon",
-//             lastName: "User",
-//             email: `anon+${user.id}@example.com`,
-//             companyName: "Anon Corp",
-//             companyAddress: "123 Anon St",
-//           },
-//           user.id
-//         );
-//       }
-
-//       // Anonymize installers
-//       const allInstallers = await tx.query.installers.findMany();
-//       for (const installer of allInstallers) {
-//         await updateInstaller(
-//           {
-//             name: "Anon Installer",
-//             email: `anon+${installer.id}@example.com`,
-//             companyName: "Anon Installers",
-//             phone: "000-000-0000",
-//           },
-//           installer.id
-//         );
-//       }
-//     });
-//     return { message: "success" };
-//   } catch (error) {
-//     console.error("Error anonymizing users and installers", error);
-//     return { message: "error" };
-//   }
-// })
 // .get("/migrate-legacy-applications", async ({ set }) => {
 //   try {
 //     await db.transaction(async (tx) => {

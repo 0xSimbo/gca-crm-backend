@@ -11,6 +11,8 @@ import {
 } from "../../../types/api-types/Application";
 import { listObjects } from "../../../utils/r2/upload-to-r2";
 import { getUniqueStarNameForApplicationId } from "../../farms/farmsRouter";
+import { completeApplicationWithDocumentsAndCreateFarmWithDevices } from "../../../db/mutations/applications/completeApplicationWithDocumentsAndCreateFarm";
+import { getProtocolFeePaymentFromTxHashReceipt } from "../../../utils/getProtocolFeePaymentFromTxHashReceipt";
 type WithoutPiiDocumentsType = {
   contractAgreement: string;
   declarationOfIntention: string;
@@ -255,7 +257,33 @@ export const handleCreateWithoutPIIDocumentsAndCompleteApplicationAudit =
       throw new Error("Failed to get a unique farm name");
     }
 
-    return await completeApplicationAudit(
+    let txData;
+    if (application.paymentTxHash && application.paymentDate) {
+      try {
+        console.log("application.paymentTxHash", application.paymentTxHash);
+        txData = await getProtocolFeePaymentFromTxHashReceipt(
+          application.paymentTxHash
+        );
+        if (!txData) {
+          console.error(
+            "Failed to get protocol fee payment from tx hash receipt"
+          );
+          throw new Error(
+            "Failed to get protocol fee payment from tx hash receipt"
+          );
+        }
+      } catch (e) {
+        console.error(
+          "Failed to get protocol fee payment from tx hash receipt",
+          e
+        );
+        throw new Error(
+          "Failed to get protocol fee payment from tx hash receipt, " + e
+        );
+      }
+    }
+    console.log("completeApplicationAudit");
+    await completeApplicationAudit(
       application.id,
       gcaId,
       signature,
@@ -265,4 +293,26 @@ export const handleCreateWithoutPIIDocumentsAndCompleteApplicationAudit =
       stepAnnotation,
       args.applicationAuditFields
     );
+    if (txData && application.paymentTxHash && application.paymentDate) {
+      console.log("completeApplicationWithDocumentsAndCreateFarmWithDevices");
+      await completeApplicationWithDocumentsAndCreateFarmWithDevices({
+        protocolFeePaymentHash: application.paymentTxHash,
+        paymentDate: application.paymentDate,
+        paymentCurrency: application.paymentCurrency,
+        paymentEventType: application.paymentEventType,
+        applicationId: application.id,
+        gcaId: application.gcaAddress!,
+        userId: application.userId,
+        devices: args.devices,
+        protocolFee: BigInt(application.finalProtocolFeeBigInt),
+        protocolFeeAdditionalPaymentTxHash: null,
+        lat: application.enquiryFields?.lat,
+        lng: application.enquiryFields?.lng,
+        farmName: application.enquiryFields?.farmOwnerName,
+        payer: txData.user.id,
+      });
+      console.log(
+        "completeApplicationWithDocumentsAndCreateFarmWithDevices done"
+      );
+    }
   };

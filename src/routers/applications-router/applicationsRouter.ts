@@ -21,12 +21,8 @@ import {
   deferredTypes,
 } from "../../constants/typed-data/deferment";
 import { deferApplicationAssignement } from "../../db/mutations/applications/deferApplicationAssignement";
-import {
-  applicationCompletedWithPaymentV2Types,
-  stepApprovedTypes,
-  stepApprovedWithFinalProtocolFeeTypes,
-} from "../../constants/typed-data/step-approval";
-import { approveApplicationStep } from "../../db/mutations/applications/approveApplicationStep";
+import { applicationCompletedWithPaymentV2Types } from "../../constants/typed-data/step-approval";
+
 import { updateApplicationStatus } from "../../db/mutations/applications/updateApplicationStatus";
 import { updateApplicationEnquiry } from "../../db/mutations/applications/updateApplicationEnquiry";
 import { incrementApplicationStep } from "../../db/mutations/applications/incrementApplicationStep";
@@ -1335,9 +1331,14 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               return "Application already linked with a farm";
             }
 
-            if (!application.auditFields?.adjustedWeeklyCarbonCredits) {
+            const applicationWeeklyProduction =
+              await db.query.weeklyProduction.findFirst({
+                where: eq(weeklyProduction.applicationId, application.id),
+              });
+
+            if (!applicationWeeklyProduction) {
               set.status = 400;
-              return "Application is not completed, adjustedWeeklyCarbonCredits is not set";
+              return "Application is not completed, weeklyProduction is not set";
             }
 
             await handleCreateWithoutPIIDocumentsAndCompleteApplicationAudit(
@@ -1376,8 +1377,9 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
 
               const expectedProduction_12Decimals = BigNumber.from(
                 Math.floor(
-                  Number(application.auditFields.adjustedWeeklyCarbonCredits) *
-                    1e6
+                  Number(
+                    applicationWeeklyProduction.adjustedWeeklyCarbonCredits
+                  ) * 1e6
                 )
               ) // convert to int, 6 decimals
                 .mul(BigNumber.from("1000000")) // 6 -> 12 decimals

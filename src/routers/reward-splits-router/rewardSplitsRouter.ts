@@ -154,12 +154,16 @@ export const rewardSplitsRouter = new Elysia({ prefix: "/rewardsSplits" })
                 return "Unauthorized";
               }
             }
-            if (application.status !== ApplicationStatusEnum.draft) {
+
+            if (
+              application.status !== ApplicationStatusEnum.draft &&
+              application.rewardSplits.length !== 0
+            ) {
               set.status = 400;
               return "Application is not Draft";
             }
             if (
-              application.currentStep !==
+              application.currentStep <
               ApplicationSteps.inspectionAndPtoDocuments
             ) {
               set.status = 400;
