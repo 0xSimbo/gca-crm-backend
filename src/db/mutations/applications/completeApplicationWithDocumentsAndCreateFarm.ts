@@ -78,7 +78,7 @@ export const completeApplicationWithDocumentsAndCreateFarmWithDevices = async ({
       process.env.R2_NOT_ENCRYPTED_FILES_BUCKET_NAME!!,
       `${applicationId}/payment_receipt.json`,
       {
-        protocolFee,
+        protocolFee: protocolFee.toString(),
         protocolFeePaymentHash,
         protocolFeeAdditionalPaymentTxHash,
         applicationId,
