@@ -985,6 +985,11 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               return "Zone not allowed";
             }
 
+            if (!application.auditFeesTxHash) {
+              set.status = 400;
+              return "Audit fees payment is not completed";
+            }
+
             const zone = await db.query.zones.findFirst({
               where: eq(zones.id, body.zoneId),
             });
