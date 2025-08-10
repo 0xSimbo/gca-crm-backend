@@ -24,6 +24,7 @@ export const findAllApplicationsByOrganizationId = async (
           roundRobinStatus: true,
           gcaAddress: true,
           auditFees: true,
+          auditFeesTxHash: true,
           isCancelled: true,
           revisedKwhGeneratedPerYear: true,
           finalProtocolFee: true,

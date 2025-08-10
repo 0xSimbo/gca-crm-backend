@@ -27,6 +27,7 @@ export const findAllApplicationsByOrgUserId = async (
           isCancelled: true,
           finalProtocolFee: true,
           auditFees: true,
+          auditFeesTxHash: true,
           preInstallVisitDate: true,
           afterInstallVisitDate: true,
         },

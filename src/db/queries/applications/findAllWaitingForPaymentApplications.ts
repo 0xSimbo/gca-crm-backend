@@ -54,6 +54,7 @@ export const findAllWaitingForPaymentApplications = async (
       publishedOnAuctionTimestamp: true,
       finalProtocolFee: true,
       auditFees: true,
+      auditFeesTxHash: true,
       allowedZones: true,
     },
     with: {
