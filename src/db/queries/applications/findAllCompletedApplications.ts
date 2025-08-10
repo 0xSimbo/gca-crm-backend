@@ -17,7 +17,7 @@ function stringifyApplicationFields(
       6
     ),
     finalProtocolFeeBigInt: application.finalProtocolFee.toString(),
-    auditFees: application.auditFees.toString(),
+    auditFees: application.auditFees?.toString() || "0",
     ...enquiryFieldsCRS,
     ...auditFieldsCRS,
     zone,

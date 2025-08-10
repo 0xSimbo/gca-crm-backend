@@ -852,9 +852,7 @@ export const applications = pgTable("applications", {
   declarationOfIntentionVersion: varchar("declaration_of_intention_version", {
     length: 12,
   }),
-  auditFees: bigint("audit_fees", { mode: "bigint" })
-    .default(sql`'0'::bigint`)
-    .notNull(),
+  auditFees: bigint("audit_fees", { mode: "bigint" }).default(sql`'0'::bigint`),
   auditFeesTxHash: varchar("audit_fees_tx_hash", { length: 66 }),
   auditFeesPaymentDate: timestamp("audit_fees_payment_date"),
   // wallet signature of the account owner

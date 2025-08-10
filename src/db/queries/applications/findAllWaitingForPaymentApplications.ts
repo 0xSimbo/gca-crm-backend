@@ -12,7 +12,7 @@ function stringifyApplicationFields(
     ...application,
     zone,
     finalProtocolFee: application.finalProtocolFee.toString(),
-    auditFees: application.auditFees.toString(),
+    auditFees: application.auditFees?.toString() || "0",
     lat:
       enquiryFieldsCRS?.lat !== undefined && enquiryFieldsCRS?.lat !== null
         ? enquiryFieldsCRS.lat.toString()

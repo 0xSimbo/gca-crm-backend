@@ -53,7 +53,7 @@ export const findAllApplicationsByOrgUserId = async (
         (application.finalProtocolFee || BigInt(0)) as bigint,
         6
       ),
-      auditFees: application.auditFees.toString(),
+      auditFees: application.auditFees?.toString() || "0",
       finalProtocolFeeBigInt: application.finalProtocolFee.toString(),
       ...enquiryFieldsCRS,
     })
