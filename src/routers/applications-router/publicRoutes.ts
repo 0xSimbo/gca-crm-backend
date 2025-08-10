@@ -237,6 +237,7 @@ export const publicApplicationsRoutes = new Elysia()
         }
 
         if (BigInt(application.finalProtocolFee) === BigInt(0)) {
+          console.error("Final Protocol Fee is not set");
           set.status = 400;
           return "Final Protocol Fee is not set";
         }
@@ -244,6 +245,7 @@ export const publicApplicationsRoutes = new Elysia()
         const currency = forwarderData.paymentCurrency;
 
         if (!(currency in DECIMALS_BY_CURRENCY)) {
+          console.error("Unsupported payment currency", currency);
           set.status = 400;
           return `Unsupported payment currency: ${currency}`;
         }
@@ -254,6 +256,7 @@ export const publicApplicationsRoutes = new Elysia()
           .where(eq(ApplicationPriceQuotes.applicationId, applicationId));
 
         if (quotes.length === 0) {
+          console.error("No price quotes found for application", applicationId);
           set.status = 400;
           return `No price quotes found for application: ${applicationId}`;
         }
@@ -269,6 +272,9 @@ export const publicApplicationsRoutes = new Elysia()
         const quoteAgeMs =
           Date.now() - new Date(latestQuote.createdAt).getTime();
         if (quoteAgeMs >= sixteenWeeksInMs) {
+          console.error(
+            "Latest price quote is stale (>= 16 weeks) and must be requoted by the GVE"
+          );
           set.status = 400;
           return "Latest price quote is stale (>= 16 weeks) and must be requoted by the GVE";
         }
@@ -282,6 +288,10 @@ export const publicApplicationsRoutes = new Elysia()
           pricePerTokenScaled6 === "" ||
           BigInt(pricePerTokenScaled6) === BigInt(0)
         ) {
+          console.error(
+            "Invalid price per token (scaled 1e6)",
+            pricePerTokenScaled6
+          );
           set.status = 400;
           return `Invalid price per token (scaled 1e6): ${pricePerTokenScaled6}`;
         }
@@ -289,11 +299,13 @@ export const publicApplicationsRoutes = new Elysia()
         const finalFee = BigInt(application.finalProtocolFee);
 
         if (!finalFee) {
+          console.error("Invalid final fee", finalFee);
           set.status = 400;
           return `Invalid final fee: ${finalFee}`;
         }
 
         if (BigInt(forwarderData.amount) === BigInt(0)) {
+          console.error("Invalid amount: 0");
           set.status = 400;
           return `Invalid amount: 0`;
         }
