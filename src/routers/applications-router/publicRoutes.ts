@@ -245,8 +245,6 @@ export const publicApplicationsRoutes = new Elysia()
           return `Unsupported payment currency: ${currency}`;
         }
 
-        const tokenDecimals = DECIMALS_BY_CURRENCY[currency];
-
         const quotes = await db
           .select()
           .from(ApplicationPriceQuotes)
@@ -290,6 +288,11 @@ export const publicApplicationsRoutes = new Elysia()
         if (!finalFee) {
           set.status = 400;
           return `Invalid final fee: ${finalFee}`;
+        }
+
+        if (BigInt(forwarderData.amount) === BigInt(0)) {
+          set.status = 400;
+          return `Invalid amount: 0`;
         }
 
         if (!application.zoneId) {
