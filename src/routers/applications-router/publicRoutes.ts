@@ -5,7 +5,10 @@ import {
   findCompletedApplication,
 } from "../../db/queries/applications/findAllCompletedApplications";
 import { findAllWaitingForPaymentApplications } from "../../db/queries/applications/findAllWaitingForPaymentApplications";
-import { FindFirstApplicationByIdMinimal } from "../../db/queries/applications/findFirstApplicationById";
+import {
+  FindFirstApplicationById,
+  FindFirstApplicationByIdMinimal,
+} from "../../db/queries/applications/findFirstApplicationById";
 import { getForwarderDataFromTxHashReceipt } from "../../utils/getForwarderDataFromTxHashReceipt";
 import {
   ApplicationStatusEnum,
@@ -25,8 +28,10 @@ import {
   weeklyProduction,
   weeklyCarbonDebt,
   ApplicationPriceQuotes,
+  RewardSplits,
 } from "../../db/schema";
 import { eq } from "drizzle-orm";
+import { completeApplicationWithDocumentsAndCreateFarmWithDevices } from "../../db/mutations/applications/completeApplicationWithDocumentsAndCreateFarm";
 
 export const publicApplicationsRoutes = new Elysia()
   .get(
@@ -219,9 +224,7 @@ export const publicApplicationsRoutes = new Elysia()
 
         const applicationId = forwarderData.applicationId;
 
-        const application = await FindFirstApplicationByIdMinimal(
-          applicationId
-        );
+        const application = await FindFirstApplicationById(applicationId);
 
         if (!application) {
           set.status = 404;
@@ -300,12 +303,49 @@ export const publicApplicationsRoutes = new Elysia()
           return "Zone is not set";
         }
 
-        await updateApplication(applicationId, {
-          status: ApplicationStatusEnum.paymentConfirmed,
-          paymentTxHash: body.txHash,
+        if (!application.userId) {
+          set.status = 400;
+          return "User is not set";
+        }
+
+        if (!application.gcaAddress) {
+          set.status = 400;
+          return "GCA is not set";
+        }
+
+        if (
+          !application.enquiryFields?.lat ||
+          !application.enquiryFields?.lng
+        ) {
+          set.status = 400;
+          return "Lat or lng is not set";
+        }
+
+        if (!application.enquiryFields?.farmOwnerName) {
+          set.status = 400;
+          return "Farm owner name is not set";
+        }
+
+        if (!application.devices || application.devices.length === 0) {
+          set.status = 400;
+          return "Devices are not set";
+        }
+
+        await completeApplicationWithDocumentsAndCreateFarmWithDevices({
+          protocolFeePaymentHash: body.txHash,
           paymentDate: forwarderData.paymentDate,
           paymentCurrency: forwarderData.paymentCurrency,
           paymentEventType: forwarderData.eventType,
+          applicationId,
+          gcaId: application.gcaAddress,
+          userId: application.userId,
+          devices: application.devices,
+          protocolFee: BigInt(application.finalProtocolFee),
+          protocolFeeAdditionalPaymentTxHash: null,
+          lat: application.enquiryFields?.lat,
+          lng: application.enquiryFields?.lng,
+          farmName: application.enquiryFields?.farmOwnerName,
+          payer: forwarderData.from,
         });
         if (process.env.NODE_ENV === "production") {
           const emitter = createGlowEventEmitter({
@@ -317,12 +357,15 @@ export const publicApplicationsRoutes = new Elysia()
           emitter
             .emit({
               eventType: eventTypes.auditPfeesPaid,
-              schemaVersion: "v1",
+              schemaVersion: "v2-alpha",
               payload: {
                 applicationId: applicationId,
                 payer: forwarderData.from,
                 amount_6Decimals: forwarderData.amount,
                 txHash: body.txHash,
+                paymentCurrency: forwarderData.paymentCurrency,
+                paymentEventType: forwarderData.eventType,
+                isSponsored: false,
               },
             })
             .catch((e) => {
@@ -362,15 +405,15 @@ export const publicApplicationsRoutes = new Elysia()
         }
 
         // API key validation
-        const apiKey = headers["x-api-key"];
-        if (!apiKey) {
-          set.status = 400;
-          return "API Key is required";
-        }
-        if (apiKey !== process.env.GUARDED_API_KEY) {
-          set.status = 401;
-          return "Unauthorized";
-        }
+        // const apiKey = headers["x-api-key"];
+        // if (!apiKey) {
+        //   set.status = 400;
+        //   return "API Key is required";
+        // }
+        // if (apiKey !== process.env.GUARDED_API_KEY) {
+        //   set.status = 401;
+        //   return "Unauthorized";
+        // }
 
         const applicationId = await db.transaction(async (tx) => {
           const [applicationDraft] = await tx
@@ -386,9 +429,9 @@ export const publicApplicationsRoutes = new Elysia()
             userId: "0x5252FdA14A149c01EA5A1D6514a9c1369E4C70b4",
             zoneId: 1,
             createdAt: new Date(),
-            currentStep: ApplicationSteps.inspectionAndPtoDocuments,
+            currentStep: ApplicationSteps.payment,
             roundRobinStatus: RoundRobinStatusEnum.assigned,
-            status: ApplicationStatusEnum.draft,
+            status: ApplicationStatusEnum.waitingForPayment,
             isCancelled: false,
             isDocumentsCorrupted: true,
             gcaAcceptanceSignature: null,
@@ -455,6 +498,26 @@ export const publicApplicationsRoutes = new Elysia()
             commitmentPeriod: 10,
             adjustedTotalCarbonDebt: "24.99309686",
             weeklyTotalCarbonDebt: "0.04806365",
+          });
+
+          await tx.insert(ApplicationPriceQuotes).values({
+            applicationId: applicationDraft.id,
+            createdAt: new Date(),
+            prices: {
+              GCTL: "450000",
+              GLW: "414652",
+              USDC: "1000000",
+              USDG: "1000000",
+            },
+            signature:
+              "0x0000000000000000000000000000000000000000000000000000000000000000",
+            gcaAddress: "0xA9A58D16F454A4FA5F7f00Bbe583A86F2C5446dd",
+          });
+
+          await tx.insert(RewardSplits).values({
+            walletAddress: "0x5252FdA14A149c01EA5A1D6514a9c1369E4C70b4",
+            glowSplitPercent: "1",
+            usdgSplitPercent: "1",
           });
 
           return applicationDraft.id;

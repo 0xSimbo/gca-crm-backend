@@ -1359,43 +1359,53 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               }
             );
 
-            //TODO: change event version
-            // if (
-            //   process.env.NODE_ENV === "production" &&
-            //   typeof farmId === "string"
-            // ) {
-            //   const emitter = createGlowEventEmitter({
-            //     username: process.env.RABBITMQ_ADMIN_USER!,
-            //     password: process.env.RABBITMQ_ADMIN_PASSWORD!,
-            //     zoneId: application.zoneId,
-            //   });
-            //   const protocolFeeUSDPrice_6Decimals = BigNumber.from(
-            //     application.finalProtocolFee
-            //   ).toString();
+            if (process.env.NODE_ENV === "production") {
+              const emitter = createGlowEventEmitter({
+                username: process.env.RABBITMQ_ADMIN_USER!,
+                password: process.env.RABBITMQ_ADMIN_PASSWORD!,
+                zoneId: application.zoneId,
+              });
+              const protocolFeeUSDPrice_6Decimals = BigNumber.from(
+                application.finalProtocolFee
+              ).toString();
 
-            //   const expectedProduction_12Decimals = BigNumber.from(
-            //     Math.floor(
-            //       Number(application.auditFields.adjustedWeeklyCarbonCredits) *
-            //         1e6
-            //     )
-            //   ) // convert to int, 6 decimals
-            //     .mul(BigNumber.from("1000000")) // 6 -> 12 decimals
-            //     .toString();
-            //   emitter
-            //     .emit({
-            //       eventType: eventTypes.auditPushed,
-            //       schemaVersion: "v1",
-            //       payload: {
-            //         farmId,
-            //         protocolFeeUSDPrice_6Decimals,
-            //         expectedProduction_12Decimals,
-            //         txHash: application.paymentTxHash,
-            //       },
-            //     })
-            //     .catch((e) => {
-            //       console.error("error with audit.pushed event", e);
-            //     });
-            // }
+              const expectedProduction_12Decimals = BigNumber.from(
+                Math.floor(
+                  Number(application.auditFields.adjustedWeeklyCarbonCredits) *
+                    1e6
+                )
+              ) // convert to int, 6 decimals
+                .mul(BigNumber.from("1000000")) // 6 -> 12 decimals
+                .toString();
+              emitter
+                .emit({
+                  eventType: eventTypes.auditPushed,
+                  schemaVersion: "v2-alpha",
+                  payload: {
+                    applicationId: application.id,
+                    protocolFeeUSDPrice_6Decimals,
+                    expectedProduction_12Decimals,
+                  },
+                })
+                .catch((e) => {
+                  console.error("error with audit.pushed event", e);
+                });
+              emitter
+                .emit({
+                  eventType: eventTypes.applicationPriceQuote,
+                  schemaVersion: "v2-alpha",
+                  payload: {
+                    applicationId: application.id,
+                    gcaAddress: gcaId,
+                    createdAt: new Date().toISOString(),
+                    prices: body.pricePerAssets,
+                    signature: body.signature,
+                  },
+                })
+                .catch((e) => {
+                  console.error("error with audit.pushed event", e);
+                });
+            }
           } catch (e) {
             if (e instanceof Error) {
               set.status = 400;
