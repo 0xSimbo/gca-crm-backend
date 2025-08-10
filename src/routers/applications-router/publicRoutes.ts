@@ -388,10 +388,11 @@ export const publicApplicationsRoutes = new Elysia()
         return application;
       } catch (e) {
         if (e instanceof Error) {
+          console.error("Error in finalize-payment", e);
           set.status = 400;
           return e.message;
         }
-        console.log("[applicationsRouter] finalize-payment", e);
+        console.error("[applicationsRouter] finalize-payment", e);
         throw new Error("Error Occured");
       }
     },
