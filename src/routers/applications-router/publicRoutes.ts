@@ -161,6 +161,7 @@ export const publicApplicationsRoutes = new Elysia()
         }
         const {
           finalProtocolFee,
+          auditFees,
           status,
           currentStep,
           isCancelled,
