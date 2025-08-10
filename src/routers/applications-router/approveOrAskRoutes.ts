@@ -65,6 +65,16 @@ export const approveOrAskRoutes = new Elysia()
         }
 
         if (body.approved) {
+          if (!body.auditFees) {
+            set.status = 400;
+            return "Audit Fees is required in case of approval";
+          }
+
+          if (!body.allowedZones || body.allowedZones.length === 0) {
+            set.status = 400;
+            return "Allowed Zones is required in case of approval";
+          }
+
           await approveApplicationStep(
             body.applicationId,
             account.id,
@@ -102,10 +112,12 @@ export const approveOrAskRoutes = new Elysia()
         allowedZones: t.Array(t.Number(), {
           minItems: 1,
         }),
-        auditFees: t.String({
-          minLength: 1,
-          pattern: "^[0-9]+$", // bigint string with 6 decimals (USDC)
-        }),
+        auditFees: t.Nullable(
+          t.String({
+            minLength: 1,
+            pattern: "^[0-9]+$", // bigint string with 6 decimals (USDC)
+          })
+        ),
       }),
       detail: {
         summary: "Gca Approve or Ask for Changes after step submission",
