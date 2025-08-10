@@ -236,7 +236,7 @@ export const publicApplicationsRoutes = new Elysia()
           return "Application is not waiting for payment";
         }
 
-        if (BigInt(application.finalProtocolFee) === BigInt(0)) {
+        if (BigInt(application.finalProtocolFeeBigInt) === BigInt(0)) {
           console.error("Final Protocol Fee is not set");
           set.status = 400;
           return "Final Protocol Fee is not set";
@@ -296,7 +296,7 @@ export const publicApplicationsRoutes = new Elysia()
           return `Invalid price per token (scaled 1e6): ${pricePerTokenScaled6}`;
         }
 
-        const finalFee = BigInt(application.finalProtocolFee);
+        const finalFee = BigInt(application.finalProtocolFeeBigInt);
 
         if (!finalFee) {
           console.error("Invalid final fee", finalFee);
@@ -352,7 +352,7 @@ export const publicApplicationsRoutes = new Elysia()
           gcaId: application.gcaAddress,
           userId: application.userId,
           devices: application.devices,
-          protocolFee: BigInt(application.finalProtocolFee),
+          protocolFee: BigInt(application.finalProtocolFeeBigInt),
           protocolFeeAdditionalPaymentTxHash: null,
           lat: application.enquiryFields?.lat,
           lng: application.enquiryFields?.lng,
