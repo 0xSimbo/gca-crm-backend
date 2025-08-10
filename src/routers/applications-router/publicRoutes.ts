@@ -490,29 +490,28 @@ export const publicApplicationsRoutes = new Elysia()
           auditFeesPaymentDate: forwarderData.paymentDate,
         });
 
-        //TODO: uncomment after testing
-        // if (process.env.NODE_ENV === "production") {
-        const emitter = createGlowEventEmitter({
-          username: process.env.RABBITMQ_ADMIN_USER!,
-          password: process.env.RABBITMQ_ADMIN_PASSWORD!,
-          zoneId: application.zoneId,
-        });
-
-        emitter
-          .emit({
-            eventType: eventTypes.auditorFeesPaid,
-            schemaVersion: "v2-alpha",
-            payload: {
-              applicationId: applicationId,
-              payer: forwarderData.from,
-              amount_6Decimals: forwarderData.amount,
-              txHash: body.txHash,
-            },
-          })
-          .catch((e) => {
-            console.error("error with audit.pfees.paid event", e);
+        if (process.env.NODE_ENV === "production") {
+          const emitter = createGlowEventEmitter({
+            username: process.env.RABBITMQ_ADMIN_USER!,
+            password: process.env.RABBITMQ_ADMIN_PASSWORD!,
+            zoneId: application.zoneId,
           });
-        // }
+
+          emitter
+            .emit({
+              eventType: eventTypes.auditorFeesPaid,
+              schemaVersion: "v2-alpha",
+              payload: {
+                applicationId: applicationId,
+                payer: forwarderData.from,
+                amount_6Decimals: forwarderData.amount,
+                txHash: body.txHash,
+              },
+            })
+            .catch((e) => {
+              console.error("error with audit.pfees.paid event", e);
+            });
+        }
 
         return application;
       } catch (e) {
