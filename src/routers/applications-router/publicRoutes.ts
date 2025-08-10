@@ -173,6 +173,7 @@ export const publicApplicationsRoutes = new Elysia()
         } = application;
         return {
           finalProtocolFee,
+          auditFees,
           status,
           currentStep,
           isCancelled,
