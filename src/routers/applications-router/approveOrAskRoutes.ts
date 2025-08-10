@@ -75,6 +75,7 @@ export const approveOrAskRoutes = new Elysia()
               status: ApplicationStatusEnum.draft,
               currentStep: body.stepIndex + 1,
               allowedZones: body.allowedZones,
+              auditFees: BigInt(body.auditFees),
             }
           );
         } else {
@@ -100,6 +101,10 @@ export const approveOrAskRoutes = new Elysia()
         ...ApproveOrAskForChangesQueryBody,
         allowedZones: t.Array(t.Number(), {
           minItems: 1,
+        }),
+        auditFees: t.String({
+          minLength: 1,
+          pattern: "^[0-9]+$", // bigint string with 6 decimals (USDC)
         }),
       }),
       detail: {

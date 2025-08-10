@@ -12,6 +12,7 @@ function stringifyApplicationFields(
     ...application,
     zone,
     finalProtocolFee: application.finalProtocolFee.toString(),
+    auditFees: application.auditFees.toString(),
     lat:
       enquiryFieldsCRS?.lat !== undefined && enquiryFieldsCRS?.lat !== null
         ? enquiryFieldsCRS.lat.toString()
@@ -52,6 +53,7 @@ export const findAllWaitingForPaymentApplications = async (
       isPublishedOnAuction: true,
       publishedOnAuctionTimestamp: true,
       finalProtocolFee: true,
+      auditFees: true,
       allowedZones: true,
     },
     with: {

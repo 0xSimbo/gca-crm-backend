@@ -23,7 +23,7 @@ export const findAllApplicationsByOrganizationId = async (
           currentStep: true,
           roundRobinStatus: true,
           gcaAddress: true,
-
+          auditFees: true,
           isCancelled: true,
           revisedKwhGeneratedPerYear: true,
           finalProtocolFee: true,
@@ -64,6 +64,7 @@ export const findAllApplicationsByOrganizationId = async (
         (application.finalProtocolFee || BigInt(0)) as bigint,
         6
       ),
+      auditFees: application.auditFees.toString(),
       finalProtocolFeeBigInt: application.finalProtocolFee.toString(),
       enquiryFields: enquiryFieldsCRS,
       auditFields: auditFieldsCRS,

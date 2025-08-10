@@ -835,7 +835,6 @@ export const applications = pgTable("applications", {
   publishedOnAuctionTimestamp: timestamp("published_on_auction_timestamp"),
   // null if application just got created
   updatedAt: timestamp("updatedAt"),
-  // pre-install documents step fields
   declarationOfIntentionSignature: varchar(
     "declaration_of_intention_signature",
     { length: 255 }
@@ -853,6 +852,11 @@ export const applications = pgTable("applications", {
   declarationOfIntentionVersion: varchar("declaration_of_intention_version", {
     length: 12,
   }),
+  auditFees: bigint("audit_fees", { mode: "bigint" })
+    .default(sql`'0'::bigint`)
+    .notNull(),
+  auditFeesTxHash: varchar("audit_fees_tx_hash", { length: 66 }),
+  auditFeesPaymentDate: timestamp("audit_fees_payment_date"),
   // wallet signature of the account owner
   finalQuotePerWatt: varchar("final_quote_per_watt", { length: 255 }),
   revisedKwhGeneratedPerYear: numeric("revised_kwh_generated_per_year", {
@@ -1063,11 +1067,12 @@ export const ApplicationsAuditFieldsCRSRelations = relations(
 
 export type ApplicationType = Omit<
   InferSelectModel<typeof applications>,
-  "finalProtocolFee"
+  "finalProtocolFee" | "auditFees"
 > & {
   finalProtocolFee: string;
   enquiryFields: ApplicationEnquiryFieldsCRSInsertType | null;
   auditFields: ApplicationAuditFieldsCRSInsertType | null;
+  auditFees: string;
 };
 export type ApplicationInsertType = typeof applications.$inferInsert;
 export type ApplicationUpdateEnquiryType = Pick<

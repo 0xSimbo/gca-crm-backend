@@ -17,6 +17,7 @@ function stringifyApplicationFields(
       6
     ),
     finalProtocolFeeBigInt: application.finalProtocolFee.toString(),
+    auditFees: application.auditFees.toString(),
     ...enquiryFieldsCRS,
     ...auditFieldsCRS,
     zone,
@@ -78,6 +79,7 @@ export const findAllCompletedApplications = async (withDocuments?: boolean) => {
       revisedCostOfPowerPerKWh: true,
       gcaAddress: true,
       finalProtocolFee: true,
+      auditFees: true,
       userId: true,
       gcaAcceptanceTimestamp: true,
       gcaAssignedTimestamp: true,
@@ -220,6 +222,7 @@ export const findCompletedApplication = async ({
       revisedCostOfPowerPerKWh: true,
       gcaAddress: true,
       finalProtocolFee: true,
+      auditFees: true,
       userId: true,
       gcaAcceptanceTimestamp: true,
       gcaAssignedTimestamp: true,
