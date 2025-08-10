@@ -29,6 +29,8 @@ import {
   weeklyCarbonDebt,
   ApplicationPriceQuotes,
   RewardSplits,
+  applicationsAuditFieldsCRS,
+  ApplicationAuditFieldsCRSInsertType,
 } from "../../db/schema";
 import { eq } from "drizzle-orm";
 import { completeApplicationWithDocumentsAndCreateFarmWithDevices } from "../../db/mutations/applications/completeApplicationWithDocumentsAndCreateFarm";
@@ -338,7 +340,10 @@ export const publicApplicationsRoutes = new Elysia()
           return "Farm owner name is not set";
         }
 
-        if (!application.devices || application.devices.length === 0) {
+        if (
+          !application.auditFields?.devices ||
+          application.auditFields?.devices.length === 0
+        ) {
           set.status = 400;
           return "Devices are not set";
         }
@@ -351,7 +356,7 @@ export const publicApplicationsRoutes = new Elysia()
           applicationId,
           gcaId: application.gcaAddress,
           userId: application.userId,
-          devices: application.devices,
+          devices: application.auditFields?.devices,
           protocolFee: BigInt(application.finalProtocolFeeBigInt),
           protocolFeeAdditionalPaymentTxHash: null,
           lat: application.enquiryFields?.lat,
@@ -488,6 +493,30 @@ export const publicApplicationsRoutes = new Elysia()
             installerEmail: "installer@example.com",
             installerPhone: "0000000000",
           });
+
+          const auditFields: ApplicationAuditFieldsCRSInsertType = {
+            applicationId: applicationDraft.id,
+            createdAt: new Date(),
+            finalEnergyCost: "12668",
+            solarPanelsQuantity: 1,
+            solarPanelsBrandAndModel: "sentinel-brand-model",
+            solarPanelsWarranty: "10",
+            ptoObtainedDate: new Date("2025-01-01"),
+            locationWithoutPII: "sentinel-location",
+            revisedInstallFinishedDate: new Date("2025-01-01"),
+            averageSunlightHoursPerDay: "4.74816609",
+            adjustedWeeklyCarbonCredits: "0.11500758",
+            weeklyTotalCarbonDebt: "0.04806365",
+            netCarbonCreditEarningWeekly: "0.11500758",
+            devices: [
+              {
+                publicKey: "0x5252FdA14A149c01EA5A1D6514a9c1369E4C70b4",
+                shortId: "0x5252FdA14A149c01EA5A1D6514a9c1369E4C70b4",
+              },
+            ],
+            systemWattageOutput: "1000",
+          };
+          await tx.insert(applicationsAuditFieldsCRS).values(auditFields);
 
           await tx.insert(weeklyProduction).values({
             applicationId: applicationDraft.id,
