@@ -134,7 +134,8 @@ export const getForwarderDataFromTxHashReceipt = async (
 
   if (
     eventType !== "PayProtocolFeeAndMintGCTLAndStake" &&
-    eventType !== "PayProtocolFee"
+    eventType !== "PayProtocolFee" &&
+    eventType !== "PayAuditFees"
   ) {
     throw new Error(`Unsupported eventType: ${eventType}`);
   }
@@ -143,6 +144,7 @@ export const getForwarderDataFromTxHashReceipt = async (
   const eventAllowedCurrencies: Record<string, PaymentCurrency[]> = {
     PayProtocolFee: ["USDG", "USDC", "GLW"],
     PayProtocolFeeAndMintGCTLAndStake: ["USDG", "USDC"],
+    PayAuditFees: ["USDC"],
   } as const;
 
   const allowedCurrencies = eventAllowedCurrencies[eventType];
