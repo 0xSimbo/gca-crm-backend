@@ -18,7 +18,10 @@ import {
 import { DECIMALS_BY_CURRENCY } from "../../constants/addresses";
 import { updateApplication } from "../../db/mutations/applications/updateApplication";
 import { createGlowEventEmitter, eventTypes } from "@glowlabs-org/events-sdk";
-import { findUsedTxHash } from "../../db/queries/applications/findUsedTxHash";
+import {
+  findUsedAuditFeesTxHash,
+  findUsedTxHash,
+} from "../../db/queries/applications/findUsedTxHash";
 import { db } from "../../db/db";
 import {
   applicationsDraft,
@@ -397,6 +400,119 @@ export const publicApplicationsRoutes = new Elysia()
               console.error("error with audit.pfees.paid event", e);
             });
         }
+
+        return application;
+      } catch (e) {
+        if (e instanceof Error) {
+          console.error("Error in finalize-payment", e);
+          set.status = 400;
+          return e.message;
+        }
+        console.error("[applicationsRouter] finalize-payment", e);
+        throw new Error("Error Occured");
+      }
+    },
+    {
+      body: t.Object({
+        txHash: t.String(),
+      }),
+      detail: {
+        summary: "Finalize Payment",
+        description: `Finalize Payment and update the application status to paymentConfirmed`,
+        tags: [TAG.APPLICATIONS],
+      },
+    }
+  )
+  .post(
+    "/finalize-audit-fees-payment",
+    async ({ body, set, headers }) => {
+      try {
+        const apiKey = headers["x-api-key"];
+        if (!apiKey) {
+          set.status = 400;
+          return "API Key is required";
+        }
+        if (apiKey !== process.env.GUARDED_API_KEY) {
+          set.status = 401;
+          return "Unauthorized";
+        }
+
+        const usedTxHash = await findUsedAuditFeesTxHash(body.txHash);
+
+        if (usedTxHash) {
+          set.status = 400;
+          return "Transaction hash already been used";
+        }
+
+        const forwarderData = await getForwarderDataFromTxHashReceipt(
+          body.txHash
+        );
+
+        const applicationId = forwarderData.applicationId;
+
+        const application = await FindFirstApplicationById(applicationId);
+
+        if (!application) {
+          set.status = 404;
+          return `Application not found: ${applicationId}`;
+        }
+
+        if (BigInt(application.auditFees) === BigInt(0)) {
+          console.error("Final Protocol Fee is not set");
+          set.status = 400;
+          return "Final Protocol Fee is not set";
+        }
+
+        const currency = forwarderData.paymentCurrency;
+
+        if (!(currency !== "USDC")) {
+          console.error("Unsupported payment currency", currency);
+          set.status = 400;
+          return `Unsupported payment currency: ${currency}`;
+        }
+
+        if (BigInt(forwarderData.amount) === BigInt(0)) {
+          console.error("Invalid amount: 0");
+          set.status = 400;
+          return `Invalid amount: 0`;
+        }
+
+        if (
+          application.auditFeesTxHash &&
+          application.auditFeesTxHash !== body.txHash
+        ) {
+          set.status = 400;
+          return "Audit fees tx hash already been used";
+        }
+
+        await updateApplication(applicationId, {
+          auditFeesTxHash: body.txHash,
+          auditFeesPaymentDate: forwarderData.paymentDate,
+        });
+
+        //TODO: uncomment after testing
+        // if (process.env.NODE_ENV === "production") {
+        const emitter = createGlowEventEmitter({
+          username: process.env.RABBITMQ_ADMIN_USER!,
+          password: process.env.RABBITMQ_ADMIN_PASSWORD!,
+          zoneId: application.zoneId,
+        });
+
+        emitter
+          .emit({
+            eventType: eventTypes.auditorFeesPaid,
+            schemaVersion: "v2-alpha",
+            payload: {
+              applicationId: applicationId,
+              payer: forwarderData.from,
+              amount_6Decimals: forwarderData.amount,
+              txHash: body.txHash,
+            },
+          })
+          .catch((e) => {
+            console.error("error with audit.pfees.paid event", e);
+          });
+        // }
 
         return application;
       } catch (e) {
