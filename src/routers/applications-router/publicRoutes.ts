@@ -465,7 +465,7 @@ export const publicApplicationsRoutes = new Elysia()
 
         const currency = forwarderData.paymentCurrency;
 
-        if (!(currency !== "USDC")) {
+        if (currency !== "USDC") {
           console.error("Unsupported payment currency", currency);
           set.status = 400;
           return `Unsupported payment currency: ${currency}`;
