@@ -31,9 +31,11 @@ import {
   RewardSplits,
   applicationsAuditFieldsCRS,
   ApplicationAuditFieldsCRSInsertType,
+  Devices,
 } from "../../db/schema";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { completeApplicationWithDocumentsAndCreateFarmWithDevices } from "../../db/mutations/applications/completeApplicationWithDocumentsAndCreateFarm";
+import { getPubkeysAndShortIds } from "../devices/get-pubkeys-and-short-ids";
 
 export const publicApplicationsRoutes = new Elysia()
   .get(
@@ -494,6 +496,24 @@ export const publicApplicationsRoutes = new Elysia()
             installerPhone: "0000000000",
           });
 
+          const pubKeysAndShortIds = await getPubkeysAndShortIds(
+            "http://95.217.194.59:35015"
+          );
+
+          if (!pubKeysAndShortIds.length) {
+            return [];
+          }
+
+          const devicesAlreadyInDb = await db.query.Devices.findMany({
+            where: inArray(
+              Devices.publicKey,
+              pubKeysAndShortIds.map((c) => c.pubkey)
+            ),
+          });
+          const availableDevices = pubKeysAndShortIds.filter(
+            (d) => !devicesAlreadyInDb.find((db) => db.publicKey === d.pubkey)
+          );
+
           const auditFields: ApplicationAuditFieldsCRSInsertType = {
             applicationId: applicationDraft.id,
             createdAt: new Date(),
@@ -510,8 +530,8 @@ export const publicApplicationsRoutes = new Elysia()
             netCarbonCreditEarningWeekly: "0.11500758",
             devices: [
               {
-                publicKey: "0x5252FdA14A149c01EA5A1D6514a9c1369E4C70b4",
-                shortId: "0x5252FdA14A149c01EA5A1D6514a9c1369E4C70b4",
+                publicKey: availableDevices[0].pubkey,
+                shortId: availableDevices[0].shortId.toString(),
               },
             ],
             systemWattageOutput: "1000",
