@@ -162,6 +162,8 @@ export const publicApplicationsRoutes = new Elysia()
         const {
           finalProtocolFee,
           auditFees,
+          auditFeesTxHash,
+          auditFeesPaymentDate,
           status,
           currentStep,
           isCancelled,
@@ -174,6 +176,8 @@ export const publicApplicationsRoutes = new Elysia()
         return {
           finalProtocolFee,
           auditFees,
+          auditFeesTxHash,
+          auditFeesPaymentDate,
           status,
           currentStep,
           isCancelled,
