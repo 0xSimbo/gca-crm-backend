@@ -8,6 +8,7 @@ import { createInstaller } from "../../db/mutations/installers/createInstaller";
 import { updateUser } from "../../db/mutations/users/updateUser";
 import { findFirstInstallerById } from "../../db/queries/installers/findFirstInstallerById";
 import { updateInstaller } from "../../db/mutations/installers/updateInstaller";
+import { findAllCertifiedInstallers } from "../../db/queries/installers/findAllCertifiedInstallers";
 
 export const CreateInstallerQueryBody = t.Object({
   name: t.String({
@@ -27,6 +28,30 @@ export const CreateInstallerQueryBody = t.Object({
 });
 
 export const installersRouter = new Elysia({ prefix: "/installers" })
+  // Public routes
+  .get(
+    "/certified",
+    async ({ set }) => {
+      try {
+        const installers = await findAllCertifiedInstallers();
+        return installers;
+      } catch (e) {
+        if (e instanceof Error) {
+          set.status = 400;
+          return e.message;
+        }
+        set.status = 500;
+        return "Internal Server Error";
+      }
+    },
+    {
+      detail: {
+        summary: "Get all certified installers",
+        description: `Returns all installers with isCertified=true. Includes id, name, email, companyName, phone, isCertified and zoneIds`,
+        tags: [TAG.INSTALLERS],
+      },
+    }
+  )
   .use(bearerplugin())
   .guard(bearerGuard, (app) =>
     app

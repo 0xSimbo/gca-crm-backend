@@ -976,7 +976,11 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               return errorChecks.errorMessage;
             }
 
-            if (!application.allowedZones.includes(body.zoneId)) {
+            //zoneId 1 is the global zone
+            if (
+              !application.allowedZones.includes(body.zoneId) &&
+              body.zoneId !== 1
+            ) {
               set.status = 400;
               return "Zone not allowed";
             }
