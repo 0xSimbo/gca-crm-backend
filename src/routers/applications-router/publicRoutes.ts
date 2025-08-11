@@ -462,7 +462,7 @@ export const publicApplicationsRoutes = new Elysia()
 
         if (forwarderData.to !== forwarderAddresses.AUDIT_FEE_WALLET) {
           set.status = 400;
-          return "Invalid forwarder address";
+          return `Invalid audit fees wallet address: ${forwarderData.to}`;
         }
 
         if (BigInt(application.auditFees) === BigInt(0)) {
