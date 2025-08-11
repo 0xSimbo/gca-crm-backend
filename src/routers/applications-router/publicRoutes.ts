@@ -15,7 +15,10 @@ import {
   ApplicationSteps,
   RoundRobinStatusEnum,
 } from "../../types/api-types/Application";
-import { DECIMALS_BY_CURRENCY } from "../../constants/addresses";
+import {
+  DECIMALS_BY_CURRENCY,
+  forwarderAddresses,
+} from "../../constants/addresses";
 import { updateApplication } from "../../db/mutations/applications/updateApplication";
 import { createGlowEventEmitter, eventTypes } from "@glowlabs-org/events-sdk";
 import {
@@ -455,6 +458,11 @@ export const publicApplicationsRoutes = new Elysia()
         if (!application) {
           set.status = 404;
           return `Application not found: ${applicationId}`;
+        }
+
+        if (forwarderData.to !== forwarderAddresses.AUDIT_FEE_WALLET) {
+          set.status = 400;
+          return "Invalid forwarder address";
         }
 
         if (BigInt(application.auditFees) === BigInt(0)) {

@@ -20,8 +20,6 @@ type Keys =
   | "impactCatalyst"
   | "carbonCreditAuction";
 
-type ForwarderKeys = "USDC" | "FORWARDER" | "FOUNDATION_WALLET";
-
 // Mainnet addresses
 const mainnetAddresses: Record<Keys, `0x${string}`> = {
   earlyLiquidity: "0xD5aBe236d2F2F5D10231c054e078788Ea3447DFc",
