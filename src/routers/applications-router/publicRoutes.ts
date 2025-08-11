@@ -460,9 +460,12 @@ export const publicApplicationsRoutes = new Elysia()
           return `Application not found: ${applicationId}`;
         }
 
-        if (forwarderData.to !== forwarderAddresses.AUDIT_FEE_WALLET) {
+        if (
+          forwarderData.to.toLowerCase() !==
+          forwarderAddresses.AUDIT_FEE_WALLET.toLowerCase()
+        ) {
           set.status = 400;
-          return `Invalid audit fees wallet address: ${forwarderData.to}`;
+          return `Invalid audit fees wallet address: ${forwarderData.to} (expected: ${forwarderAddresses.AUDIT_FEE_WALLET})`;
         }
 
         if (BigInt(application.auditFees) === BigInt(0)) {
