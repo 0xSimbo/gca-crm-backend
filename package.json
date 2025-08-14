@@ -22,7 +22,7 @@
     "@elysiajs/swagger": "1.0.5",
     "@glowlabs-org/events-sdk": "^1.0.13",
     "@glowlabs-org/guarded-launch-ethers-sdk": "^0.0.3",
-    "@glowlabs-org/utils": "^0.2.22",
+    "@glowlabs-org/utils": "^0.2.43",
     "@neondatabase/serverless": "^0.9.4",
     "@types/heic-convert": "^2.1.0",
     "dotenv": "^16.4.5",
