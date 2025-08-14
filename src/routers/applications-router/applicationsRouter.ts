@@ -853,10 +853,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                   enquiryEstimatedFees: body.enquiryEstimatedFees.toString(),
                   enquiryEstimatedQuotePerWatt:
                     body.enquiryEstimatedQuotePerWatt.toString(),
-                  installerName: body.installerName,
-                  installerCompanyName: body.installerCompanyName,
-                  installerEmail: body.installerEmail,
-                  installerPhone: body.installerPhone,
+
                   lat: body.lat.toString(),
                   lng: body.lng.toString(),
                 },
@@ -883,10 +880,13 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                   zoneId: 0,
                 });
 
+                const estimatedProtocolFeeUSDPrice_6Decimals =
+                  body.enquiryEstimatedFees.toString();
+
                 emitter
                   .emit({
                     eventType: eventTypes.applicationCreated,
-                    schemaVersion: "v1",
+                    schemaVersion: "v2-alpha",
                     payload: {
                       gcaAddress,
                       lat: body.lat,
@@ -895,7 +895,8 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                         body.estimatedCostOfPowerPerKWh,
                       estimatedKWhGeneratedPerYear:
                         body.estimatedKWhGeneratedPerYear,
-                      installerCompanyName: body.installerCompanyName,
+                      estimatedProtocolFeeUSDPrice_6Decimals:
+                        estimatedProtocolFeeUSDPrice_6Decimals.toString(),
                     },
                   })
                   .catch((e) => {
@@ -1000,10 +1001,16 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
 
             await handleCreateOrUpdatePreIntallDocuments(
               application,
-              application.organizationApplication?.id,
+
               ApplicationSteps.preInstallDocuments,
               {
                 ...body,
+              },
+              {
+                installerCompanyName: body.installerCompanyName,
+                installerEmail: body.installerEmail,
+                installerPhone: body.installerPhone,
+                installerName: body.installerName,
               }
             );
 

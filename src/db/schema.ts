@@ -871,6 +871,9 @@ export const applications = pgTable("applications", {
   }),
   // permit-documentation step fields
   // --- estimated installation date provided by the installer / farm owner
+  certifiedInstallerId: varchar("certified_installer_id", {
+    length: 255,
+  }).references(() => installers.id, { onDelete: "cascade" }),
   estimatedInstallDate: timestamp("estimated_install_date"),
   preInstallVisitDate: timestamp("pre_install_visit_date"),
   preInstallVisitDateConfirmedTimestamp: timestamp(
@@ -966,12 +969,12 @@ export const applicationsEnquiryFieldsCRS = pgTable(
       precision: 10,
       scale: 5,
     }).notNull(),
-    installerName: varchar("installer_name", { length: 255 }).notNull(),
+    installerName: varchar("installer_name", { length: 255 }),
     installerCompanyName: varchar("installer_company_name", {
       length: 255,
-    }).notNull(),
-    installerEmail: varchar("installer_email", { length: 255 }).notNull(),
-    installerPhone: varchar("installer_phone", { length: 255 }).notNull(),
+    }),
+    installerEmail: varchar("installer_email", { length: 255 }),
+    installerPhone: varchar("installer_phone", { length: 255 }),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at"),
   }
@@ -1136,6 +1139,10 @@ export const applicationsRelations = relations(
       references: [applicationsAuditFieldsCRS.applicationId],
     }),
     applicationPriceQuotes: many(ApplicationPriceQuotes),
+    installer: one(installers, {
+      fields: [applications.certifiedInstallerId],
+      references: [installers.id],
+    }),
   })
 );
 
