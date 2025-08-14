@@ -39,7 +39,6 @@ import {
 } from "../../db/mutations/applications/updateApplication";
 import { roundRobinAssignement } from "../../db/queries/gcas/roundRobinAssignement";
 
-import { BigNumber, ethers } from "ethers";
 import { handleCreateWithoutPIIDocumentsAndCompleteApplicationAudit } from "./steps/gca-application-audit-completion";
 import { db } from "../../db/db";
 import { OrganizationUsers, applicationsDraft, zones } from "../../db/schema";
@@ -1375,18 +1374,19 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                 password: process.env.RABBITMQ_ADMIN_PASSWORD!,
                 zoneId: application.zoneId,
               });
-              const protocolFeeUSDPrice_6Decimals = BigNumber.from(
+              const protocolFeeUSDPrice_6Decimals = BigInt(
                 application.finalProtocolFee
               ).toString();
 
-              const expectedProduction_12Decimals = BigNumber.from(
-                Math.floor(
-                  Number(
-                    applicationWeeklyProduction.adjustedWeeklyCarbonCredits
-                  ) * 1e6
-                )
-              ) // convert to int, 6 decimals
-                .mul(BigNumber.from("1000000")) // 6 -> 12 decimals
+              const expectedProduction_12Decimals = (
+                BigInt(
+                  Math.floor(
+                    Number(
+                      applicationWeeklyProduction.adjustedWeeklyCarbonCredits
+                    ) * 1e6
+                  )
+                ) * BigInt("1000000")
+              ) // 6 -> 12 decimals
                 .toString();
               emitter
                 .emit({

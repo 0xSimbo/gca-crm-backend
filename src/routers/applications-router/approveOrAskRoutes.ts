@@ -19,7 +19,7 @@ import {
   WeeklyCarbonDebtSchema,
   WeeklyProductionSchema,
 } from "./query-schemas";
-import { ethers } from "ethers";
+import { parseUnits } from "ethers";
 
 export const approveOrAskRoutes = new Elysia()
   .post(
@@ -446,9 +446,7 @@ export const approveOrAskRoutes = new Elysia()
               status: ApplicationStatusEnum.waitingForApproval,
               afterInstallVisitDateConfirmedTimestamp: new Date(),
               currentStep: body.stepIndex + 1,
-              finalProtocolFee: ethers.utils
-                .parseUnits(body.finalProtocolFee!!, 6)
-                .toBigInt(),
+              finalProtocolFee: parseUnits(body.finalProtocolFee!!, 6),
             },
             {
               applicationId: body.applicationId,

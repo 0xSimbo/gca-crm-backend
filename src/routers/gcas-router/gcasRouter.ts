@@ -6,11 +6,11 @@ import {
 } from "../../examples/encryptionKeys";
 import { updateRole } from "../../db/mutations/accounts/updateRole";
 import { findFirstAccountById } from "../../db/queries/accounts/findFirstAccountById";
-import { ethers } from "ethers";
-import {
-  MinerPoolAndGCA__factory,
-  addresses,
-} from "@glowlabs-org/guarded-launch-ethers-sdk";
+
+import { addresses } from "../../constants/addresses";
+import { minerPoolAndGCAAbi } from "../../abis/MinerPoolAndGCA.abi";
+import { createPublicClient, getContract, http } from "viem";
+import { mainnet, sepolia } from "viem/chains";
 import { createGca } from "../../db/mutations/gcas/createGca";
 import { FindFirstGcaById } from "../../db/queries/gcas/findFirsGcaById";
 import { bearer as bearerplugin } from "@elysiajs/bearer";
@@ -227,17 +227,21 @@ export const gcasRouter = new Elysia({ prefix: "/gcas" })
               return "this account is already a user";
             }
 
-            const provider = new ethers.providers.StaticJsonRpcProvider({
-              url: process.env.MAINNET_RPC_URL!!,
-              skipFetchSetup: true,
+            const rpcUrl = process.env.MAINNET_RPC_URL!!;
+            const chain =
+              process.env.NODE_ENV === "production" ? mainnet : sepolia;
+            const publicClient = createPublicClient({
+              chain,
+              transport: http(rpcUrl),
             });
-            const minerPoolAndGCA = MinerPoolAndGCA__factory.connect(
-              addresses.gcaAndMinerPoolContract,
-              provider
-            );
+            const minerPoolAndGCA = getContract({
+              address: addresses.gcaAndMinerPoolContract,
+              abi: minerPoolAndGCAAbi,
+              client: publicClient,
+            });
 
             // if (process.env.NODE_ENV === "production") {
-            const allGcas = await minerPoolAndGCA.allGcas();
+            const allGcas = await minerPoolAndGCA.read.allGcas();
             const isGca = allGcas
               .map((c) => c.toLowerCase())
               .includes(wallet.toLowerCase());

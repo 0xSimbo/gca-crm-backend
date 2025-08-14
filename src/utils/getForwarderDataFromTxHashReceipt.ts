@@ -1,6 +1,8 @@
-import { ethers } from "ethers";
 import { addresses, forwarderAddresses } from "../constants/addresses";
 import { FORWARDER_ABI } from "@glowlabs-org/utils/browser";
+import { createPublicClient, decodeEventLog, http } from "viem";
+import type { Abi } from "viem";
+import { mainnet, sepolia } from "viem/chains";
 // --------------------------------------------------
 // Forwarder event utility
 // --------------------------------------------------
@@ -58,35 +60,42 @@ export const getForwarderDataFromTxHashReceipt = async (
     throw new Error("MAINNET_RPC_URL is not set");
   }
 
-  const provider = new ethers.providers.StaticJsonRpcProvider({
-    url:
-      process.env.NODE_ENV === "production"
-        ? process.env.MAINNET_RPC_URL
-        : "https://ethereum-sepolia-rpc.publicnode.com",
-    skipFetchSetup: true,
-  });
+  const rpcUrl =
+    process.env.NODE_ENV === "production"
+      ? process.env.MAINNET_RPC_URL!
+      : "https://ethereum-sepolia-rpc.publicnode.com";
+  const chain = process.env.NODE_ENV === "production" ? mainnet : sepolia;
+  const client = createPublicClient({ chain, transport: http(rpcUrl) });
 
   // Fetch the transaction receipt which contains the logs we are interested in.
-  const receipt = await provider.getTransactionReceipt(txHash);
+  const receipt = await client.getTransactionReceipt({
+    hash: txHash as `0x${string}`,
+  });
   if (!receipt) {
     throw new Error(`Transaction receipt not found for hash: ${txHash}`);
   }
 
   // Derive the block timestamp — this is not present on the receipt itself.
-  const block = await provider.getBlock(receipt.blockNumber);
+  const block = await client.getBlock({ blockNumber: receipt.blockNumber });
   if (!block) {
     throw new Error("Block details not found");
   }
 
-  const iface = new ethers.utils.Interface(
-    FORWARDER_ABI as unknown as ethers.utils.Fragment[]
-  );
-
-  // Find the first log that successfully decodes to the `Forward` event.
+  // Find the first log that successfully decodes to the `Forward` event from the expected contract
   const forwardLog = receipt.logs.find((log) => {
+    if (
+      log.address.toLowerCase() !== forwarderAddresses.FORWARDER.toLowerCase()
+    ) {
+      return false;
+    }
     try {
-      const parsed = iface.parseLog(log);
-      return parsed?.name === "Forward";
+      const decoded = decodeEventLog({
+        abi: FORWARDER_ABI as unknown as Abi,
+        eventName: "Forward",
+        data: log.data,
+        topics: log.topics,
+      });
+      return decoded?.eventName === "Forward";
     } catch {
       return false;
     }
@@ -96,23 +105,25 @@ export const getForwarderDataFromTxHashReceipt = async (
     throw new Error("Forward event not found in transaction logs");
   }
 
-  // Ensure the event was emitted by the expected forwarder contract
-  if (
-    forwardLog.address.toLowerCase() !==
-    forwarderAddresses.FORWARDER.toLowerCase()
-  ) {
-    throw new Error(
-      `Invalid forwarder contract: expected ${forwarderAddresses.FORWARDER}, got ${forwardLog.address}`
-    );
-  }
+  type ForwardEventArgs = {
+    amount: bigint;
+    message: string;
+    from: string;
+    to: string;
+    token: string;
+  };
+  const decodedUnknown = decodeEventLog({
+    abi: FORWARDER_ABI as unknown as Abi,
+    eventName: "Forward",
+    data: forwardLog.data,
+    topics: forwardLog.topics,
+  }) as unknown as { eventName: "Forward"; args: ForwardEventArgs };
 
-  const parsed = iface.parseLog(forwardLog);
-
-  const amount = (parsed.args["amount"] as ethers.BigNumber).toString();
-  const message = parsed.args["message"] as string;
-  const from = parsed.args["from"] as string;
-  const to = parsed.args["to"] as string;
-  const token = parsed.args["token"] as string;
+  const amount = decodedUnknown.args.amount.toString();
+  const message = decodedUnknown.args.message;
+  const from = decodedUnknown.args.from;
+  const to = decodedUnknown.args.to;
+  const token = decodedUnknown.args.token;
 
   // Normalize the address once to avoid repeated `toLowerCase` calls
   const normalizedToken = token.toLowerCase();
@@ -162,7 +173,7 @@ export const getForwarderDataFromTxHashReceipt = async (
   return {
     amount,
     message,
-    paymentDate: new Date(block.timestamp * 1000),
+    paymentDate: new Date(Number(block.timestamp) * 1000),
     from,
     to,
     token,

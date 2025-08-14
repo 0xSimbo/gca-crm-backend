@@ -1,5 +1,3 @@
-import { ethers } from "ethers";
-
 import MerkleTree from "merkletreejs";
 import keccak256 from "keccak256";
 import { and, desc, eq, gt, inArray, isNotNull, isNull, or } from "drizzle-orm";
@@ -12,6 +10,16 @@ import {
 
 import { createAndUploadJsonFile } from "./r2/upload-to-r2";
 import { declarationOfIntentionFieldsValueType } from "../db/mutations/applications/createApplication";
+import {
+  createPublicClient,
+  createWalletClient,
+  encodePacked,
+  http,
+  keccak256 as viemKeccak256,
+  parseAbi,
+} from "viem";
+import { mainnet, sepolia } from "viem/chains";
+import { privateKeyToAccount } from "viem/accounts";
 
 interface Declaration {
   fullname: string;
@@ -26,24 +34,26 @@ if (!process.env.MERKLE_ROOT_CONTRACT_ADDRESS) {
   throw new Error("MERKLE_ROOT_CONTRACT_ADDRESS is not set");
 }
 
-const merkleRootPosterAbi = [
-  "function postRoot(bytes32 root) external",
-  "function getRoot(bytes32 root) external view returns (tuple(uint64 timestamp, address poster))",
-];
+const merkleRootPosterAbi = parseAbi([
+  "function postRoot(bytes32 root)",
+  "function getRoot(bytes32 root) view returns (uint64 timestamp, address poster)",
+]);
 
 const merkleRootPosterAddress = process.env.MERKLE_ROOT_CONTRACT_ADDRESS;
 
 export function hashLeaf(declaration: Declaration): string {
-  return ethers.utils.solidityKeccak256(
-    ["string", "string", "string", "uint256", "address", "bytes"],
-    [
-      declaration.fullname,
-      declaration.latitude,
-      declaration.longitude,
-      declaration.date,
-      declaration.signer,
-      declaration.signature,
-    ]
+  return viemKeccak256(
+    encodePacked(
+      ["string", "string", "string", "uint256", "address", "bytes"],
+      [
+        declaration.fullname,
+        declaration.latitude,
+        declaration.longitude,
+        BigInt(declaration.date),
+        declaration.signer as `0x${string}`,
+        declaration.signature as `0x${string}`,
+      ]
+    )
   );
 }
 
@@ -51,29 +61,53 @@ export async function postMerkleRoot(merkleRoot: string) {
   if (!process.env.PRIVATE_KEY) {
     throw new Error("PRIVATE_KEY is not set");
   }
-  const provider = new ethers.providers.StaticJsonRpcProvider({
-    url: process.env.MAINNET_RPC_URL!!,
-    skipFetchSetup: true,
+  if (!process.env.MAINNET_RPC_URL) {
+    throw new Error("MAINNET_RPC_URL is not set");
+  }
+
+  const rpcUrl = process.env.MAINNET_RPC_URL;
+  const chain = process.env.NODE_ENV === "production" ? mainnet : sepolia;
+  const publicClient = createPublicClient({ chain, transport: http(rpcUrl) });
+  const account = privateKeyToAccount(process.env.PRIVATE_KEY as `0x${string}`);
+  const walletClient = createWalletClient({
+    account,
+    chain,
+    transport: http(rpcUrl),
   });
-  const signer = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
 
   // Define the ABI of the MerkleRootPoster contract
 
-  // Instantiate the MerkleRootPoster contract
-  const merkleRootPoster = new ethers.Contract(
-    merkleRootPosterAddress,
-    merkleRootPosterAbi,
-    signer
-  );
+  // Instantiate the MerkleRootPoster contract (read and write via viem)
+  const contractAddress = merkleRootPosterAddress as `0x${string}`;
 
-  const rootData = await merkleRootPoster.getRoot("0x" + merkleRoot);
-  if (rootData.timestamp.toString() !== "0") {
+  const hexRoot = (
+    merkleRoot.startsWith("0x") ? merkleRoot : "0x" + merkleRoot
+  ) as `0x${string}`;
+  const rootData = (await publicClient.readContract({
+    address: contractAddress,
+    abi: merkleRootPosterAbi,
+    functionName: "getRoot",
+    args: [hexRoot],
+  })) as any;
+  const existingTimestamp: bigint | null = Array.isArray(rootData)
+    ? (rootData[0] as bigint)
+    : rootData && typeof rootData === "object" && "timestamp" in rootData
+    ? (rootData.timestamp as bigint)
+    : null;
+  if (existingTimestamp != null && existingTimestamp !== BigInt(0)) {
     throw new Error("Merkle Root already posted");
   }
 
   // Upload the Merkle Root
-  const tx = await merkleRootPoster.postRoot("0x" + merkleRoot);
-  const receipt = await tx.wait();
+  const txHash = await walletClient.writeContract({
+    address: contractAddress,
+    abi: merkleRootPosterAbi,
+    functionName: "postRoot",
+    args: [hexRoot],
+  });
+  const receipt = await publicClient.waitForTransactionReceipt({
+    hash: txHash,
+  });
 
   return receipt.transactionHash;
 }
@@ -152,7 +186,7 @@ export const postMerkleRootHandler = async () => {
           ],
         },
         hashFunction:
-          'function hashLeaf(declaration: { fullname: string; latitude: string; longitude: string; date: number; signer: string; signature: string; }): string { return ethers.utils.solidityKeccak256(["string", "string", "string", "uint256", "address", "bytes"], [ declaration.fullname, declaration.latitude, declaration.longitude, declaration.date, declaration.signer, declaration.signature ]); }',
+          'function hashLeaf(declaration: { fullname: string; latitude: string; longitude: string; date: number; signer: string; signature: string; }): string { return keccak256(encodePacked(["string", "string", "string", "uint256", "address", "bytes"], [ declaration.fullname, declaration.latitude, declaration.longitude, declaration.date, declaration.signer, declaration.signature ])); }',
       },
       leaves: declarations,
     }

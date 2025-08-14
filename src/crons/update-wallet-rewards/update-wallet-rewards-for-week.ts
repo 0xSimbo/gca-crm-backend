@@ -6,8 +6,9 @@ import { DB_DECIMALS, GLOW_REWARDS_PER_WEEK } from "../../constants";
 import { checksumAddress, formatUnits } from "viem";
 import MerkleTree from "merkletreejs";
 import keccak256 from "keccak256";
-import { ethers } from "ethers";
+
 import { walletWeeklyRewards } from "../../db/schema";
+import { solidityPackedKeccak256 } from "ethers";
 /**
     Each
 */
@@ -37,7 +38,7 @@ export const updateWalletRewardsForWeek = async (
 
   const leaves = merkleTree.map((leaf) => {
     const values = [leaf.address, leaf.glowWeight, leaf.usdcWeight];
-    const hash = ethers.utils.solidityKeccak256(leafType, values);
+    const hash = solidityPackedKeccak256(leafType, values);
     return hash;
   });
   const tree = new MerkleTree(leaves, keccak256, { sort: true });
@@ -68,7 +69,7 @@ export const updateWalletRewardsForWeek = async (
         : (BigInt(leaf.usdcWeight) * BigInt(usdgRewards.toString())) /
           sumOfWeights.usdgWeight;
 
-    let targetLeaf = ethers.utils.solidityKeccak256(leafType, [
+    let targetLeaf = solidityPackedKeccak256(leafType, [
       leaf.address,
       leaf.glowWeight,
       leaf.usdcWeight,

@@ -3,7 +3,7 @@ import {
   MinerPoolAndGCA__factory,
 } from "@glowlabs-org/guarded-launch-ethers-sdk";
 import { viemClient } from "../web3-providers/viem-client";
-import { minerPoolAndGCAAbi } from "../../abis/MinerPoolAndGCA.abi";
+
 /**
  * @returns {BigInt} - the amount of USDG Rewards In A Bucket
             - has 6 decimals
