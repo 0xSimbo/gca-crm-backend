@@ -1,7 +1,5 @@
-import {
-  addresses,
-  MinerPoolAndGCA__factory,
-} from "@glowlabs-org/guarded-launch-ethers-sdk";
+import { addresses } from "../../constants/addresses";
+import { MinerPoolAndGCA_ABI } from "../MinerPoolAndGCA__factory";
 import { viemClient } from "../web3-providers/viem-client";
 
 /**
@@ -14,7 +12,7 @@ export const getRewardsInBucket = async (
   try {
     const rewards = (await viemClient.readContract({
       address: addresses.gcaAndMinerPoolContract as `0x${string}`,
-      abi: MinerPoolAndGCA__factory.abi,
+      abi: MinerPoolAndGCA_ABI,
       functionName: "reward",
       args: [BigInt(weekNumber)],
     })) as { amountInBucket: BigInt };
