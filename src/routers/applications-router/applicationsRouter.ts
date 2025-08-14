@@ -87,6 +87,7 @@ import { findFirstApplicationDraftByUserId } from "../../db/queries/applications
 import { publicApplicationsRoutes } from "./publicRoutes";
 import { approveOrAskRoutes } from "./approveOrAskRoutes";
 import { organizationApplicationRoutes } from "./organizationApplicationRoutes";
+import { parseUnits } from "viem";
 
 export const applicationsRouter = new Elysia({ prefix: "/applications" })
   .use(publicApplicationsRoutes)
@@ -880,8 +881,10 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                   zoneId: 0,
                 });
 
-                const estimatedProtocolFeeUSDPrice_6Decimals =
-                  body.enquiryEstimatedFees.toString();
+                const estimatedProtocolFeeUSDPrice_6Decimals = parseUnits(
+                  body.enquiryEstimatedFees.toString(),
+                  6
+                );
 
                 emitter
                   .emit({
@@ -1001,7 +1004,6 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
 
             await handleCreateOrUpdatePreIntallDocuments(
               application,
-
               ApplicationSteps.preInstallDocuments,
               {
                 ...body,

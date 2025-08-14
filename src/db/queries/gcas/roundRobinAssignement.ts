@@ -3,6 +3,9 @@ import { db } from "../../db";
 import { Gcas, applications } from "../../schema";
 
 export const roundRobinAssignement = async () => {
+  if (process.env.NODE_ENV === "staging") {
+    return "0xA9A58D16F454A4FA5F7f00Bbe583A86F2C5446dd";
+  }
   const latestAssignedApplication = await db.query.applications.findFirst({
     where: and(
       isNotNull(applications.gcaAssignedTimestamp),
