@@ -217,6 +217,11 @@ export const publicApplicationsRoutes = new Elysia()
     "/finalize-payment",
     async ({ body, set, headers }) => {
       try {
+        if (process.env.NODE_ENV === "production") {
+          set.status = 400;
+          return "We are not accepting any payment at the moment";
+        }
+
         const apiKey = headers["x-api-key"];
         if (!apiKey) {
           set.status = 400;
