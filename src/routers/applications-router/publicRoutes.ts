@@ -44,6 +44,7 @@ import { completeApplicationWithDocumentsAndCreateFarmWithDevices } from "../../
 import { getPubkeysAndShortIds } from "../devices/get-pubkeys-and-short-ids";
 import { findAllAuditFeesPaidApplicationsByZoneId } from "../../db/queries/applications/findAllAuditFeesPaidApplicationsByZoneId";
 import { findAllCertifiedInstallers } from "../../db/queries/installers/findAllCertifiedInstallers";
+import { findAllInstallers } from "../../db/queries/installers/findAllInstallers";
 
 export const publicApplicationsRoutes = new Elysia()
   .get(
@@ -773,6 +774,38 @@ export const publicApplicationsRoutes = new Elysia()
       detail: {
         summary: "Dev-only: Create application at waiting-for-payment step",
         description: `Create a new application pre-populated with sentinel values and immediately set to waiting-for-payment. Accessible only when NODE_ENV is not production and with a valid x-api-key.`,
+        tags: [TAG.APPLICATIONS],
+      },
+    }
+  )
+  .get(
+    "/installers",
+    async ({ headers, set }) => {
+      try {
+        const apiKey = headers["x-api-key"];
+        if (!apiKey) {
+          set.status = 400;
+          return "API Key is required";
+        }
+        if (apiKey !== process.env.GUARDED_API_KEY) {
+          set.status = 401;
+          return "Unauthorized";
+        }
+        const installers = await findAllInstallers();
+        return installers;
+      } catch (e) {
+        if (e instanceof Error) {
+          set.status = 400;
+          return e.message;
+        }
+        set.status = 500;
+        return "Internal Server Error";
+      }
+    },
+    {
+      detail: {
+        summary: "Get all installers",
+        description: `Returns all installers. Accessible only with a valid x-api-key.`,
         tags: [TAG.APPLICATIONS],
       },
     }
