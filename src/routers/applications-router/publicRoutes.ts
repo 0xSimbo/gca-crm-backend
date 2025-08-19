@@ -778,38 +778,7 @@ export const publicApplicationsRoutes = new Elysia()
       },
     }
   )
-  .get(
-    "/installers",
-    async ({ headers, set }) => {
-      try {
-        const apiKey = headers["x-api-key"];
-        if (!apiKey) {
-          set.status = 400;
-          return "API Key is required";
-        }
-        if (apiKey !== process.env.GUARDED_API_KEY) {
-          set.status = 401;
-          return "Unauthorized";
-        }
-        const installers = await findAllInstallers();
-        return installers;
-      } catch (e) {
-        if (e instanceof Error) {
-          set.status = 400;
-          return e.message;
-        }
-        set.status = 500;
-        return "Internal Server Error";
-      }
-    },
-    {
-      detail: {
-        summary: "Get all installers",
-        description: `Returns all installers. Accessible only with a valid x-api-key.`,
-        tags: [TAG.APPLICATIONS],
-      },
-    }
-  )
+
   .get(
     "/application-price-quotes",
     async ({ query, set }) => {

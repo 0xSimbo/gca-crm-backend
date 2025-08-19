@@ -9,6 +9,7 @@ import { updateUser } from "../../db/mutations/users/updateUser";
 import { findFirstInstallerById } from "../../db/queries/installers/findFirstInstallerById";
 import { updateInstaller } from "../../db/mutations/installers/updateInstaller";
 import { findAllCertifiedInstallers } from "../../db/queries/installers/findAllCertifiedInstallers";
+import { findAllInstallers } from "../../db/queries/installers/findAllInstallers";
 
 export const CreateInstallerQueryBody = t.Object({
   name: t.String({
@@ -49,6 +50,38 @@ export const installersRouter = new Elysia({ prefix: "/installers" })
         summary: "Get all certified installers",
         description: `Returns all installers with isCertified=true. Includes id, name, email, companyName, phone, isCertified and zoneIds`,
         tags: [TAG.INSTALLERS],
+      },
+    }
+  )
+  .get(
+    "/all",
+    async ({ headers, set }) => {
+      try {
+        const apiKey = headers["x-api-key"];
+        if (!apiKey) {
+          set.status = 400;
+          return "API Key is required";
+        }
+        if (apiKey !== process.env.GUARDED_API_KEY) {
+          set.status = 401;
+          return "Unauthorized";
+        }
+        const installers = await findAllInstallers();
+        return installers;
+      } catch (e) {
+        if (e instanceof Error) {
+          set.status = 400;
+          return e.message;
+        }
+        set.status = 500;
+        return "Internal Server Error";
+      }
+    },
+    {
+      detail: {
+        summary: "Get all installers",
+        description: `Returns all installers. Accessible only with a valid x-api-key.`,
+        tags: [TAG.APPLICATIONS],
       },
     }
   )
