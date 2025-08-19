@@ -1,4 +1,4 @@
-import { ethers } from "ethers";
+import { verifyTypedData } from "ethers";
 import { db } from "../db/db";
 import { eq } from "drizzle-orm";
 import { Accounts } from "../db/schema";
@@ -16,7 +16,7 @@ export const recoverAddressHandler = async (
     throw new Error("Account not found");
   }
 
-  const signerAddress = ethers.utils.verifyTypedData(
+  const signerAddress = verifyTypedData(
     {
       name: "Glow Crm",
       version: "1",

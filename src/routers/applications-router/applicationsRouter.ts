@@ -21,12 +21,8 @@ import {
   deferredTypes,
 } from "../../constants/typed-data/deferment";
 import { deferApplicationAssignement } from "../../db/mutations/applications/deferApplicationAssignement";
-import {
-  applicationCompletedWithPaymentTypes,
-  stepApprovedTypes,
-  stepApprovedWithFinalProtocolFeeTypes,
-} from "../../constants/typed-data/step-approval";
-import { approveApplicationStep } from "../../db/mutations/applications/approveApplicationStep";
+import { applicationCompletedWithPaymentV2Types } from "../../constants/typed-data/step-approval";
+
 import { updateApplicationStatus } from "../../db/mutations/applications/updateApplicationStatus";
 import { updateApplicationEnquiry } from "../../db/mutations/applications/updateApplicationEnquiry";
 import { incrementApplicationStep } from "../../db/mutations/applications/incrementApplicationStep";
@@ -43,10 +39,9 @@ import {
 } from "../../db/mutations/applications/updateApplication";
 import { roundRobinAssignement } from "../../db/queries/gcas/roundRobinAssignement";
 
-import { BigNumber, ethers } from "ethers";
-import { handleCreateWithoutPIIDocumentsAndCompleteApplication } from "./steps/gca-application-completion";
+import { handleCreateWithoutPIIDocumentsAndCompleteApplicationAudit } from "./steps/gca-application-audit-completion";
 import { db } from "../../db/db";
-import { OrganizationUsers, applicationsDraft } from "../../db/schema";
+import { OrganizationUsers, applicationsDraft, zones } from "../../db/schema";
 
 import { convertKWhToMWh } from "../../utils/format/convertKWhToMWh";
 import { findFirstUserById } from "../../db/queries/users/findFirstUserById";
@@ -64,17 +59,9 @@ import { findFirstDelegatedEncryptedMasterKeyByApplicationIdAndOrganizationUserI
 import { findFirstDelegatedEncryptedMasterKeyByApplicationId } from "../../db/queries/organizations/findFirstDelegatedEncryptedMasterKeyByApplicationId";
 import { FindFirstGcaById } from "../../db/queries/gcas/findFirsGcaById";
 import { findFirstApplicationMasterKeyByApplicationIdAndUserId } from "../../db/queries/applications/findFirstApplicationMasterKeyByApplicationIdAndUserId";
-import {
-  findAllCompletedApplications,
-  findCompletedApplication,
-} from "../../db/queries/applications/findAllCompletedApplications";
 import { findAllApplicationsWithoutMasterKey } from "../../db/queries/applications/findAllApplicationsWithoutMasterKey";
 import { createApplicationEncryptedMasterKeysForUsers } from "../../db/mutations/applications/createApplicationEncryptedMasterKeysForUsers";
 import { findAllApplications } from "../../db/queries/applications/findAllApplications";
-import {
-  GetProtocolFeePaymentFromTxHashReceipt,
-  getProtocolFeePaymentFromTxHashReceipt,
-} from "../../utils/getProtocolFeePaymentFromTxHashReceipt";
 import { findAllApplicationsOwnersByIds } from "../../db/queries/applications/findAllApplicationsOwnersByIds";
 import { createOrganizationApplicationBatch } from "../../db/mutations/organizations/createOrganizationApplicationBatch";
 import { deleteOrganizationApplicationBatch } from "../../db/mutations/organizations/deleteOrganizationApplicationBatch";
@@ -97,80 +84,14 @@ import {
   ApproveOrAskForChangesQueryBody,
 } from "./query-schemas";
 import { findFirstApplicationDraftByUserId } from "../../db/queries/applications/findFirstApplicationDraftByUserId";
+import { publicApplicationsRoutes } from "./publicRoutes";
+import { approveOrAskRoutes } from "./approveOrAskRoutes";
+import { organizationApplicationRoutes } from "./organizationApplicationRoutes";
+import { parseUnits } from "viem";
 
 export const applicationsRouter = new Elysia({ prefix: "/applications" })
+  .use(publicApplicationsRoutes)
   .use(bearerplugin())
-  .get(
-    "/completed",
-    async ({ query: { withDocuments }, set }) => {
-      try {
-        const applications = await findAllCompletedApplications(
-          !!withDocuments
-        );
-
-        return applications;
-      } catch (e) {
-        if (e instanceof Error) {
-          set.status = 400;
-          return e.message;
-        }
-        console.log("[applicationsRouter] /completed", e);
-        throw new Error("Error Occured");
-      }
-    },
-    {
-      query: t.Object({
-        withDocuments: t.Optional(t.Literal("true")),
-      }),
-      detail: {
-        summary: "Get all completed applications ",
-        description: `Get all completed applications `,
-        tags: [TAG.APPLICATIONS],
-      },
-    }
-  )
-  .get(
-    "/completed/by",
-    async ({ query, set }) => {
-      try {
-        const { farmId, publicKey, shortId } = query;
-        if (!farmId && !publicKey && !shortId) {
-          set.status = 400;
-          return "You must provide one of: farmId, publicKey, or shortId";
-        }
-        const application = await findCompletedApplication({
-          farmId,
-          publicKey,
-          shortId,
-        });
-        if (!application) {
-          set.status = 404;
-          return "Completed application not found";
-        }
-        return application;
-      } catch (e) {
-        if (e instanceof Error) {
-          set.status = 400;
-          return e.message;
-        }
-        set.status = 500;
-        return "Internal Server Error";
-      }
-    },
-    {
-      query: t.Object({
-        farmId: t.Optional(t.String()),
-        publicKey: t.Optional(t.String()),
-        shortId: t.Optional(t.String()),
-      }),
-      detail: {
-        summary:
-          "Get one completed application by farmId, publicKey, or shortId",
-        description: `Returns a completed application for a farm or device. Prioritizes: publicKey > shortId > farmId.`,
-        tags: [TAG.APPLICATIONS],
-      },
-    }
-  )
   .guard(bearerGuard, (app) =>
     app
       .resolve(({ headers: { authorization } }) => {
@@ -179,6 +100,8 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
           userId,
         };
       })
+      .use(approveOrAskRoutes)
+      .use(organizationApplicationRoutes)
       .get(
         "/byId",
         async ({ query, set, userId }) => {
@@ -336,260 +259,6 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
           },
         }
       )
-      .get(
-        "/all-applications-by-organization-id",
-        async ({ query, set, userId }) => {
-          if (!query.organizationId)
-            throw new Error("organizationId is required");
-          try {
-            const user = await findFirstUserById(userId);
-            if (!user) {
-              set.status = 400;
-
-              return "Unauthorized";
-            }
-
-            const organization = await findOrganizationById(
-              query.organizationId
-            );
-
-            const isOrganizationOwner = organization?.ownerId === userId;
-
-            const organizationMember = await findOrganizationMemberByUserId(
-              query.organizationId,
-              userId
-            );
-
-            const isAuthorized =
-              isOrganizationOwner ||
-              organizationMember?.role.rolePermissions.find(
-                (p) =>
-                  p.permission.key === PermissionsEnum.ApplicationsRead ||
-                  p.permission.key === PermissionsEnum.ProtocolFeePayment
-              );
-
-            const applications = await findAllApplicationsByOrganizationId(
-              query.organizationId
-            );
-
-            if (!isAuthorized) {
-              // return only applications owned by the user
-              return applications.filter((c) => c.user.id === userId);
-            }
-
-            return applications;
-          } catch (e) {
-            if (e instanceof Error) {
-              set.status = 400;
-              return e.message;
-            }
-            console.log(
-              "[organizationsRouter] /all-applications-by-organization-id",
-              e
-            );
-            throw new Error("Error Occured");
-          }
-        },
-        {
-          query: t.Object({
-            organizationId: t.String(),
-          }),
-          detail: {
-            summary: "Get all applications by organization ID",
-            description: `Get all applications by organization ID and check if the user is authorized to view applications`,
-            tags: [TAG.APPLICATIONS],
-          },
-        }
-      )
-      .post(
-        "/add-application-to-organization",
-        async ({ body, set, userId }) => {
-          try {
-            const user = await findFirstUserById(userId);
-            if (!user) {
-              set.status = 400;
-
-              return "Unauthorized";
-            }
-
-            const organizationMember = await findOrganizationMemberByUserId(
-              body.organizationId,
-              userId
-            );
-
-            if (!organizationMember) {
-              set.status = 400;
-              return "User is not a member of the organization";
-            }
-
-            const isAuthorized = organizationMember?.role.rolePermissions.find(
-              (p) => p.permission.key === PermissionsEnum.ApplicationsShare
-            );
-
-            if (!isAuthorized) {
-              set.status = 400;
-              return "User does not have the required permissions";
-            }
-
-            const application = await FindFirstApplicationById(
-              body.applicationId
-            );
-
-            if (!application) {
-              set.status = 404;
-              return "Application not found";
-            }
-
-            if (application.userId !== userId) {
-              set.status = 400;
-              return "User is not the owner of the application";
-            }
-
-            if (
-              application.organizationApplication?.organizationId ===
-              body.organizationId
-            ) {
-              set.status = 400;
-              return "Application already added to organization";
-            }
-
-            await createOrganizationApplication(
-              organizationMember.id,
-              body.organizationId,
-              body.applicationId,
-              body.delegatedApplicationsEncryptedMasterKeys
-            );
-          } catch (e) {
-            if (e instanceof Error) {
-              set.status = 400;
-              return e.message;
-            }
-            console.log(
-              "[organizationsRouter] /add-application-to-organization",
-              e
-            );
-            throw new Error("Error Occured");
-          }
-        },
-        {
-          body: t.Object({
-            organizationId: t.String(),
-            applicationId: t.String(),
-            delegatedApplicationsEncryptedMasterKeys: t.Array(
-              t.Object({
-                userId: t.String(),
-                encryptedMasterKey: t.String(),
-                applicationId: t.String(),
-                organizationUserId: t.String(),
-              })
-            ),
-          }),
-          detail: {
-            summary: "Add application to organization",
-            description: `Add application to organization and check if the user is authorized to add applications to the organization`,
-            tags: [TAG.APPLICATIONS],
-          },
-        }
-      )
-      .post(
-        "/share-all-applications-to-organization",
-        async ({ body, set, userId }) => {
-          try {
-            const user = await findFirstUserById(userId);
-            if (!user) {
-              set.status = 400;
-
-              return "Unauthorized";
-            }
-
-            const organizationMember = await findOrganizationMemberByUserId(
-              body.organizationId,
-              userId
-            );
-
-            if (!organizationMember) {
-              set.status = 400;
-              return "User is not a member of the organization";
-            }
-
-            const isAlreadyShardingAllApplications =
-              await findFirstOrgMemberwithShareAllApplications(userId);
-
-            if (isAlreadyShardingAllApplications) {
-              set.status = 400;
-              return "User is already sharing all applications with an organization";
-            }
-
-            const isAuthorized = organizationMember?.role.rolePermissions.find(
-              (p) => p.permission.key === PermissionsEnum.ApplicationsShare
-            );
-
-            if (!isAuthorized) {
-              set.status = 400;
-              return "User does not have the required permissions";
-            }
-
-            const applications = await findAllApplicationsOwnersByIds(
-              body.applicationIds
-            );
-
-            if (applications.length !== body.applicationIds.length) {
-              set.status = 404;
-              return "Application not found";
-            }
-
-            if (applications.some((a) => a.user.id !== userId)) {
-              set.status = 400;
-              return "User is not the owner of the application";
-            }
-
-            if (body.applicationIds.length === 0) {
-              await db
-                .update(OrganizationUsers)
-                .set({
-                  shareAllApplications: true,
-                })
-                .where(eq(OrganizationUsers.id, organizationMember.id));
-            } else {
-              await createOrganizationApplicationBatch(
-                organizationMember.id,
-                body.organizationId,
-                body.applicationIds,
-                body.delegatedApplicationsEncryptedMasterKeys
-              );
-            }
-          } catch (e) {
-            if (e instanceof Error) {
-              set.status = 400;
-              return e.message;
-            }
-            console.log(
-              "[organizationsRouter] /share-all-applications-to-organization",
-              e
-            );
-            throw new Error("Error Occured");
-          }
-        },
-        {
-          body: t.Object({
-            organizationId: t.String(),
-            applicationIds: t.Array(t.String()),
-            delegatedApplicationsEncryptedMasterKeys: t.Array(
-              t.Object({
-                userId: t.String(),
-                encryptedMasterKey: t.String(),
-                applicationId: t.String(),
-                organizationUserId: t.String(),
-              })
-            ),
-          }),
-          detail: {
-            summary: "Share all org member applications with the organization",
-            description: `share all org member applications with the organization`,
-            tags: [TAG.APPLICATIONS],
-          },
-        }
-      )
       .post(
         "/cancel-or-resume-application",
         async ({ body, set, userId }) => {
@@ -634,322 +303,6 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
           detail: {
             summary: "Cancel or Resume Application",
             description: `Cancel or Resume Application and check if the user is authorized to cancel the application`,
-            tags: [TAG.APPLICATIONS],
-          },
-        }
-      )
-      .post(
-        "/remove-application-to-organization",
-        async ({ body, set, userId }) => {
-          try {
-            const user = await findFirstUserById(userId);
-            if (!user) {
-              set.status = 400;
-
-              return "Unauthorized";
-            }
-
-            const organization = await findOrganizationById(
-              body.organizationId
-            );
-
-            const isOrganizationOwner = organization?.ownerId === userId;
-
-            const organizationMember = await findOrganizationMemberByUserId(
-              body.organizationId,
-              userId
-            );
-
-            const application = await FindFirstApplicationById(
-              body.applicationId
-            );
-
-            if (!application) {
-              set.status = 404;
-              return "Application not found";
-            }
-
-            const isAuthorized =
-              isOrganizationOwner ||
-              organizationMember?.role.rolePermissions.find(
-                (p) => p.permission.key === PermissionsEnum.ApplicationsShare
-              ) ||
-              application?.userId === userId;
-
-            if (!isAuthorized) {
-              set.status = 400;
-              return "Unauthorized";
-            }
-
-            if (application.userId !== userId) {
-              set.status = 400;
-              return "Unauthorized";
-            }
-
-            await deleteOrganizationApplication(
-              body.organizationId,
-              body.applicationId
-            );
-          } catch (e) {
-            if (e instanceof Error) {
-              set.status = 400;
-              return e.message;
-            }
-            console.log(
-              "[organizationsRouter] /remove-organization-application",
-              e
-            );
-            throw new Error("Error Occured");
-          }
-        },
-        {
-          body: t.Object({
-            organizationId: t.String(),
-            applicationId: t.String(),
-          }),
-          detail: {
-            summary: "Remove application from organization",
-            description: `Remove application from organization and check if the user is authorized to remove the application from the organization`,
-            tags: [TAG.APPLICATIONS],
-          },
-        }
-      )
-      .post(
-        "/remove-org-user-applications-from-organization",
-        async ({ body, set, userId }) => {
-          try {
-            const user = await findFirstUserById(userId);
-            if (!user) {
-              set.status = 400;
-
-              return "Unauthorized";
-            }
-
-            const organization = await findOrganizationById(
-              body.organizationId
-            );
-
-            const organizationMember = await findOrganizationMemberByUserId(
-              body.organizationId,
-              userId
-            );
-
-            if (!organizationMember) {
-              set.status = 400;
-              return "Unauthorized";
-            }
-
-            const allOrgUserApplications = await findAllApplicationsByOrgUserId(
-              organizationMember.id
-            );
-
-            await deleteOrganizationApplicationBatch(
-              organizationMember.id,
-              body.organizationId,
-              allOrgUserApplications.map((a) => a.id)
-            );
-          } catch (e) {
-            if (e instanceof Error) {
-              set.status = 400;
-              return e.message;
-            }
-            console.log(
-              "[organizationsRouter] /remove-org-user-applications-from-organization",
-              e
-            );
-            throw new Error("Error Occured");
-          }
-        },
-        {
-          body: t.Object({
-            organizationId: t.String(),
-          }),
-          detail: {
-            summary: "Remove applications from organization",
-            description: `Remove applications from organization and check if the user is authorized to remove applications from the organization`,
-            tags: [TAG.APPLICATIONS],
-          },
-        }
-      )
-      .post(
-        "/enquiry-approve-or-ask-for-changes",
-        async ({ body, set, userId: gcaId }) => {
-          try {
-            const account = await findFirstAccountById(gcaId);
-            if (!account) {
-              return { errorCode: 404, errorMessage: "Account not found" };
-            }
-
-            const errorChecks = await approveOrAskForChangesCheckHandler(
-              body.stepIndex,
-              body.applicationId,
-              body.deadline,
-              account
-            );
-            if (errorChecks.errorCode !== 200 || !errorChecks.data) {
-              set.status = errorChecks.errorCode;
-              return errorChecks.errorMessage;
-            }
-
-            const approvedValues = {
-              applicationId: body.applicationId,
-              approved: body.approved,
-              deadline: body.deadline,
-              stepIndex: body.stepIndex,
-              // nonce is fetched from user account. nonce is updated for every new next-auth session
-            };
-
-            const recoveredAddress = await recoverAddressHandler(
-              stepApprovedTypes,
-              approvedValues,
-              body.signature,
-              gcaId
-            );
-
-            if (recoveredAddress.toLowerCase() !== account.id.toLowerCase()) {
-              set.status = 400;
-              return "Invalid Signature";
-            }
-
-            if (body.approved) {
-              await approveApplicationStep(
-                body.applicationId,
-                account.id,
-                body.annotation,
-                body.stepIndex,
-                body.signature,
-                {
-                  status: ApplicationStatusEnum.draft,
-                  currentStep: body.stepIndex + 1,
-                }
-              );
-            } else {
-              await updateApplicationStatus(
-                body.applicationId,
-                ApplicationStatusEnum.changesRequired
-              );
-            }
-          } catch (e) {
-            if (e instanceof Error) {
-              set.status = 400;
-              return e.message;
-            }
-            console.log(
-              "[applicationsRouter] enquiry-approve-or-ask-for-changes",
-              e
-            );
-            throw new Error("Error Occured");
-          }
-        },
-        {
-          body: t.Object(ApproveOrAskForChangesQueryBody),
-          detail: {
-            summary: "Gca Approve or Ask for Changes after step submission",
-            description: `Approve or Ask for Changes. If the user is not a GCA, it will throw an error. If the deadline is in the past, it will throw an error. If the deadline is more than 10 minutes in the future, it will throw an error.`,
-            tags: [TAG.APPLICATIONS],
-          },
-        }
-      )
-      .post(
-        "/pre-install-documents-approve-or-ask-for-changes",
-        async ({ body, set, userId: gcaId }) => {
-          try {
-            const account = await findFirstAccountById(gcaId);
-            if (!account) {
-              return { errorCode: 404, errorMessage: "Account not found" };
-            }
-
-            const errorChecks = await approveOrAskForChangesCheckHandler(
-              body.stepIndex,
-              body.applicationId,
-              body.deadline,
-              account
-            );
-            if (errorChecks.errorCode !== 200 || !errorChecks.data) {
-              set.status = errorChecks.errorCode;
-              return errorChecks.errorMessage;
-            }
-
-            const approvedValues = {
-              applicationId: body.applicationId,
-              approved: body.approved,
-              deadline: body.deadline,
-              stepIndex: body.stepIndex,
-              // nonce is fetched from user account. nonce is updated for every new next-auth session
-            };
-
-            const recoveredAddress = await recoverAddressHandler(
-              stepApprovedTypes,
-              approvedValues,
-              body.signature,
-              gcaId
-            );
-
-            if (recoveredAddress.toLowerCase() !== account.id.toLowerCase()) {
-              set.status = 400;
-              return "Invalid Signature";
-            }
-
-            if (body.approved) {
-              if (!body.finalQuotePerWatt) {
-                set.status = 400;
-                return "finalQuotePerWatt is required";
-              }
-
-              if (!body.revisedKwhGeneratedPerYear) {
-                set.status = 400;
-                return "revisedKwhGeneratedPerYear is required";
-              }
-
-              const protocolFees =
-                parseFloat(body.finalQuotePerWatt) *
-                parseFloat(convertKWhToMWh(body.revisedKwhGeneratedPerYear)) *
-                1e6;
-
-              // console.log("protocolFees", protocolFees);
-
-              await approveApplicationStep(
-                body.applicationId,
-                account.id,
-                body.annotation,
-                body.stepIndex,
-                body.signature,
-                {
-                  status: ApplicationStatusEnum.approved,
-                  finalQuotePerWatt: body.finalQuotePerWatt,
-                  revisedEstimatedProtocolFees: protocolFees.toString(),
-                  revisedKwhGeneratedPerYear: body.revisedKwhGeneratedPerYear,
-                  revisedCostOfPowerPerKWh: body.revisedCostOfPowerPerKWh,
-                }
-              );
-            } else {
-              await updateApplicationStatus(
-                body.applicationId,
-                ApplicationStatusEnum.changesRequired
-              );
-            }
-          } catch (e) {
-            if (e instanceof Error) {
-              set.status = 400;
-              return e.message;
-            }
-            console.log(
-              "[applicationsRouter] pre-install-documents-approve-or-ask-for-changes",
-              e
-            );
-            throw new Error("Error Occured");
-          }
-        },
-        {
-          body: t.Object({
-            ...ApproveOrAskForChangesQueryBody,
-            finalQuotePerWatt: t.Nullable(t.String()),
-            revisedKwhGeneratedPerYear: t.Nullable(t.String()),
-            revisedCostOfPowerPerKWh: t.Nullable(t.String()),
-          }),
-          detail: {
-            summary: "Gca Approve or Ask for Changes after step submission",
-            description: `Approve or Ask for Changes. If the user is not a GCA, it will throw an error. If the deadline is in the past, it will throw an error. If the deadline is more than 10 minutes in the future, it will throw an error.`,
             tags: [TAG.APPLICATIONS],
           },
         }
@@ -1480,7 +833,6 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                 {
                   id: body.applicationId,
                   userId,
-                  zoneId: body.zoneId,
                   farmId: null,
                   createdAt: new Date(),
                   currentStep: 1,
@@ -1502,10 +854,8 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                   enquiryEstimatedFees: body.enquiryEstimatedFees.toString(),
                   enquiryEstimatedQuotePerWatt:
                     body.enquiryEstimatedQuotePerWatt.toString(),
-                  installerName: body.installerName,
-                  installerCompanyName: body.installerCompanyName,
-                  installerEmail: body.installerEmail,
-                  installerPhone: body.installerPhone,
+                  estimatedAdjustedWeeklyCredits:
+                    body.estimatedAdjustedWeeklyCredits.toString(),
                   lat: body.lat.toString(),
                   lng: body.lng.toString(),
                 },
@@ -1523,17 +873,24 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                       .declarationOfIntentionVersion,
                 }
               );
+
               if (process.env.NODE_ENV === "production") {
+                //TODO: update eventEmitter to not have a zoneId here
                 const emitter = createGlowEventEmitter({
                   username: process.env.RABBITMQ_ADMIN_USER!,
                   password: process.env.RABBITMQ_ADMIN_PASSWORD!,
-                  zoneId: 1,
+                  zoneId: 0,
                 });
+
+                const estimatedProtocolFeeUSDPrice_6Decimals = parseUnits(
+                  body.enquiryEstimatedFees.toString(),
+                  6
+                );
 
                 emitter
                   .emit({
                     eventType: eventTypes.applicationCreated,
-                    schemaVersion: "v1",
+                    schemaVersion: "v2-alpha",
                     payload: {
                       gcaAddress,
                       lat: body.lat,
@@ -1542,7 +899,8 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                         body.estimatedCostOfPowerPerKWh,
                       estimatedKWhGeneratedPerYear:
                         body.estimatedKWhGeneratedPerYear,
-                      installerCompanyName: body.installerCompanyName,
+                      estimatedProtocolFeeUSDPrice_6Decimals:
+                        estimatedProtocolFeeUSDPrice_6Decimals.toString(),
                     },
                   })
                   .catch((e) => {
@@ -1574,6 +932,8 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                     body.enquiryEstimatedQuotePerWatt.toString(),
                   estimatedKWhGeneratedPerYear:
                     body.estimatedKWhGeneratedPerYear.toString(),
+                  estimatedAdjustedWeeklyCredits:
+                    body.estimatedAdjustedWeeklyCredits.toString(),
                   lat: body.lat.toString(),
                   lng: body.lng.toString(),
                 }
@@ -1622,12 +982,40 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               return errorChecks.errorMessage;
             }
 
+            //zoneId 1 is the global zone
+            if (
+              !application.allowedZones.includes(body.zoneId) &&
+              body.zoneId !== 1
+            ) {
+              set.status = 400;
+              return "Zone not allowed";
+            }
+
+            if (!application.auditFeesTxHash) {
+              set.status = 400;
+              return "Audit fees payment is not completed";
+            }
+
+            const zone = await db.query.zones.findFirst({
+              where: eq(zones.id, body.zoneId),
+            });
+
+            if (!zone) {
+              set.status = 400;
+              return "Zone not found";
+            }
+
             await handleCreateOrUpdatePreIntallDocuments(
               application,
-              application.organizationApplication?.id,
               ApplicationSteps.preInstallDocuments,
               {
                 ...body,
+              },
+              {
+                installerCompanyName: body.installerCompanyName,
+                installerEmail: body.installerEmail,
+                installerPhone: body.installerPhone,
+                installerName: body.installerName,
               }
             );
 
@@ -1725,183 +1113,6 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
           detail: {
             summary: "Create or Update the Inspection and PTO documents",
             description: `insert the Inspection and PTO documents in db + insert documentsMissingWithReason if inspection or pto missing and update the application status to waitingForApproval`,
-            tags: [TAG.APPLICATIONS],
-          },
-        }
-      )
-      .post(
-        "/verify-payment",
-        async ({ body, set, userId }) => {
-          try {
-            let protocolFeeData:
-              | GetProtocolFeePaymentFromTxHashReceipt
-              | undefined;
-            const application = await FindFirstApplicationById(
-              body.applicationId
-            );
-
-            const usedTxHash = await findUsedTxHash(body.txHash);
-
-            if (usedTxHash) {
-              set.status = 400;
-              return "Transaction hash already been used";
-            }
-
-            if (!application) {
-              set.status = 404;
-              return "Application not found";
-            }
-
-            if (application.userId !== userId) {
-              const organizationApplication =
-                await findFirstOrganizationApplicationByApplicationId(
-                  body.applicationId
-                );
-
-              if (!organizationApplication) {
-                set.status = 400;
-                return "Unauthorized";
-              }
-
-              const isOrganizationOwner =
-                organizationApplication.organization.ownerId === userId;
-
-              const organizationMember = await findOrganizationMemberByUserId(
-                organizationApplication.organization.id,
-                userId
-              );
-
-              const isAuthorized =
-                isOrganizationOwner ||
-                organizationMember?.role.rolePermissions.find(
-                  (p) => p.permission.key === PermissionsEnum.ProtocolFeePayment
-                );
-
-              if (!isAuthorized) {
-                set.status = 400;
-                return "Unauthorized";
-              }
-            }
-
-            if (
-              application.status !== ApplicationStatusEnum.waitingForPayment
-            ) {
-              set.status = 400;
-              return "Application is not waiting for payment";
-            }
-
-            if (process.env.NODE_ENV === "production") {
-              protocolFeeData = await getProtocolFeePaymentFromTxHashReceipt(
-                body.txHash
-              );
-              //TODO: handle additionalPaymentTxHash + verify if wallets are allowed to pay for additionalPaymentTxHash wallets
-
-              if (
-                protocolFeeData.user.id.toLowerCase() !== userId.toLowerCase()
-              ) {
-                const organizationApplication =
-                  await findFirstOrganizationApplicationByApplicationId(
-                    body.applicationId
-                  );
-
-                if (!organizationApplication) {
-                  set.status = 400;
-                  return "The transaction hash does not belong to the user";
-                }
-
-                const organizationMembers = await findAllOrganizationMembers(
-                  organizationApplication.organization.id
-                );
-
-                const allowedWallets = organizationMembers
-                  .filter((m) =>
-                    m.role.rolePermissions.find(
-                      (p) =>
-                        p.permission.key === PermissionsEnum.ProtocolFeePayment
-                    )
-                  )
-                  .map((c) => c.userId.toLowerCase());
-
-                if (
-                  !allowedWallets.includes(
-                    protocolFeeData.user.id.toLowerCase()
-                  )
-                ) {
-                  set.status = 400;
-                  return "The transaction hash does not belong to the user or any of the organization members allowed to pay the protocol fee";
-                }
-              }
-
-              if (
-                BigInt(
-                  ethers.utils
-                    .parseUnits(application.finalProtocolFee, 6)
-                    .toString()
-                ) === BigInt(0)
-              ) {
-                set.status = 400;
-                return "Final Protocol Fee is not set";
-              }
-
-              /// TODO: If it's greater, need to check with david what to do on that. For now, let's not change anything
-              if (
-                BigInt(protocolFeeData.amount) <
-                BigInt(
-                  ethers.utils
-                    .parseUnits(application.finalProtocolFee, 6)
-                    .toString()
-                )
-              ) {
-                set.status = 400;
-                return "Invalid Amount";
-              }
-              const emitter = createGlowEventEmitter({
-                username: process.env.RABBITMQ_ADMIN_USER!,
-                password: process.env.RABBITMQ_ADMIN_PASSWORD!,
-                zoneId: 1,
-              });
-
-              emitter
-                .emit({
-                  eventType: eventTypes.auditPfeesPaid,
-                  schemaVersion: "v1",
-                  payload: {
-                    applicationId: body.applicationId,
-                    payer: protocolFeeData.user.id,
-                    amount_6Decimals: protocolFeeData.amount,
-                    txHash: body.txHash,
-                  },
-                })
-                .catch((e) => {
-                  console.error("error with audit.pfees.paid event", e);
-                });
-            }
-
-            await updateApplication(body.applicationId, {
-              status: ApplicationStatusEnum.paymentConfirmed,
-              paymentTxHash: body.txHash,
-              paymentDate: protocolFeeData
-                ? protocolFeeData.paymentDate
-                : new Date(),
-            });
-          } catch (e) {
-            if (e instanceof Error) {
-              set.status = 400;
-              return e.message;
-            }
-            console.log("[applicationsRouter] verify-payment", e);
-            throw new Error("Error Occured");
-          }
-        },
-        {
-          body: t.Object({
-            applicationId: t.String(),
-            txHash: t.String(),
-            additionalPaymentTxHash: t.Optional(t.Array(t.String())),
-          }),
-          detail: {
-            summary: "Verify Payment",
-            description: `Verify Payment and update the application status to paymentConfirmed`,
             tags: [TAG.APPLICATIONS],
           },
         }
@@ -2059,117 +1270,15 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
         }
       )
       .post(
-        "/pre-install-visit-approve-or-ask-for-changes",
-        async ({ body, set, userId: gcaId }) => {
+        "/gca-complete-audit",
+        async ({ body, set, userId }) => {
+          const gcaId = userId;
           try {
             const account = await findFirstAccountById(gcaId);
             if (!account) {
               return { errorCode: 404, errorMessage: "Account not found" };
             }
 
-            const errorChecks = await approveOrAskForChangesCheckHandler(
-              body.stepIndex,
-              body.applicationId,
-              body.deadline,
-              account
-            );
-
-            const application = errorChecks.data;
-
-            if (errorChecks.errorCode !== 200 || !application) {
-              set.status = errorChecks.errorCode;
-              return errorChecks.errorMessage;
-            }
-
-            const approvedValues = {
-              applicationId: body.applicationId,
-              approved: body.approved,
-              deadline: body.deadline,
-              stepIndex: body.stepIndex,
-              // nonce is fetched from user account. nonce is updated for every new next-auth session
-            };
-
-            const recoveredAddress = await recoverAddressHandler(
-              stepApprovedTypes,
-              approvedValues,
-              body.signature,
-              gcaId
-            );
-
-            if (recoveredAddress.toLowerCase() !== account.id.toLowerCase()) {
-              set.status = 400;
-              return "Invalid Signature";
-            }
-
-            if (body.approved) {
-              if (!application.preInstallVisitDate) {
-                set.status = 400;
-                return "Pre Install Visit Date is not set";
-              }
-
-              const now = new Date();
-              const today = new Date(
-                now.getFullYear(),
-                now.getMonth(),
-                now.getDate()
-              );
-
-              const preInstallVisitDateTime = new Date(
-                application.preInstallVisitDate.getFullYear(),
-                application.preInstallVisitDate.getMonth(),
-                application.preInstallVisitDate.getDate()
-              ).getTime();
-
-              if (today.getTime() < preInstallVisitDateTime) {
-                set.status = 400;
-                return "Pre Install Visit Date is not passed yet";
-              }
-
-              await approveApplicationStep(
-                body.applicationId,
-                account.id,
-                body.annotation,
-                body.stepIndex,
-                body.signature,
-                {
-                  status: ApplicationStatusEnum.draft,
-                  preInstallVisitDateConfirmedTimestamp: new Date(),
-                  currentStep: body.stepIndex + 1,
-                }
-              );
-            } else {
-              set.status = 400;
-              return "Ask for Changes is not allowed for this step.";
-            }
-          } catch (e) {
-            if (e instanceof Error) {
-              set.status = 400;
-              return e.message;
-            }
-            console.log("[applicationsRouter] gca-assigned-applications", e);
-            throw new Error("Error Occured");
-          }
-        },
-        {
-          body: t.Object(ApproveOrAskForChangesQueryBody),
-          detail: {
-            summary:
-              "Gca Approve and confirm pre install visit date or Ask for Changes",
-            description: `Approve and confirm pre install visit date or Ask for Changes. If the user is not a GCA, it will throw an error. If the deadline is in the past, it will throw an error. If the deadline is more than 10 minutes in the future, it will throw an error.`,
-            tags: [TAG.APPLICATIONS],
-          },
-        }
-      )
-      .post(
-        "/gca-complete-application",
-        async ({ body, set, userId: gcaId }) => {
-          try {
-            const account = await findFirstAccountById(gcaId);
-            if (!account) {
-              return { errorCode: 404, errorMessage: "Account not found" };
-            }
-
-            //TODO: rename function when time
             const errorChecks = await approveOrAskForChangesCheckHandler(
               ApplicationSteps.payment,
               body.applicationId,
@@ -2184,22 +1293,40 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               return errorChecks.errorMessage;
             }
 
-            if (!application.paymentTxHash) {
+            if (!application.finalProtocolFee) {
               set.status = 400;
-              return "No payment has been made yet";
+              return "No final protocol fee has been set yet";
             }
 
-            const approvedValues = {
+            if (!application.afterInstallVisitDate) {
+              set.status = 400;
+              return "After Install Visit Date is not set";
+            }
+
+            // build V2 payload with canonical JSON (sorted keys)
+            const sortedEntries = (
+              Object.entries(
+                body.pricePerAssets as Record<string, string>
+              ) as Array<[string, string]>
+            ).sort(([a], [b]) => a.localeCompare(b));
+            const canonicalPricesJson = JSON.stringify(
+              Object.fromEntries(sortedEntries)
+            );
+
+            const signedValues = {
               applicationId: body.applicationId,
               deadline: body.deadline,
-              devices: body.devices.map((device) => device.publicKey),
-              txHash: application.paymentTxHash,
+              devices: body.devices.map(
+                (d: { publicKey: string }) => d.publicKey
+              ),
+              pricePerAssetsJson: canonicalPricesJson,
+              typesVersion: "v2",
               // nonce is fetched from user account. nonce is updated for every new next-auth session
             };
 
-            const recoveredAddress = await recoverAddressHandler(
-              applicationCompletedWithPaymentTypes,
-              approvedValues,
+            let recoveredAddress = await recoverAddressHandler(
+              applicationCompletedWithPaymentV2Types,
+              signedValues,
               body.signature,
               gcaId
             );
@@ -2219,65 +1346,83 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               return "Application already linked with a farm";
             }
 
-            if (!application.auditFields?.adjustedWeeklyCarbonCredits) {
+            const applicationWeeklyProduction =
+              await db.query.weeklyProduction.findFirst({
+                where: eq(weeklyProduction.applicationId, application.id),
+              });
+
+            if (!applicationWeeklyProduction) {
               set.status = 400;
-              return "Application is not completed, adjustedWeeklyCarbonCredits is not set";
+              return "Application is not completed, weeklyProduction is not set";
             }
 
-            const farmId =
-              await handleCreateWithoutPIIDocumentsAndCompleteApplication(
-                application,
-                gcaId,
-                body.signature,
-                ApplicationSteps.payment,
-                body.annotation,
-                {
-                  finalAuditReport: body.finalAuditReport,
-                  ...body.withoutPIIdocuments,
-                  miscDocuments: body.miscDocuments,
-                  devices: body.devices,
-                  applicationAuditFields: {
-                    finalEnergyCost: body.finalEnergyCost,
-                    solarPanelsQuantity: body.solarPanelsQuantity,
-                    solarPanelsBrandAndModel: body.solarPanelsBrandAndModel,
-                    solarPanelsWarranty: body.solarPanelsWarranty,
-                    ptoObtainedDate: body.ptoObtainedDate,
-                    locationWithoutPII: body.locationWithoutPII,
-                    revisedInstallFinishedDate: body.revisedInstallFinishedDate,
-                  },
-                }
-              );
+            await handleCreateWithoutPIIDocumentsAndCompleteApplicationAudit(
+              application,
+              gcaId,
+              body.signature,
+              canonicalPricesJson,
+              ApplicationSteps.payment,
+              body.annotation,
+              {
+                finalAuditReport: body.finalAuditReport,
+                ...body.withoutPIIdocuments,
+                miscDocuments: body.miscDocuments,
+                devices: body.devices,
+                applicationAuditFields: {
+                  finalEnergyCost: body.finalEnergyCost,
+                  solarPanelsQuantity: body.solarPanelsQuantity,
+                  solarPanelsBrandAndModel: body.solarPanelsBrandAndModel,
+                  solarPanelsWarranty: body.solarPanelsWarranty,
+                  ptoObtainedDate: body.ptoObtainedDate,
+                  locationWithoutPII: body.locationWithoutPII,
+                  revisedInstallFinishedDate: body.revisedInstallFinishedDate,
+                },
+              }
+            );
 
-            if (
-              process.env.NODE_ENV === "production" &&
-              typeof farmId === "string"
-            ) {
+            if (process.env.NODE_ENV === "production") {
               const emitter = createGlowEventEmitter({
                 username: process.env.RABBITMQ_ADMIN_USER!,
                 password: process.env.RABBITMQ_ADMIN_PASSWORD!,
-                zoneId: 1,
+                zoneId: application.zoneId,
               });
-              const protocolFeeUSDPrice_6Decimals = BigNumber.from(
+              const protocolFeeUSDPrice_6Decimals = BigInt(
                 application.finalProtocolFee
               ).toString();
 
-              const expectedProduction_12Decimals = BigNumber.from(
-                Math.floor(
-                  Number(application.auditFields.adjustedWeeklyCarbonCredits) *
-                    1e6
-                )
-              ) // convert to int, 6 decimals
-                .mul(BigNumber.from("1000000")) // 6 -> 12 decimals
+              const expectedProduction_12Decimals = (
+                BigInt(
+                  Math.floor(
+                    Number(
+                      applicationWeeklyProduction.adjustedWeeklyCarbonCredits
+                    ) * 1e6
+                  )
+                ) * BigInt("1000000")
+              ) // 6 -> 12 decimals
                 .toString();
               emitter
                 .emit({
                   eventType: eventTypes.auditPushed,
-                  schemaVersion: "v1",
+                  schemaVersion: "v2-alpha",
                   payload: {
-                    farmId,
+                    applicationId: application.id,
                     protocolFeeUSDPrice_6Decimals,
                     expectedProduction_12Decimals,
-                    txHash: application.paymentTxHash,
+                  },
+                })
+                .catch((e) => {
+                  console.error("error with audit.pushed event", e);
+                });
+              emitter
+                .emit({
+                  eventType: eventTypes.applicationPriceQuote,
+                  schemaVersion: "v2-alpha",
+                  payload: {
+                    applicationId: application.id,
+                    gcaAddress: gcaId,
+                    createdAt: new Date().toISOString(),
+                    prices: body.pricePerAssets,
+                    signature: body.signature,
                   },
                 })
                 .catch((e) => {
@@ -2308,6 +1453,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                 publicUrl: t.String(),
                 documentName: t.String(),
                 extension: t.String(),
+                isShowingSolarPanels: t.Boolean(),
               })
             ),
             withoutPIIdocuments: t.Object({
@@ -2343,6 +1489,20 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
             zoneId: t.Number({
               minimum: 1,
             }),
+            pricePerAssets: t.Object({
+              USDC: t.String({
+                minLength: 1, // in bigint 6 decimals
+              }),
+              USDG: t.String({
+                minLength: 1, // in bigint 6 decimals
+              }),
+              GCTL: t.String({
+                minLength: 1, // in bigint 6 decimals
+              }),
+              GLW: t.String({
+                minLength: 1, // in bigint 6 decimals
+              }),
+            }),
           }),
           detail: {
             summary: "",
@@ -2352,254 +1512,9 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
         }
       )
       .post(
-        "/inspection-and-pto-approve-or-ask-for-changes",
-        async ({ body, set, userId: gcaId }) => {
-          try {
-            const account = await findFirstAccountById(gcaId);
-            if (!account) {
-              return { errorCode: 404, errorMessage: "Account not found" };
-            }
-
-            const errorChecks = await approveOrAskForChangesCheckHandler(
-              body.stepIndex,
-              body.applicationId,
-              body.deadline,
-              account
-            );
-
-            const application = errorChecks.data;
-
-            if (errorChecks.errorCode !== 200 || !application) {
-              set.status = errorChecks.errorCode;
-              return errorChecks.errorMessage;
-            }
-
-            let approvedValues;
-            let recoveredAddress;
-            if (body.approved) {
-              if (body.finalProtocolFee) {
-                approvedValues = {
-                  applicationId: body.applicationId,
-                  approved: body.approved,
-                  deadline: body.deadline,
-                  finalProtocolFee: body.finalProtocolFee,
-                  stepIndex: body.stepIndex,
-                  // nonce is fetched from user account. nonce is updated for every new next-auth session
-                };
-              } else {
-                set.status = 400;
-                return "Final Protocol Fee is required in case of approval";
-              }
-
-              recoveredAddress = await recoverAddressHandler(
-                stepApprovedWithFinalProtocolFeeTypes,
-                approvedValues,
-                body.signature,
-                gcaId
-              );
-            } else {
-              approvedValues = {
-                applicationId: body.applicationId,
-                approved: body.approved,
-                deadline: body.deadline,
-                stepIndex: body.stepIndex,
-                // nonce is fetched from user account. nonce is updated for every new next-auth session
-              };
-
-              recoveredAddress = await recoverAddressHandler(
-                stepApprovedTypes,
-                approvedValues,
-                body.signature,
-                gcaId
-              );
-            }
-
-            if (recoveredAddress.toLowerCase() !== account.id.toLowerCase()) {
-              set.status = 400;
-              return "Invalid Signature";
-            }
-
-            if (body.approved) {
-              if (!application.afterInstallVisitDate) {
-                set.status = 400;
-                return "After Install Visit Date is not set";
-              }
-
-              const now = new Date();
-              const today = new Date(
-                now.getFullYear(),
-                now.getMonth(),
-                now.getDate()
-              );
-              const afterInstallVisitDateTime = new Date(
-                application.afterInstallVisitDate.getFullYear(),
-                application.afterInstallVisitDate.getMonth(),
-                application.afterInstallVisitDate.getDate()
-              ).getTime();
-
-              if (today.getTime() < afterInstallVisitDateTime) {
-                set.status = 400;
-                return "After Install Visit Date is not passed yet";
-              }
-
-              if (!body.weeklyProduction || !body.weeklyCarbonDebt) {
-                set.status = 400;
-                return "Missing required fields for weekly production and weekly carbon debt";
-              }
-
-              const netCarbonCreditEarningWeekly = (
-                body.weeklyProduction?.adjustedWeeklyCarbonCredits -
-                body.weeklyCarbonDebt?.weeklyTotalCarbonDebt
-              ).toString();
-              await approveApplicationStep(
-                body.applicationId,
-                account.id,
-                body.annotation,
-                body.stepIndex,
-                body.signature,
-                {
-                  status: ApplicationStatusEnum.approved,
-                  afterInstallVisitDateConfirmedTimestamp: new Date(),
-                  finalProtocolFee: ethers.utils
-                    .parseUnits(body.finalProtocolFee!!, 6)
-                    .toBigInt(),
-                },
-                {
-                  applicationId: body.applicationId,
-                  systemWattageOutput: `${body.weeklyCarbonDebt?.convertToKW.toString()} kW-DC`,
-                  netCarbonCreditEarningWeekly,
-                  weeklyTotalCarbonDebt:
-                    body.weeklyCarbonDebt?.weeklyTotalCarbonDebt.toString(),
-                  averageSunlightHoursPerDay:
-                    body.weeklyProduction?.hoursOfSunlightPerDay.toString(),
-                  adjustedWeeklyCarbonCredits:
-                    body.weeklyProduction?.adjustedWeeklyCarbonCredits.toString(),
-                }
-              );
-
-              // --- Insert into weeklyProduction and weeklyCarbonDebt ---
-              try {
-                await db
-                  .insert(weeklyProduction)
-                  .values({
-                    applicationId: body.applicationId,
-                    createdAt: new Date(),
-                    powerOutputMWH:
-                      body.weeklyProduction?.powerOutputMWH?.toString(),
-                    hoursOfSunlightPerDay:
-                      body.weeklyProduction?.hoursOfSunlightPerDay?.toString(),
-                    carbonOffsetsPerMWH:
-                      body.weeklyProduction?.carbonOffsetsPerMWH?.toString(),
-                    adjustmentDueToUncertainty:
-                      body.weeklyProduction?.adjustmentDueToUncertainty?.toString(),
-                    weeklyPowerProductionMWh:
-                      body.weeklyProduction?.weeklyPowerProductionMWh?.toString(),
-                    weeklyCarbonCredits:
-                      body.weeklyProduction?.weeklyCarbonCredits?.toString(),
-                    adjustedWeeklyCarbonCredits:
-                      body.weeklyProduction?.adjustedWeeklyCarbonCredits?.toString(),
-                  } as any)
-                  .onConflictDoUpdate({
-                    target: [weeklyProduction.applicationId],
-                    set: {
-                      createdAt: new Date(),
-                      powerOutputMWH:
-                        body.weeklyProduction?.powerOutputMWH?.toString(),
-                      hoursOfSunlightPerDay:
-                        body.weeklyProduction?.hoursOfSunlightPerDay?.toString(),
-                      carbonOffsetsPerMWH:
-                        body.weeklyProduction?.carbonOffsetsPerMWH?.toString(),
-                      adjustmentDueToUncertainty:
-                        body.weeklyProduction?.adjustmentDueToUncertainty?.toString(),
-                      weeklyPowerProductionMWh:
-                        body.weeklyProduction?.weeklyPowerProductionMWh?.toString(),
-                      weeklyCarbonCredits:
-                        body.weeklyProduction?.weeklyCarbonCredits?.toString(),
-                      adjustedWeeklyCarbonCredits:
-                        body.weeklyProduction?.adjustedWeeklyCarbonCredits?.toString(),
-                    },
-                  });
-
-                await db
-                  .insert(weeklyCarbonDebt)
-                  .values({
-                    applicationId: body.applicationId,
-                    createdAt: new Date(),
-                    totalCarbonDebtAdjustedKWh:
-                      body.weeklyCarbonDebt?.totalCarbonDebtAdjustedKWh?.toString(),
-                    convertToKW: body.weeklyCarbonDebt?.convertToKW?.toString(),
-                    totalCarbonDebtProduced:
-                      body.weeklyCarbonDebt?.totalCarbonDebtProduced?.toString(),
-                    disasterRisk:
-                      body.weeklyCarbonDebt?.disasterRisk?.toString(),
-                    commitmentPeriod:
-                      body.weeklyCarbonDebt?.commitmentPeriod?.toString(),
-                    adjustedTotalCarbonDebt:
-                      body.weeklyCarbonDebt?.adjustedTotalCarbonDebt?.toString(),
-                    weeklyTotalCarbonDebt:
-                      body.weeklyCarbonDebt?.weeklyTotalCarbonDebt?.toString(),
-                  } as any)
-                  .onConflictDoUpdate({
-                    target: [weeklyCarbonDebt.applicationId],
-                    set: {
-                      createdAt: new Date(),
-                      totalCarbonDebtAdjustedKWh:
-                        body.weeklyCarbonDebt?.totalCarbonDebtAdjustedKWh?.toString(),
-                      convertToKW:
-                        body.weeklyCarbonDebt?.convertToKW?.toString(),
-                      totalCarbonDebtProduced:
-                        body.weeklyCarbonDebt?.totalCarbonDebtProduced?.toString(),
-                      disasterRisk:
-                        body.weeklyCarbonDebt?.disasterRisk?.toString(),
-                      commitmentPeriod: body.weeklyCarbonDebt?.commitmentPeriod,
-                      adjustedTotalCarbonDebt:
-                        body.weeklyCarbonDebt?.adjustedTotalCarbonDebt?.toString(),
-                      weeklyTotalCarbonDebt:
-                        body.weeklyCarbonDebt?.weeklyTotalCarbonDebt?.toString(),
-                    },
-                  });
-              } catch (err) {
-                set.status = 500;
-                return `Failed to upsert weekly production or carbon debt: ${
-                  err instanceof Error ? err.message : String(err)
-                }`;
-              }
-            } else {
-              await updateApplication(body.applicationId, {
-                status: ApplicationStatusEnum.changesRequired,
-                afterInstallVisitDate: null,
-              });
-            }
-          } catch (e) {
-            if (e instanceof Error) {
-              set.status = 400;
-              return e.message;
-            }
-            console.log(
-              "[applicationsRouter] inspection-and-pto-approve-or-ask-for-changes",
-              e
-            );
-            throw new Error("Error Occured");
-          }
-        },
-        {
-          body: t.Object({
-            ...ApproveOrAskForChangesQueryBody,
-            weeklyProduction: t.Nullable(t.Object(WeeklyProductionSchema)),
-            weeklyCarbonDebt: t.Nullable(t.Object(WeeklyCarbonDebtSchema)),
-            finalProtocolFee: t.Nullable(t.String()),
-          }),
-          detail: {
-            summary:
-              "Gca Approve and confirm pre install visit date or Ask for Changes",
-            description: `Approve and confirm pre install visit date or Ask for Changes. If the user is not a GCA, it will throw an error. If the deadline is in the past, it will throw an error. If the deadline is more than 10 minutes in the future, it will throw an error.`,
-            tags: [TAG.APPLICATIONS],
-          },
-        }
-      )
-      .post(
         "/gca-pre-install-visit",
-        async ({ body, set, userId: gcaId }) => {
+        async ({ body, set, userId }) => {
+          const gcaId = userId;
           try {
             const account = await findFirstAccountById(gcaId);
             if (!account) {
@@ -2690,7 +1605,8 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
       )
       .post(
         "/gca-after-install-visit",
-        async ({ body, set, userId: gcaId }) => {
+        async ({ body, set, userId }) => {
+          const gcaId = userId;
           try {
             const account = await findFirstAccountById(gcaId);
             if (!account) {
@@ -2778,7 +1694,8 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
       )
       .post(
         "/create-application-encrypted-master-keys",
-        async ({ body, set, userId: gcaId }) => {
+        async ({ body, set, userId }) => {
+          const gcaId = userId;
           const account = await findFirstAccountById(gcaId);
           if (!account) {
             return { errorCode: 404, errorMessage: "Account not found" };
@@ -2794,10 +1711,16 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
             }
 
             await createApplicationEncryptedMasterKeysForUsers(
-              body.applicationEncryptedMasterKeys.map((key) => ({
-                ...key,
-                applicationId: body.applicationId,
-              }))
+              body.applicationEncryptedMasterKeys.map(
+                (key: {
+                  publicKey?: string;
+                  userId: string;
+                  encryptedMasterKey: string;
+                }) => ({
+                  ...key,
+                  applicationId: body.applicationId,
+                })
+              )
             );
             await updateApplication(body.applicationId, {
               isDocumentsCorrupted: body.isDocumentsCorrupted,
@@ -2889,7 +1812,8 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
       )
       .post(
         "/patch-production-and-carbon-debt",
-        async ({ body, set, userId: gcaId }) => {
+        async ({ body, set, userId }) => {
+          const gcaId = userId;
           try {
             const account = await findFirstAccountById(gcaId);
             if (!account) {
@@ -3058,6 +1982,62 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
             summary: "Patch production and carbon debt for an application",
             description:
               "Update application with systemWattageOutput, netCarbonCreditEarningWeekly, weeklyTotalCarbonDebt, averageSunlightHoursPerDay, lat, lng and insert weeklyProduction and weeklyCarbonDebt records.",
+            tags: [TAG.APPLICATIONS],
+          },
+        }
+      )
+      .post(
+        "/publish-application-to-auction",
+        async ({ body, set, userId }) => {
+          try {
+            const user = await findFirstUserById(userId);
+            if (!user) {
+              set.status = 400;
+              return "Unauthorized";
+            }
+
+            const application = await FindFirstApplicationById(
+              body.applicationId
+            );
+
+            if (!application) {
+              set.status = 404;
+              return "Application not found";
+            }
+
+            if (application.userId !== userId) {
+              set.status = 400;
+              return "User is not the owner of the application";
+            }
+
+            if (application.isPublishedOnAuction) {
+              set.status = 400;
+              return "Application is already published on auction";
+            }
+
+            await updateApplication(application.id, {
+              isPublishedOnAuction: true,
+              publishedOnAuctionTimestamp: new Date(),
+            });
+          } catch (e) {
+            if (e instanceof Error) {
+              set.status = 400;
+              return e.message;
+            }
+            console.log(
+              "[applicationsRouter] /publish-application-to-auction",
+              e
+            );
+            throw new Error("Error Occured");
+          }
+        },
+        {
+          body: t.Object({
+            applicationId: t.String(),
+          }),
+          detail: {
+            summary: "Publish Application to auction",
+            description: `Toggle isPublishedOnAuction and set publishedOnAuctionTimestamp; accessible only by the application owner while the application is waiting-for-payment.`,
             tags: [TAG.APPLICATIONS],
           },
         }

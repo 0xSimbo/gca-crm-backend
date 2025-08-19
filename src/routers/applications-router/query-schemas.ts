@@ -79,6 +79,10 @@ export const EnquiryQueryBody = t.Object({
     example: 32,
     minimum: 0,
   }),
+  estimatedAdjustedWeeklyCredits: t.Numeric({
+    example: 100,
+    minimum: 0,
+  }),
   farmOwnerName: t.String({
     example: "John Doe",
     minLength: 2,
@@ -91,22 +95,7 @@ export const EnquiryQueryBody = t.Object({
     example: "123-456-7890",
     minLength: 2,
   }),
-  installerCompanyName: t.String({
-    example: "John Doe Farms",
-    minLength: 2,
-  }),
-  installerEmail: t.String({
-    example: "JohnDoe@gmail.com",
-    minLength: 2,
-  }),
-  installerPhone: t.String({
-    example: "123-456-7890",
-    minLength: 2,
-  }),
-  installerName: t.String({
-    example: "John",
-    minLength: 2,
-  }),
+
   address: t.String({
     example: "123 John Doe Street, Phoenix, AZ 85001",
     minLength: 10,
@@ -121,7 +110,6 @@ export const EnquiryQueryBody = t.Object({
     minimum: -180,
     maximum: 180,
   }),
-  zoneId: t.Number(),
 });
 
 export const DeclarationOfIntentionMissingQueryBody = t.Object({
@@ -141,6 +129,24 @@ export const PreInstallDocumentsQueryBody = t.Object({
   applicationId: t.String(),
   estimatedInstallDate: t.Date(),
   contractAgreement: encryptedFileUpload,
+  zoneId: t.Number(),
+  installerCompanyName: t.String({
+    example: "John Doe Farms",
+    minLength: 2,
+  }),
+  installerEmail: t.String({
+    example: "JohnDoe@gmail.com",
+    minLength: 2,
+  }),
+  installerPhone: t.String({
+    example: "123-456-7890",
+    minLength: 2,
+  }),
+  installerName: t.String({
+    example: "John",
+    minLength: 2,
+  }),
+  certifiedInstallerId: t.Optional(t.String()),
 });
 
 export const PermitDocumentationQueryBody = t.Object({

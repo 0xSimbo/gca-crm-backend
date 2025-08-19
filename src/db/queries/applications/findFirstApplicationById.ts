@@ -2,8 +2,6 @@ import { eq } from "drizzle-orm";
 import { db } from "../../db";
 import { applications } from "../../schema";
 import { formatUnits } from "viem";
-import { requirementSetCodes, requirementSetMap } from "../../zones";
-import { getZoneRequirementFields } from "./zoneRequirementsUtil";
 
 export const FindFirstApplicationById = async (id: string) => {
   const applicationDb = await db.query.applications.findFirst({
@@ -46,8 +44,13 @@ export const FindFirstApplicationById = async (id: string) => {
     return null;
   }
 
-  const { enquiryFieldsCRS, auditFieldsCRS, zone, ...application } =
-    applicationDb;
+  const {
+    enquiryFieldsCRS,
+    auditFieldsCRS,
+    zone,
+    rewardSplits,
+    ...application
+  } = applicationDb;
 
   return {
     ...application,
@@ -55,8 +58,48 @@ export const FindFirstApplicationById = async (id: string) => {
       (application?.finalProtocolFee || BigInt(0)) as bigint,
       6
     ),
+    finalProtocolFeeBigInt: application.finalProtocolFee.toString(),
+    auditFees: application.auditFees?.toString() || "0",
     enquiryFields: enquiryFieldsCRS,
     auditFields: auditFieldsCRS,
+    zone: zone,
+    rewardSplits: rewardSplits,
+  };
+};
+
+export const FindFirstApplicationByIdMinimal = async (id: string) => {
+  const applicationDb = await db.query.applications.findFirst({
+    where: eq(applications.id, id),
+    with: {
+      gca: {
+        columns: {
+          id: true,
+        },
+      },
+      applicationPriceQuotes: true,
+      user: {
+        columns: {
+          id: true,
+        },
+      },
+      zone: {
+        with: {
+          requirementSet: true,
+        },
+      },
+    },
+  });
+
+  if (!applicationDb) {
+    return null;
+  }
+
+  const { zone, ...application } = applicationDb;
+
+  return {
+    ...application,
+    finalProtocolFee: application.finalProtocolFee.toString(),
+    auditFees: application.auditFees?.toString() || "0",
     zone: zone,
   };
 };

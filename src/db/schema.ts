@@ -829,9 +829,12 @@ export const applications = pgTable("applications", {
   isDocumentsCorrupted: boolean("is_documents_corrupted")
     .notNull()
     .default(false),
+  isPublishedOnAuction: boolean("is_published_on_auction")
+    .notNull()
+    .default(false),
+  publishedOnAuctionTimestamp: timestamp("published_on_auction_timestamp"),
   // null if application just got created
   updatedAt: timestamp("updatedAt"),
-  // pre-install documents step fields
   declarationOfIntentionSignature: varchar(
     "declaration_of_intention_signature",
     { length: 255 }
@@ -849,6 +852,9 @@ export const applications = pgTable("applications", {
   declarationOfIntentionVersion: varchar("declaration_of_intention_version", {
     length: 12,
   }),
+  auditFees: bigint("audit_fees", { mode: "bigint" }).default(sql`'0'::bigint`),
+  auditFeesTxHash: varchar("audit_fees_tx_hash", { length: 66 }),
+  auditFeesPaymentDate: timestamp("audit_fees_payment_date"),
   // wallet signature of the account owner
   finalQuotePerWatt: varchar("final_quote_per_watt", { length: 255 }),
   revisedKwhGeneratedPerYear: numeric("revised_kwh_generated_per_year", {
@@ -865,6 +871,9 @@ export const applications = pgTable("applications", {
   }),
   // permit-documentation step fields
   // --- estimated installation date provided by the installer / farm owner
+  certifiedInstallerId: varchar("certified_installer_id", {
+    length: 255,
+  }).references(() => installers.id, { onDelete: "cascade" }),
   estimatedInstallDate: timestamp("estimated_install_date"),
   preInstallVisitDate: timestamp("pre_install_visit_date"),
   preInstallVisitDateConfirmedTimestamp: timestamp(
@@ -886,11 +895,23 @@ export const applications = pgTable("applications", {
   additionalPaymentTxHash: varchar("additional_payment_tx_hash", {
     length: 66,
   }),
+  paymentCurrency: varchar("payment_currency", { length: 20 })
+    .notNull()
+    .default("USDG"), // USDG or GCTL or USDC and maybe GLOW in the future
+  paymentEventType: varchar("payment_event_type", { length: 66 })
+    .notNull()
+    .default("PayProtocolFee"), // PayProtocolFee or PayProtocolFeeAndMintGCTLAndStake
+  payer: varchar("payer", { length: 42 }),
   // gca assignement fields
   gcaAssignedTimestamp: timestamp("gca_assigned_timestamp"),
   gcaAcceptanceTimestamp: timestamp("gca_acceptance_timestamp"),
   gcaAddress: varchar("gca_address", { length: 42 }),
   gcaAcceptanceSignature: varchar("gca_acceptance_signature", { length: 255 }),
+  // allowed zones for the application. 1 is zone CGP, 2 is zone UTAH, etc.
+  allowedZones: integer("allowed_zones")
+    .array()
+    .notNull()
+    .default(sql`'{}'::integer[]`),
 });
 
 /**
@@ -948,12 +969,21 @@ export const applicationsEnquiryFieldsCRS = pgTable(
       precision: 10,
       scale: 5,
     }).notNull(),
-    installerName: varchar("installer_name", { length: 255 }).notNull(),
+    estimatedAdjustedWeeklyCredits: numeric(
+      "estimated_adjusted_weekly_credits",
+      {
+        precision: 10,
+        scale: 5,
+      }
+    )
+      .notNull()
+      .default(sql`'0'::numeric`),
+    installerName: varchar("installer_name", { length: 255 }),
     installerCompanyName: varchar("installer_company_name", {
       length: 255,
-    }).notNull(),
-    installerEmail: varchar("installer_email", { length: 255 }).notNull(),
-    installerPhone: varchar("installer_phone", { length: 255 }).notNull(),
+    }),
+    installerEmail: varchar("installer_email", { length: 255 }),
+    installerPhone: varchar("installer_phone", { length: 255 }),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at"),
   }
@@ -1016,6 +1046,7 @@ export const applicationsAuditFieldsCRS = pgTable(
     ptoObtainedDate: timestamp("pto_date"),
     locationWithoutPII: varchar("location_without_pii", { length: 255 }),
     revisedInstallFinishedDate: timestamp("revised_install_finished_date"),
+    devices: json("devices").$type<{ publicKey: string; shortId: string }[]>(),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at"),
   }
@@ -1046,11 +1077,13 @@ export const ApplicationsAuditFieldsCRSRelations = relations(
 
 export type ApplicationType = Omit<
   InferSelectModel<typeof applications>,
-  "finalProtocolFee"
+  "finalProtocolFee" | "auditFees"
 > & {
   finalProtocolFee: string;
+  finalProtocolFeeBigInt: string;
   enquiryFields: ApplicationEnquiryFieldsCRSInsertType | null;
   auditFields: ApplicationAuditFieldsCRSInsertType | null;
+  auditFees: string;
 };
 export type ApplicationInsertType = typeof applications.$inferInsert;
 export type ApplicationUpdateEnquiryType = Pick<
@@ -1062,6 +1095,7 @@ export type ApplicationUpdateEnquiryType = Pick<
   | "estimatedKWhGeneratedPerYear"
   | "enquiryEstimatedFees"
   | "enquiryEstimatedQuotePerWatt"
+  | "estimatedAdjustedWeeklyCredits"
 >;
 
 export const applicationsRelations = relations(
@@ -1113,6 +1147,11 @@ export const applicationsRelations = relations(
     auditFieldsCRS: one(applicationsAuditFieldsCRS, {
       fields: [applications.id],
       references: [applicationsAuditFieldsCRS.applicationId],
+    }),
+    applicationPriceQuotes: many(ApplicationPriceQuotes),
+    installer: one(installers, {
+      fields: [applications.certifiedInstallerId],
+      references: [installers.id],
     }),
   })
 );
@@ -1199,6 +1238,11 @@ export const installers = pgTable("installers", {
   email: varchar("email", { length: 255 }).notNull(),
   companyName: varchar("company_name", { length: 255 }).notNull(),
   phone: varchar("phone", { length: 255 }).notNull(),
+  isCertified: boolean("is_certified").notNull().default(false),
+  zoneIds: text("zone_ids")
+    .array()
+    .notNull()
+    .default(sql`'{}'::integer[]`),
 });
 
 export type InstallerType = InferSelectModel<typeof installers>;
@@ -1511,6 +1555,43 @@ export const ApplicationStepApprovalsRelations = relations(
     gca: one(Gcas, {
       fields: [ApplicationStepApprovals.gcaAddress],
       references: [Gcas.id],
+    }),
+  })
+);
+
+/**
+ * @dev Tracks GCA-issued price-per-asset quotes at audit completion.
+ *      Stored as strings representing integer amounts with 6 decimals.
+ *      (USD/USDC/USDG/GCTL).
+ */
+export const ApplicationPriceQuotes = pgTable("application_price_quotes", {
+  id: text("application_price_quote_id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  applicationId: text("application_id")
+    .notNull()
+    .references(() => applications.id, { onDelete: "cascade" }),
+  gcaAddress: varchar("gca_address", { length: 42 }).notNull(),
+  prices: json("prices").$type<Record<string, string>>().notNull(),
+  typesVersion: varchar("types_version", { length: 16 })
+    .notNull()
+    .default("v1"),
+  signature: varchar("signature", { length: 255 }).notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export type ApplicationPriceQuoteType = InferSelectModel<
+  typeof ApplicationPriceQuotes
+>;
+export type ApplicationPriceQuoteInsertType =
+  typeof ApplicationPriceQuotes.$inferInsert;
+
+export const ApplicationPriceQuotesRelations = relations(
+  ApplicationPriceQuotes,
+  ({ one }) => ({
+    application: one(applications, {
+      fields: [ApplicationPriceQuotes.applicationId],
+      references: [applications.id],
     }),
   })
 );

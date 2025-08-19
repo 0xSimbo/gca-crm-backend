@@ -19,11 +19,12 @@ export const findAllApplicationsByOrganizationId = async (
           status: true,
           createdAt: true,
           updatedAt: true,
-
+          allowedZones: true,
           currentStep: true,
           roundRobinStatus: true,
           gcaAddress: true,
-
+          auditFees: true,
+          auditFeesTxHash: true,
           isCancelled: true,
           revisedKwhGeneratedPerYear: true,
           finalProtocolFee: true,
@@ -64,6 +65,8 @@ export const findAllApplicationsByOrganizationId = async (
         (application.finalProtocolFee || BigInt(0)) as bigint,
         6
       ),
+      auditFees: application.auditFees?.toString() || "0",
+      finalProtocolFeeBigInt: application.finalProtocolFee.toString(),
       enquiryFields: enquiryFieldsCRS,
       auditFields: auditFieldsCRS,
       zone: zone,

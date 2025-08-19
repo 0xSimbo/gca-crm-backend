@@ -23,9 +23,11 @@ export const findAllApplicationsByOrgUserId = async (
           currentStep: true,
           roundRobinStatus: true,
           gcaAddress: true,
-
+          allowedZones: true,
           isCancelled: true,
           finalProtocolFee: true,
+          auditFees: true,
+          auditFeesTxHash: true,
           preInstallVisitDate: true,
           afterInstallVisitDate: true,
         },
@@ -52,6 +54,8 @@ export const findAllApplicationsByOrgUserId = async (
         (application.finalProtocolFee || BigInt(0)) as bigint,
         6
       ),
+      auditFees: application.auditFees?.toString() || "0",
+      finalProtocolFeeBigInt: application.finalProtocolFee.toString(),
       ...enquiryFieldsCRS,
     })
   );

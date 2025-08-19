@@ -1,6 +1,3 @@
-import { ethers } from "ethers";
+import { JsonRpcProvider } from "ethers";
 
-export const ethersProvider = new ethers.providers.StaticJsonRpcProvider({
-  url: process.env.MAINNET_RPC_URL!,
-  skipFetchSetup: true,
-});
+export const ethersProvider = new JsonRpcProvider(process.env.MAINNET_RPC_URL!);

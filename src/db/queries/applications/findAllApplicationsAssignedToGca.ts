@@ -14,7 +14,7 @@ export const findAllApplicationsAssignedToGca = async (gcaAddress: string) => {
       status: true,
       createdAt: true,
       updatedAt: true,
-
+      allowedZones: true,
       currentStep: true,
       roundRobinStatus: true,
       gcaAddress: true,

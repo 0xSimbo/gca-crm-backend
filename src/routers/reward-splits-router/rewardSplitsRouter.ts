@@ -11,18 +11,13 @@ import {
   ApplicationStatusEnum,
   ApplicationSteps,
 } from "../../types/api-types/Application";
-import { createSplits } from "../../db/mutations/reward-splits/createSplits";
-
-import { updateApplication } from "../../db/mutations/applications/updateApplication";
 import { findFirstOrganizationApplicationByApplicationId } from "../../db/queries/applications/findFirstOrganizationApplicationByApplicationId";
 import { findOrganizationMemberByUserId } from "../../db/queries/organizations/findOrganizationMemberByUserId";
 import { PermissionsEnum } from "../../types/api-types/Permissions";
 import { findAllUserOrganizations } from "../../db/queries/organizations/findAllUserOrganizations";
-import { findAllApplicationsByOrganizationIds } from "../../db/queries/applications/findAllApplicationsByOrganizationIds";
 import { findAllApplicationsRewardSplitsByOrganizationIds } from "../../db/queries/rewardSplits/findAllApplicationsRewardSplitsByOrganizationIds";
-import { findAllApplicationsByUserId } from "../../db/queries/applications/findAllApplicationsByUserId";
 import { findAllApplicationsRewardSplitsByUserId } from "../../db/queries/rewardSplits/findAllApplicationsRewardSplitsByUserId";
-import { updateSplitsWithHistory } from "../../db/mutations/reward-splits/updateSplitsWithHistory";
+import { updateSplits } from "../../db/mutations/reward-splits/updateSplits";
 
 export const rewardSplitsRouter = new Elysia({ prefix: "/rewardsSplits" })
   .use(bearerplugin())
@@ -96,7 +91,11 @@ export const rewardSplitsRouter = new Elysia({ prefix: "/rewardsSplits" })
                 userId,
                 allOrgsApplications.map((app) => app.id)
               );
-            return allUserApplications.concat(allOrgsApplications);
+            const rewardSplits = allUserApplications
+              .concat(allOrgsApplications)
+              .map((app) => app.rewardSplits)
+              .flat();
+            return rewardSplits;
           } catch (e) {
             if (e instanceof Error) {
               set.status = 400;
@@ -155,21 +154,20 @@ export const rewardSplitsRouter = new Elysia({ prefix: "/rewardsSplits" })
                 return "Unauthorized";
               }
             }
-            if (application.status !== ApplicationStatusEnum.approved) {
+
+            if (
+              application.status !== ApplicationStatusEnum.draft &&
+              application.rewardSplits.length !== 0
+            ) {
               set.status = 400;
-              return "Application is not Approved";
+              return "Application is not Draft";
             }
             if (
-              application.currentStep !==
+              application.currentStep <
               ApplicationSteps.inspectionAndPtoDocuments
             ) {
               set.status = 400;
               return "Application is not in the correct step";
-            }
-
-            if (application.rewardSplits.length > 0) {
-              set.status = 400;
-              return "Reward Splits already created";
             }
 
             const sumGlow = body.splits.reduce((acc, curr) => {
@@ -185,20 +183,15 @@ export const rewardSplitsRouter = new Elysia({ prefix: "/rewardsSplits" })
               return "Sum of the percentages for each token should be 100";
             }
 
-            //TODO: change to atomic transaction
-            await createSplits(
+            await updateSplits(
               body.splits.map((split) => ({
                 walletAddress: split.walletAddress,
                 glowSplitPercent: split.glowSplitPercent.toString(),
                 usdgSplitPercent: split.usdgSplitPercent.toString(),
                 applicationId: body.applicationId,
-              }))
+              })),
+              body.applicationId
             );
-
-            await updateApplication(body.applicationId, {
-              currentStep: ApplicationSteps.payment,
-              status: ApplicationStatusEnum.waitingForPayment,
-            });
           } catch (e) {
             if (e instanceof Error) {
               set.status = 400;

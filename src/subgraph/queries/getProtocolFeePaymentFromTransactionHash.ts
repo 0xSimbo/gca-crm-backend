@@ -1,24 +1,19 @@
 import { subgraphClient } from "../subgraphClient";
 import { gql } from "graphql-request";
 function createQuery(txHash: string) {
-  const query = gql` 
-     {
-      donations(where:{
-          and: [
-        { transactionHash: "${txHash}"},
-        {isDonation:true}
-      ]   
-          
-          })
-           {
-          id,
-          amount,
-          user {
-              id
-          }
+  return gql`
+    query GetDonationByTxHash($txHash: String!) {
+      donations(
+        where: { and: [{ transactionHash: $txHash }, { isDonation: true }] }
+      ) {
+        id
+        amount
+        user {
+          id
+        }
+      }
     }
-    }`;
-  return query;
+  `;
 }
 
 export type GetProtocolFeePaymentFromTransactionHashSubgraphResponseIndividual =
@@ -40,7 +35,8 @@ export async function getProtocolFeePaymentFromTransactionHash(
   const query = createQuery(txHash);
   const result =
     await subgraphClient.request<GetProtocolFeePaymentFromTransactionHashSubgraphResponse>(
-      query
+      query,
+      { txHash }
     );
   if (result.donations.length === 0) {
     return null;
