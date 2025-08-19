@@ -43,6 +43,7 @@ import { eq, inArray } from "drizzle-orm";
 import { completeApplicationWithDocumentsAndCreateFarmWithDevices } from "../../db/mutations/applications/completeApplicationWithDocumentsAndCreateFarm";
 import { getPubkeysAndShortIds } from "../devices/get-pubkeys-and-short-ids";
 import { findAllAuditFeesPaidApplicationsByZoneId } from "../../db/queries/applications/findAllAuditFeesPaidApplicationsByZoneId";
+import { findAllCertifiedInstallers } from "../../db/queries/installers/findAllCertifiedInstallers";
 
 export const publicApplicationsRoutes = new Elysia()
   .get(
@@ -772,6 +773,29 @@ export const publicApplicationsRoutes = new Elysia()
       detail: {
         summary: "Dev-only: Create application at waiting-for-payment step",
         description: `Create a new application pre-populated with sentinel values and immediately set to waiting-for-payment. Accessible only when NODE_ENV is not production and with a valid x-api-key.`,
+        tags: [TAG.APPLICATIONS],
+      },
+    }
+  )
+  .get(
+    "/verified-installers",
+    async ({ set }) => {
+      try {
+        const installers = await findAllCertifiedInstallers();
+        return installers;
+      } catch (e) {
+        if (e instanceof Error) {
+          set.status = 400;
+          return e.message;
+        }
+        set.status = 500;
+        return "Internal Server Error";
+      }
+    },
+    {
+      detail: {
+        summary: "Get all verified installers",
+        description: `Returns all installers marked as certified (isCertified = true).`,
         tags: [TAG.APPLICATIONS],
       },
     }
