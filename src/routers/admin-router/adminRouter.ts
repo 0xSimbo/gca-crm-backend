@@ -157,31 +157,31 @@ export const adminRouter = new Elysia({ prefix: "/admin" })
       console.error("Error bootstrapping clean grid zone", error);
       return { message: "error" };
     }
-  })
-  .get("/migrate-applications-too-advanced-step", async ({ set }) => {
-    try {
-      await db.transaction(async (tx) => {
-        await tx
-          .update(applications)
-          .set({
-            status: ApplicationStatusEnum.waitingForApproval,
-          })
-          .where(
-            and(
-              eq(applications.currentStep, ApplicationSteps.payment),
-              or(
-                eq(applications.status, ApplicationStatusEnum.paymentConfirmed),
-                eq(applications.status, ApplicationStatusEnum.waitingForPayment)
-              )
-            )
-          );
-      });
-      return { message: "success" };
-    } catch (error) {
-      console.error("Error anonymizing users and installers", error);
-      return { message: "error" };
-    }
   });
+// .get("/migrate-applications-too-advanced-step", async ({ set }) => {
+//   try {
+//     await db.transaction(async (tx) => {
+//       await tx
+//         .update(applications)
+//         .set({
+//           status: ApplicationStatusEnum.waitingForApproval,
+//         })
+//         .where(
+//           and(
+//             eq(applications.currentStep, ApplicationSteps.payment),
+//             or(
+//               eq(applications.status, ApplicationStatusEnum.paymentConfirmed),
+//               eq(applications.status, ApplicationStatusEnum.waitingForPayment)
+//             )
+//           )
+//         );
+//     });
+//     return { message: "success" };
+//   } catch (error) {
+//     console.error("Error anonymizing users and installers", error);
+//     return { message: "error" };
+//   }
+// });
 // .get("/anonymize-users-and-installers", async ({ set }) => {
 //   try {
 //     await db.transaction(async (tx) => {
