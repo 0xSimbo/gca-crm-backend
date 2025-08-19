@@ -778,29 +778,6 @@ export const publicApplicationsRoutes = new Elysia()
     }
   )
   .get(
-    "/verified-installers",
-    async ({ set }) => {
-      try {
-        const installers = await findAllCertifiedInstallers();
-        return installers;
-      } catch (e) {
-        if (e instanceof Error) {
-          set.status = 400;
-          return e.message;
-        }
-        set.status = 500;
-        return "Internal Server Error";
-      }
-    },
-    {
-      detail: {
-        summary: "Get all verified installers",
-        description: `Returns all installers marked as certified (isCertified = true).`,
-        tags: [TAG.APPLICATIONS],
-      },
-    }
-  )
-  .get(
     "/application-price-quotes",
     async ({ query, set }) => {
       try {
