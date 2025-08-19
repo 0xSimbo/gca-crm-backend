@@ -42,8 +42,43 @@ import {
 import { eq, inArray } from "drizzle-orm";
 import { completeApplicationWithDocumentsAndCreateFarmWithDevices } from "../../db/mutations/applications/completeApplicationWithDocumentsAndCreateFarm";
 import { getPubkeysAndShortIds } from "../devices/get-pubkeys-and-short-ids";
+import { findAllAuditFeesPaidApplicationsByZoneId } from "../../db/queries/applications/findAllAuditFeesPaidApplicationsByZoneId";
 
 export const publicApplicationsRoutes = new Elysia()
+  .get(
+    "/audit-fees-paid",
+    async ({ query, set }) => {
+      try {
+        const { zoneId } = query;
+        const parsed = zoneId !== undefined ? Number(zoneId) : undefined;
+        if (zoneId !== undefined && Number.isNaN(parsed)) {
+          set.status = 400;
+          return "zoneId must be a valid number if provided";
+        }
+
+        const applications = await findAllAuditFeesPaidApplicationsByZoneId(
+          parsed
+        );
+        return applications;
+      } catch (e) {
+        if (e instanceof Error) {
+          set.status = 400;
+          return e.message;
+        }
+        set.status = 500;
+        return "Internal Server Error";
+      }
+    },
+    {
+      query: t.Object({ zoneId: t.Optional(t.Numeric()) }),
+      detail: {
+        summary: "Get applications with paid audit fees by zoneId",
+        description:
+          "Returns all applications with paid audit fees (auditFeesTxHash set). If zoneId is provided, results are filtered by that zone.",
+        tags: [TAG.APPLICATIONS],
+      },
+    }
+  )
   .get(
     "/completed",
     async ({ query: { withDocuments }, set }) => {
