@@ -879,7 +879,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                 const emitter = createGlowEventEmitter({
                   username: process.env.RABBITMQ_ADMIN_USER!,
                   password: process.env.RABBITMQ_ADMIN_PASSWORD!,
-                  zoneId: 0,
+                  zoneId: 1,
                 });
 
                 const estimatedProtocolFeeUSDPrice_6Decimals = parseUnits(
