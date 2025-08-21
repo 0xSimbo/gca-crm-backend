@@ -86,6 +86,8 @@ export const findAllCompletedApplications = async (withDocuments?: boolean) => {
       gcaAssignedTimestamp: true,
       installFinishedDate: true,
       revisedKwhGeneratedPerYear: true,
+      paymentEventType: true,
+      payer: true,
     },
     with: {
       zone: {
