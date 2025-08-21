@@ -87,6 +87,7 @@ export const findAllCompletedApplications = async (withDocuments?: boolean) => {
       installFinishedDate: true,
       revisedKwhGeneratedPerYear: true,
       paymentEventType: true,
+      paymentCurrency: true,
       payer: true,
     },
     with: {
