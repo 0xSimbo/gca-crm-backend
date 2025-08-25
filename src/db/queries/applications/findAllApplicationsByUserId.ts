@@ -19,6 +19,8 @@ export const findAllApplicationsByUserId = async (userId: string) => {
       isCancelled: true,
       preInstallVisitDate: true,
       afterInstallVisitDate: true,
+      sponsorSplitPercent: true,
+      isPublishedOnAuction: true,
     },
     with: {
       enquiryFieldsCRS: {

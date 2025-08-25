@@ -30,6 +30,8 @@ export const findAllApplicationsByOrgUserId = async (
           auditFeesTxHash: true,
           preInstallVisitDate: true,
           afterInstallVisitDate: true,
+          sponsorSplitPercent: true,
+          isPublishedOnAuction: true,
         },
         with: {
           enquiryFieldsCRS: {

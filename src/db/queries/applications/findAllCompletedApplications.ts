@@ -233,6 +233,10 @@ export const findCompletedApplication = async ({
       gcaAssignedTimestamp: true,
       installFinishedDate: true,
       revisedKwhGeneratedPerYear: true,
+      sponsorSplitPercent: true,
+      isPublishedOnAuction: true,
+      publishedOnAuctionTimestamp: true,
+      sponsorSplitUpdatedAt: true,
     },
     with: {
       zone: {

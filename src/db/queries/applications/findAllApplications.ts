@@ -14,6 +14,8 @@ export const findAllApplications = async () => {
       isCancelled: true,
       revisedKwhGeneratedPerYear: true,
       allowedZones: true,
+      sponsorSplitPercent: true,
+      isPublishedOnAuction: true,
     },
     with: {
       enquiryFieldsCRS: {
