@@ -540,57 +540,57 @@ export const adminRouter = new Elysia({ prefix: "/admin" })
       }
       return { message: "error" };
     }
-  })
-  .get("/anonymize-users-and-installers", async ({ set }) => {
-    if (process.env.NODE_ENV === "production") {
-      set.status = 404;
-      return { message: "Not allowed" };
-    }
-    try {
-      await db.transaction(async (tx) => {
-        // Anonymize users
-        const allUsers = await tx.query.users.findMany();
-        for (const user of allUsers) {
-          await updateUser(
-            {
-              firstName: "Anon",
-              lastName: "User",
-              email: `anon+${user.id}@example.com`,
-              companyName: "Anon Corp",
-              companyAddress: "123 Anon St",
-            },
-            user.id
-          );
-        }
-
-        // Anonymize installers
-        const allInstallers = await tx.query.installers.findMany();
-        for (const installer of allInstallers) {
-          await updateInstaller(
-            {
-              name: "Anon Installer",
-              email: `anon+${installer.id}@example.com`,
-              companyName: "Anon Installers",
-              phone: "000-000-0000",
-            },
-            installer.id
-          );
-        }
-
-        await tx
-          .update(applications)
-          .set({
-            userId: "0x5252FdA14A149c01EA5A1D6514a9c1369E4C70b4",
-            gcaAddress: "0xA9A58D16F454A4FA5F7f00Bbe583A86F2C5446dd",
-          })
-          .where(not(eq(applications.status, ApplicationStatusEnum.completed)));
-      });
-      return { message: "success" };
-    } catch (error) {
-      console.error("Error anonymizing users and installers", error);
-      return { message: "error" };
-    }
   });
+// .get("/anonymize-users-and-installers", async ({ set }) => {
+//   if (process.env.NODE_ENV === "production") {
+//     set.status = 404;
+//     return { message: "Not allowed" };
+//   }
+//   try {
+//     await db.transaction(async (tx) => {
+//       // Anonymize users
+//       const allUsers = await tx.query.users.findMany();
+//       for (const user of allUsers) {
+//         await updateUser(
+//           {
+//             firstName: "Anon",
+//             lastName: "User",
+//             email: `anon+${user.id}@example.com`,
+//             companyName: "Anon Corp",
+//             companyAddress: "123 Anon St",
+//           },
+//           user.id
+//         );
+//       }
+
+//       // Anonymize installers
+//       const allInstallers = await tx.query.installers.findMany();
+//       for (const installer of allInstallers) {
+//         await updateInstaller(
+//           {
+//             name: "Anon Installer",
+//             email: `anon+${installer.id}@example.com`,
+//             companyName: "Anon Installers",
+//             phone: "000-000-0000",
+//           },
+//           installer.id
+//         );
+//       }
+
+//       await tx
+//         .update(applications)
+//         .set({
+//           userId: "0x5252FdA14A149c01EA5A1D6514a9c1369E4C70b4",
+//           gcaAddress: "0xA9A58D16F454A4FA5F7f00Bbe583A86F2C5446dd",
+//         })
+//         .where(not(eq(applications.status, ApplicationStatusEnum.completed)));
+//     });
+//     return { message: "success" };
+//   } catch (error) {
+//     console.error("Error anonymizing users and installers", error);
+//     return { message: "error" };
+//   }
+// });
 // .get("/migrate-applications-too-advanced-step", async ({ set }) => {
 //   try {
 //     await db.transaction(async (tx) => {
