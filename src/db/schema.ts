@@ -820,7 +820,9 @@ export const applications = pgTable("applications", {
   id: text("application_id").primaryKey(),
   userId: varchar("user_id", { length: 42 }).notNull(),
   zoneId: integer("zone_id").notNull().default(1),
-  farmId: varchar("farm_id", { length: 66 }).unique(),
+  farmId: varchar("farm_id", { length: 66 })
+    .unique()
+    .references(() => farms.id, { onDelete: "cascade" }),
   createdAt: timestamp("createdAt").notNull(),
   currentStep: integer("current_step").notNull(),
   roundRobinStatus: roundRobinStatusEnum("round_robin_status").notNull(),

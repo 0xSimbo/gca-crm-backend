@@ -44,6 +44,9 @@ import { parseCoordinates } from "../../utils/parseCoordinates";
 import { HubFarm } from "../../types/HubFarm";
 import { getFarmsStatus } from "../devices/get-pubkeys-and-short-ids";
 import { getProtocolFeePaymentFromTransactionHash } from "../../subgraph/queries/getProtocolFeePaymentFromTransactionHash";
+import { getPubkeysAndShortIds } from "../devices/get-pubkeys-and-short-ids";
+import { getRegionFromLatAndLng } from "../../utils/getRegionFromLatAndLng";
+import { Coordinates } from "../../types/geography.types";
 
 function parseAuditDate(input?: string): Date | undefined {
   if (!input) return undefined;
@@ -112,7 +115,279 @@ function parseAuditDate(input?: string): Date | undefined {
   return undefined;
 }
 
+async function patchFarmsFromAudits(dryRun: boolean = false) {
+  const audits: HubFarm[] = await fetch(`https://glow.org/api/audits`).then(
+    (r) => r.json()
+  );
+  if (!audits || audits.length === 0) {
+    return {
+      createdFarms: 0,
+      createdDevices: 0,
+      plannedFarms: [],
+      plannedDevices: [],
+    };
+  }
+
+  const allActiveShortIds = Array.from(
+    new Set(
+      audits.flatMap((a) => (a.activeShortIds || []).map((n) => String(n)))
+    )
+  );
+  const allPrevShortIds = Array.from(
+    new Set(
+      audits.flatMap((a) => (a.previousShortIds || []).map((n) => String(n)))
+    )
+  );
+  const allShortIds = Array.from(
+    new Set([...allActiveShortIds, ...allPrevShortIds])
+  );
+
+  // Build shortId -> publicKey map from all known GCA server URLs
+  const gcas = await db.query.Gcas.findMany();
+  const serverUrls = Array.from(
+    new Set(
+      gcas.flatMap((g) => (Array.isArray(g.serverUrls) ? g.serverUrls : []))
+    )
+  );
+  const shortIdToPubkey: Record<string, string> = {};
+  for (const url of serverUrls) {
+    try {
+      const pairs = await getPubkeysAndShortIds(url);
+      for (const p of pairs) {
+        const key = String(p.shortId);
+        if (!shortIdToPubkey[key]) shortIdToPubkey[key] = p.pubkey;
+      }
+    } catch (e) {
+      console.error("error fetching pubkeys from", url, e);
+    }
+  }
+
+  const existingDevices = await db.query.Devices.findMany({
+    where: (d, { inArray }) => inArray(d.shortId, allShortIds),
+    with: {
+      farm: {
+        columns: { id: true },
+      },
+    },
+  });
+
+  const shortIdToDevice: Record<string, any> = {};
+  for (const dev of existingDevices) shortIdToDevice[dev.shortId] = dev;
+
+  const { legacy } = await getFarmsStatus();
+
+  let createdFarms = 0;
+  let createdDevices = 0;
+  const plannedFarms: Array<{
+    name: string;
+    zoneId: number;
+    auditCompleteDate: string;
+    protocolFeePaymentHash: string;
+    gcaId: string;
+    userId: string;
+    rewardSplits: Array<{
+      walletAddress: string;
+      glowSplitPercent: string;
+      usdgSplitPercent: string;
+    }>;
+    activeShortIds: string[];
+  }> = [];
+  const plannedDevices: Array<{
+    shortId: string;
+    farmId: string | null;
+    farmName: string;
+  }> = [];
+
+  for (const auditEntry of audits) {
+    const auditShortIds = (auditEntry.activeShortIds || []).map((n) =>
+      String(n)
+    );
+    const prevShortIds = (auditEntry.previousShortIds || []).map((n) =>
+      String(n)
+    );
+    if (auditShortIds.length === 0) continue;
+
+    const existingAny = auditShortIds
+      .map((sid) => shortIdToDevice[sid])
+      .find(Boolean);
+
+    let targetFarmId: string | null = existingAny
+      ? (existingAny.farmId as string)
+      : null;
+
+    if (!existingAny) {
+      const legacyHit = legacy.find((l) =>
+        auditShortIds.some((sid) => l.short_id === Number(sid))
+      );
+      if (!legacyHit) {
+        console.log(
+          "No legacy hit found for farm",
+          auditEntry.humanReadableName
+        );
+        continue;
+      }
+      const auditDate = new Date(legacyHit.timestamp_audited_completed * 1000);
+      const paymentTxHash = legacyHit?.payment_tx_hash || `0x${"0".repeat(64)}`;
+      const rewardSplit = legacyHit?.reward_splits;
+
+      if (!rewardSplit || rewardSplit.length === 0) {
+        console.log("No reward split found for farm", auditEntry.farmName);
+        continue;
+      }
+
+      if (!auditEntry.summary.address.coordinates) {
+        console.log(
+          "No coordinates found for farm",
+          auditEntry.humanReadableName
+        );
+        continue;
+      }
+
+      const receipt = legacyHit
+        ? await getProtocolFeePaymentFromTransactionHash(paymentTxHash)
+        : null;
+      const ownerUserId =
+        receipt?.user?.id || "0x0000000000000000000000000000000000000000";
+      const region = await getRegionFromLatAndLng(
+        String(parseCoordinates(auditEntry.summary.address.coordinates)?.lat),
+        String(parseCoordinates(auditEntry.summary.address.coordinates)?.lng)
+      );
+      console.log("region", region);
+      const farmValues = {
+        zoneId: 1,
+        auditCompleteDate: auditDate,
+        protocolFeePaymentHash: paymentTxHash,
+        gcaId: "0x63a74612274FbC6ca3f7096586aF01Fd986d69cE",
+        userId: ownerUserId,
+        name:
+          (auditEntry.humanReadableName as string | undefined) || "__UNSET__",
+        region: region?.region,
+        regionFullName: region?.regionFullName,
+        signalType: region?.signalType,
+      };
+
+      if (dryRun) {
+        plannedFarms.push({
+          name: farmValues.name,
+          zoneId: farmValues.zoneId,
+          auditCompleteDate: farmValues.auditCompleteDate.toISOString(),
+          protocolFeePaymentHash: farmValues.protocolFeePaymentHash,
+          gcaId: farmValues.gcaId,
+          userId: farmValues.userId,
+          rewardSplits: rewardSplit.map((r: any) => ({
+            walletAddress: r.walletAddress,
+            glowSplitPercent: r.glowSplitPercent.toString(),
+            usdgSplitPercent: r.usdgSplitPercent.toString(),
+          })),
+          activeShortIds: auditShortIds,
+        });
+        createdFarms += 1;
+      } else {
+        await db.transaction(async (tx) => {
+          const farmInsert = await tx
+            .insert(farms)
+            .values(farmValues)
+            .returning({ id: farms.id });
+
+          if (rewardSplit.length > 0) {
+            await tx.insert(RewardSplits).values(
+              rewardSplit.map((r: any) => ({
+                farmId: farmInsert[0].id,
+                walletAddress: r.walletAddress,
+                glowSplitPercent: r.glowSplitPercent.toString(),
+                usdgSplitPercent: r.usdgSplitPercent.toString(),
+              }))
+            );
+          }
+
+          targetFarmId = farmInsert[0].id;
+          createdFarms += 1;
+
+          for (const sid of auditShortIds) {
+            if (!shortIdToDevice[sid]) {
+              const mappedPub = shortIdToPubkey[sid] || `unknown_short_${sid}`;
+              const deviceInsert = await tx
+                .insert(Devices)
+                .values({
+                  farmId: targetFarmId!,
+                  publicKey: mappedPub,
+                  shortId: sid,
+                  isEnabled: true,
+                  enabledAt: auditDate,
+                  previousPublicKey:
+                    prevShortIds.length > 0
+                      ? shortIdToPubkey[prevShortIds[0]]
+                      : null,
+                })
+                .returning({ id: Devices.id, shortId: Devices.shortId });
+              shortIdToDevice[sid] = {
+                ...deviceInsert[0],
+                farmId: targetFarmId,
+              } as any;
+              createdDevices += 1;
+            }
+          }
+          for (const sid of prevShortIds) {
+            if (!shortIdToDevice[sid]) {
+              const mappedPub =
+                shortIdToPubkey[sid] || `unknown_prev_short_${sid}`;
+              const deviceInsert = await tx
+                .insert(Devices)
+                .values({
+                  farmId: targetFarmId!,
+                  publicKey: mappedPub,
+                  shortId: sid,
+                  isEnabled: false,
+                  enabledAt: auditDate,
+                })
+                .returning({ id: Devices.id, shortId: Devices.shortId });
+              shortIdToDevice[sid] = {
+                ...deviceInsert[0],
+                farmId: targetFarmId,
+              } as any;
+              createdDevices += 1;
+            }
+          }
+        });
+      }
+    }
+
+    if (dryRun) {
+      // plan devices for a new farm
+      for (const sid of auditShortIds) {
+        if (!shortIdToDevice[sid]) {
+          plannedDevices.push({
+            shortId: sid,
+            farmId: null,
+            farmName:
+              (auditEntry.humanReadableName as string | undefined) ||
+              "__UNSET__",
+          });
+          shortIdToDevice[sid] = { id: `planned_${sid}`, farmId: null } as any;
+          createdDevices += 1;
+        }
+      }
+      for (const sid of prevShortIds) {
+        if (!shortIdToDevice[sid]) {
+          plannedDevices.push({
+            shortId: sid,
+            farmId: null,
+            farmName:
+              (auditEntry.humanReadableName as string | undefined) ||
+              "__UNSET__",
+          });
+          shortIdToDevice[sid] = { id: `planned_${sid}`, farmId: null } as any;
+          createdDevices += 1;
+        }
+      }
+    }
+  }
+
+  return { createdFarms, createdDevices, plannedFarms, plannedDevices };
+}
+
 export const adminRouter = new Elysia({ prefix: "/admin" })
+
   .get(
     "/create-completed-application-from-sources",
     async ({ set }) => {
@@ -121,6 +396,9 @@ export const adminRouter = new Elysia({ prefix: "/admin" })
           set.status = 404;
           return { message: "Not allowed" };
         }
+
+        // Ensure all farms from audits exist before proceeding
+        await patchFarmsFromAudits();
 
         let applicationsPatch = [];
         const allFarmsWithoutApplications = await db.query.farms.findMany({
@@ -200,9 +478,6 @@ export const adminRouter = new Elysia({ prefix: "/admin" })
               ""
             );
           const paymentTxHash = legacyFarm.payment_tx_hash;
-          const paymentDate = new Date(
-            legacyFarm.timestamp_audited_completed * 1000
-          );
 
           const electricityPriceStr =
             auditEntry?.summary?.installationAndOperations?.electricityPrice?.replace(
@@ -271,6 +546,8 @@ export const adminRouter = new Elysia({ prefix: "/admin" })
             return { message: "Receipt not found" };
           }
 
+          const paymentDate = new Date(Number(receipt.blockTimestamp) * 1000);
+
           await db.transaction(async (tx) => {
             const [draft] = await tx
               .insert(applicationsDraft)
@@ -296,8 +573,8 @@ export const adminRouter = new Elysia({ prefix: "/admin" })
               isCancelled: false,
               isDocumentsCorrupted: false,
               gcaAddress,
-              gcaAssignedTimestamp: paymentDate,
-              gcaAcceptanceTimestamp: paymentDate,
+              gcaAssignedTimestamp: installDate || paymentDate,
+              gcaAcceptanceTimestamp: paymentDate || paymentDate,
               gcaAcceptanceSignature: null,
               installFinishedDate: installDate || paymentDate,
               revisedKwhGeneratedPerYear: estimatedKWhPerYear.toString(),

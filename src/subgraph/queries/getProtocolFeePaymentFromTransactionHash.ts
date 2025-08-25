@@ -8,6 +8,7 @@ function createQuery(txHash: string) {
       ) {
         id
         amount
+        blockTimestamp
         user {
           id
         }
@@ -20,6 +21,7 @@ export type GetProtocolFeePaymentFromTransactionHashSubgraphResponseIndividual =
   {
     id: string;
     amount: string;
+    blockTimestamp: string;
     user: {
       id: string;
     };
