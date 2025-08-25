@@ -3,6 +3,8 @@ import {
   ApplicationEnquiryFieldsCRSInsertType,
   ApplicationInsertType,
   applications,
+  deviceRewards,
+  farmRewards,
   requirementSets,
   wallets,
   walletWeeklyRewards,
@@ -47,6 +49,9 @@ import { getProtocolFeePaymentFromTransactionHash } from "../../subgraph/queries
 import { getPubkeysAndShortIds } from "../devices/get-pubkeys-and-short-ids";
 import { getRegionFromLatAndLng } from "../../utils/getRegionFromLatAndLng";
 import { Coordinates } from "../../types/geography.types";
+import { getDevicesLifetimeMetrics } from "../../crons/update-farm-rewards/get-devices-lifetime-metrics";
+import { updateDeviceRewardsForWeek } from "../../crons/update-farm-rewards/update-device-rewards-for-week";
+import { updateFarmRewardsForWeek } from "../../crons/update-farm-rewards/update-farm-rewards-for-week";
 
 function parseAuditDate(input?: string): Date | undefined {
   if (!input) return undefined;
@@ -387,7 +392,6 @@ async function patchFarmsFromAudits(dryRun: boolean = false) {
 }
 
 export const adminRouter = new Elysia({ prefix: "/admin" })
-
   .get(
     "/create-completed-application-from-sources",
     async ({ set }) => {
@@ -739,29 +743,29 @@ export const adminRouter = new Elysia({ prefix: "/admin" })
     return { message: "dev only" };
     const lastWeek = getProtocolWeek() - 1;
     try {
-      // await db.update(farms).set({
-      //   totalUSDGRewards: BigInt(0),
-      //   totalGlowRewards: BigInt(0),
-      // });
+      await db.update(farms).set({
+        totalUSDGRewards: BigInt(0),
+        totalGlowRewards: BigInt(0),
+      });
       await db.update(wallets).set({
         totalUSDGRewards: BigInt(0),
         totalGlowRewards: BigInt(0),
       });
-      // await db.delete(farmRewards);
-      // await db.delete(deviceRewards);
+      await db.delete(farmRewards);
+      await db.delete(deviceRewards);
       await db.delete(walletWeeklyRewards);
-      // const deviceLifetimeMetrics = await getDevicesLifetimeMetrics();
+      const deviceLifetimeMetrics = await getDevicesLifetimeMetrics();
       for (let i = 10; i <= lastWeek; i++) {
         console.log("Updating rewards for week", i);
         await updateWalletRewardsForWeek(i);
-        // await updateDeviceRewardsForWeek({
-        //   deviceLifetimeMetrics,
-        //   weekNumber: i,
-        // });
-        // await updateFarmRewardsForWeek({
-        //   deviceLifetimeMetrics,
-        //   weekNumber: i,
-        // });
+        await updateDeviceRewardsForWeek({
+          deviceLifetimeMetrics,
+          weekNumber: i,
+        });
+        await updateFarmRewardsForWeek({
+          deviceLifetimeMetrics,
+          weekNumber: i,
+        });
       }
       return { message: "success" };
     } catch (error) {
