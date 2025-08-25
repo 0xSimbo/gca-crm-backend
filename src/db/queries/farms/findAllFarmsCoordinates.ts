@@ -3,8 +3,6 @@ import { db } from "../../db";
 import { applications, Devices } from "../../schema";
 import { parseCoordinates } from "../../../utils/parseCoordinates";
 
-import pLimit from "p-limit";
-
 export const findAllFarmsCoordinates = async () => {
   const farmsCoordinates = await db.query.applications.findMany({
     where: isNotNull(applications.farmId),

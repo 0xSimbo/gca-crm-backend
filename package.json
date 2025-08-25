@@ -21,7 +21,7 @@
     "@elysiajs/eden": "1.1.2",
     "@elysiajs/swagger": "1.0.5",
     "@glowlabs-org/events-sdk": "^1.0.14",
-    "@glowlabs-org/utils": "^0.2.44",
+    "@glowlabs-org/utils": "^0.2.68",
     "@neondatabase/serverless": "^0.9.4",
     "@types/heic-convert": "^2.1.0",
     "dotenv": "^16.4.5",

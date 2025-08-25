@@ -18,8 +18,22 @@ import { findAllUserOrganizations } from "../../db/queries/organizations/findAll
 import { findAllApplicationsRewardSplitsByOrganizationIds } from "../../db/queries/rewardSplits/findAllApplicationsRewardSplitsByOrganizationIds";
 import { findAllApplicationsRewardSplitsByUserId } from "../../db/queries/rewardSplits/findAllApplicationsRewardSplitsByUserId";
 import { updateSplits } from "../../db/mutations/reward-splits/updateSplits";
+import { findAllRewardSplits } from "../../db/queries/rewardSplits/findAllRewardSplits";
 
 export const rewardSplitsRouter = new Elysia({ prefix: "/rewardsSplits" })
+  .get("/all", async ({ set }) => {
+    try {
+      const allRewardSplits = await findAllRewardSplits();
+      return allRewardSplits;
+    } catch (e) {
+      if (e instanceof Error) {
+        set.status = 400;
+        return e.message;
+      }
+      console.log("[rewardSplitsRouter] /all", e);
+      throw new Error("Error Occured");
+    }
+  })
   .use(bearerplugin())
   .guard(bearerGuard, (app) =>
     app

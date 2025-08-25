@@ -44,6 +44,6 @@ export async function getProtocolFeePaymentFromTransactionHash(
 
   const res = result
     .donations[0] as GetProtocolFeePaymentFromTransactionHashSubgraphResponseIndividual;
-  console.log(res);
+
   return res;
 }

@@ -24,3 +24,47 @@ export const getPubkeysAndShortIds = async (
     throw new Error("Failed to fetch pubkeys and short ids");
   }
 };
+
+type FarmStatus = {
+  comments: string[];
+  glow_weight: number;
+  payment_tx_hash: string;
+  protocol_fee_paid_week: number;
+  reward_splits: {
+    glowSplitPercent: number;
+    usdgSplitPercent: number;
+    walletAddress: string;
+  }[];
+  short_id: number;
+  status: {
+    AuditInherited: {
+      oldFarmId: number;
+      originalAuditCompleteWeek: number;
+      slotRangeActiveInWeekInherited: [number, number];
+      weekAuditWasInherited: number;
+    };
+  };
+  timestamp_audited_completed: number;
+  weeks_and_slot_ranges_to_invert_power_map: null;
+  weeks_and_slots_to_invalidate_power_map: null;
+};
+
+export const getFarmsStatus = async (): Promise<{
+  crm: FarmStatus[];
+  legacy: FarmStatus[];
+}> => {
+  const url = `https://fun-rust-production.up.railway.app/get_farm_statuses`;
+  const post = await fetch(url, {
+    method: "GET",
+    headers: {
+      "Content-Type": "application/json",
+    },
+  });
+
+  if (post.ok) {
+    const resSon = (await post.json()) as any;
+    return resSon;
+  } else {
+    throw new Error("Failed to fetch farms status");
+  }
+};

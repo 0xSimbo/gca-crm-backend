@@ -43,8 +43,6 @@ import { eq, inArray } from "drizzle-orm";
 import { completeApplicationWithDocumentsAndCreateFarmWithDevices } from "../../db/mutations/applications/completeApplicationWithDocumentsAndCreateFarm";
 import { getPubkeysAndShortIds } from "../devices/get-pubkeys-and-short-ids";
 import { findAllAuditFeesPaidApplicationsByZoneId } from "../../db/queries/applications/findAllAuditFeesPaidApplicationsByZoneId";
-import { findAllCertifiedInstallers } from "../../db/queries/installers/findAllCertifiedInstallers";
-import { findAllInstallers } from "../../db/queries/installers/findAllInstallers";
 
 export const publicApplicationsRoutes = new Elysia()
   .get(
