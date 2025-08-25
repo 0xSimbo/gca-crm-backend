@@ -833,6 +833,8 @@ export const applications = pgTable("applications", {
     .notNull()
     .default(false),
   publishedOnAuctionTimestamp: timestamp("published_on_auction_timestamp"),
+  sponsorSplitPercent: integer("sponsor_split_percent"),
+  sponsorSplitUpdatedAt: timestamp("sponsor_split_updated_at"),
   // null if application just got created
   updatedAt: timestamp("updatedAt"),
   declarationOfIntentionSignature: varchar(

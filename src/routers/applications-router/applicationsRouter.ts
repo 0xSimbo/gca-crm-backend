@@ -2010,15 +2010,29 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               return "User is not the owner of the application";
             }
 
-            if (application.isPublishedOnAuction) {
+            const sponsorSplitPercent = body.sponsorSplitPercent;
+
+            if (
+              !Number.isInteger(sponsorSplitPercent) ||
+              sponsorSplitPercent < 20 ||
+              sponsorSplitPercent > 80 ||
+              sponsorSplitPercent % 10 !== 0
+            ) {
               set.status = 400;
-              return "Application is already published on auction";
+              return "Invalid sponsorSplitPercent. Allowed values: 20,30,40,50,60,70,80";
             }
 
-            await updateApplication(application.id, {
-              isPublishedOnAuction: true,
-              publishedOnAuctionTimestamp: new Date(),
-            });
+            const updateFields: any = {
+              sponsorSplitPercent,
+              sponsorSplitUpdatedAt: new Date(),
+            };
+
+            if (!application.isPublishedOnAuction) {
+              updateFields.isPublishedOnAuction = true;
+              updateFields.publishedOnAuctionTimestamp = new Date();
+            }
+
+            await updateApplication(application.id, updateFields);
           } catch (e) {
             if (e instanceof Error) {
               set.status = 400;
@@ -2034,10 +2048,11 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
         {
           body: t.Object({
             applicationId: t.String(),
+            sponsorSplitPercent: t.Number({ minimum: 20, maximum: 80 }),
           }),
           detail: {
             summary: "Publish Application to auction",
-            description: `Toggle isPublishedOnAuction and set publishedOnAuctionTimestamp; accessible only by the application owner while the application is waiting-for-payment.`,
+            description: `Set sponsorSplitPercent (20-80 inclusive, steps of 10). If not yet published, also toggle isPublishedOnAuction and set publishedOnAuctionTimestamp. If already published, only updates sponsorSplitPercent and sponsorSplitUpdatedAt.`,
             tags: [TAG.APPLICATIONS],
           },
         }

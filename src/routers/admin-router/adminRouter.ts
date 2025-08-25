@@ -581,6 +581,7 @@ export const adminRouter = new Elysia({ prefix: "/admin" })
           .update(applications)
           .set({
             userId: "0x5252FdA14A149c01EA5A1D6514a9c1369E4C70b4",
+            gcaAddress: "0xA9A58D16F454A4FA5F7f00Bbe583A86F2C5446dd",
           })
           .where(not(eq(applications.status, ApplicationStatusEnum.completed)));
       });

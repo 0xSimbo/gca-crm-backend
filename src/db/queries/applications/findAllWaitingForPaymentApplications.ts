@@ -51,6 +51,8 @@ export const findAllWaitingForPaymentApplications = async (
       gcaAssignedTimestamp: true,
       installFinishedDate: true,
       isPublishedOnAuction: true,
+      sponsorSplitPercent: true,
+      sponsorSplitUpdatedAt: true,
       publishedOnAuctionTimestamp: true,
       finalProtocolFee: true,
       auditFees: true,
