@@ -1,6 +1,7 @@
-import { and, eq, isNotNull } from "drizzle-orm";
+import { and, eq, isNotNull, not } from "drizzle-orm";
 import { db } from "../../db";
 import { applications } from "../../schema";
+import { ApplicationStatusEnum } from "../../../types/api-types/Application";
 
 function stringifyApplicationFields(
   application: any,
@@ -28,6 +29,7 @@ export const findAllAuditFeesPaidApplicationsByZoneId = async (
   const whereConditions = [
     eq(applications.isCancelled, false),
     isNotNull(applications.auditFeesTxHash),
+    not(eq(applications.status, ApplicationStatusEnum.completed)),
   ];
 
   if (zoneId !== undefined) {
