@@ -55,6 +55,11 @@ export const findAllAuditFeesPaidApplicationsByZoneId = async (
           name: true,
         },
       },
+      farm: {
+        columns: {
+          id: true,
+        },
+      },
       enquiryFieldsCRS: {
         columns: {
           lat: true,
