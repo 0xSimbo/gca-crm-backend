@@ -299,6 +299,7 @@ export const handleCreateWithoutPIIDocumentsAndCompleteApplicationAudit =
         paymentDate: application.paymentDate,
         paymentCurrency: application.paymentCurrency,
         paymentEventType: application.paymentEventType,
+        paymentAmount: application.paymentAmount,
         applicationId: application.id,
         gcaId: application.gcaAddress!,
         userId: application.userId,

@@ -43,6 +43,7 @@ import { eq, inArray } from "drizzle-orm";
 import { completeApplicationWithDocumentsAndCreateFarmWithDevices } from "../../db/mutations/applications/completeApplicationWithDocumentsAndCreateFarm";
 import { getPubkeysAndShortIds } from "../devices/get-pubkeys-and-short-ids";
 import { findAllAuditFeesPaidApplicationsByZoneId } from "../../db/queries/applications/findAllAuditFeesPaidApplicationsByZoneId";
+import { PAYMENT_CURRENCIES } from "@glowlabs-org/utils/browser";
 
 export const publicApplicationsRoutes = new Elysia()
   .get(
@@ -274,11 +275,7 @@ export const publicApplicationsRoutes = new Elysia()
           return "Transaction hash already been used";
         }
 
-        const forwarderData = await getForwarderDataFromTxHashReceipt(
-          body.txHash
-        );
-
-        const applicationId = forwarderData.applicationId;
+        const applicationId = body.applicationId;
 
         const application = await FindFirstApplicationById(applicationId);
 
@@ -298,7 +295,7 @@ export const publicApplicationsRoutes = new Elysia()
           return "Final Protocol Fee is not set";
         }
 
-        const currency = forwarderData.paymentCurrency;
+        const currency = body.paymentCurrency;
 
         if (!(currency in DECIMALS_BY_CURRENCY)) {
           console.error("Unsupported payment currency", currency);
@@ -360,7 +357,7 @@ export const publicApplicationsRoutes = new Elysia()
           return `Invalid final fee: ${finalFee}`;
         }
 
-        if (BigInt(forwarderData.amount) === BigInt(0)) {
+        if (BigInt(body.amount) === BigInt(0)) {
           console.error("Invalid amount: 0");
           set.status = 400;
           return `Invalid amount: 0`;
@@ -404,9 +401,10 @@ export const publicApplicationsRoutes = new Elysia()
 
         await completeApplicationWithDocumentsAndCreateFarmWithDevices({
           protocolFeePaymentHash: body.txHash,
-          paymentDate: forwarderData.paymentDate,
-          paymentCurrency: forwarderData.paymentCurrency,
-          paymentEventType: forwarderData.eventType,
+          paymentDate: body.paymentDate,
+          paymentCurrency: body.paymentCurrency,
+          paymentEventType: body.eventType,
+          paymentAmount: body.amount,
           applicationId,
           gcaId: application.gcaAddress,
           userId: application.userId,
@@ -416,7 +414,7 @@ export const publicApplicationsRoutes = new Elysia()
           lat: application.enquiryFields?.lat,
           lng: application.enquiryFields?.lng,
           farmName: application.enquiryFields?.farmOwnerName,
-          payer: forwarderData.from,
+          payer: body.from,
         });
         if (process.env.NODE_ENV === "production") {
           const emitter = createGlowEventEmitter({
@@ -431,11 +429,11 @@ export const publicApplicationsRoutes = new Elysia()
               schemaVersion: "v2-alpha",
               payload: {
                 applicationId: applicationId,
-                payer: forwarderData.from,
-                amount_6Decimals: forwarderData.amount,
+                payer: body.from,
+                amount_6Decimals: body.amount,
                 txHash: body.txHash,
-                paymentCurrency: forwarderData.paymentCurrency,
-                paymentEventType: forwarderData.eventType,
+                paymentCurrency: body.paymentCurrency,
+                paymentEventType: body.eventType,
                 isSponsored: false,
               },
             })
@@ -458,6 +456,15 @@ export const publicApplicationsRoutes = new Elysia()
     {
       body: t.Object({
         txHash: t.String(),
+        applicationId: t.String(),
+        paymentCurrency: t.Enum(
+          Object.fromEntries(PAYMENT_CURRENCIES.map((c) => [c, c])),
+          { type: "string" }
+        ),
+        eventType: t.String(),
+        amount: t.String(),
+        paymentDate: t.Date(),
+        from: t.String(),
       }),
       detail: {
         summary: "Finalize Payment",

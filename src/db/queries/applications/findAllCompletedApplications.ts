@@ -17,6 +17,7 @@ function stringifyApplicationFields(
       6
     ),
     finalProtocolFeeBigInt: application.finalProtocolFee.toString(),
+    paymentAmount: application.paymentAmount.toString(),
     auditFees: application.auditFees?.toString() || "0",
     ...enquiryFieldsCRS,
     ...auditFieldsCRS,
@@ -88,6 +89,7 @@ export const findAllCompletedApplications = async (withDocuments?: boolean) => {
       revisedKwhGeneratedPerYear: true,
       paymentEventType: true,
       paymentCurrency: true,
+      paymentAmount: true,
       payer: true,
     },
     with: {
@@ -237,6 +239,10 @@ export const findCompletedApplication = async ({
       isPublishedOnAuction: true,
       publishedOnAuctionTimestamp: true,
       sponsorSplitUpdatedAt: true,
+      paymentAmount: true,
+      paymentCurrency: true,
+      paymentEventType: true,
+      payer: true,
     },
     with: {
       zone: {

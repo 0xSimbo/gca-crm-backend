@@ -821,6 +821,80 @@ export const adminRouter = new Elysia({ prefix: "/admin" })
       }
       return { message: "error" };
     }
+  })
+  .get("/patch-payment-amounts", async ({ set }) => {
+    try {
+      if (process.env.NODE_ENV === "production") {
+        set.status = 404;
+        return { message: "Not allowed in production" };
+      }
+
+      // Find all applications with farmId that have mismatched payment amounts
+      const applicationsWithFarms = await db.query.applications.findMany({
+        where: (app, { isNotNull }) => isNotNull(app.farmId),
+        columns: {
+          id: true,
+          finalProtocolFee: true,
+          paymentAmount: true,
+          farmId: true,
+        },
+      });
+
+      if (applicationsWithFarms.length === 0) {
+        return {
+          message: "No applications with farms found",
+          updated: 0,
+        };
+      }
+
+      // Filter applications where paymentAmount doesn't match finalProtocolFee
+      const applicationsToUpdate = applicationsWithFarms.filter(
+        (app) => BigInt(app.paymentAmount) !== app.finalProtocolFee
+      );
+
+      if (applicationsToUpdate.length === 0) {
+        return {
+          message: "All payment amounts already match final protocol fees",
+          total: applicationsWithFarms.length,
+          updated: 0,
+        };
+      }
+
+      let updated = 0;
+
+      // Update payment amounts to match final protocol fees
+      await db.transaction(async (tx) => {
+        for (const app of applicationsToUpdate) {
+          await tx
+            .update(applications)
+            .set({
+              paymentAmount: app.finalProtocolFee.toString(),
+            })
+            .where(eq(applications.id, app.id));
+
+          updated++;
+        }
+      });
+
+      return {
+        message: `Successfully updated payment amounts for ${updated} applications`,
+        total: applicationsWithFarms.length,
+        updated,
+        applicationsPatched: applicationsToUpdate.map((app) => ({
+          applicationId: app.id,
+          farmId: app.farmId,
+          oldPaymentAmount: app.paymentAmount.toString(),
+          newPaymentAmount: app.finalProtocolFee.toString(),
+        })),
+      };
+    } catch (error) {
+      console.error("Error patching payment amounts", error);
+      set.status = 500;
+      return {
+        message: "Error patching payment amounts",
+        error: error instanceof Error ? error.message : "Unknown error",
+      };
+    }
   });
 // .get("/anonymize-users-and-installers", async ({ set }) => {
 //   if (process.env.NODE_ENV === "production") {

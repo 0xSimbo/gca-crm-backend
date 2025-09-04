@@ -3,11 +3,10 @@ import { FORWARDER_ABI } from "@glowlabs-org/utils/browser";
 import { createPublicClient, decodeEventLog, http } from "viem";
 import type { Abi } from "viem";
 import { mainnet, sepolia } from "viem/chains";
+import { PaymentCurrency } from "@glowlabs-org/utils/browser";
 // --------------------------------------------------
 // Forwarder event utility
 // --------------------------------------------------
-
-export type PaymentCurrency = "GCTL" | "USDC" | "USDG" | "GLW";
 
 export interface GetForwarderDataFromTxHashReceipt {
   /** Raw USDC amount (6-decimals) */

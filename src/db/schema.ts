@@ -899,9 +899,15 @@ export const applications = pgTable("applications", {
   additionalPaymentTxHash: varchar("additional_payment_tx_hash", {
     length: 66,
   }),
+  paymentAmount: numeric("payment_amount", {
+    precision: 38,
+    scale: 0,
+  })
+    .default(sql`'0'::numeric`)
+    .notNull(),
   paymentCurrency: varchar("payment_currency", { length: 20 })
     .notNull()
-    .default("USDG"), // USDG or GCTL or USDC and maybe GLOW in the future
+    .default("USDG"), // USDG or GCTL or USDC or GLW or GCTL or SGCTL
   paymentEventType: varchar("payment_event_type", { length: 66 })
     .notNull()
     .default("PayProtocolFee"), // PayProtocolFee or PayProtocolFeeAndMintGCTLAndStake
