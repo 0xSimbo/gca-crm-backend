@@ -46,6 +46,7 @@ import { parseCoordinates } from "../../utils/parseCoordinates";
 import { HubFarm } from "../../types/HubFarm";
 import { getFarmsStatus } from "../devices/get-pubkeys-and-short-ids";
 import { getProtocolFeePaymentFromTransactionHash } from "../../subgraph/queries/getProtocolFeePaymentFromTransactionHash";
+import { getProtocolFeePaymentFromTxHashReceipt } from "../../utils/getProtocolFeePaymentFromTxHashReceipt";
 import { getPubkeysAndShortIds } from "../devices/get-pubkeys-and-short-ids";
 import { getRegionFromLatAndLng } from "../../utils/getRegionFromLatAndLng";
 import { Coordinates } from "../../types/geography.types";
@@ -892,6 +893,82 @@ export const adminRouter = new Elysia({ prefix: "/admin" })
       set.status = 500;
       return {
         message: "Error patching payment amounts",
+        error: error instanceof Error ? error.message : "Unknown error",
+      };
+    }
+  })
+  .get("/patch-payer", async ({ set }) => {
+    try {
+      if (process.env.NODE_ENV === "production") {
+        set.status = 404;
+        return { message: "Not allowed in production" };
+      }
+
+      // Find all applications with paymentTxHash but null payer
+      const applicationsWithNullPayer = await db.query.applications.findMany({
+        where: (app, { and, isNull, isNotNull }) =>
+          and(isNull(app.payer), isNotNull(app.paymentTxHash)),
+        columns: {
+          id: true,
+          paymentTxHash: true,
+          payer: true,
+        },
+      });
+
+      if (applicationsWithNullPayer.length === 0) {
+        return {
+          message:
+            "No applications with null payer and valid paymentTxHash found",
+          updated: 0,
+        };
+      }
+
+      let updated = 0;
+      const errors: Array<{ applicationId: string; error: string }> = [];
+
+      // Process each application to get payer from transaction receipt
+      for (const app of applicationsWithNullPayer) {
+        try {
+          if (!app.paymentTxHash) {
+            continue; // Skip if somehow paymentTxHash is null
+          }
+
+          // Get payment details from blockchain transaction
+          const paymentData = await getProtocolFeePaymentFromTxHashReceipt(
+            app.paymentTxHash
+          );
+
+          // Update the payer field with the user ID from the transaction
+          await db
+            .update(applications)
+            .set({
+              payer: paymentData.user.id,
+            })
+            .where(eq(applications.id, app.id));
+
+          updated++;
+        } catch (error) {
+          console.error(`Error processing application ${app.id}:`, error);
+          errors.push({
+            applicationId: app.id,
+            error: error instanceof Error ? error.message : "Unknown error",
+          });
+        }
+      }
+
+      return {
+        message: `Successfully patched payer field for ${updated} applications`,
+        total: applicationsWithNullPayer.length,
+        updated,
+        failed: errors.length,
+        applicationIds: applicationsWithNullPayer.map((app) => app.id),
+        errors: errors.length > 0 ? errors : undefined,
+      };
+    } catch (error) {
+      console.error("Error patching payer fields", error);
+      set.status = 500;
+      return {
+        message: "Error patching payer fields",
         error: error instanceof Error ? error.message : "Unknown error",
       };
     }
