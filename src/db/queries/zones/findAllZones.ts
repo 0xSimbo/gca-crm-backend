@@ -9,6 +9,7 @@ export const findAllZones = async () => {
       requirementSetId: true,
       createdAt: true,
       isActive: true,
+      isAcceptingSponsors: true,
     },
     with: {
       requirementSet: {

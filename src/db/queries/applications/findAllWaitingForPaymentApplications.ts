@@ -65,6 +65,7 @@ export const findAllWaitingForPaymentApplications = async (
           id: true,
           name: true,
           isActive: true,
+          isAcceptingSponsors: true,
         },
       },
       enquiryFieldsCRS: {

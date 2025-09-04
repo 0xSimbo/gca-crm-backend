@@ -1787,6 +1787,9 @@ export const zones = pgTable("zones", {
     .references(() => requirementSets.id, { onDelete: "restrict" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   isActive: boolean("is_active").notNull().default(false),
+  isAcceptingSponsors: boolean("is_accepting_sponsors")
+    .notNull()
+    .default(false),
 });
 
 export const ZoneRelations = relations(zones, ({ one, many }) => ({

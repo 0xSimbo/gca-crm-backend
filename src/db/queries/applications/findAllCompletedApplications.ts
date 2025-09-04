@@ -98,6 +98,7 @@ export const findAllCompletedApplications = async (withDocuments?: boolean) => {
           id: true,
           name: true,
           isActive: true,
+          isAcceptingSponsors: true,
         },
       },
       auditFieldsCRS: {
@@ -251,6 +252,7 @@ export const findCompletedApplication = async ({
           id: true,
           name: true,
           isActive: true,
+          isAcceptingSponsors: true,
         },
       },
       auditFieldsCRS: {

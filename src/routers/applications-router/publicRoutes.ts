@@ -39,13 +39,179 @@ import {
   ApplicationAuditFieldsCRSInsertType,
   Devices,
 } from "../../db/schema";
-import { eq, inArray } from "drizzle-orm";
+import { eq, inArray, and, asc, desc } from "drizzle-orm";
 import { completeApplicationWithDocumentsAndCreateFarmWithDevices } from "../../db/mutations/applications/completeApplicationWithDocumentsAndCreateFarm";
 import { getPubkeysAndShortIds } from "../devices/get-pubkeys-and-short-ids";
 import { findAllAuditFeesPaidApplicationsByZoneId } from "../../db/queries/applications/findAllAuditFeesPaidApplicationsByZoneId";
 import { PAYMENT_CURRENCIES } from "@glowlabs-org/utils/browser";
 
 export const publicApplicationsRoutes = new Elysia()
+  .get(
+    "/auction-applications",
+    async ({ query, set }) => {
+      try {
+        const { zoneId, sortBy, sortOrder } = query;
+
+        // Parse zoneId if provided
+        const parsedZoneId = zoneId !== undefined ? Number(zoneId) : undefined;
+        if (zoneId !== undefined && Number.isNaN(parsedZoneId)) {
+          set.status = 400;
+          return "zoneId must be a valid number if provided";
+        }
+
+        // Build where conditions
+        let whereConditions = and(
+          eq(applications.status, ApplicationStatusEnum.waitingForPayment),
+          eq(applications.isPublishedOnAuction, true)
+        );
+
+        // Add zoneId filter if specified
+        if (parsedZoneId !== undefined) {
+          whereConditions = and(
+            whereConditions,
+            eq(applications.zoneId, parsedZoneId),
+            eq(applications.status, ApplicationStatusEnum.waitingForPayment)
+          );
+        }
+
+        // Determine sort order
+        const sortOrderFn = sortOrder === "desc" ? desc : asc;
+        let orderByClause;
+
+        switch (sortBy) {
+          case "publishedOnAuctionTimestamp":
+            orderByClause = sortOrderFn(
+              applications.publishedOnAuctionTimestamp
+            );
+            break;
+          case "sponsorSplitPercent":
+            orderByClause = sortOrderFn(applications.sponsorSplitPercent);
+            break;
+          case "finalProtocolFee":
+            orderByClause = sortOrderFn(applications.finalProtocolFee);
+            break;
+          default:
+            orderByClause = desc(applications.publishedOnAuctionTimestamp); // Default sort
+            break;
+        }
+
+        // Query applications with all required joins
+        const auctionApplications = await db.query.applications.findMany({
+          where: whereConditions,
+          orderBy: orderByClause,
+          columns: {
+            id: true,
+            userId: true,
+            zoneId: true,
+            status: true,
+            createdAt: true,
+            isPublishedOnAuction: true,
+            publishedOnAuctionTimestamp: true,
+            sponsorSplitPercent: true,
+            finalProtocolFee: true,
+            paymentCurrency: true,
+            paymentEventType: true,
+          },
+          with: {
+            zone: {
+              columns: {
+                id: true,
+                name: true,
+                isAcceptingSponsors: true,
+                isActive: true,
+              },
+              with: {
+                requirementSet: {
+                  columns: {
+                    id: true,
+                    name: true,
+                    code: true,
+                  },
+                },
+              },
+            },
+            applicationPriceQuotes: {
+              columns: {
+                id: true,
+                prices: true,
+                signature: true,
+                createdAt: true,
+                gcaAddress: true,
+              },
+              orderBy: desc(ApplicationPriceQuotes.createdAt),
+            },
+            enquiryFieldsCRS: {
+              columns: {
+                address: true,
+                farmOwnerName: true,
+                lat: true,
+                lng: true,
+                estimatedKWhGeneratedPerYear: true,
+              },
+            },
+            auditFieldsCRS: {
+              columns: {
+                systemWattageOutput: true,
+                averageSunlightHoursPerDay: true,
+                adjustedWeeklyCarbonCredits: true,
+              },
+            },
+            weeklyProduction: true,
+            weeklyCarbonDebt: true,
+          },
+        });
+
+        // Filter to only include applications in zones that accept sponsors
+        const filteredApplications = auctionApplications.filter(
+          (app) => app.zone?.isAcceptingSponsors === true
+        );
+
+        return filteredApplications.map((app) => ({
+          id: app.id,
+          userId: app.userId,
+          status: app.status,
+          createdAt: app.createdAt,
+          isPublishedOnAuction: app.isPublishedOnAuction,
+          publishedOnAuctionTimestamp: app.publishedOnAuctionTimestamp,
+          sponsorSplitPercent: app.sponsorSplitPercent,
+          finalProtocolFee: app.finalProtocolFee?.toString(),
+          paymentCurrency: app.paymentCurrency,
+          paymentEventType: app.paymentEventType,
+          zone: app.zone,
+          applicationPriceQuotes: app.applicationPriceQuotes,
+          enquiryFields: app.enquiryFieldsCRS,
+          auditFields: app.auditFieldsCRS,
+          weeklyProduction: app.weeklyProduction,
+          weeklyCarbonDebt: app.weeklyCarbonDebt,
+        }));
+      } catch (e) {
+        if (e instanceof Error) {
+          set.status = 400;
+          return e.message;
+        }
+        set.status = 500;
+        return "Internal Server Error";
+      }
+    },
+    {
+      query: t.Object({
+        zoneId: t.Optional(t.Numeric()),
+        sortBy: t.Optional(
+          t.Union([
+            t.Literal("publishedOnAuctionTimestamp"),
+            t.Literal("sponsorSplitPercent"),
+            t.Literal("finalProtocolFee"),
+          ])
+        ),
+        sortOrder: t.Optional(t.Union([t.Literal("asc"), t.Literal("desc")])),
+      }),
+      detail: {
+        summary: "Get auction applications available for sponsorship",
+        description: `Returns applications that are waiting for payment, published on auction, and in zones accepting sponsors. Supports filtering by zoneId and sorting by publishedOnAuctionTimestamp, sponsorSplitPercent, or finalProtocolFee. Includes application price quotes and related data.`,
+        tags: [TAG.APPLICATIONS],
+      },
+    }
+  )
   .get(
     "/audit-fees-paid",
     async ({ query, set }) => {
