@@ -912,6 +912,7 @@ export const applications = pgTable("applications", {
     .notNull()
     .default("PayProtocolFee"), // PayProtocolFee or PayProtocolFeeAndMintGCTLAndStake
   payer: varchar("payer", { length: 42 }),
+  sponsorWallet: varchar("sponsor_wallet", { length: 42 }),
   // gca assignement fields
   gcaAssignedTimestamp: timestamp("gca_assigned_timestamp"),
   gcaAcceptanceTimestamp: timestamp("gca_acceptance_timestamp"),

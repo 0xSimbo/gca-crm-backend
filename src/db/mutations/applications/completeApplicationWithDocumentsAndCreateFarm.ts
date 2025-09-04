@@ -50,6 +50,7 @@ export const completeApplicationWithDocumentsAndCreateFarmWithDevices = async ({
   paymentCurrency,
   paymentEventType,
   paymentAmount,
+  sponsorWallet = null,
 }: {
   applicationId: string;
   gcaId: string;
@@ -66,6 +67,7 @@ export const completeApplicationWithDocumentsAndCreateFarmWithDevices = async ({
   paymentCurrency: string;
   paymentEventType: string;
   paymentAmount: string;
+  sponsorWallet?: string | null;
 }) => {
   if (!process.env.R2_NOT_ENCRYPTED_FILES_BUCKET_NAME) {
     throw new Error("R2_NOT_ENCRYPTED_FILES_BUCKET_NAME is not defined");
@@ -160,6 +162,7 @@ export const completeApplicationWithDocumentsAndCreateFarmWithDevices = async ({
         paymentAmount,
         payer,
         farmId: farmInsert[0].farmId,
+        sponsorWallet,
       })
       .where(and(eq(applications.id, applicationId)))
       .returning({ status: applications.status });

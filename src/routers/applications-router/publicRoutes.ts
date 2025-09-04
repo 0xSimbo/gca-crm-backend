@@ -45,7 +45,10 @@ import { eq, inArray, and, asc, desc, exists, sql } from "drizzle-orm";
 import { completeApplicationWithDocumentsAndCreateFarmWithDevices } from "../../db/mutations/applications/completeApplicationWithDocumentsAndCreateFarm";
 import { getPubkeysAndShortIds } from "../devices/get-pubkeys-and-short-ids";
 import { findAllAuditFeesPaidApplicationsByZoneId } from "../../db/queries/applications/findAllAuditFeesPaidApplicationsByZoneId";
-import { PAYMENT_CURRENCIES } from "@glowlabs-org/utils/browser";
+import {
+  PAYMENT_CURRENCIES,
+  TRANSFER_TYPES,
+} from "@glowlabs-org/utils/browser";
 
 export const publicApplicationsRoutes = new Elysia()
   .get(
@@ -75,26 +78,8 @@ export const publicApplicationsRoutes = new Elysia()
           );
         }
 
-        // Add payment currency filter if specified
-        if (paymentCurrency) {
-          whereConditions = and(
-            whereConditions,
-            exists(
-              db
-                .select()
-                .from(ApplicationPriceQuotes)
-                .where(
-                  and(
-                    eq(ApplicationPriceQuotes.applicationId, applications.id),
-                    // Use SQL to check if the JSON prices object has the currency key with value > 0
-                    // This uses PostgreSQL's JSON operators
-                    sql`${ApplicationPriceQuotes.prices}->>${paymentCurrency} IS NOT NULL AND 
-                        CAST(${ApplicationPriceQuotes.prices}->>${paymentCurrency} AS BIGINT) > 0`
-                  )
-                )
-            )
-          );
-        }
+        // Note: Payment currency filtering is done in JavaScript after the query
+        // due to complexities with JSON column querying in SQL
 
         // Add zone filter for accepting sponsors - join with zones table
         whereConditions = and(
@@ -133,18 +118,18 @@ export const publicApplicationsRoutes = new Elysia()
               // Sort by the price of the specific currency using a subquery
               orderByClause = sortOrderFn(
                 sql`(
-                  SELECT MIN(CAST(${ApplicationPriceQuotes.prices}->>${paymentCurrency} AS BIGINT))
+                  SELECT MIN(CAST(${ApplicationPriceQuotes.prices}::json->>${paymentCurrency} AS BIGINT))
                   FROM ${ApplicationPriceQuotes}
                   WHERE ${ApplicationPriceQuotes.applicationId} = ${applications.id}
-                  AND ${ApplicationPriceQuotes.prices}->>${paymentCurrency} IS NOT NULL
-                  AND CAST(${ApplicationPriceQuotes.prices}->>${paymentCurrency} AS BIGINT) > 0
+                  AND ${ApplicationPriceQuotes.prices}::json->>${paymentCurrency} IS NOT NULL
+                  AND CAST(${ApplicationPriceQuotes.prices}::json->>${paymentCurrency} AS BIGINT) > 0
                 )`
               );
             } else {
               // Sort by number of available currencies using a subquery
               orderByClause = sortOrderFn(
                 sql`(
-                  SELECT COUNT(DISTINCT jsonb_object_keys(${ApplicationPriceQuotes.prices}))
+                  SELECT COUNT(DISTINCT json_object_keys(${ApplicationPriceQuotes.prices}))
                   FROM ${ApplicationPriceQuotes}
                   WHERE ${ApplicationPriceQuotes.applicationId} = ${applications.id}
                 )`
@@ -157,7 +142,6 @@ export const publicApplicationsRoutes = new Elysia()
             break;
         }
 
-        // Query applications with all required joins
         const auctionApplications = await db.query.applications.findMany({
           where: whereConditions,
           orderBy: orderByClause,
@@ -173,6 +157,7 @@ export const publicApplicationsRoutes = new Elysia()
             finalProtocolFee: true,
             paymentCurrency: true,
             paymentEventType: true,
+            sponsorWallet: true,
           },
           with: {
             zone: {
@@ -234,7 +219,20 @@ export const publicApplicationsRoutes = new Elysia()
           },
         });
 
-        return auctionApplications.map((app) => ({
+        // Filter by payment currency in JavaScript if specified
+        let filteredApplications = auctionApplications;
+        if (paymentCurrency) {
+          filteredApplications = auctionApplications.filter((app) => {
+            return app.applicationPriceQuotes.some(
+              (quote) =>
+                quote.prices &&
+                quote.prices[paymentCurrency] &&
+                Number(quote.prices[paymentCurrency]) > 0
+            );
+          });
+        }
+
+        return filteredApplications.map((app) => ({
           id: app.id,
           userId: app.userId,
           status: app.status,
@@ -645,6 +643,14 @@ export const publicApplicationsRoutes = new Elysia()
           return "Devices are not set";
         }
 
+        let sponsorWallet = null;
+        if (
+          body.eventType === "SponsorProtocolFee" ||
+          body.eventType === "SponsorProtocolFeeAndMintGCTLAndStake"
+        ) {
+          sponsorWallet = body.sponsorWallet;
+        }
+
         await completeApplicationWithDocumentsAndCreateFarmWithDevices({
           protocolFeePaymentHash: body.txHash,
           paymentDate: body.paymentDate,
@@ -661,6 +667,7 @@ export const publicApplicationsRoutes = new Elysia()
           lng: application.enquiryFields?.lng,
           farmName: application.enquiryFields?.farmOwnerName,
           payer: body.from,
+          sponsorWallet,
         });
         if (process.env.NODE_ENV === "production") {
           const emitter = createGlowEventEmitter({
@@ -710,7 +717,8 @@ export const publicApplicationsRoutes = new Elysia()
         eventType: t.String(),
         amount: t.String(),
         paymentDate: t.Date(),
-        from: t.String(),
+        from: t.String({ pattern: "^0x[a-fA-F0-9]{40}$" }),
+        sponsorWallet: t.Optional(t.String({ pattern: "^0x[a-fA-F0-9]{40}$" })),
       }),
       detail: {
         summary: "Finalize Payment",
