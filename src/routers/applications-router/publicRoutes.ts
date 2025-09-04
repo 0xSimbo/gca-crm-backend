@@ -38,8 +38,10 @@ import {
   applicationsAuditFieldsCRS,
   ApplicationAuditFieldsCRSInsertType,
   Devices,
+  Documents,
+  zones,
 } from "../../db/schema";
-import { eq, inArray, and, asc, desc } from "drizzle-orm";
+import { eq, inArray, and, asc, desc, exists, sql } from "drizzle-orm";
 import { completeApplicationWithDocumentsAndCreateFarmWithDevices } from "../../db/mutations/applications/completeApplicationWithDocumentsAndCreateFarm";
 import { getPubkeysAndShortIds } from "../devices/get-pubkeys-and-short-ids";
 import { findAllAuditFeesPaidApplicationsByZoneId } from "../../db/queries/applications/findAllAuditFeesPaidApplicationsByZoneId";
@@ -50,7 +52,7 @@ export const publicApplicationsRoutes = new Elysia()
     "/auction-applications",
     async ({ query, set }) => {
       try {
-        const { zoneId, sortBy, sortOrder } = query;
+        const { zoneId, sortBy, sortOrder, paymentCurrency } = query;
 
         // Parse zoneId if provided
         const parsedZoneId = zoneId !== undefined ? Number(zoneId) : undefined;
@@ -69,12 +71,48 @@ export const publicApplicationsRoutes = new Elysia()
         if (parsedZoneId !== undefined) {
           whereConditions = and(
             whereConditions,
-            eq(applications.zoneId, parsedZoneId),
-            eq(applications.status, ApplicationStatusEnum.waitingForPayment)
+            eq(applications.zoneId, parsedZoneId)
           );
         }
 
-        // Determine sort order
+        // Add payment currency filter if specified
+        if (paymentCurrency) {
+          whereConditions = and(
+            whereConditions,
+            exists(
+              db
+                .select()
+                .from(ApplicationPriceQuotes)
+                .where(
+                  and(
+                    eq(ApplicationPriceQuotes.applicationId, applications.id),
+                    // Use SQL to check if the JSON prices object has the currency key with value > 0
+                    // This uses PostgreSQL's JSON operators
+                    sql`${ApplicationPriceQuotes.prices}->>${paymentCurrency} IS NOT NULL AND 
+                        CAST(${ApplicationPriceQuotes.prices}->>${paymentCurrency} AS BIGINT) > 0`
+                  )
+                )
+            )
+          );
+        }
+
+        // Add zone filter for accepting sponsors - join with zones table
+        whereConditions = and(
+          whereConditions,
+          exists(
+            db
+              .select()
+              .from(zones)
+              .where(
+                and(
+                  eq(zones.id, applications.zoneId),
+                  eq(zones.isAcceptingSponsors, true)
+                )
+              )
+          )
+        );
+
+        // Determine sort order for SQL
         const sortOrderFn = sortOrder === "desc" ? desc : asc;
         let orderByClause;
 
@@ -90,8 +128,32 @@ export const publicApplicationsRoutes = new Elysia()
           case "finalProtocolFee":
             orderByClause = sortOrderFn(applications.finalProtocolFee);
             break;
+          case "paymentCurrency":
+            if (paymentCurrency) {
+              // Sort by the price of the specific currency using a subquery
+              orderByClause = sortOrderFn(
+                sql`(
+                  SELECT MIN(CAST(${ApplicationPriceQuotes.prices}->>${paymentCurrency} AS BIGINT))
+                  FROM ${ApplicationPriceQuotes}
+                  WHERE ${ApplicationPriceQuotes.applicationId} = ${applications.id}
+                  AND ${ApplicationPriceQuotes.prices}->>${paymentCurrency} IS NOT NULL
+                  AND CAST(${ApplicationPriceQuotes.prices}->>${paymentCurrency} AS BIGINT) > 0
+                )`
+              );
+            } else {
+              // Sort by number of available currencies using a subquery
+              orderByClause = sortOrderFn(
+                sql`(
+                  SELECT COUNT(DISTINCT jsonb_object_keys(${ApplicationPriceQuotes.prices}))
+                  FROM ${ApplicationPriceQuotes}
+                  WHERE ${ApplicationPriceQuotes.applicationId} = ${applications.id}
+                )`
+              );
+            }
+            break;
           default:
-            orderByClause = desc(applications.publishedOnAuctionTimestamp); // Default sort
+            // Default sort by publishedOnAuctionTimestamp descending
+            orderByClause = desc(applications.publishedOnAuctionTimestamp);
             break;
         }
 
@@ -158,15 +220,21 @@ export const publicApplicationsRoutes = new Elysia()
             },
             weeklyProduction: true,
             weeklyCarbonDebt: true,
+            documents: {
+              where: and(
+                eq(Documents.isEncrypted, false),
+                eq(Documents.isShowingSolarPanels, true)
+              ),
+              columns: {
+                id: true,
+                name: true,
+                url: true,
+              },
+            },
           },
         });
 
-        // Filter to only include applications in zones that accept sponsors
-        const filteredApplications = auctionApplications.filter(
-          (app) => app.zone?.isAcceptingSponsors === true
-        );
-
-        return filteredApplications.map((app) => ({
+        return auctionApplications.map((app) => ({
           id: app.id,
           userId: app.userId,
           status: app.status,
@@ -183,6 +251,9 @@ export const publicApplicationsRoutes = new Elysia()
           auditFields: app.auditFieldsCRS,
           weeklyProduction: app.weeklyProduction,
           weeklyCarbonDebt: app.weeklyCarbonDebt,
+          afterInstallPictures: app.documents.filter((d) =>
+            d.name.includes("after_install_pictures")
+          ),
         }));
       } catch (e) {
         if (e instanceof Error) {
@@ -201,13 +272,22 @@ export const publicApplicationsRoutes = new Elysia()
             t.Literal("publishedOnAuctionTimestamp"),
             t.Literal("sponsorSplitPercent"),
             t.Literal("finalProtocolFee"),
+            t.Literal("paymentCurrency"),
+          ])
+        ),
+        paymentCurrency: t.Optional(
+          t.Union([
+            t.Literal("USDG"),
+            t.Literal("USDC"),
+            t.Literal("GLW"),
+            t.Literal("GCTL"),
           ])
         ),
         sortOrder: t.Optional(t.Union([t.Literal("asc"), t.Literal("desc")])),
       }),
       detail: {
         summary: "Get auction applications available for sponsorship",
-        description: `Returns applications that are waiting for payment, published on auction, and in zones accepting sponsors. Supports filtering by zoneId and sorting by publishedOnAuctionTimestamp, sponsorSplitPercent, or finalProtocolFee. Includes application price quotes and related data.`,
+        description: `Returns applications that are waiting for payment, published on auction, and in zones accepting sponsors. Supports filtering by zoneId and paymentCurrency, and sorting by publishedOnAuctionTimestamp, sponsorSplitPercent, finalProtocolFee, or paymentCurrency. When sorting by paymentCurrency with a specific currency filter, sorts by lowest price for that currency. Includes application price quotes and related data.`,
         tags: [TAG.APPLICATIONS],
       },
     }
