@@ -8,6 +8,7 @@ export const findAllZones = async () => {
       name: true,
       requirementSetId: true,
       createdAt: true,
+      isActive: true,
     },
     with: {
       requirementSet: {

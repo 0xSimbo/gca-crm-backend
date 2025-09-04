@@ -1777,6 +1777,7 @@ export type RequirementSetInsert = typeof requirementSets.$inferInsert;
  * @param {string} name - The name of the zone.
  * @param {number} requirementSetId - The ID of the requirement set associated with the zone.
  * @param {timestamp} createdAt - The date and time when the zone was created.
+ * @param {boolean} isActive - Whether the zone is active.
  */
 export const zones = pgTable("zones", {
   id: serial("zone_id").primaryKey(),
@@ -1785,6 +1786,7 @@ export const zones = pgTable("zones", {
     .notNull()
     .references(() => requirementSets.id, { onDelete: "restrict" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
+  isActive: boolean("is_active").notNull().default(false),
 });
 
 export const ZoneRelations = relations(zones, ({ one, many }) => ({

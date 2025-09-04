@@ -60,6 +60,7 @@ export const zonesRouter = new Elysia({ prefix: "/zones" })
         const newZone = await createZone({
           name,
           requirementSetId,
+          isActive: false,
         });
 
         // Return the created zone with its requirement set
