@@ -49,7 +49,7 @@ import { PAYMENT_CURRENCIES } from "@glowlabs-org/utils/browser";
 
 export const publicApplicationsRoutes = new Elysia()
   .get(
-    "/auction-applications",
+    "/sponsor-listings-applications",
     async ({ query, set }) => {
       try {
         const { zoneId, sortBy, sortOrder, paymentCurrency } = query;
