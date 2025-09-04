@@ -97,6 +97,7 @@ export const findAllCompletedApplications = async (withDocuments?: boolean) => {
         columns: {
           id: true,
           name: true,
+          isActive: true,
         },
       },
       auditFieldsCRS: {
@@ -249,6 +250,7 @@ export const findCompletedApplication = async ({
         columns: {
           id: true,
           name: true,
+          isActive: true,
         },
       },
       auditFieldsCRS: {

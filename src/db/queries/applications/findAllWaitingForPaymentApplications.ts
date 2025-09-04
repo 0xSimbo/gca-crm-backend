@@ -64,6 +64,7 @@ export const findAllWaitingForPaymentApplications = async (
         columns: {
           id: true,
           name: true,
+          isActive: true,
         },
       },
       enquiryFieldsCRS: {
