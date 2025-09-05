@@ -47,6 +47,7 @@ import {
   PAYMENT_CURRENCIES,
   TRANSFER_TYPES,
 } from "@glowlabs-org/utils/browser";
+import { getUniqueStarNameForApplicationId } from "../farms/farmsRouter";
 
 export const publicApplicationsRoutes = new Elysia()
   .get(
@@ -650,6 +651,12 @@ export const publicApplicationsRoutes = new Elysia()
           sponsorWallet = body.from;
         }
 
+        const farmName = await getUniqueStarNameForApplicationId(
+          application.id
+        );
+        if (!farmName) {
+          throw new Error("Failed to get a unique farm name");
+        }
         await completeApplicationWithDocumentsAndCreateFarmWithDevices({
           protocolFeePaymentHash: body.txHash,
           paymentDate: body.paymentDate,
@@ -664,7 +671,7 @@ export const publicApplicationsRoutes = new Elysia()
           protocolFeeAdditionalPaymentTxHash: null,
           lat: application.enquiryFields?.lat,
           lng: application.enquiryFields?.lng,
-          farmName: application.enquiryFields?.farmOwnerName,
+          farmName,
           payer: body.from,
           sponsorWallet,
         });
