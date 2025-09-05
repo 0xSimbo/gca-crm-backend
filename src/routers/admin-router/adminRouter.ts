@@ -972,7 +972,188 @@ export const adminRouter = new Elysia({ prefix: "/admin" })
         error: error instanceof Error ? error.message : "Unknown error",
       };
     }
-  });
+  })
+  .get(
+    "/completed-applications-without-reward-splits",
+    async ({ set }) => {
+      if (process.env.NODE_ENV === "production") {
+        set.status = 404;
+        return { message: "Not allowed in production" };
+      }
+
+      try {
+        // Find all completed applications with their farms and reward splits
+        const completedApplications = await db.query.applications.findMany({
+          where: (app, { eq }) =>
+            eq(app.status, ApplicationStatusEnum.completed),
+          columns: {
+            id: true,
+            farmId: true,
+          },
+          with: {
+            farm: {
+              columns: {
+                id: true,
+              },
+            },
+            rewardSplits: true,
+          },
+        });
+
+        // Filter applications where the farm has no reward splits
+        const applicationsWithoutRewardSplits = completedApplications.filter(
+          (app) => app.rewardSplits && app.rewardSplits.length === 0
+        );
+
+        // Map to desired format
+        const result = applicationsWithoutRewardSplits.map((app) => ({
+          applicationId: app.id,
+          farmId: app.farmId,
+        }));
+
+        set.status = 200;
+        return {
+          message: `Found ${applicationsWithoutRewardSplits.length} completed applications without reward splits`,
+          total: applicationsWithoutRewardSplits.length,
+          data: result,
+        };
+      } catch (error) {
+        console.error(
+          "Error finding completed applications without reward splits",
+          error
+        );
+        set.status = 500;
+        return {
+          message: "Error finding completed applications without reward splits",
+          error: error instanceof Error ? error.message : "Unknown error",
+        };
+      }
+    },
+    {
+      detail: {
+        summary: "Get completed applications without reward splits",
+        description:
+          "Returns a list of completed applications that don't have any reward splits associated with them.",
+        tags: ["admin", "applications", "reward-splits"],
+      },
+    }
+  )
+  .get(
+    "/patch-reward-splits-application-ids",
+    async ({ set }) => {
+      try {
+        if (process.env.NODE_ENV === "production") {
+          set.status = 404;
+          return { message: "Not allowed in production" };
+        }
+
+        // Find all completed applications without reward splits but with farms
+        const completedApplications = await db.query.applications.findMany({
+          where: (app, { and, eq, isNotNull }) =>
+            and(
+              eq(app.status, ApplicationStatusEnum.completed),
+              isNotNull(app.farmId)
+            ),
+          columns: {
+            id: true,
+            farmId: true,
+          },
+          with: {
+            rewardSplits: true,
+            farm: {
+              columns: {
+                id: true,
+              },
+              with: {
+                rewardSplits: true,
+              },
+            },
+          },
+        });
+
+        // Filter applications where:
+        // 1. Application has no reward splits
+        // 2. Farm has reward splits
+        // 3. Farm's reward splits don't have applicationId set
+        const applicationsToPatch = completedApplications.filter(
+          (app) =>
+            app.rewardSplits.length === 0 &&
+            app.farm &&
+            app.farm.rewardSplits.length > 0 &&
+            app.farm.rewardSplits.some((rs) => !rs.applicationId)
+        );
+
+        if (applicationsToPatch.length === 0) {
+          return {
+            message: "No applications need patching",
+            total: 0,
+            patched: 0,
+          };
+        }
+
+        let patched = 0;
+        const patchedApplications: Array<{
+          applicationId: string;
+          farmId: string | null;
+          rewardSplitIds: string[];
+        }> = [];
+
+        // Update reward splits for each application
+        await db.transaction(async (tx) => {
+          for (const app of applicationsToPatch) {
+            if (!app.farm || !app.farmId) continue;
+
+            // Find reward splits for this farm that don't have applicationId
+            const farmRewardSplitsToUpdate = app.farm.rewardSplits.filter(
+              (rs) => !rs.applicationId && rs.farmId === app.farmId
+            );
+
+            if (farmRewardSplitsToUpdate.length > 0) {
+              // Update each reward split to include the applicationId
+              for (const rewardSplit of farmRewardSplitsToUpdate) {
+                await tx
+                  .update(RewardSplits)
+                  .set({
+                    applicationId: app.id,
+                    updatedAt: new Date(),
+                  })
+                  .where(eq(RewardSplits.id, rewardSplit.id));
+              }
+
+              patched++;
+              patchedApplications.push({
+                applicationId: app.id,
+                farmId: app.farmId,
+                rewardSplitIds: farmRewardSplitsToUpdate.map((rs) => rs.id),
+              });
+            }
+          }
+        });
+
+        return {
+          message: `Successfully patched reward splits for ${patched} applications`,
+          total: applicationsToPatch.length,
+          patched,
+          patchedApplications,
+        };
+      } catch (error) {
+        console.error("Error patching reward splits", error);
+        set.status = 500;
+        return {
+          message: "Error patching reward splits",
+          error: error instanceof Error ? error.message : "Unknown error",
+        };
+      }
+    },
+    {
+      detail: {
+        summary: "Patch reward splits to link them with their applications",
+        description:
+          "Updates reward splits that belong to farms but don't have applicationId set. Links them to their corresponding completed applications.",
+        tags: ["admin", "reward-splits"],
+      },
+    }
+  );
 // .get("/anonymize-users-and-installers", async ({ set }) => {
 //   if (process.env.NODE_ENV === "production") {
 //     set.status = 404;

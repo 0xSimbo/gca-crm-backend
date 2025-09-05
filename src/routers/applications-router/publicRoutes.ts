@@ -908,6 +908,9 @@ export const publicApplicationsRoutes = new Elysia()
             afterInstallVisitDateConfirmedTimestamp: new Date(),
             finalProtocolFee: BigInt(12668490000),
             revisedEstimatedProtocolFees: "12668",
+            sponsorSplitPercent: 0.5,
+            isPublishedOnAuction: true,
+            publishedOnAuctionTimestamp: new Date(),
           });
 
           await tx.insert(ApplicationsEncryptedMasterKeys).values({
