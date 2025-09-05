@@ -81,13 +81,3 @@ const getAddresses = (): Record<Keys, `0x${string}`> => {
 
 export const addresses = getAddresses();
 export const forwarderAddresses = getSDKAddresses(CHAIN_ID);
-
-// ---------------------------------------------------------------------------
-// Decimals per currency (on-chain token precision)
-// ---------------------------------------------------------------------------
-
-export const DECIMALS_BY_CURRENCY: Record<string, number> = {
-  USDC: 6,
-  USDG: 6,
-  GLW: 18,
-};

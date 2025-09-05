@@ -15,10 +15,7 @@ import {
   ApplicationSteps,
   RoundRobinStatusEnum,
 } from "../../types/api-types/Application";
-import {
-  DECIMALS_BY_CURRENCY,
-  forwarderAddresses,
-} from "../../constants/addresses";
+import { forwarderAddresses } from "../../constants/addresses";
 import { updateApplication } from "../../db/mutations/applications/updateApplication";
 import { createGlowEventEmitter, eventTypes } from "@glowlabs-org/events-sdk";
 import {
@@ -46,6 +43,7 @@ import { completeApplicationWithDocumentsAndCreateFarmWithDevices } from "../../
 import { getPubkeysAndShortIds } from "../devices/get-pubkeys-and-short-ids";
 import { findAllAuditFeesPaidApplicationsByZoneId } from "../../db/queries/applications/findAllAuditFeesPaidApplicationsByZoneId";
 import {
+  DECIMALS_BY_TOKEN,
   PAYMENT_CURRENCIES,
   TRANSFER_TYPES,
 } from "@glowlabs-org/utils/browser";
@@ -541,7 +539,7 @@ export const publicApplicationsRoutes = new Elysia()
 
         const currency = body.paymentCurrency;
 
-        if (!(currency in DECIMALS_BY_CURRENCY)) {
+        if (!(currency in DECIMALS_BY_TOKEN)) {
           console.error("Unsupported payment currency", currency);
           set.status = 400;
           return `Unsupported payment currency: ${currency}`;
