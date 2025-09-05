@@ -1153,6 +1153,264 @@ export const adminRouter = new Elysia({ prefix: "/admin" })
         tags: ["admin", "reward-splits"],
       },
     }
+  )
+  .get(
+    "/patch-reward-splits-decimals-application-ids",
+    async ({ set }) => {
+      try {
+        if (process.env.NODE_ENV === "production") {
+          set.status = 404;
+          return { message: "Not allowed in production" };
+        }
+
+        // Find all reward splits that have updatedAt not null
+        const allRewardSplits = await db.query.RewardSplits.findMany({
+          where: (rs, { isNotNull }) => isNotNull(rs.updatedAt),
+          columns: {
+            id: true,
+            applicationId: true,
+            farmId: true,
+            walletAddress: true,
+            glowSplitPercent: true,
+            usdgSplitPercent: true,
+            updatedAt: true,
+          },
+        });
+
+        if (allRewardSplits.length === 0) {
+          return {
+            message: "No reward splits with updatedAt found",
+            total: 0,
+            fixed: 0,
+          };
+        }
+
+        // Group reward splits by applicationId or farmId
+        const splitsGrouped = new Map<string, typeof allRewardSplits>();
+
+        allRewardSplits.forEach((split) => {
+          const key = split.applicationId || split.farmId || "unknown";
+          if (!splitsGrouped.has(key)) {
+            splitsGrouped.set(key, []);
+          }
+          splitsGrouped.get(key)!.push(split);
+        });
+
+        let fixedCount = 0;
+        const fixedGroups: Array<{
+          groupKey: string;
+          splits: Array<{
+            id: string;
+            walletAddress: string;
+            originalGlowPercent: string;
+            originalUsdgPercent: string;
+            fixedGlowPercent: string;
+            fixedUsdgPercent: string;
+          }>;
+          originalGlowSum: number;
+          originalUsdgSum: number;
+          fixedGlowSum: number;
+          fixedUsdgSum: number;
+        }> = [];
+
+        // Process each group of splits
+        await db.transaction(async (tx) => {
+          for (const [groupKey, splits] of splitsGrouped) {
+            // Calculate sums
+            const glowSum = splits.reduce(
+              (sum, split) => sum + parseFloat(split.glowSplitPercent),
+              0
+            );
+            const usdgSum = splits.reduce(
+              (sum, split) => sum + parseFloat(split.usdgSplitPercent),
+              0
+            );
+
+            // Check if we need to fix these splits
+            // Case 1: Sum is less than 100 and at least one value >= 1 (e.g., 50.5 stored as 0.505)
+            // Case 2: Sum is around 1 (0.5 to 1.5) indicating fractions instead of percentages
+            const needsFixingGlow =
+              (glowSum < 100 &&
+                splits.some((s) => parseFloat(s.glowSplitPercent) >= 1)) ||
+              (glowSum >= 0.5 && glowSum <= 1.5);
+            const needsFixingUsdg =
+              (usdgSum < 100 &&
+                splits.some((s) => parseFloat(s.usdgSplitPercent) >= 1)) ||
+              (usdgSum >= 0.5 && usdgSum <= 1.5);
+
+            if (!needsFixingGlow && !needsFixingUsdg) {
+              continue;
+            }
+
+            const fixedSplits: (typeof fixedGroups)[0]["splits"] = [];
+
+            // Fix each split in the group
+            for (const split of splits) {
+              let newGlowPercent = parseFloat(split.glowSplitPercent);
+              let newUsdgPercent = parseFloat(split.usdgSplitPercent);
+
+              if (needsFixingGlow) {
+                newGlowPercent = newGlowPercent * 100;
+              }
+              if (needsFixingUsdg) {
+                newUsdgPercent = newUsdgPercent * 100;
+              }
+
+              // Update the split if values changed
+              if (
+                newGlowPercent !== parseFloat(split.glowSplitPercent) ||
+                newUsdgPercent !== parseFloat(split.usdgSplitPercent)
+              ) {
+                await tx
+                  .update(RewardSplits)
+                  .set({
+                    glowSplitPercent: newGlowPercent.toFixed(2),
+                    usdgSplitPercent: newUsdgPercent.toFixed(2),
+                    updatedAt: new Date(),
+                  })
+                  .where(eq(RewardSplits.id, split.id));
+
+                fixedSplits.push({
+                  id: split.id,
+                  walletAddress: split.walletAddress,
+                  originalGlowPercent: split.glowSplitPercent,
+                  originalUsdgPercent: split.usdgSplitPercent,
+                  fixedGlowPercent: newGlowPercent.toFixed(2),
+                  fixedUsdgPercent: newUsdgPercent.toFixed(2),
+                });
+              }
+            }
+
+            if (fixedSplits.length > 0) {
+              fixedCount++;
+
+              // Calculate new sums
+              const fixedGlowSum = splits.reduce((sum, split, index) => {
+                const fixed = fixedSplits.find((f) => f.id === split.id);
+                return (
+                  sum +
+                  (fixed
+                    ? parseFloat(fixed.fixedGlowPercent)
+                    : parseFloat(split.glowSplitPercent))
+                );
+              }, 0);
+
+              const fixedUsdgSum = splits.reduce((sum, split, index) => {
+                const fixed = fixedSplits.find((f) => f.id === split.id);
+                return (
+                  sum +
+                  (fixed
+                    ? parseFloat(fixed.fixedUsdgPercent)
+                    : parseFloat(split.usdgSplitPercent))
+                );
+              }, 0);
+
+              fixedGroups.push({
+                groupKey,
+                splits: fixedSplits,
+                originalGlowSum: glowSum,
+                originalUsdgSum: usdgSum,
+                fixedGlowSum,
+                fixedUsdgSum,
+              });
+            }
+          }
+        });
+
+        // Validation: Pull all reward splits and verify they sum to 100%
+        const allSplitsAfterFix = await db.query.RewardSplits.findMany({
+          columns: {
+            id: true,
+            applicationId: true,
+            farmId: true,
+            walletAddress: true,
+            glowSplitPercent: true,
+            usdgSplitPercent: true,
+          },
+        });
+
+        // Group all splits by applicationId or farmId
+        const validationGroups = new Map<string, typeof allSplitsAfterFix>();
+        allSplitsAfterFix.forEach((split) => {
+          const key = split.applicationId || split.farmId || "unknown";
+          if (!validationGroups.has(key)) {
+            validationGroups.set(key, []);
+          }
+          validationGroups.get(key)!.push(split);
+        });
+
+        // Check each group sums to 100%
+        const invalidGroups: Array<{
+          groupKey: string;
+          glowSum: number;
+          usdgSum: number;
+          splitCount: number;
+          splits: Array<{
+            id: string;
+            walletAddress: string;
+            glowPercent: string;
+            usdgPercent: string;
+          }>;
+        }> = [];
+
+        for (const [groupKey, splits] of validationGroups) {
+          const glowSum = splits.reduce(
+            (sum, split) => sum + parseFloat(split.glowSplitPercent),
+            0
+          );
+          const usdgSum = splits.reduce(
+            (sum, split) => sum + parseFloat(split.usdgSplitPercent),
+            0
+          );
+
+          // Allow for small floating point differences (99.99 to 100.01)
+          const isGlowValid = glowSum >= 99.99 && glowSum <= 100.01;
+          const isUsdgValid = usdgSum >= 99.99 && usdgSum <= 100.01;
+
+          if (!isGlowValid || !isUsdgValid) {
+            invalidGroups.push({
+              groupKey,
+              glowSum: Math.round(glowSum * 100) / 100,
+              usdgSum: Math.round(usdgSum * 100) / 100,
+              splitCount: splits.length,
+              splits: splits.map((s) => ({
+                id: s.id,
+                walletAddress: s.walletAddress,
+                glowPercent: s.glowSplitPercent,
+                usdgPercent: s.usdgSplitPercent,
+              })),
+            });
+          }
+        }
+
+        return {
+          message: `Successfully fixed reward splits for ${fixedCount} groups`,
+          totalGroups: splitsGrouped.size,
+          fixedGroups: fixedCount,
+          details: fixedGroups,
+          validation: {
+            totalGroupsInDb: validationGroups.size,
+            invalidGroups: invalidGroups.length,
+            invalidGroupDetails: invalidGroups,
+          },
+        };
+      } catch (error) {
+        console.error("Error patching reward splits", error);
+        set.status = 500;
+        return {
+          message: "Error patching reward splits",
+          error: error instanceof Error ? error.message : "Unknown error",
+        };
+      }
+    },
+    {
+      detail: {
+        summary: "Fix reward splits percentages that were stored as decimals",
+        description:
+          "Finds reward splits with updatedAt not null, checks if percentages sum to less than 100, and fixes splits that were stored as decimals (0.5) instead of percentages (50%).",
+        tags: ["admin", "reward-splits"],
+      },
+    }
   );
 // .get("/anonymize-users-and-installers", async ({ set }) => {
 //   if (process.env.NODE_ENV === "production") {

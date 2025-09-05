@@ -908,7 +908,7 @@ export const publicApplicationsRoutes = new Elysia()
             afterInstallVisitDateConfirmedTimestamp: new Date(),
             finalProtocolFee: BigInt(12668490000),
             revisedEstimatedProtocolFees: "12668",
-            sponsorSplitPercent: 0.5,
+            sponsorSplitPercent: 50,
             isPublishedOnAuction: true,
             publishedOnAuctionTimestamp: new Date(),
           });
@@ -1019,11 +1019,20 @@ export const publicApplicationsRoutes = new Elysia()
             gcaAddress: "0xA9A58D16F454A4FA5F7f00Bbe583A86F2C5446dd",
           });
 
-          await tx.insert(RewardSplits).values({
-            walletAddress: "0x5252FdA14A149c01EA5A1D6514a9c1369E4C70b4",
-            glowSplitPercent: "1",
-            usdgSplitPercent: "1",
-          });
+          await tx.insert(RewardSplits).values([
+            {
+              walletAddress: "0x34b50C3A7f004c65CEF59aa29cC9102C46d4c9bA",
+              glowSplitPercent: "50",
+              usdgSplitPercent: "10",
+              applicationId: applicationDraft.id,
+            },
+            {
+              walletAddress: "0x5252FdA14A149c01EA5A1D6514a9c1369E4C70c8",
+              glowSplitPercent: "50",
+              usdgSplitPercent: "90",
+              applicationId: applicationDraft.id,
+            },
+          ]);
 
           return applicationDraft.id;
         });
