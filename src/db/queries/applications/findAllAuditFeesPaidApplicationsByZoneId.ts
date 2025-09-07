@@ -1,7 +1,10 @@
-import { and, eq, isNotNull, not } from "drizzle-orm";
+import { and, eq, gte, isNotNull, not } from "drizzle-orm";
 import { db } from "../../db";
 import { applications } from "../../schema";
-import { ApplicationStatusEnum } from "../../../types/api-types/Application";
+import {
+  ApplicationStatusEnum,
+  ApplicationSteps,
+} from "../../../types/api-types/Application";
 
 function stringifyApplicationFields(
   application: any,
@@ -30,6 +33,7 @@ export const findAllAuditFeesPaidApplicationsByZoneId = async (
     eq(applications.isCancelled, false),
     isNotNull(applications.auditFeesTxHash),
     not(eq(applications.status, ApplicationStatusEnum.completed)),
+    gte(applications.currentStep, ApplicationSteps.preInstallDocuments),
   ];
 
   if (zoneId !== undefined) {

@@ -11,7 +11,9 @@ import {
   zones,
 } from "../../db/schema";
 import { db } from "../../db/db";
-import { and, eq, not, or } from "drizzle-orm";
+import { and, eq, not, or, sql } from "drizzle-orm";
+import postgres from "postgres";
+import { PG_DATABASE_URL, PG_ENV } from "../../db/PG_ENV";
 import { getProtocolWeek } from "../../utils/getProtocolWeek";
 import { updateWalletRewardsForWeek } from "../../crons/update-wallet-rewards";
 import { findAllPermissions } from "../../db/queries/permissions/findAllPermissions";
@@ -972,7 +974,82 @@ export const adminRouter = new Elysia({ prefix: "/admin" })
         error: error instanceof Error ? error.message : "Unknown error",
       };
     }
-  });
+  })
+  .get(
+    "/fix-zones-sequence",
+    async ({ set }) => {
+      try {
+        if (process.env.NODE_ENV === "production") {
+          set.status = 404;
+          return { message: "Not allowed in production" };
+        }
+
+        console.log("Checking zones table and sequence...");
+
+        // Create postgres client for raw queries
+        const sqlClient = postgres(PG_DATABASE_URL, PG_ENV);
+
+        try {
+          // Get the maximum ID from the zones table
+          const maxIdResult =
+            await sqlClient`SELECT MAX(zone_id) as max_id FROM zones`;
+          const maxId = maxIdResult[0]?.max_id || 0;
+          console.log(`Maximum zone_id in table: ${maxId}`);
+
+          // Get the current sequence value
+          const seqResult =
+            await sqlClient`SELECT last_value FROM zones_zone_id_seq`;
+          const currentSeqValue = seqResult[0]?.last_value;
+          console.log(`Current sequence value: ${currentSeqValue}`);
+
+          if (maxId >= currentSeqValue) {
+            const newSeqValue = maxId + 1;
+            console.log(`Updating sequence to: ${newSeqValue}`);
+
+            // Reset the sequence to the correct value
+            await sqlClient`SELECT setval('zones_zone_id_seq', ${newSeqValue}, false)`;
+
+            // Verify the fix
+            const verifyResult =
+              await sqlClient`SELECT last_value FROM zones_zone_id_seq`;
+            const newSequenceValue = verifyResult[0]?.last_value;
+
+            return {
+              message: "Zones sequence fixed successfully",
+              previousMaxId: maxId,
+              previousSequenceValue: currentSeqValue,
+              newSequenceValue: newSequenceValue,
+              updated: true,
+            };
+          } else {
+            return {
+              message: "Zones sequence is already at the correct value",
+              maxId: maxId,
+              currentSequenceValue: currentSeqValue,
+              updated: false,
+            };
+          }
+        } finally {
+          await sqlClient.end();
+        }
+      } catch (error) {
+        console.error("Error fixing zones sequence", error);
+        set.status = 500;
+        return {
+          message: "Error fixing zones sequence",
+          error: error instanceof Error ? error.message : "Unknown error",
+        };
+      }
+    },
+    {
+      detail: {
+        summary: "Fix zones table sequence",
+        description:
+          "Fixes the PostgreSQL sequence for the zones table primary key when it gets out of sync. This resolves 'duplicate key value violates unique constraint zones_pkey' errors.",
+        tags: ["admin", "maintenance"],
+      },
+    }
+  );
 // .get("/anonymize-users-and-installers", async ({ set }) => {
 //   if (process.env.NODE_ENV === "production") {
 //     set.status = 404;
