@@ -1049,7 +1049,217 @@ export const adminRouter = new Elysia({ prefix: "/admin" })
         tags: ["admin", "maintenance"],
       },
     }
-  );
+  )
+  .get("/patch-audit-fees-txhashes", async ({ set }) => {
+    try {
+      if (process.env.NODE_ENV === "production") {
+        set.status = 404;
+        return { message: "Not allowed in production" };
+      }
+
+      // Mapping of farm owner names to their audit fee transaction hashes
+      const auditFeesMapping = [
+        {
+          farmOwnerName: "Corey Gandy",
+          txHash:
+            "0x6c1f9471ff36a1a116acb768233c83efe3b728321409e8d16bfb11bac5bf8d7c",
+        },
+        {
+          farmOwnerName: "Darcy Oneill",
+          txHash:
+            "0xe57e95d97588d70cbd7e83949308e733a7a5b1b5ba50f7e2e223a4db2a73cda9",
+        },
+        {
+          farmOwnerName: "William Ream",
+          txHash:
+            "0xb75d833dba54a911656eabf72d3e3d448f883093e28f687f24a6b300b66d6e30",
+        },
+        {
+          farmOwnerName: "Makya Stell",
+          txHash:
+            "0x9702e7def5174c6b1e14391cf581254ee981e8f61a0439b1daf2e4b45fe98c2c",
+        },
+        {
+          farmOwnerName: "Marcus Hoskin",
+          txHash:
+            "0xcbd274db4a5aad69d452c888f5725dcda40bdb3606d8473d0c2becf0822a2e77",
+        },
+        {
+          farmOwnerName: "Benjamin Knight",
+          txHash:
+            "0x80b5d3f63a5632de503964299167c57fdefa02fa828e1eaae2e125b6eca38dc9",
+        },
+        {
+          farmOwnerName: "Charley Hine",
+          txHash:
+            "0x1da6d67ea6760a3888c926090d7dd5e441de0fda680bad2d86b79d0b6711af4c",
+        },
+        {
+          farmOwnerName: "Mary Carter",
+          txHash:
+            "0xa75e1333ace3ebe75cc7cb1d2bfabf9c1079ef5fa2bcd269457ff14465624011",
+        },
+        {
+          farmOwnerName: "Jake Barlow Jr",
+          txHash:
+            "0x8c628883328da12037264b55db9009117d48f589745c0862f6caef2a3894389a",
+        },
+        {
+          farmOwnerName: "Bonnie Douglas",
+          txHash:
+            "0x59d8ea9dceca78d8fabdc3659b3b2397ac24c65ae7fef9ebbdea7b197c1b0291",
+        },
+        {
+          farmOwnerName: "Ryan Carver",
+          txHash:
+            "0xb8648ef1e4370afa8d33b58ce0f2b1f6541d6e8a5163b018b0eeb44be11b9579",
+        },
+        {
+          farmOwnerName: "Steven Roundy",
+          txHash:
+            "0x392b602bc3dafef0ce7ab3a4509ed87540855dd0f44fbf849ce062a163592dfb",
+        },
+        {
+          farmOwnerName: "Willie Watson",
+          txHash:
+            "0x11f0311edd17a723c88cf500212f6f3bfb91c3540447f5d8a3c2639abc049e0e",
+        },
+        {
+          farmOwnerName: "Randy Hund",
+          txHash:
+            "0x05cb36ef872825fe5f3be38550369105a113376bd4393cbacf7fa689841b01e7",
+        },
+        {
+          farmOwnerName: "Arthur Atteberry",
+          txHash:
+            "0xddaa6292da51d8e2526499e468d7787f5c6626a3710b36a394eafc5b088d02e3",
+        },
+        {
+          farmOwnerName: "Vernon Watts",
+          txHash:
+            "0x9613bff409609d2ff6e39adc709d5b99b40f48b35fdaebe9af494827a2cf482e",
+        },
+        {
+          farmOwnerName: "Martha Nix",
+          txHash:
+            "0xcfa637925f2ffaa85dea7e818c61a598a75419a2d5e7fccdf9a434d6e56a9b04",
+        },
+        {
+          farmOwnerName: "Cary Hill",
+          txHash:
+            "0x315c7ce8266e362d0f17ea17682803a5758cc61228da89fa1c8666920ee4f2ba",
+        },
+        {
+          farmOwnerName: "Christopher Gallagher",
+          txHash:
+            "0x0121b2c5fc6c0fc2f9b769362152ec9376dba700f5ceaec292fe36943655bb7b",
+        },
+      ];
+
+      let updated = 0;
+      let notFound = 0;
+      let alreadySet = 0;
+      const results: Array<{
+        farmOwnerName: string;
+        txHash: string;
+        status: "updated" | "not_found" | "already_set";
+        applicationId?: string;
+      }> = [];
+
+      // Process each farm owner
+      for (const { farmOwnerName, txHash } of auditFeesMapping) {
+        try {
+          // Find application by farm owner name in enquiry fields
+          const application = await db.query.applications.findFirst({
+            where: (app, { eq, and, isNull }) =>
+              and(
+                eq(app.status, ApplicationStatusEnum.completed),
+                isNull(app.auditFeesTxHash)
+              ),
+            with: {
+              enquiryFieldsCRS: true,
+            },
+          });
+
+          if (!application || !application.enquiryFieldsCRS) {
+            console.log(
+              `No application found for farm owner: ${farmOwnerName}`
+            );
+            results.push({
+              farmOwnerName,
+              txHash,
+              status: "not_found",
+            });
+            notFound++;
+            continue;
+          }
+
+          // Check if auditFeesTxHash is already set
+          if (application.auditFeesTxHash) {
+            console.log(
+              `Audit fees txHash already set for ${farmOwnerName}: ${application.auditFeesTxHash}`
+            );
+            results.push({
+              farmOwnerName,
+              txHash,
+              status: "already_set",
+              applicationId: application.id,
+            });
+            alreadySet++;
+            continue;
+          }
+
+          // Update the application with the audit fees transaction hash
+          await db
+            .update(applications)
+            .set({
+              auditFees: BigInt(1200000000),
+              auditFeesTxHash: txHash,
+              auditFeesPaymentDate: new Date(),
+              updatedAt: new Date(),
+            })
+            .where(eq(applications.id, application.id));
+
+          console.log(
+            `Updated audit fees txHash for ${farmOwnerName}: ${txHash}`
+          );
+          results.push({
+            farmOwnerName,
+            txHash,
+            status: "updated",
+            applicationId: application.id,
+          });
+          updated++;
+        } catch (error) {
+          console.error(`Error processing ${farmOwnerName}:`, error);
+          results.push({
+            farmOwnerName,
+            txHash,
+            status: "not_found",
+          });
+          notFound++;
+        }
+      }
+
+      return {
+        message: `Audit fees transaction hashes patching completed`,
+        summary: {
+          total: auditFeesMapping.length,
+          updated,
+          notFound,
+          alreadySet,
+        },
+        results,
+      };
+    } catch (error) {
+      console.error("Error patching audit fees transaction hashes", error);
+      set.status = 500;
+      return {
+        message: "Error patching audit fees transaction hashes",
+        error: error instanceof Error ? error.message : "Unknown error",
+      };
+    }
+  });
 // .get("/anonymize-users-and-installers", async ({ set }) => {
 //   if (process.env.NODE_ENV === "production") {
 //     set.status = 404;

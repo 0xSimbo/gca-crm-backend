@@ -496,11 +496,6 @@ export const publicApplicationsRoutes = new Elysia()
     "/finalize-payment",
     async ({ body, set, headers }) => {
       try {
-        if (process.env.NODE_ENV === "production") {
-          set.status = 400;
-          return "We are not accepting any payment at the moment";
-        }
-
         const apiKey = headers["x-api-key"];
         if (!apiKey) {
           set.status = 400;
@@ -525,6 +520,15 @@ export const publicApplicationsRoutes = new Elysia()
         if (!application) {
           set.status = 404;
           return `Application not found: ${applicationId}`;
+        }
+
+        const isZoneActive = await db.query.zones.findFirst({
+          where: eq(zones.id, application.zoneId),
+        });
+
+        if (!isZoneActive) {
+          set.status = 400;
+          return "Zone is not active";
         }
 
         if (application.status !== ApplicationStatusEnum.waitingForPayment) {
@@ -675,6 +679,17 @@ export const publicApplicationsRoutes = new Elysia()
           payer: body.from,
           sponsorWallet,
         });
+
+        // Trigger hub solar farms sync
+        try {
+          await fetch(
+            "https://glow-impact-backend-staging.up.railway.app/hub-solar-farms-sync-trigger"
+          );
+        } catch (error) {
+          console.error("Failed to trigger hub solar farms sync:", error);
+          // Don't fail the main operation if sync trigger fails
+        }
+
         if (process.env.NODE_ENV === "production") {
           const emitter = createGlowEventEmitter({
             username: process.env.RABBITMQ_ADMIN_USER!,
