@@ -72,6 +72,30 @@ export const zonesRouter = new Elysia({ prefix: "/zones" })
       } catch (e) {
         if (e instanceof Error) {
           console.error("Error creating zone", e);
+
+          // Handle specific database constraint violations
+          if (
+            e.message.includes("duplicate key value violates unique constraint")
+          ) {
+            if (e.message.includes("zones_pkey")) {
+              set.status = 500;
+              return "Database sequence error. Please contact support.";
+            }
+            if (
+              e.message.includes("zones_name_key") ||
+              e.message.includes("unique constraint")
+            ) {
+              set.status = 400;
+              return "A zone with this name already exists";
+            }
+          }
+
+          // Handle foreign key constraint violations
+          if (e.message.includes("foreign key constraint")) {
+            set.status = 400;
+            return "Invalid requirement set ID";
+          }
+
           set.status = 400;
           return e.message;
         }
