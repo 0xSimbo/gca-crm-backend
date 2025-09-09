@@ -167,6 +167,6 @@ export const completeApplicationWithDocumentsAndCreateFarmWithDevices = async ({
       .where(and(eq(applications.id, applicationId)))
       .returning({ status: applications.status });
 
-    return farmInsert[0].farmId;
+    return farmInsert[0].farmId as string;
   });
 };

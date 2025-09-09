@@ -661,24 +661,25 @@ export const publicApplicationsRoutes = new Elysia()
         if (!farmName) {
           throw new Error("Failed to get a unique farm name");
         }
-        await completeApplicationWithDocumentsAndCreateFarmWithDevices({
-          protocolFeePaymentHash: body.txHash,
-          paymentDate: body.paymentDate,
-          paymentCurrency: body.paymentCurrency,
-          paymentEventType: body.eventType,
-          paymentAmount: body.amount,
-          applicationId,
-          gcaId: application.gcaAddress,
-          userId: application.userId,
-          devices: application.auditFields?.devices,
-          protocolFee: BigInt(application.finalProtocolFeeBigInt),
-          protocolFeeAdditionalPaymentTxHash: null,
-          lat: application.enquiryFields?.lat,
-          lng: application.enquiryFields?.lng,
-          farmName,
-          payer: body.from,
-          sponsorWallet,
-        });
+        const farmId =
+          await completeApplicationWithDocumentsAndCreateFarmWithDevices({
+            protocolFeePaymentHash: body.txHash,
+            paymentDate: body.paymentDate,
+            paymentCurrency: body.paymentCurrency,
+            paymentEventType: body.eventType,
+            paymentAmount: body.amount,
+            applicationId,
+            gcaId: application.gcaAddress,
+            userId: application.userId,
+            devices: application.auditFields?.devices,
+            protocolFee: BigInt(application.finalProtocolFeeBigInt),
+            protocolFeeAdditionalPaymentTxHash: null,
+            lat: application.enquiryFields?.lat,
+            lng: application.enquiryFields?.lng,
+            farmName,
+            payer: body.from,
+            sponsorWallet,
+          });
 
         // Trigger hub solar farms sync
         try {
@@ -716,7 +717,7 @@ export const publicApplicationsRoutes = new Elysia()
             });
         }
 
-        return application;
+        return farmId;
       } catch (e) {
         if (e instanceof Error) {
           console.error("Error in finalize-payment", e);
