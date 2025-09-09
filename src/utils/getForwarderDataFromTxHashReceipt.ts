@@ -1,5 +1,5 @@
 import { addresses, forwarderAddresses } from "../constants/addresses";
-import { FORWARDER_ABI } from "@glowlabs-org/utils/browser";
+import { FORWARDER_ABI, TRANSFER_TYPES } from "@glowlabs-org/utils/browser";
 import { createPublicClient, decodeEventLog, http } from "viem";
 import type { Abi } from "viem";
 import { mainnet, sepolia } from "viem/chains";
@@ -143,9 +143,9 @@ export const getForwarderDataFromTxHashReceipt = async (
   const { eventType, applicationId } = parseForwardMessage(message);
 
   if (
-    eventType !== "PayProtocolFeeAndMintGCTLAndStake" &&
-    eventType !== "PayProtocolFee" &&
-    eventType !== "PayAuditFees"
+    eventType !== TRANSFER_TYPES.PayProtocolFeeAndMintGCTLAndStake &&
+    eventType !== TRANSFER_TYPES.PayProtocolFee &&
+    eventType !== TRANSFER_TYPES.PayAuditFees
   ) {
     throw new Error(`Unsupported eventType: ${eventType}`);
   }

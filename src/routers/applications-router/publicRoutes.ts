@@ -647,10 +647,11 @@ export const publicApplicationsRoutes = new Elysia()
         }
 
         let sponsorWallet = null;
-        console.log("body.eventType", body.eventType);
+
         if (
-          body.eventType === "SponsorProtocolFee" ||
-          body.eventType === "SponsorProtocolFeeAndMintGCTLAndStake"
+          body.eventType === TRANSFER_TYPES.SponsorProtocolFee ||
+          body.eventType ===
+            TRANSFER_TYPES.SponsorProtocolFeeAndMintGCTLAndStake
         ) {
           sponsorWallet = body.from;
         }
