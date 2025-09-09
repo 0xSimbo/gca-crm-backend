@@ -717,7 +717,7 @@ export const publicApplicationsRoutes = new Elysia()
             });
         }
 
-        return farmId;
+        return { farmId };
       } catch (e) {
         if (e instanceof Error) {
           console.error("Error in finalize-payment", e);
