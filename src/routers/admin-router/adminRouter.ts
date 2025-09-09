@@ -1241,6 +1241,11 @@ export const adminRouter = new Elysia({ prefix: "/admin" })
         }
       }
 
+      // Extract names of farm owners not found
+      const notFoundNames = results
+        .filter((r) => r.status === "not_found")
+        .map((r) => r.farmOwnerName);
+
       return {
         message: `Audit fees transaction hashes patching completed`,
         summary: {
@@ -1249,6 +1254,7 @@ export const adminRouter = new Elysia({ prefix: "/admin" })
           notFound,
           alreadySet,
         },
+        notFoundNames,
         results,
       };
     } catch (error) {
