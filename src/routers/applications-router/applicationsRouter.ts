@@ -41,7 +41,12 @@ import { roundRobinAssignement } from "../../db/queries/gcas/roundRobinAssigneme
 
 import { handleCreateWithoutPIIDocumentsAndCompleteApplicationAudit } from "./steps/gca-application-audit-completion";
 import { db } from "../../db/db";
-import { OrganizationUsers, applicationsDraft, zones } from "../../db/schema";
+import {
+  OrganizationUsers,
+  applicationsDraft,
+  zones,
+  fractions,
+} from "../../db/schema";
 
 import { convertKWhToMWh } from "../../utils/format/convertKWhToMWh";
 import { findFirstUserById } from "../../db/queries/users/findFirstUserById";
@@ -88,6 +93,14 @@ import { publicApplicationsRoutes } from "./publicRoutes";
 import { approveOrAskRoutes } from "./approveOrAskRoutes";
 import { organizationApplicationRoutes } from "./organizationApplicationRoutes";
 import { parseUnits } from "viem";
+import { createFraction } from "../../db/mutations/fractions/createFraction";
+import { findLatestFractionByApplicationId } from "../../db/queries/fractions/findFractionsByApplicationId";
+import {
+  MIN_SPONSOR_SPLIT_PERCENT,
+  MAX_SPONSOR_SPLIT_PERCENT,
+  SPONSOR_SPLIT_INCREMENT,
+  VALID_SPONSOR_SPLIT_PERCENTAGES,
+} from "../../constants/fractions";
 
 export const applicationsRouter = new Elysia({ prefix: "/applications" })
   .use(publicApplicationsRoutes)
@@ -2010,16 +2023,33 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               return "User is not the owner of the application";
             }
 
+            if (application.currentStep !== ApplicationSteps.payment) {
+              set.status = 400;
+              return "Application is not in the correct step";
+            }
+
             const sponsorSplitPercent = body.sponsorSplitPercent;
 
             if (
               !Number.isInteger(sponsorSplitPercent) ||
-              sponsorSplitPercent < 20 ||
-              sponsorSplitPercent > 80 ||
-              sponsorSplitPercent % 10 !== 0
+              !VALID_SPONSOR_SPLIT_PERCENTAGES.includes(sponsorSplitPercent)
             ) {
               set.status = 400;
-              return "Invalid sponsorSplitPercent. Allowed values: 20,30,40,50,60,70,80";
+              return `Invalid sponsorSplitPercent. Allowed values: ${VALID_SPONSOR_SPLIT_PERCENTAGES.join(
+                ","
+              )}`;
+            }
+
+            // Check if there's an existing active fraction for this application
+            const existingFraction = await findLatestFractionByApplicationId(
+              application.id
+            );
+            if (existingFraction) {
+              // If there's an active fraction, don't allow reducing the sponsor split percentage
+              if (sponsorSplitPercent < existingFraction.sponsorSplitPercent) {
+                set.status = 400;
+                return `Cannot reduce sponsor split percentage below the current active fraction (${existingFraction.sponsorSplitPercent}%). Current attempt: ${sponsorSplitPercent}%`;
+              }
             }
 
             const updateFields: any = {
@@ -2033,6 +2063,39 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
             }
 
             await updateApplication(application.id, updateFields);
+
+            let fraction;
+
+            // If there's an existing uncommitted fraction, update it; otherwise create a new one
+            if (existingFraction && !existingFraction.isCommittedOnChain) {
+              // Update the existing fraction with the new sponsor split percentage
+              // Keep the same expirationAt to maintain the original 4-week deadline
+              fraction = await db
+                .update(fractions)
+                .set({
+                  sponsorSplitPercent,
+                  updatedAt: new Date(),
+                })
+                .where(eq(fractions.id, existingFraction.id))
+                .returning();
+              fraction = fraction[0];
+            } else {
+              // Create a new fraction entry for this application
+              fraction = await createFraction({
+                applicationId: application.id,
+                createdBy: userId,
+                sponsorSplitPercent,
+              });
+            }
+
+            return {
+              fractionId: fraction.id,
+              applicationId: application.id,
+              sponsorSplitPercent,
+              nonce: fraction.nonce,
+              maxSplits: application.maxSplits,
+              expirationAt: fraction.expirationAt,
+            };
           } catch (e) {
             if (e instanceof Error) {
               set.status = 400;
@@ -2048,11 +2111,14 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
         {
           body: t.Object({
             applicationId: t.String(),
-            sponsorSplitPercent: t.Number({ minimum: 20, maximum: 80 }),
+            sponsorSplitPercent: t.Number({
+              minimum: MIN_SPONSOR_SPLIT_PERCENT,
+              maximum: MAX_SPONSOR_SPLIT_PERCENT,
+            }),
           }),
           detail: {
             summary: "Publish Application to auction",
-            description: `Set sponsorSplitPercent (20-80 inclusive, steps of 10). If not yet published, also toggle isPublishedOnAuction and set publishedOnAuctionTimestamp. If already published, only updates sponsorSplitPercent and sponsorSplitUpdatedAt.`,
+            description: `Set sponsorSplitPercent (${MIN_SPONSOR_SPLIT_PERCENT}-${MAX_SPONSOR_SPLIT_PERCENT} inclusive, steps of ${SPONSOR_SPLIT_INCREMENT}). If not yet published, also toggle isPublishedOnAuction and set publishedOnAuctionTimestamp. If already published, only updates sponsorSplitPercent and sponsorSplitUpdatedAt.`,
             tags: [TAG.APPLICATIONS],
           },
         }

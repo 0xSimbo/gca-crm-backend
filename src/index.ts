@@ -25,6 +25,8 @@ import { getDevicesLifetimeMetrics } from "./crons/update-farm-rewards/get-devic
 
 import { adminRouter } from "./routers/admin-router/adminRouter";
 import { zonesRouter } from "./routers/zones/zonesRouter";
+import { fractionsRouter } from "./routers/fractions-router/fractionsRouter";
+import { incrementStaleFractions } from "./crons/increment-stale-fractions/incrementStaleFractions";
 
 const PORT = process.env.PORT || 3005;
 const app = new Elysia()
@@ -111,11 +113,38 @@ const app = new Elysia()
       },
     })
   )
+  .use(
+    cron({
+      name: "Increment Stale Fractions",
+      pattern: "*/5 * * * *", // Every 5 minutes
+      async run() {
+        try {
+          const result = await incrementStaleFractions();
+          console.log(
+            `[Cron] Increment Stale Fractions: Updated ${result.updated} fractions`
+          );
+        } catch (error) {
+          console.error("[Cron] Error in Increment Stale Fractions:", error);
+        }
+      },
+    })
+  )
   .get(
     "/trigger-merkle-root-cron",
     async ({
       store: {
         cron: { "declaration-of-intention-merkle-root": cronJob },
+      },
+    }) => {
+      await cronJob.trigger();
+      return { message: "success" };
+    }
+  )
+  .get(
+    "/trigger-increment-stale-fractions-cron",
+    async ({
+      store: {
+        cron: { "Increment Stale Fractions": cronJob },
       },
     }) => {
       await cronJob.trigger();
@@ -136,6 +165,7 @@ const app = new Elysia()
   .use(farmsRouter)
   .use(adminRouter)
   .use(zonesRouter)
+  .use(fractionsRouter)
   .get("/update-rewards-for-current-week", async () => {
     //Will only work if the GCA has submitted the report for the current week.
     const currentWeek = getProtocolWeek();

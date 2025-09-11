@@ -1169,6 +1169,7 @@ export const applicationsRelations = relations(
       fields: [applications.certifiedInstallerId],
       references: [installers.id],
     }),
+    fractions: many(fractions),
   })
 );
 
@@ -1833,3 +1834,62 @@ export const defaultMaxSplits = pgTable("default_max_splits", {
 
 export type DefaultMaxSplitsType = InferSelectModel<typeof defaultMaxSplits>;
 export type DefaultMaxSplitsInsertType = typeof defaultMaxSplits.$inferInsert;
+
+/**
+ * @dev Represents fraction sales created from applications
+ * @param {string} id - The unique fraction ID (bytes32 hex string)
+ * @param {string} applicationId - The ID of the application this fraction is for
+ * @param {number} nonce - The nonce used to create the unique fraction ID
+ * @param {string} createdBy - The wallet address of who created the fraction
+ * @param {timestamp} createdAt - When the fraction was created
+ * @param {timestamp} updatedAt - When the fraction was last updated
+ * @param {boolean} isCommittedOnChain - Whether the fraction has been committed on-chain
+ * @param {string} txHash - Transaction hash when committed on-chain (nullable)
+ * @param {timestamp} committedAt - When the fraction was committed on-chain (nullable)
+ * @param {number} sponsorSplitPercent - The sponsor split percentage for this fraction
+ * @param {timestamp} expirationAt - When the fraction expires (4 weeks from creation)
+ */
+export const fractions = pgTable(
+  "fractions",
+  {
+    id: varchar("fraction_id", { length: 66 }).primaryKey().notNull(), // bytes32 hex string (0x + 64 chars)
+    applicationId: text("application_id")
+      .notNull()
+      .references(() => applications.id, { onDelete: "cascade" }),
+    nonce: integer("nonce").notNull(),
+    createdBy: varchar("created_by", { length: 42 }).notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+    isCommittedOnChain: boolean("is_committed_on_chain")
+      .notNull()
+      .default(false),
+    txHash: varchar("tx_hash", { length: 66 }),
+    committedAt: timestamp("committed_at"),
+    sponsorSplitPercent: integer("sponsor_split_percent").notNull(),
+    expirationAt: timestamp("expiration_at").notNull(),
+  },
+  (t) => ({
+    applicationIdNonceIndex: uniqueIndex("application_id_nonce_unique_ix").on(
+      t.applicationId,
+      t.nonce
+    ),
+    createdByIndex: index("created_by_ix").on(t.createdBy),
+    applicationIdIndex: index("fractions_application_id_ix").on(
+      t.applicationId
+    ),
+  })
+);
+
+export type FractionType = InferSelectModel<typeof fractions>;
+export type FractionInsertType = typeof fractions.$inferInsert;
+
+export const FractionsRelations = relations(fractions, ({ one }) => ({
+  application: one(applications, {
+    fields: [fractions.applicationId],
+    references: [applications.id],
+  }),
+  createdByWallet: one(wallets, {
+    fields: [fractions.createdBy],
+    references: [wallets.id],
+  }),
+}));
