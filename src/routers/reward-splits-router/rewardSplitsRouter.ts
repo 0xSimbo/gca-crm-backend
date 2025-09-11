@@ -19,6 +19,7 @@ import { findAllApplicationsRewardSplitsByOrganizationIds } from "../../db/queri
 import { findAllApplicationsRewardSplitsByUserId } from "../../db/queries/rewardSplits/findAllApplicationsRewardSplitsByUserId";
 import { updateSplits } from "../../db/mutations/reward-splits/updateSplits";
 import { findAllRewardSplits } from "../../db/queries/rewardSplits/findAllRewardSplits";
+import { findActiveDefaultMaxSplits } from "../../db/queries/defaultMaxSplits/findActiveDefaultMaxSplits";
 
 export const rewardSplitsRouter = new Elysia({ prefix: "/rewardsSplits" })
   .get("/all", async ({ set }) => {
@@ -34,6 +35,64 @@ export const rewardSplitsRouter = new Elysia({ prefix: "/rewardsSplits" })
       throw new Error("Error Occured");
     }
   })
+  .get(
+    "/default-max-splits",
+    async ({ query: { applicationId }, set }) => {
+      try {
+        if (!applicationId) {
+          set.status = 400;
+          return "applicationId is required";
+        }
+
+        // Get the application to check if it has a custom maxSplits value
+        const application = await FindFirstApplicationById(applicationId);
+        if (!application) {
+          set.status = 404;
+          return "Application not found";
+        }
+
+        // If application has a custom maxSplits value (not 0), return it
+        if (application.maxSplits && application.maxSplits !== "0") {
+          return {
+            maxSplits: application.maxSplits.toString(),
+            isDefault: false,
+            source: "application_override",
+          };
+        }
+
+        // Otherwise, get the default maxSplits
+        const defaultMaxSplitsResult = await findActiveDefaultMaxSplits();
+        if (defaultMaxSplitsResult.length === 0) {
+          set.status = 404;
+          return "No default maxSplits configuration found";
+        }
+
+        return {
+          maxSplits: defaultMaxSplitsResult[0].maxSplits.toString(),
+          isDefault: true,
+          source: "default_configuration",
+        };
+      } catch (e) {
+        if (e instanceof Error) {
+          set.status = 400;
+          return e.message;
+        }
+        console.log("[rewardSplitsRouter] /default-max-splits", e);
+        throw new Error("Error Occured");
+      }
+    },
+    {
+      query: t.Object({
+        applicationId: t.String(),
+      }),
+      detail: {
+        summary: "Get default or application-specific maxSplits value",
+        description:
+          "Returns the maxSplits value for an application - either the application-specific override or the default configuration",
+        tags: [TAG.REWARD_SPLITS],
+      },
+    }
+  )
   .use(bearerplugin())
   .guard(bearerGuard, (app) =>
     app

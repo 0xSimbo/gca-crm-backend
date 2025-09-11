@@ -15,6 +15,7 @@ function stringifyApplicationFields(
     ...application,
     zone,
     auditFees: application.auditFees?.toString() || "0",
+    maxSplits: application.maxSplits?.toString() || "0",
     lat:
       enquiryFieldsCRS?.lat !== undefined && enquiryFieldsCRS?.lat !== null
         ? enquiryFieldsCRS.lat.toString()
@@ -53,6 +54,7 @@ export const findAllAuditFeesPaidApplicationsByZoneId = async (
       gcaAssignedTimestamp: true,
       auditFees: true,
       auditFeesTxHash: true,
+      maxSplits: true,
     },
     with: {
       zone: {

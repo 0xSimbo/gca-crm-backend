@@ -923,6 +923,10 @@ export const applications = pgTable("applications", {
     .array()
     .notNull()
     .default(sql`'{}'::integer[]`),
+  // Maximum splits value in USDC (6 decimals) - can be overridden per application
+  maxSplits: bigint("max_splits", { mode: "bigint" })
+    .default(sql`'0'::bigint`)
+    .notNull(),
 });
 
 /**
@@ -1088,13 +1092,14 @@ export const ApplicationsAuditFieldsCRSRelations = relations(
 
 export type ApplicationType = Omit<
   InferSelectModel<typeof applications>,
-  "finalProtocolFee" | "auditFees"
+  "finalProtocolFee" | "auditFees" | "maxSplits"
 > & {
   finalProtocolFee: string;
   finalProtocolFeeBigInt: string;
   enquiryFields: ApplicationEnquiryFieldsCRSInsertType | null;
   auditFields: ApplicationAuditFieldsCRSInsertType | null;
   auditFees: string;
+  maxSplits: string;
 };
 export type ApplicationInsertType = typeof applications.$inferInsert;
 export type ApplicationUpdateEnquiryType = Pick<
@@ -1806,3 +1811,25 @@ export type ZoneType = InferSelectModel<typeof zones>;
 export type ZoneInsert = typeof zones.$inferInsert;
 
 // ---------- end zones ----------
+
+/**
+ * @dev Represents default maxSplits configuration that applies to all applications
+ * @param {number} id - The unique ID of the default configuration
+ * @param {BigInt} maxSplits - The default maximum splits value in USDC (6 decimals)
+ * @param {timestamp} createdAt - When this default was set
+ * @param {timestamp} updatedAt - When this default was last updated
+ * @param {string} updatedBy - The wallet address of who updated this default
+ * @param {boolean} isActive - Whether this default is currently active
+ */
+export const defaultMaxSplits = pgTable("default_max_splits", {
+  id: serial("default_max_splits_id").primaryKey(),
+  maxSplits: bigint("max_splits", { mode: "bigint" })
+    .default(sql`'0'::bigint`)
+    .notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  isActive: boolean("is_active").notNull().default(true),
+});
+
+export type DefaultMaxSplitsType = InferSelectModel<typeof defaultMaxSplits>;
+export type DefaultMaxSplitsInsertType = typeof defaultMaxSplits.$inferInsert;

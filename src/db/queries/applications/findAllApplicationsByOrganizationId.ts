@@ -28,6 +28,7 @@ export const findAllApplicationsByOrganizationId = async (
           isCancelled: true,
           revisedKwhGeneratedPerYear: true,
           finalProtocolFee: true,
+          maxSplits: true,
           preInstallVisitDate: true,
           afterInstallVisitDate: true,
           sponsorSplitPercent: true,
@@ -68,6 +69,7 @@ export const findAllApplicationsByOrganizationId = async (
         6
       ),
       auditFees: application.auditFees?.toString() || "0",
+      maxSplits: application.maxSplits?.toString() || "0",
       finalProtocolFeeBigInt: application.finalProtocolFee.toString(),
       enquiryFields: enquiryFieldsCRS,
       auditFields: auditFieldsCRS,

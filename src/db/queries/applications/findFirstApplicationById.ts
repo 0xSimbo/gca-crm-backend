@@ -60,6 +60,7 @@ export const FindFirstApplicationById = async (id: string) => {
     ),
     finalProtocolFeeBigInt: application.finalProtocolFee.toString(),
     auditFees: application.auditFees?.toString() || "0",
+    maxSplits: application.maxSplits?.toString() || "0",
     enquiryFields: enquiryFieldsCRS,
     auditFields: auditFieldsCRS,
     zone: zone,
@@ -100,6 +101,7 @@ export const FindFirstApplicationByIdMinimal = async (id: string) => {
     ...application,
     finalProtocolFee: application.finalProtocolFee.toString(),
     auditFees: application.auditFees?.toString() || "0",
+    maxSplits: application.maxSplits?.toString() || "0",
     zone: zone,
   };
 };

@@ -13,6 +13,7 @@ function stringifyApplicationFields(
     zone,
     finalProtocolFee: application.finalProtocolFee.toString(),
     auditFees: application.auditFees?.toString() || "0",
+    maxSplits: application.maxSplits?.toString() || "0",
     lat:
       enquiryFieldsCRS?.lat !== undefined && enquiryFieldsCRS?.lat !== null
         ? enquiryFieldsCRS.lat.toString()
@@ -57,6 +58,7 @@ export const findAllWaitingForPaymentApplications = async (
       finalProtocolFee: true,
       auditFees: true,
       auditFeesTxHash: true,
+      maxSplits: true,
       allowedZones: true,
     },
     with: {

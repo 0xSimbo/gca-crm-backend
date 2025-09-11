@@ -19,6 +19,7 @@ function stringifyApplicationFields(
     finalProtocolFeeBigInt: application.finalProtocolFee.toString(),
     paymentAmount: application.paymentAmount.toString(),
     auditFees: application.auditFees?.toString() || "0",
+    maxSplits: application.maxSplits?.toString() || "0",
     ...enquiryFieldsCRS,
     ...auditFieldsCRS,
     zone,
