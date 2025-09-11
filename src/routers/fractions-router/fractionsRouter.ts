@@ -8,8 +8,8 @@ import { FindFirstApplicationById } from "../../db/queries/applications/findFirs
 import {
   findFractionsByApplicationId,
   findFractionById,
+  findActiveFractionByApplicationId,
 } from "../../db/queries/fractions/findFractionsByApplicationId";
-import { markFractionAsCommitted } from "../../db/mutations/fractions/createFraction";
 
 export const fractionsRouter = new Elysia({ prefix: "/fractions" })
   .use(bearerplugin())
@@ -130,18 +130,23 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
           },
         }
       )
-      .post(
-        "/mark-as-committed",
-        async ({ body, set, userId }) => {
+      .get(
+        "/active-by-application-id",
+        async ({ query: { applicationId }, set, userId }) => {
+          if (!applicationId) {
+            set.status = 400;
+            return "applicationId is required";
+          }
+
           try {
-            const fraction = await findFractionById(body.fractionId);
-            if (!fraction) {
+            const application = await FindFirstApplicationById(applicationId);
+            if (!application) {
               set.status = 404;
-              return "Fraction not found";
+              return "Application not found";
             }
 
-            // Check if user is the creator of this fraction
-            if (fraction.createdBy !== userId) {
+            // Check if user has access to this application
+            if (application.userId !== userId) {
               const account = await findFirstAccountById(userId);
               if (
                 !account ||
@@ -152,41 +157,33 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
               }
             }
 
-            if (fraction.isCommittedOnChain) {
-              set.status = 400;
-              return "Fraction is already committed on-chain";
-            }
-
-            const updatedFraction = await markFractionAsCommitted(
-              body.fractionId,
-              body.txHash
+            const activeFraction = await findActiveFractionByApplicationId(
+              applicationId
             );
 
-            return updatedFraction[0];
+            if (!activeFraction) {
+              set.status = 404;
+              return "No active fraction found for this application";
+            }
+
+            return activeFraction;
           } catch (e) {
             if (e instanceof Error) {
               set.status = 400;
               return e.message;
             }
-            console.log("[fractionsRouter] /mark-as-committed", e);
+            console.log("[fractionsRouter] /active-by-application-id", e);
             throw new Error("Error Occured");
           }
         },
         {
-          body: t.Object({
-            fractionId: t.String({
-              description: "The fraction ID (bytes32 hex string)",
-            }),
-            txHash: t.String({
-              description: "The transaction hash of the on-chain commitment",
-              minLength: 66,
-              maxLength: 66,
-            }),
+          query: t.Object({
+            applicationId: t.String(),
           }),
           detail: {
-            summary: "Mark fraction as committed on-chain",
+            summary: "Get active fraction by application ID",
             description:
-              "Updates a fraction to mark it as committed on-chain with the transaction hash",
+              "Returns the active fraction for an application (not expired and not committed on-chain)",
             tags: [TAG.APPLICATIONS],
           },
         }

@@ -48,6 +48,8 @@ import {
   TRANSFER_TYPES,
 } from "@glowlabs-org/utils/browser";
 import { getUniqueStarNameForApplicationId } from "../farms/farmsRouter";
+import { findFractionById } from "../../db/queries/fractions/findFractionsByApplicationId";
+import { markFractionAsCommitted } from "../../db/mutations/fractions/createFraction";
 
 export const publicApplicationsRoutes = new Elysia()
   .get(
@@ -1105,6 +1107,65 @@ export const publicApplicationsRoutes = new Elysia()
       detail: {
         summary: "Get Application Price Quotes by applicationId",
         description: `Returns all price quotes for the specified applicationId`,
+        tags: [TAG.APPLICATIONS],
+      },
+    }
+  )
+  .post(
+    "/fractions/mark-as-committed",
+    async ({ body, set, headers }) => {
+      try {
+        const apiKey = headers["x-api-key"];
+        if (!apiKey) {
+          set.status = 400;
+          return "API Key is required";
+        }
+        if (apiKey !== process.env.GUARDED_API_KEY) {
+          set.status = 401;
+          return "Unauthorized";
+        }
+
+        const fraction = await findFractionById(body.fractionId);
+        if (!fraction) {
+          set.status = 404;
+          return "Fraction not found";
+        }
+
+        if (fraction.isCommittedOnChain) {
+          set.status = 400;
+          return "Fraction is already committed on-chain";
+        }
+
+        const updatedFraction = await markFractionAsCommitted(
+          body.fractionId,
+          body.txHash
+        );
+
+        return updatedFraction[0];
+      } catch (e) {
+        if (e instanceof Error) {
+          set.status = 400;
+          return e.message;
+        }
+        console.log("[publicRoutes] /fractions/mark-as-committed", e);
+        throw new Error("Error Occured");
+      }
+    },
+    {
+      body: t.Object({
+        fractionId: t.String({
+          description: "The fraction ID (bytes32 hex string)",
+        }),
+        txHash: t.String({
+          description: "The transaction hash of the on-chain commitment",
+          minLength: 66,
+          maxLength: 66,
+        }),
+      }),
+      detail: {
+        summary: "Mark fraction as committed on-chain",
+        description:
+          "Updates a fraction to mark it as committed on-chain with the transaction hash. Requires API key authentication.",
         tags: [TAG.APPLICATIONS],
       },
     }

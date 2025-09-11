@@ -1,4 +1,4 @@
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, and, gt } from "drizzle-orm";
 import { db } from "../../db";
 import { fractions } from "../../schema";
 
@@ -43,6 +43,30 @@ export async function findLatestFractionByApplicationId(applicationId: string) {
     .select()
     .from(fractions)
     .where(eq(fractions.applicationId, applicationId))
+    .orderBy(desc(fractions.createdAt))
+    .limit(1);
+
+  return result[0] || null;
+}
+
+/**
+ * Finds the active fraction for an application (not expired and not committed on-chain)
+ *
+ * @param applicationId - The application ID
+ * @returns The active fraction or null if none exist
+ */
+export async function findActiveFractionByApplicationId(applicationId: string) {
+  const now = new Date();
+  const result = await db
+    .select()
+    .from(fractions)
+    .where(
+      and(
+        eq(fractions.applicationId, applicationId),
+        eq(fractions.isCommittedOnChain, false),
+        gt(fractions.expirationAt, now)
+      )
+    )
     .orderBy(desc(fractions.createdAt))
     .limit(1);
 
