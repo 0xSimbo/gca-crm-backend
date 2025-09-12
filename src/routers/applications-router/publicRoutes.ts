@@ -49,7 +49,10 @@ import {
 } from "@glowlabs-org/utils/browser";
 import { getUniqueStarNameForApplicationId } from "../farms/farmsRouter";
 import { findFractionById } from "../../db/queries/fractions/findFractionsByApplicationId";
-import { markFractionAsCommitted } from "../../db/mutations/fractions/createFraction";
+import {
+  markFractionAsCommitted,
+  markFractionAsFilled,
+} from "../../db/mutations/fractions/createFraction";
 
 export const publicApplicationsRoutes = new Elysia()
   .get(
@@ -1166,6 +1169,65 @@ export const publicApplicationsRoutes = new Elysia()
         summary: "Mark fraction as committed on-chain",
         description:
           "Updates a fraction to mark it as committed on-chain with the transaction hash. Requires API key authentication.",
+        tags: [TAG.APPLICATIONS],
+      },
+    }
+  )
+  .post(
+    "/fractions/mark-as-filled",
+    async ({ body, set, headers }) => {
+      try {
+        const apiKey = headers["x-api-key"];
+        if (!apiKey) {
+          set.status = 400;
+          return "API Key is required";
+        }
+        if (apiKey !== process.env.GUARDED_API_KEY) {
+          set.status = 401;
+          return "Unauthorized";
+        }
+
+        const fraction = await findFractionById(body.fractionId);
+        if (!fraction) {
+          set.status = 404;
+          return "Fraction not found";
+        }
+
+        if (fraction.isFilled) {
+          set.status = 400;
+          return "Fraction is already filled";
+        }
+
+        const updatedFraction = await markFractionAsFilled(
+          body.fractionId,
+          body.txHash
+        );
+
+        return updatedFraction[0];
+      } catch (e) {
+        if (e instanceof Error) {
+          set.status = 400;
+          return e.message;
+        }
+        console.log("[publicRoutes] /fractions/mark-as-filled", e);
+        throw new Error("Error Occured");
+      }
+    },
+    {
+      body: t.Object({
+        fractionId: t.String({
+          description: "The fraction ID (bytes32 hex string)",
+        }),
+        txHash: t.String({
+          description: "The transaction hash of the fill transaction",
+          minLength: 66,
+          maxLength: 66,
+        }),
+      }),
+      detail: {
+        summary: "Mark fraction as filled",
+        description:
+          "Updates a fraction to mark it as filled with the transaction hash. Once filled, no new fractions can be created for the application. Requires API key authentication.",
         tags: [TAG.APPLICATIONS],
       },
     }

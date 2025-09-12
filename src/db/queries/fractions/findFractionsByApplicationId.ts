@@ -72,3 +72,26 @@ export async function findActiveFractionByApplicationId(applicationId: string) {
 
   return result[0] || null;
 }
+
+/**
+ * Checks if an application has any filled fractions
+ *
+ * @param applicationId - The application ID
+ * @returns True if the application has a filled fraction, false otherwise
+ */
+export async function hasFilledFraction(
+  applicationId: string
+): Promise<boolean> {
+  const result = await db
+    .select({ id: fractions.id })
+    .from(fractions)
+    .where(
+      and(
+        eq(fractions.applicationId, applicationId),
+        eq(fractions.isFilled, true)
+      )
+    )
+    .limit(1);
+
+  return result.length > 0;
+}
