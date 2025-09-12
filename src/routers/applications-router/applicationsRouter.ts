@@ -101,6 +101,7 @@ import {
   SPONSOR_SPLIT_INCREMENT,
   VALID_SPONSOR_SPLIT_PERCENTAGES,
 } from "../../constants/fractions";
+import { findActiveDefaultMaxSplits } from "../../db/queries/defaultMaxSplits/findActiveDefaultMaxSplits";
 
 export const applicationsRouter = new Elysia({ prefix: "/applications" })
   .use(publicApplicationsRoutes)
@@ -2088,12 +2089,25 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               });
             }
 
+            // Determine the effective maxSplits value
+            let effectiveMaxSplits = application.maxSplits;
+            if (!effectiveMaxSplits || effectiveMaxSplits === "0") {
+              // Get the default maxSplits if application doesn't have a custom value
+              const defaultMaxSplitsResult = await findActiveDefaultMaxSplits();
+              if (defaultMaxSplitsResult.length > 0) {
+                effectiveMaxSplits =
+                  defaultMaxSplitsResult[0].maxSplits.toString();
+              } else {
+                effectiveMaxSplits = "0"; // Fallback if no default is set
+              }
+            }
+
             return {
               fractionId: fraction.id,
               applicationId: application.id,
               sponsorSplitPercent,
               nonce: fraction.nonce,
-              maxSplits: application.maxSplits,
+              maxSplits: effectiveMaxSplits,
               expirationAt: fraction.expirationAt,
             };
           } catch (e) {
