@@ -912,7 +912,6 @@ export const applications = pgTable("applications", {
     .notNull()
     .default("PayProtocolFee"), // PayProtocolFee or PayProtocolFeeAndMintGCTLAndStake
   payer: varchar("payer", { length: 42 }),
-  sponsorWallet: varchar("sponsor_wallet", { length: 42 }),
   // gca assignement fields
   gcaAssignedTimestamp: timestamp("gca_assigned_timestamp"),
   gcaAcceptanceTimestamp: timestamp("gca_acceptance_timestamp"),
@@ -1870,6 +1869,11 @@ export const fractions = pgTable(
     filledAt: timestamp("filled_at"),
     sponsorSplitPercent: integer("sponsor_split_percent").notNull(),
     expirationAt: timestamp("expiration_at").notNull(),
+    // Fields added for on-chain fraction commitment
+    token: varchar("token", { length: 42 }), // ERC20 token address
+    owner: varchar("owner", { length: 42 }), // Owner address that must match
+    step: varchar("step", { length: 78 }), // Price in GLW (18 decimals) as string
+    totalSteps: integer("total_steps"), // Total number of steps
   },
   (t) => ({
     applicationIdNonceIndex: uniqueIndex("application_id_nonce_unique_ix").on(

@@ -62,10 +62,18 @@ export async function createFraction(params: CreateFractionParams) {
  *
  * @param fractionId - The fraction ID
  * @param txHash - The transaction hash
+ * @param token - The token address (must be GLW)
+ * @param owner - The owner address
+ * @param step - The price in GLW (18 decimals) for each fraction
+ * @param totalSteps - The total number of steps
  */
 export async function markFractionAsCommitted(
   fractionId: string,
-  txHash: string
+  txHash: string,
+  token: string,
+  owner: string,
+  step: string,
+  totalSteps: number
 ) {
   return await db
     .update(fractions)
@@ -74,6 +82,10 @@ export async function markFractionAsCommitted(
       txHash,
       committedAt: new Date(),
       updatedAt: new Date(),
+      token,
+      owner,
+      step,
+      totalSteps,
     })
     .where(eq(fractions.id, fractionId))
     .returning();

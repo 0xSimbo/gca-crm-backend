@@ -54,6 +54,98 @@ import {
   markFractionAsFilled,
 } from "../../db/mutations/fractions/createFraction";
 
+/**
+ * Helper function to complete an application and create a farm with devices
+ * This is shared between direct payment and fraction-based payment flows
+ */
+async function completeApplicationAndCreateFarm({
+  application,
+  txHash,
+  paymentDate,
+  paymentCurrency,
+  paymentEventType,
+  paymentAmount,
+  protocolFee,
+  protocolFeeAdditionalPaymentTxHash = null,
+  payer,
+}: {
+  application: any;
+  txHash: string;
+  paymentDate: Date;
+  paymentCurrency: (typeof PAYMENT_CURRENCIES)[number];
+  paymentEventType: string;
+  paymentAmount: string;
+  protocolFee: bigint;
+  protocolFeeAdditionalPaymentTxHash?: string | null;
+  payer: string;
+}) {
+  // Get unique farm name
+  const farmName = await getUniqueStarNameForApplicationId(application.id);
+  if (!farmName) {
+    throw new Error("Failed to get a unique farm name");
+  }
+
+  // Create farm
+  const farmId = await completeApplicationWithDocumentsAndCreateFarmWithDevices(
+    {
+      protocolFeePaymentHash: txHash,
+      paymentDate,
+      paymentCurrency,
+      paymentEventType,
+      paymentAmount,
+      applicationId: application.id,
+      gcaId: application.gcaAddress || application.gca?.id,
+      userId: application.userId || application.user?.id,
+      devices: application.auditFields?.devices || [],
+      protocolFee,
+      protocolFeeAdditionalPaymentTxHash,
+      lat: application.enquiryFields?.lat || "0",
+      lng: application.enquiryFields?.lng || "0",
+      farmName,
+      payer,
+    }
+  );
+
+  // Trigger hub solar farms sync
+  try {
+    await fetch(
+      "https://glow-impact-backend-staging.up.railway.app/hub-solar-farms-sync-trigger"
+    );
+  } catch (error) {
+    console.error("Failed to trigger hub solar farms sync:", error);
+    // Don't fail the main operation if sync trigger fails
+  }
+
+  // Emit event in production
+  if (process.env.NODE_ENV === "production") {
+    const emitter = createGlowEventEmitter({
+      username: process.env.RABBITMQ_ADMIN_USER!,
+      password: process.env.RABBITMQ_ADMIN_PASSWORD!,
+      zoneId: application.zoneId,
+    });
+
+    emitter
+      .emit({
+        eventType: eventTypes.auditPfeesPaid,
+        schemaVersion: "v2-alpha",
+        payload: {
+          applicationId: application.id,
+          payer,
+          amount_6Decimals: paymentAmount,
+          txHash,
+          paymentCurrency,
+          paymentEventType,
+          isSponsored: false,
+        },
+      })
+      .catch((e) => {
+        console.error("error with audit.pfees.paid event", e);
+      });
+  }
+
+  return farmId;
+}
+
 export const publicApplicationsRoutes = new Elysia()
   .get(
     "/sponsor-listings-applications",
@@ -161,7 +253,6 @@ export const publicApplicationsRoutes = new Elysia()
             finalProtocolFee: true,
             paymentCurrency: true,
             paymentEventType: true,
-            sponsorWallet: true,
           },
           with: {
             zone: {
@@ -651,77 +742,17 @@ export const publicApplicationsRoutes = new Elysia()
           return "Devices are not set";
         }
 
-        let sponsorWallet = null;
-
-        if (
-          body.eventType === TRANSFER_TYPES.SponsorProtocolFee ||
-          body.eventType ===
-            TRANSFER_TYPES.SponsorProtocolFeeAndMintGCTLAndStake
-        ) {
-          sponsorWallet = body.from;
-        }
-
-        const farmName = await getUniqueStarNameForApplicationId(
-          application.id
-        );
-        if (!farmName) {
-          throw new Error("Failed to get a unique farm name");
-        }
-        const farmId =
-          await completeApplicationWithDocumentsAndCreateFarmWithDevices({
-            protocolFeePaymentHash: body.txHash,
-            paymentDate: body.paymentDate,
-            paymentCurrency: body.paymentCurrency,
-            paymentEventType: body.eventType,
-            paymentAmount: body.amount,
-            applicationId,
-            gcaId: application.gcaAddress,
-            userId: application.userId,
-            devices: application.auditFields?.devices,
-            protocolFee: BigInt(application.finalProtocolFeeBigInt),
-            protocolFeeAdditionalPaymentTxHash: null,
-            lat: application.enquiryFields?.lat,
-            lng: application.enquiryFields?.lng,
-            farmName,
-            payer: body.from,
-            sponsorWallet,
-          });
-
-        // Trigger hub solar farms sync
-        try {
-          await fetch(
-            "https://glow-impact-backend-staging.up.railway.app/hub-solar-farms-sync-trigger"
-          );
-        } catch (error) {
-          console.error("Failed to trigger hub solar farms sync:", error);
-          // Don't fail the main operation if sync trigger fails
-        }
-
-        if (process.env.NODE_ENV === "production") {
-          const emitter = createGlowEventEmitter({
-            username: process.env.RABBITMQ_ADMIN_USER!,
-            password: process.env.RABBITMQ_ADMIN_PASSWORD!,
-            zoneId: application.zoneId,
-          });
-
-          emitter
-            .emit({
-              eventType: eventTypes.auditPfeesPaid,
-              schemaVersion: "v2-alpha",
-              payload: {
-                applicationId: applicationId,
-                payer: body.from,
-                amount_6Decimals: body.amount,
-                txHash: body.txHash,
-                paymentCurrency: body.paymentCurrency,
-                paymentEventType: body.eventType,
-                isSponsored: false,
-              },
-            })
-            .catch((e) => {
-              console.error("error with audit.pfees.paid event", e);
-            });
-        }
+        const farmId = await completeApplicationAndCreateFarm({
+          application,
+          txHash: body.txHash,
+          paymentDate: body.paymentDate,
+          paymentCurrency: body.paymentCurrency,
+          paymentEventType: body.eventType,
+          paymentAmount: body.amount,
+          protocolFee: BigInt(application.finalProtocolFeeBigInt),
+          protocolFeeAdditionalPaymentTxHash: null,
+          payer: body.from,
+        });
 
         return { farmId };
       } catch (e) {
@@ -746,7 +777,6 @@ export const publicApplicationsRoutes = new Elysia()
         amount: t.String(),
         paymentDate: t.Date(),
         from: t.String({ pattern: "^0x[a-fA-F0-9]{40}$" }),
-        sponsorWallet: t.Optional(t.String({ pattern: "^0x[a-fA-F0-9]{40}$" })),
       }),
       detail: {
         summary: "Finalize Payment",
@@ -1139,9 +1169,26 @@ export const publicApplicationsRoutes = new Elysia()
           return "Fraction is already committed on-chain";
         }
 
+        // Validate token address is GLW
+        const glwAddress = forwarderAddresses.GLW.toLowerCase();
+        if (body.token.toLowerCase() !== glwAddress) {
+          set.status = 400;
+          return `Invalid token address: ${body.token}. Must be GLW token (${forwarderAddresses.GLW})`;
+        }
+
+        // Validate owner matches the fraction creator
+        if (body.owner.toLowerCase() !== fraction.createdBy.toLowerCase()) {
+          set.status = 400;
+          return `Owner mismatch: ${body.owner} does not match fraction creator ${fraction.createdBy}`;
+        }
+
         const updatedFraction = await markFractionAsCommitted(
           body.fractionId,
-          body.txHash
+          body.txHash,
+          body.token,
+          body.owner,
+          body.step,
+          body.totalSteps
         );
 
         return updatedFraction[0];
@@ -1164,11 +1211,28 @@ export const publicApplicationsRoutes = new Elysia()
           minLength: 66,
           maxLength: 66,
         }),
+        token: t.String({
+          description: "The token address (must be GLW)",
+          minLength: 42,
+          maxLength: 42,
+        }),
+        owner: t.String({
+          description: "The owner address (must match fraction creator)",
+          minLength: 42,
+          maxLength: 42,
+        }),
+        step: t.String({
+          description: "The price in GLW (18 decimals) for each fraction",
+        }),
+        totalSteps: t.Number({
+          description: "The total number of steps",
+          minimum: 1,
+        }),
       }),
       detail: {
         summary: "Mark fraction as committed on-chain",
         description:
-          "Updates a fraction to mark it as committed on-chain with the transaction hash. Requires API key authentication.",
+          "Updates a fraction to mark it as committed on-chain with the transaction hash and price details. Requires API key authentication.",
         tags: [TAG.APPLICATIONS],
       },
     }
@@ -1198,10 +1262,61 @@ export const publicApplicationsRoutes = new Elysia()
           return "Fraction is already filled";
         }
 
+        // Ensure fraction is committed on-chain
+        if (!fraction.isCommittedOnChain) {
+          set.status = 400;
+          return "Fraction must be committed on-chain before it can be filled";
+        }
+
+        // Ensure all required fields are present
+        if (
+          !fraction.token ||
+          !fraction.owner ||
+          !fraction.step ||
+          !fraction.totalSteps
+        ) {
+          set.status = 400;
+          return "Fraction is missing required commitment fields (token, owner, step, totalSteps)";
+        }
+
+        // Get the application data
+        const application = await FindFirstApplicationById(
+          fraction.applicationId
+        );
+        if (!application) {
+          set.status = 404;
+          return "Application not found";
+        }
+
+        // Calculate payment amount (step * totalSteps)
+        const stepBigInt = BigInt(fraction.step);
+        const totalStepsBigInt = BigInt(fraction.totalSteps);
+        const paymentAmount = (stepBigInt * totalStepsBigInt).toString();
+
         const updatedFraction = await markFractionAsFilled(
           body.fractionId,
           body.txHash
         );
+
+        // Trigger application completion with the fraction payment data
+        if (application.gca?.id && application.user?.id) {
+          if (
+            application.auditFields?.devices &&
+            application.auditFields?.devices.length > 0
+          ) {
+            await completeApplicationAndCreateFarm({
+              application,
+              txHash: body.txHash,
+              paymentDate: body.paymentDate,
+              paymentCurrency: "GLW" as (typeof PAYMENT_CURRENCIES)[number],
+              paymentEventType: "OnchainFractionRoundFilled",
+              paymentAmount: paymentAmount,
+              protocolFee: BigInt(application.finalProtocolFeeBigInt),
+              protocolFeeAdditionalPaymentTxHash: null,
+              payer: fraction.owner,
+            });
+          }
+        }
 
         return updatedFraction[0];
       } catch (e) {
@@ -1222,6 +1337,9 @@ export const publicApplicationsRoutes = new Elysia()
           description: "The transaction hash of the fill transaction",
           minLength: 66,
           maxLength: 66,
+        }),
+        paymentDate: t.Date({
+          description: "The date of the payment",
         }),
       }),
       detail: {

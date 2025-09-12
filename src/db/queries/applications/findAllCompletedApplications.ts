@@ -93,7 +93,6 @@ export const findAllCompletedApplications = async (withDocuments?: boolean) => {
       sponsorSplitPercent: true,
       sponsorSplitUpdatedAt: true,
       paymentEventType: true,
-      sponsorWallet: true,
       paymentCurrency: true,
       paymentAmount: true,
       payer: true,
@@ -250,7 +249,6 @@ export const findCompletedApplication = async ({
       paymentAmount: true,
       paymentCurrency: true,
       paymentEventType: true,
-      sponsorWallet: true,
       payer: true,
     },
     with: {
