@@ -48,6 +48,7 @@ import {
   TRANSFER_TYPES,
 } from "@glowlabs-org/utils/browser";
 import { getUniqueStarNameForApplicationId } from "../farms/farmsRouter";
+import { findActiveFractionByApplicationId } from "../../db/queries/fractions/findFractionsByApplicationId";
 import { findFractionById } from "../../db/queries/fractions/findFractionsByApplicationId";
 import { markFractionAsFilled } from "../../db/mutations/fractions/createFraction";
 import { getFractionEventService } from "../../services/eventListener";
@@ -329,27 +330,95 @@ export const publicApplicationsRoutes = new Elysia()
           });
         }
 
-        return filteredApplications.map((app) => ({
-          id: app.id,
-          userId: app.userId,
-          status: app.status,
-          createdAt: app.createdAt,
-          isPublishedOnAuction: app.isPublishedOnAuction,
-          publishedOnAuctionTimestamp: app.publishedOnAuctionTimestamp,
-          sponsorSplitPercent: app.sponsorSplitPercent,
-          finalProtocolFee: app.finalProtocolFee?.toString(),
-          paymentCurrency: app.paymentCurrency,
-          paymentEventType: app.paymentEventType,
-          zone: app.zone,
-          applicationPriceQuotes: app.applicationPriceQuotes,
-          enquiryFields: app.enquiryFieldsCRS,
-          auditFields: app.auditFieldsCRS,
-          weeklyProduction: app.weeklyProduction,
-          weeklyCarbonDebt: app.weeklyCarbonDebt,
-          afterInstallPictures: app.documents.filter((d) =>
-            d.name.includes("after_install_pictures")
-          ),
-        }));
+        // Get active fractions for all applications in parallel
+        const applicationIds = filteredApplications.map((app) => app.id);
+        const activeFractionsPromises = applicationIds.map((id) =>
+          findActiveFractionByApplicationId(id)
+        );
+        const activeFractions = await Promise.all(activeFractionsPromises);
+
+        // Create a map for quick lookup
+        const fractionMap = new Map();
+        activeFractions.forEach((fraction, index) => {
+          if (fraction) {
+            fractionMap.set(applicationIds[index], fraction);
+          }
+        });
+
+        return filteredApplications.map((app) => {
+          const activeFraction = fractionMap.get(app.id);
+
+          return {
+            id: app.id,
+            userId: app.userId,
+            status: app.status,
+            createdAt: app.createdAt,
+            isPublishedOnAuction: app.isPublishedOnAuction,
+            publishedOnAuctionTimestamp: app.publishedOnAuctionTimestamp,
+            sponsorSplitPercent: app.sponsorSplitPercent,
+            finalProtocolFee: app.finalProtocolFee?.toString(),
+            paymentCurrency: app.paymentCurrency,
+            paymentEventType: app.paymentEventType,
+            zone: app.zone,
+            applicationPriceQuotes: app.applicationPriceQuotes,
+            enquiryFields: app.enquiryFieldsCRS,
+            auditFields: app.auditFieldsCRS,
+            weeklyProduction: app.weeklyProduction,
+            weeklyCarbonDebt: app.weeklyCarbonDebt,
+            afterInstallPictures: app.documents.filter((d) =>
+              d.name.includes("after_install_pictures")
+            ),
+            // Add active fraction information
+            activeFraction: activeFraction
+              ? {
+                  id: activeFraction.id,
+                  nonce: activeFraction.nonce,
+                  status: activeFraction.status,
+                  sponsorSplitPercent: activeFraction.sponsorSplitPercent,
+                  createdAt: activeFraction.createdAt,
+                  expirationAt: activeFraction.expirationAt,
+                  isCommittedOnChain: activeFraction.isCommittedOnChain,
+                  isFilled: activeFraction.isFilled,
+                  totalSteps: activeFraction.totalSteps,
+                  splitsSold: activeFraction.splitsSold,
+                  step: activeFraction.step, // Price per step in GLW
+                  token: activeFraction.token,
+                  owner: activeFraction.owner,
+                  txHash: activeFraction.txHash,
+                  // Calculate progress percentage
+                  progressPercent:
+                    activeFraction.totalSteps && activeFraction.splitsSold
+                      ? Math.round(
+                          (activeFraction.splitsSold /
+                            activeFraction.totalSteps) *
+                            100
+                        )
+                      : 0,
+                  // Calculate remaining splits
+                  remainingSteps: activeFraction.totalSteps
+                    ? activeFraction.totalSteps -
+                      (activeFraction.splitsSold || 0)
+                    : null,
+                  // Calculate total amount raised so far (step * splitsSold)
+                  amountRaised:
+                    activeFraction.step && activeFraction.splitsSold
+                      ? (
+                          BigInt(activeFraction.step) *
+                          BigInt(activeFraction.splitsSold)
+                        ).toString()
+                      : null,
+                  // Calculate total amount needed (step * totalSteps)
+                  totalAmountNeeded:
+                    activeFraction.step && activeFraction.totalSteps
+                      ? (
+                          BigInt(activeFraction.step) *
+                          BigInt(activeFraction.totalSteps)
+                        ).toString()
+                      : null,
+                }
+              : null,
+          };
+        });
       } catch (e) {
         if (e instanceof Error) {
           set.status = 400;
@@ -382,7 +451,7 @@ export const publicApplicationsRoutes = new Elysia()
       }),
       detail: {
         summary: "Get auction applications available for sponsorship",
-        description: `Returns applications that are waiting for payment, published on auction, and in zones accepting sponsors. Supports filtering by zoneId and paymentCurrency, and sorting by publishedOnAuctionTimestamp, sponsorSplitPercent, finalProtocolFee, or paymentCurrency. When sorting by paymentCurrency with a specific currency filter, sorts by lowest price for that currency. Includes application price quotes and related data.`,
+        description: `Returns applications that are waiting for payment, published on auction, and in zones accepting sponsors. Supports filtering by zoneId and paymentCurrency, and sorting by publishedOnAuctionTimestamp, sponsorSplitPercent, finalProtocolFee, or paymentCurrency. When sorting by paymentCurrency with a specific currency filter, sorts by lowest price for that currency. Includes application price quotes, related data, and active fraction information (if any) showing funding progress, steps sold, amounts raised, and expiration details.`,
         tags: [TAG.APPLICATIONS],
       },
     }

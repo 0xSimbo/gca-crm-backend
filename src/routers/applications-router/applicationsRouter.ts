@@ -2060,7 +2060,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
             );
             if (existingFraction) {
               // If there's an active fraction, don't allow reducing the sponsor split percentage
-              if (sponsorSplitPercent < existingFraction.sponsorSplitPercent) {
+              if (sponsorSplitPercent <= existingFraction.sponsorSplitPercent) {
                 set.status = 400;
                 return `Cannot reduce sponsor split percentage below the current active fraction (${existingFraction.sponsorSplitPercent}%). Current attempt: ${sponsorSplitPercent}%`;
               }

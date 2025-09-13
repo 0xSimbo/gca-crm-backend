@@ -13,7 +13,15 @@ export async function findFractionsByApplicationId(applicationId: string) {
   return await db
     .select()
     .from(fractions)
-    .where(eq(fractions.applicationId, applicationId))
+    .where(
+      and(
+        eq(fractions.applicationId, applicationId),
+        inArray(fractions.status, [
+          FRACTION_STATUS.DRAFT,
+          FRACTION_STATUS.COMMITTED,
+        ])
+      )
+    )
     .orderBy(fractions.createdAt);
 }
 
@@ -43,7 +51,15 @@ export async function findLatestFractionByApplicationId(applicationId: string) {
   const result = await db
     .select()
     .from(fractions)
-    .where(eq(fractions.applicationId, applicationId))
+    .where(
+      and(
+        eq(fractions.applicationId, applicationId),
+        inArray(fractions.status, [
+          FRACTION_STATUS.DRAFT,
+          FRACTION_STATUS.COMMITTED,
+        ])
+      )
+    )
     .orderBy(desc(fractions.createdAt))
     .limit(1);
 

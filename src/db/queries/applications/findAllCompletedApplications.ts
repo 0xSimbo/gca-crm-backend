@@ -1,8 +1,14 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "../../db";
-import { Documents, applications } from "../../schema";
+import {
+  Documents,
+  applications,
+  fractions,
+  fractionSplits,
+} from "../../schema";
 import { formatUnits } from "viem";
 import { ApplicationStatusEnum } from "../../../types/api-types/Application";
+import { FRACTION_STATUS } from "../../../constants/fractions";
 
 function stringifyApplicationFields(
   application: any,
@@ -10,6 +16,30 @@ function stringifyApplicationFields(
   enquiryFieldsCRS?: any,
   auditFieldsCRS?: any
 ) {
+  // Aggregate sponsor wallets from fraction splits
+  const sponsorWallets: Array<{ walletAddress: string; fractions: number }> =
+    [];
+
+  if (application.fractions && application.fractions.length > 0) {
+    const walletMap = new Map<string, number>();
+
+    application.fractions.forEach((fraction: any) => {
+      if (fraction.splits && fraction.splits.length > 0) {
+        fraction.splits.forEach((split: any) => {
+          const currentCount = walletMap.get(split.buyer) || 0;
+          walletMap.set(split.buyer, currentCount + 1);
+        });
+      }
+    });
+
+    // Convert map to array format
+    walletMap.forEach((fractions, walletAddress) => {
+      sponsorWallets.push({ walletAddress, fractions });
+    });
+
+    // Sort by number of fractions purchased (descending)
+    sponsorWallets.sort((a, b) => b.fractions - a.fractions);
+  }
   return {
     ...application,
     finalProtocolFee: formatUnits(
@@ -61,6 +91,7 @@ function stringifyApplicationFields(
       auditFieldsCRS?.netCarbonCreditEarningWeekly !== null
         ? auditFieldsCRS.netCarbonCreditEarningWeekly.toString()
         : undefined,
+    sponsorWallets: sponsorWallets.length > 0 ? sponsorWallets : undefined,
   };
 }
 
@@ -99,8 +130,20 @@ export const findAllCompletedApplications = async (withDocuments?: boolean) => {
     },
     with: {
       fractions: {
+        where: eq(fractions.status, FRACTION_STATUS.FILLED),
         columns: {
           id: true,
+          status: true,
+          totalSteps: true,
+          splitsSold: true,
+        },
+        with: {
+          splits: {
+            columns: {
+              buyer: true,
+              amount: true,
+            },
+          },
         },
       },
       zone: {
