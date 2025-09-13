@@ -1,6 +1,7 @@
-import { eq, desc, and, gt } from "drizzle-orm";
+import { eq, desc, and, gt, inArray } from "drizzle-orm";
 import { db } from "../../db";
 import { fractions } from "../../schema";
+import { FRACTION_STATUS } from "../../../constants/fractions";
 
 /**
  * Finds all fractions for a given application ID
@@ -50,7 +51,7 @@ export async function findLatestFractionByApplicationId(applicationId: string) {
 }
 
 /**
- * Finds the active fraction for an application (not expired and not committed on-chain)
+ * Finds the active fraction for an application (draft or committed status, not expired)
  *
  * @param applicationId - The application ID
  * @returns The active fraction or null if none exist
@@ -63,7 +64,10 @@ export async function findActiveFractionByApplicationId(applicationId: string) {
     .where(
       and(
         eq(fractions.applicationId, applicationId),
-        eq(fractions.isCommittedOnChain, false),
+        inArray(fractions.status, [
+          FRACTION_STATUS.DRAFT,
+          FRACTION_STATUS.COMMITTED,
+        ]),
         gt(fractions.expirationAt, now)
       )
     )
@@ -88,7 +92,7 @@ export async function hasFilledFraction(
     .where(
       and(
         eq(fractions.applicationId, applicationId),
-        eq(fractions.isFilled, true)
+        eq(fractions.status, FRACTION_STATUS.FILLED)
       )
     )
     .limit(1);

@@ -49,10 +49,8 @@ import {
 } from "@glowlabs-org/utils/browser";
 import { getUniqueStarNameForApplicationId } from "../farms/farmsRouter";
 import { findFractionById } from "../../db/queries/fractions/findFractionsByApplicationId";
-import {
-  markFractionAsCommitted,
-  markFractionAsFilled,
-} from "../../db/mutations/fractions/createFraction";
+import { markFractionAsFilled } from "../../db/mutations/fractions/createFraction";
+import { getFractionEventService } from "../../services/eventListener";
 
 /**
  * Helper function to complete an application and create a farm with devices
@@ -79,6 +77,10 @@ async function completeApplicationAndCreateFarm({
   protocolFeeAdditionalPaymentTxHash?: string | null;
   payer: string;
 }) {
+  if (application.status === ApplicationStatusEnum.completed) {
+    throw new Error("Application is already completed");
+  }
+
   // Get unique farm name
   const farmName = await getUniqueStarNameForApplicationId(application.id);
   if (!farmName) {
@@ -1140,212 +1142,6 @@ export const publicApplicationsRoutes = new Elysia()
       detail: {
         summary: "Get Application Price Quotes by applicationId",
         description: `Returns all price quotes for the specified applicationId`,
-        tags: [TAG.APPLICATIONS],
-      },
-    }
-  )
-  .post(
-    "/fractions/mark-as-committed",
-    async ({ body, set, headers }) => {
-      try {
-        const apiKey = headers["x-api-key"];
-        if (!apiKey) {
-          set.status = 400;
-          return "API Key is required";
-        }
-        if (apiKey !== process.env.GUARDED_API_KEY) {
-          set.status = 401;
-          return "Unauthorized";
-        }
-
-        const fraction = await findFractionById(body.fractionId);
-        if (!fraction) {
-          set.status = 404;
-          return "Fraction not found";
-        }
-
-        if (fraction.isCommittedOnChain) {
-          set.status = 400;
-          return "Fraction is already committed on-chain";
-        }
-
-        // Validate token address is GLW
-        const glwAddress = forwarderAddresses.GLW.toLowerCase();
-        if (body.token.toLowerCase() !== glwAddress) {
-          set.status = 400;
-          return `Invalid token address: ${body.token}. Must be GLW token (${forwarderAddresses.GLW})`;
-        }
-
-        // Validate owner matches the fraction creator
-        if (body.owner.toLowerCase() !== fraction.createdBy.toLowerCase()) {
-          set.status = 400;
-          return `Owner mismatch: ${body.owner} does not match fraction creator ${fraction.createdBy}`;
-        }
-
-        const updatedFraction = await markFractionAsCommitted(
-          body.fractionId,
-          body.txHash,
-          body.token,
-          body.owner,
-          body.step,
-          body.totalSteps
-        );
-
-        return updatedFraction[0];
-      } catch (e) {
-        if (e instanceof Error) {
-          set.status = 400;
-          return e.message;
-        }
-        console.log("[publicRoutes] /fractions/mark-as-committed", e);
-        throw new Error("Error Occured");
-      }
-    },
-    {
-      body: t.Object({
-        fractionId: t.String({
-          description: "The fraction ID (bytes32 hex string)",
-        }),
-        txHash: t.String({
-          description: "The transaction hash of the on-chain commitment",
-          minLength: 66,
-          maxLength: 66,
-        }),
-        token: t.String({
-          description: "The token address (must be GLW)",
-          minLength: 42,
-          maxLength: 42,
-        }),
-        owner: t.String({
-          description: "The owner address (must match fraction creator)",
-          minLength: 42,
-          maxLength: 42,
-        }),
-        step: t.String({
-          description: "The price in GLW (18 decimals) for each fraction",
-        }),
-        totalSteps: t.Number({
-          description: "The total number of steps",
-          minimum: 1,
-        }),
-      }),
-      detail: {
-        summary: "Mark fraction as committed on-chain",
-        description:
-          "Updates a fraction to mark it as committed on-chain with the transaction hash and price details. Requires API key authentication.",
-        tags: [TAG.APPLICATIONS],
-      },
-    }
-  )
-  .post(
-    "/fractions/mark-as-filled",
-    async ({ body, set, headers }) => {
-      try {
-        const apiKey = headers["x-api-key"];
-        if (!apiKey) {
-          set.status = 400;
-          return "API Key is required";
-        }
-        if (apiKey !== process.env.GUARDED_API_KEY) {
-          set.status = 401;
-          return "Unauthorized";
-        }
-
-        const fraction = await findFractionById(body.fractionId);
-        if (!fraction) {
-          set.status = 404;
-          return "Fraction not found";
-        }
-
-        if (fraction.isFilled) {
-          set.status = 400;
-          return "Fraction is already filled";
-        }
-
-        // Ensure fraction is committed on-chain
-        if (!fraction.isCommittedOnChain) {
-          set.status = 400;
-          return "Fraction must be committed on-chain before it can be filled";
-        }
-
-        // Ensure all required fields are present
-        if (
-          !fraction.token ||
-          !fraction.owner ||
-          !fraction.step ||
-          !fraction.totalSteps
-        ) {
-          set.status = 400;
-          return "Fraction is missing required commitment fields (token, owner, step, totalSteps)";
-        }
-
-        // Get the application data
-        const application = await FindFirstApplicationById(
-          fraction.applicationId
-        );
-        if (!application) {
-          set.status = 404;
-          return "Application not found";
-        }
-
-        // Calculate payment amount (step * totalSteps)
-        const stepBigInt = BigInt(fraction.step);
-        const totalStepsBigInt = BigInt(fraction.totalSteps);
-        const paymentAmount = (stepBigInt * totalStepsBigInt).toString();
-
-        const updatedFraction = await markFractionAsFilled(
-          body.fractionId,
-          body.txHash
-        );
-
-        // Trigger application completion with the fraction payment data
-        if (application.gca?.id && application.user?.id) {
-          if (
-            application.auditFields?.devices &&
-            application.auditFields?.devices.length > 0
-          ) {
-            await completeApplicationAndCreateFarm({
-              application,
-              txHash: body.txHash,
-              paymentDate: body.paymentDate,
-              paymentCurrency: "GLW" as (typeof PAYMENT_CURRENCIES)[number],
-              paymentEventType: "OnchainFractionRoundFilled",
-              paymentAmount: paymentAmount,
-              protocolFee: BigInt(application.finalProtocolFeeBigInt),
-              protocolFeeAdditionalPaymentTxHash: null,
-              payer: fraction.owner,
-            });
-          }
-        }
-
-        return updatedFraction[0];
-      } catch (e) {
-        if (e instanceof Error) {
-          set.status = 400;
-          return e.message;
-        }
-        console.log("[publicRoutes] /fractions/mark-as-filled", e);
-        throw new Error("Error Occured");
-      }
-    },
-    {
-      body: t.Object({
-        fractionId: t.String({
-          description: "The fraction ID (bytes32 hex string)",
-        }),
-        txHash: t.String({
-          description: "The transaction hash of the fill transaction",
-          minLength: 66,
-          maxLength: 66,
-        }),
-        paymentDate: t.Date({
-          description: "The date of the payment",
-        }),
-      }),
-      detail: {
-        summary: "Mark fraction as filled",
-        description:
-          "Updates a fraction to mark it as filled with the transaction hash. Once filled, no new fractions can be created for the application. Requires API key authentication.",
         tags: [TAG.APPLICATIONS],
       },
     }

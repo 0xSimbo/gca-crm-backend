@@ -10,6 +10,7 @@ import {
   findFractionById,
   findActiveFractionByApplicationId,
 } from "../../db/queries/fractions/findFractionsByApplicationId";
+import { findFractionSplits } from "../../db/queries/fractions/findFractionSplits";
 
 export const fractionsRouter = new Elysia({ prefix: "/fractions" })
   .use(bearerplugin())
@@ -184,6 +185,70 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
             summary: "Get active fraction by application ID",
             description:
               "Returns the active fraction for an application (not expired and not committed on-chain)",
+            tags: [TAG.APPLICATIONS],
+          },
+        }
+      )
+      .get(
+        "/splits",
+        async ({ query: { fractionId }, set, userId }) => {
+          if (!fractionId) {
+            set.status = 400;
+            return "fractionId is required";
+          }
+
+          try {
+            const fraction = await findFractionById(fractionId);
+            if (!fraction) {
+              set.status = 404;
+              return "Fraction not found";
+            }
+
+            const application = await FindFirstApplicationById(
+              fraction.applicationId
+            );
+            if (!application) {
+              set.status = 404;
+              return "Associated application not found";
+            }
+
+            // Check if user has access to this fraction
+            if (
+              application.userId !== userId &&
+              fraction.createdBy !== userId
+            ) {
+              const account = await findFirstAccountById(userId);
+              if (
+                !account ||
+                (account.role !== "ADMIN" && account.role !== "GCA")
+              ) {
+                set.status = 401;
+                return "Unauthorized";
+              }
+            }
+
+            const splits = await findFractionSplits(fractionId);
+            return {
+              fractionId,
+              totalSplits: splits.length,
+              splits,
+            };
+          } catch (e) {
+            if (e instanceof Error) {
+              set.status = 400;
+              return e.message;
+            }
+            console.log("[fractionsRouter] /splits", e);
+            throw new Error("Error Occured");
+          }
+        },
+        {
+          query: t.Object({
+            fractionId: t.String(),
+          }),
+          detail: {
+            summary: "Get fraction splits by fraction ID",
+            description: "Returns all splits (sales) for a specific fraction",
             tags: [TAG.APPLICATIONS],
           },
         }

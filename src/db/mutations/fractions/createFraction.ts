@@ -1,9 +1,22 @@
 import { db } from "../../db";
-import { fractions, FractionInsertType } from "../../schema";
-import { eq } from "drizzle-orm";
+import {
+  fractions,
+  FractionInsertType,
+  fractionSplits,
+  FractionSplitInsertType,
+} from "../../schema";
+import { eq, sql } from "drizzle-orm";
 import { generateUniqueFractionId } from "../../../utils/fractions/generateFractionId";
-import { FRACTION_LIFETIME_MS } from "../../../constants/fractions";
+import {
+  FRACTION_LIFETIME_MS,
+  FRACTION_STATUS,
+  VALID_SPONSOR_SPLIT_PERCENTAGES,
+} from "../../../constants/fractions";
 import { hasFilledFraction } from "../../queries/fractions/findFractionsByApplicationId";
+import { FindFirstApplicationById } from "../../queries/applications/findFirstApplicationById";
+import { completeApplicationWithDocumentsAndCreateFarmWithDevices } from "../applications/completeApplicationWithDocumentsAndCreateFarm";
+import { getUniqueStarNameForApplicationId } from "../../../routers/farms/farmsRouter";
+import { getFractionEventService } from "../../../services/eventListener";
 
 export interface CreateFractionParams {
   applicationId: string;
@@ -20,6 +33,15 @@ export interface CreateFractionParams {
  * @throws Error if the application already has a filled fraction
  */
 export async function createFraction(params: CreateFractionParams) {
+  // Validate sponsor split percentage
+  if (!VALID_SPONSOR_SPLIT_PERCENTAGES.includes(params.sponsorSplitPercent)) {
+    throw new Error(
+      `Invalid sponsor split percentage: ${
+        params.sponsorSplitPercent
+      }. Must be one of: ${VALID_SPONSOR_SPLIT_PERCENTAGES.join(", ")}`
+    );
+  }
+
   // Check if the application already has a filled fraction
   const alreadyFilled = await hasFilledFraction(params.applicationId);
   if (alreadyFilled) {
@@ -47,9 +69,9 @@ export async function createFraction(params: CreateFractionParams) {
     txHash: null,
     committedAt: null,
     isFilled: false,
-    filledTxHash: null,
     filledAt: null,
     expirationAt,
+    status: FRACTION_STATUS.DRAFT,
   };
 
   const result = await db.insert(fractions).values(fractionData).returning();
@@ -86,6 +108,7 @@ export async function markFractionAsCommitted(
       owner,
       step,
       totalSteps,
+      status: FRACTION_STATUS.COMMITTED,
     })
     .where(eq(fractions.id, fractionId))
     .returning();
@@ -95,15 +118,267 @@ export async function markFractionAsCommitted(
  * Updates a fraction when it's filled
  *
  * @param fractionId - The fraction ID
- * @param txHash - The transaction hash
  */
-export async function markFractionAsFilled(fractionId: string, txHash: string) {
+export async function markFractionAsFilled(fractionId: string) {
   return await db
     .update(fractions)
     .set({
       isFilled: true,
-      filledTxHash: txHash,
       filledAt: new Date(),
+      updatedAt: new Date(),
+      status: FRACTION_STATUS.FILLED,
+    })
+    .where(eq(fractions.id, fractionId))
+    .returning();
+}
+
+export interface CreateFractionSplitParams {
+  fractionId: string;
+  transactionHash: string;
+  blockNumber: string;
+  logIndex: number;
+  creator: string;
+  buyer: string;
+  step: string;
+  amount: string;
+  timestamp: number;
+}
+
+/**
+ * Records a fraction split sale and increments the splitsSold counter
+ * If splitsSold reaches totalSteps, marks the fraction as filled and completes the application
+ *
+ * @param params - The fraction split parameters from the blockchain event
+ * @returns The created fraction split and updated fraction
+ */
+export async function recordFractionSplit(params: CreateFractionSplitParams) {
+  // First, check the fraction status before starting the transaction
+  const fraction = await db
+    .select()
+    .from(fractions)
+    .where(eq(fractions.id, params.fractionId))
+    .limit(1);
+
+  if (!fraction[0]) {
+    throw new Error(`Fraction not found: ${params.fractionId}`);
+  }
+
+  // Validate fraction is in a valid state to record splits
+  if (fraction[0].status !== FRACTION_STATUS.COMMITTED) {
+    throw new Error(
+      `Cannot record split for fraction in status: ${fraction[0].status}. Fraction must be committed.`
+    );
+  }
+
+  // Check if fraction has expired
+  if (new Date() > fraction[0].expirationAt) {
+    throw new Error(
+      `Cannot record split for expired fraction: ${params.fractionId}`
+    );
+  }
+
+  const transactionResult = await db.transaction(async (tx) => {
+    // Insert the fraction split record
+    const splitData: FractionSplitInsertType = {
+      fractionId: params.fractionId,
+      transactionHash: params.transactionHash,
+      blockNumber: params.blockNumber,
+      logIndex: params.logIndex,
+      creator: params.creator,
+      buyer: params.buyer,
+      step: params.step,
+      amount: params.amount,
+      timestamp: params.timestamp,
+      createdAt: new Date(),
+    };
+
+    const [createdSplit] = await tx
+      .insert(fractionSplits)
+      .values(splitData)
+      .returning();
+
+    // Increment the splitsSold counter
+    const [updatedFraction] = await tx
+      .update(fractions)
+      .set({
+        splitsSold: sql`${fractions.splitsSold} + 1`,
+        updatedAt: new Date(),
+      })
+      .where(eq(fractions.id, params.fractionId))
+      .returning();
+
+    // Check if the fraction is now fully filled
+    if (
+      updatedFraction.totalSteps &&
+      updatedFraction.splitsSold >= updatedFraction.totalSteps &&
+      updatedFraction.status !== FRACTION_STATUS.FILLED
+    ) {
+      // Mark as filled
+      const [filledFraction] = await tx
+        .update(fractions)
+        .set({
+          isFilled: true,
+          filledAt: new Date(),
+          updatedAt: new Date(),
+          status: FRACTION_STATUS.FILLED,
+        })
+        .where(eq(fractions.id, params.fractionId))
+        .returning();
+
+      return {
+        split: createdSplit,
+        fraction: filledFraction,
+        shouldCompleteApplication: true,
+      };
+    }
+
+    return {
+      split: createdSplit,
+      fraction: updatedFraction,
+      shouldCompleteApplication: false,
+    };
+  });
+
+  // If the fraction was just filled, complete the application
+  if (transactionResult.shouldCompleteApplication) {
+    try {
+      // Get the application data
+      const application = await FindFirstApplicationById(
+        transactionResult.fraction.applicationId
+      );
+
+      if (!application) {
+        console.error(
+          "[recordFractionSplit] Application not found for fraction:",
+          params.fractionId
+        );
+        return transactionResult;
+      }
+
+      // Calculate payment amount (step * totalSteps)
+      const stepBigInt = BigInt(transactionResult.fraction.step!);
+      const totalStepsBigInt = BigInt(transactionResult.fraction.totalSteps!);
+      const paymentAmount = (stepBigInt * totalStepsBigInt).toString();
+
+      // Complete the application if it has all required data
+      if (application.gca?.id && application.user?.id) {
+        if (
+          application.auditFields?.devices &&
+          application.auditFields?.devices.length > 0
+        ) {
+          // Get unique farm name
+          const farmName = await getUniqueStarNameForApplicationId(
+            application.id
+          );
+          if (!farmName) {
+            console.error(
+              "[recordFractionSplit] Failed to get a unique farm name for application:",
+              application.id
+            );
+            return transactionResult;
+          }
+
+          await completeApplicationWithDocumentsAndCreateFarmWithDevices({
+            protocolFeePaymentHash: params.transactionHash,
+            paymentDate: new Date(params.timestamp * 1000),
+            paymentCurrency: "GLW",
+            paymentEventType: "OnchainFractionRoundFilled",
+            paymentAmount: paymentAmount,
+            applicationId: application.id,
+            gcaId: application.gcaAddress || application.gca?.id,
+            userId: application.userId || application.user?.id,
+            devices: application.auditFields?.devices || [],
+            protocolFee: BigInt(application.finalProtocolFeeBigInt),
+            protocolFeeAdditionalPaymentTxHash: null,
+            lat: application.enquiryFields?.lat || "0",
+            lng: application.enquiryFields?.lng || "0",
+            farmName,
+            payer: transactionResult.fraction.owner!,
+          });
+
+          console.log(
+            "[recordFractionSplit] Successfully completed application and created farm for fraction:",
+            params.fractionId
+          );
+        }
+      }
+
+      // Emit fraction.closed event when filled
+      try {
+        const eventService = getFractionEventService();
+        await eventService.emitFractionClosed({
+          fractionId: params.fractionId,
+          transactionHash: params.transactionHash,
+          blockNumber: params.blockNumber,
+          logIndex: params.logIndex,
+          token: transactionResult.fraction.token || "",
+          owner: transactionResult.fraction.owner || "",
+          timestamp: params.timestamp,
+        });
+      } catch (eventError) {
+        console.error(
+          "[recordFractionSplit] Failed to emit fraction.closed event:",
+          eventError
+        );
+        // Don't fail the operation if event emission fails
+      }
+    } catch (error) {
+      console.error(
+        "[recordFractionSplit] Error completing application for fraction:",
+        params.fractionId,
+        error
+      );
+      // Don't throw the error - the fraction split was recorded successfully
+    }
+  }
+
+  return transactionResult;
+}
+
+/**
+ * Gets the current splits sold count for a fraction
+ *
+ * @param fractionId - The fraction ID
+ * @returns The current splits sold count
+ */
+export async function getFractionSplitsSold(fractionId: string) {
+  const result = await db
+    .select({ splitsSold: fractions.splitsSold })
+    .from(fractions)
+    .where(eq(fractions.id, fractionId))
+    .limit(1);
+
+  return result[0]?.splitsSold ?? 0;
+}
+
+/**
+ * Marks a fraction as cancelled
+ *
+ * @param fractionId - The fraction ID
+ * @returns The updated fraction
+ */
+export async function markFractionAsCancelled(fractionId: string) {
+  return await db
+    .update(fractions)
+    .set({
+      status: FRACTION_STATUS.CANCELLED,
+      updatedAt: new Date(),
+    })
+    .where(eq(fractions.id, fractionId))
+    .returning();
+}
+
+/**
+ * Marks a fraction as expired
+ *
+ * @param fractionId - The fraction ID
+ * @returns The updated fraction
+ */
+export async function markFractionAsExpired(fractionId: string) {
+  return await db
+    .update(fractions)
+    .set({
+      status: FRACTION_STATUS.EXPIRED,
       updatedAt: new Date(),
     })
     .where(eq(fractions.id, fractionId))

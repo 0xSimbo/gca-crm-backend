@@ -98,6 +98,11 @@ export const findAllCompletedApplications = async (withDocuments?: boolean) => {
       payer: true,
     },
     with: {
+      fractions: {
+        columns: {
+          id: true,
+        },
+      },
       zone: {
         columns: {
           id: true,

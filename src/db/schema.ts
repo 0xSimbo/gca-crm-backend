@@ -1865,7 +1865,6 @@ export const fractions = pgTable(
     txHash: varchar("tx_hash", { length: 66 }),
     committedAt: timestamp("committed_at"),
     isFilled: boolean("is_filled").notNull().default(false),
-    filledTxHash: varchar("filled_tx_hash", { length: 66 }),
     filledAt: timestamp("filled_at"),
     sponsorSplitPercent: integer("sponsor_split_percent").notNull(),
     expirationAt: timestamp("expiration_at").notNull(),
@@ -1874,6 +1873,8 @@ export const fractions = pgTable(
     owner: varchar("owner", { length: 42 }), // Owner address that must match
     step: varchar("step", { length: 78 }), // Price in GLW (18 decimals) as string
     totalSteps: integer("total_steps"), // Total number of steps
+    splitsSold: integer("splits_sold").notNull().default(0), // Counter for sold splits
+    status: varchar("status", { length: 20 }).notNull().default("draft"), // draft, committed, cancelled, filled, expired
   },
   (t) => ({
     applicationIdNonceIndex: uniqueIndex("application_id_nonce_unique_ix").on(
@@ -1890,7 +1891,40 @@ export const fractions = pgTable(
 export type FractionType = InferSelectModel<typeof fractions>;
 export type FractionInsertType = typeof fractions.$inferInsert;
 
-export const FractionsRelations = relations(fractions, ({ one }) => ({
+/**
+ * Tracks individual fraction split sales
+ */
+export const fractionSplits = pgTable(
+  "fraction_splits",
+  {
+    id: serial("id").primaryKey(),
+    fractionId: varchar("fraction_id", { length: 66 })
+      .notNull()
+      .references(() => fractions.id, { onDelete: "cascade" }),
+    transactionHash: varchar("transaction_hash", { length: 66 }).notNull(),
+    blockNumber: varchar("block_number", { length: 20 }).notNull(),
+    logIndex: integer("log_index").notNull(),
+    creator: varchar("creator", { length: 42 }).notNull(),
+    buyer: varchar("buyer", { length: 42 }).notNull(),
+    step: varchar("step", { length: 78 }).notNull(), // Step number as string
+    amount: varchar("amount", { length: 78 }).notNull(), // Amount as string (18 decimals)
+    timestamp: integer("timestamp").notNull(), // Unix timestamp
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    fractionIdIndex: index("fraction_splits_fraction_id_ix").on(t.fractionId),
+    txHashLogIndex: uniqueIndex(
+      "fraction_splits_tx_hash_log_index_unique_ix"
+    ).on(t.transactionHash, t.logIndex),
+    creatorIndex: index("fraction_splits_creator_ix").on(t.creator),
+    buyerIndex: index("fraction_splits_buyer_ix").on(t.buyer),
+  })
+);
+
+export type FractionSplitType = InferSelectModel<typeof fractionSplits>;
+export type FractionSplitInsertType = typeof fractionSplits.$inferInsert;
+
+export const FractionsRelations = relations(fractions, ({ one, many }) => ({
   application: one(applications, {
     fields: [fractions.applicationId],
     references: [applications.id],
@@ -1899,4 +1933,60 @@ export const FractionsRelations = relations(fractions, ({ one }) => ({
     fields: [fractions.createdBy],
     references: [wallets.id],
   }),
+  splits: many(fractionSplits),
 }));
+
+export const FractionSplitsRelations = relations(fractionSplits, ({ one }) => ({
+  fraction: one(fractions, {
+    fields: [fractionSplits.fractionId],
+    references: [fractions.id],
+  }),
+  creatorWallet: one(wallets, {
+    fields: [fractionSplits.creator],
+    references: [wallets.id],
+  }),
+  buyerWallet: one(wallets, {
+    fields: [fractionSplits.buyer],
+    references: [wallets.id],
+  }),
+}));
+
+/**
+ * Tracks failed fraction operations for retry and monitoring
+ */
+export const failedFractionOperations = pgTable(
+  "failed_fraction_operations",
+  {
+    id: serial("id").primaryKey(),
+    fractionId: varchar("fraction_id", { length: 66 }),
+    operationType: varchar("operation_type", { length: 50 }).notNull(), // 'create', 'commit', 'fill', 'split', 'expire', 'cancel'
+    eventType: varchar("event_type", { length: 50 }), // 'fraction.created', 'fraction.sold', 'fraction.closed'
+    eventPayload: json("event_payload"), // Store the full event payload for retry
+    errorMessage: text("error_message").notNull(),
+    errorStack: text("error_stack"),
+    retryCount: integer("retry_count").notNull().default(0),
+    maxRetries: integer("max_retries").notNull().default(3),
+    status: varchar("status", { length: 20 }).notNull().default("pending"), // 'pending', 'retrying', 'failed', 'resolved'
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+    resolvedAt: timestamp("resolved_at"),
+  },
+  (t) => ({
+    fractionIdIndex: index("failed_fraction_operations_fraction_id_ix").on(
+      t.fractionId
+    ),
+    statusIndex: index("failed_fraction_operations_status_ix").on(t.status),
+    operationTypeIndex: index(
+      "failed_fraction_operations_operation_type_ix"
+    ).on(t.operationType),
+    createdAtIndex: index("failed_fraction_operations_created_at_ix").on(
+      t.createdAt
+    ),
+  })
+);
+
+export type FailedFractionOperationType = InferSelectModel<
+  typeof failedFractionOperations
+>;
+export type FailedFractionOperationInsertType =
+  typeof failedFractionOperations.$inferInsert;

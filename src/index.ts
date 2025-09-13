@@ -27,6 +27,10 @@ import { adminRouter } from "./routers/admin-router/adminRouter";
 import { zonesRouter } from "./routers/zones/zonesRouter";
 import { fractionsRouter } from "./routers/fractions-router/fractionsRouter";
 import { incrementStaleFractions } from "./crons/increment-stale-fractions/incrementStaleFractions";
+import { expireFractions } from "./crons/expire-fractions/expireFractions";
+import { initializeFractionEventService } from "./services/eventListener";
+import { retryFailedOperations } from "./services/retryFailedOperations";
+import { createSlackClient } from "./slack/create-slack-client";
 
 const PORT = process.env.PORT || 3005;
 const app = new Elysia()
@@ -129,6 +133,38 @@ const app = new Elysia()
       },
     })
   )
+  .use(
+    cron({
+      name: "Expire Fractions",
+      pattern: "0 * * * *", // Every hour
+      async run() {
+        try {
+          const result = await expireFractions();
+          console.log(
+            `[Cron] Expire Fractions: Expired ${result.expired} fractions`
+          );
+        } catch (error) {
+          console.error("[Cron] Error in Expire Fractions:", error);
+        }
+      },
+    })
+  )
+  .use(
+    cron({
+      name: "Retry Failed Operations",
+      pattern: "*/15 * * * *", // Every 15 minutes
+      async run() {
+        try {
+          const result = await retryFailedOperations();
+          console.log(
+            `[Cron] Retry Failed Operations: ${result.retried} retried, ${result.resolved} resolved, ${result.failed} failed`
+          );
+        } catch (error) {
+          console.error("[Cron] Error in Retry Failed Operations:", error);
+        }
+      },
+    })
+  )
   .get(
     "/trigger-merkle-root-cron",
     async ({
@@ -145,6 +181,28 @@ const app = new Elysia()
     async ({
       store: {
         cron: { "Increment Stale Fractions": cronJob },
+      },
+    }) => {
+      await cronJob.trigger();
+      return { message: "success" };
+    }
+  )
+  .get(
+    "/trigger-expire-fractions-cron",
+    async ({
+      store: {
+        cron: { "Expire Fractions": cronJob },
+      },
+    }) => {
+      await cronJob.trigger();
+      return { message: "success" };
+    }
+  )
+  .get(
+    "/trigger-retry-failed-operations-cron",
+    async ({
+      store: {
+        cron: { "Retry Failed Operations": cronJob },
       },
     }) => {
       await cronJob.trigger();
@@ -182,7 +240,7 @@ const app = new Elysia()
       return { message: "error" };
     }
   })
-  .get("/legacyFarms", async ({ params }) => {
+  .get("/legacyFarms", async () => {
     return legacyFarms;
   })
   .get("/", () => "Hey!")
@@ -191,5 +249,50 @@ const app = new Elysia()
 console.log(
   `🦊 Elysia is running at ${app.server?.hostname}:${app.server?.port}`
 );
+
+// Initialize Slack bot
+let slackBot: ReturnType<typeof createSlackClient> | undefined;
+if (process.env.SLACK_BOT_TOKEN) {
+  slackBot = createSlackClient(process.env.SLACK_BOT_TOKEN);
+  slackBot.start();
+  console.log("✅ Slack bot initialized");
+}
+
+// Initialize and start the fraction event service
+if (
+  process.env.RABBITMQ_ADMIN_USER &&
+  process.env.RABBITMQ_ADMIN_PASSWORD &&
+  process.env.RABBITMQ_QUEUE
+) {
+  const fractionEventService = initializeFractionEventService();
+
+  fractionEventService
+    .startListener()
+    .then(() => {
+      console.log("✅ Fraction event service started successfully");
+    })
+    .catch((error) => {
+      console.error("❌ Failed to start fraction event service:", error);
+    });
+
+  // Graceful shutdown
+  process.on("SIGINT", async () => {
+    console.log("Shutting down gracefully...");
+    await fractionEventService.stopListener();
+    await fractionEventService.disconnect();
+    process.exit(0);
+  });
+
+  process.on("SIGTERM", async () => {
+    console.log("Shutting down gracefully...");
+    await fractionEventService.stopListener();
+    await fractionEventService.disconnect();
+    process.exit(0);
+  });
+} else {
+  console.warn(
+    "⚠️ Fraction event service not initialized - missing environment variables (RABBITMQ_ADMIN_USER, RABBITMQ_ADMIN_PASSWORD, RABBITMQ_QUEUE)"
+  );
+}
 
 export type ApiType = typeof app;

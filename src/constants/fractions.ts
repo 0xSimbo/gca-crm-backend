@@ -17,3 +17,15 @@ export const FRACTION_STALE_PERIOD_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 // Time periods (in days for easier reading)
 export const FRACTION_LIFETIME_DAYS = 28; // 4 weeks
 export const FRACTION_STALE_PERIOD_DAYS = 7; // 7 days
+
+// Fraction status constants
+export const FRACTION_STATUS = {
+  DRAFT: "draft",
+  COMMITTED: "committed",
+  CANCELLED: "cancelled",
+  FILLED: "filled",
+  EXPIRED: "expired",
+} as const;
+
+export type FractionStatus =
+  (typeof FRACTION_STATUS)[keyof typeof FRACTION_STATUS];

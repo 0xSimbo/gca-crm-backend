@@ -1,4 +1,4 @@
-import { Elysia } from "elysia";
+import { Elysia, t } from "elysia";
 import {
   ApplicationEnquiryFieldsCRSInsertType,
   ApplicationInsertType,
@@ -55,6 +55,7 @@ import { Coordinates } from "../../types/geography.types";
 import { getDevicesLifetimeMetrics } from "../../crons/update-farm-rewards/get-devices-lifetime-metrics";
 import { updateDeviceRewardsForWeek } from "../../crons/update-farm-rewards/update-device-rewards-for-week";
 import { updateFarmRewardsForWeek } from "../../crons/update-farm-rewards/update-farm-rewards-for-week";
+import { manualRetryFailedOperation } from "../../services/retryFailedOperations";
 
 function parseAuditDate(input?: string): Date | undefined {
   if (!input) return undefined;
@@ -1265,7 +1266,69 @@ export const adminRouter = new Elysia({ prefix: "/admin" })
         error: error instanceof Error ? error.message : "Unknown error",
       };
     }
-  });
+  })
+  .get(
+    "/retry-failed-operation/:operationId",
+    async ({ params, set }) => {
+      try {
+        const operationId = parseInt(params.operationId);
+
+        if (isNaN(operationId)) {
+          set.status = 400;
+          return {
+            message: "Invalid operation ID",
+            error: "Operation ID must be a number",
+          };
+        }
+
+        console.log(
+          `[adminRouter] Manual retry requested for operation ${operationId}`
+        );
+
+        const result = await manualRetryFailedOperation(operationId);
+
+        set.status = result.success ? 200 : 500;
+
+        return {
+          message: result.success
+            ? `Successfully retried operation ${operationId}`
+            : `Failed to retry operation ${operationId}`,
+          result,
+        };
+      } catch (error) {
+        console.error("Error in manual retry:", error);
+        set.status = 500;
+
+        const errorMessage =
+          error instanceof Error ? error.message : "Unknown error";
+
+        // Special handling for specific error cases
+        if (errorMessage.includes("not found")) {
+          set.status = 404;
+        } else if (errorMessage.includes("already resolved")) {
+          set.status = 400;
+        }
+
+        return {
+          message: "Error retrying failed operation",
+          error: errorMessage,
+        };
+      }
+    },
+    {
+      detail: {
+        summary: "Manually retry a failed fraction operation",
+        description:
+          "Manually retries a specific failed fraction operation by its ID. " +
+          "This is useful when automatic retries have failed and manual intervention is required. " +
+          "Note: Operations are only automatically retried once before requiring manual retry.",
+        tags: ["admin", "fractions", "maintenance"],
+        query: t.Object({
+          operationId: t.String(),
+        }),
+      },
+    }
+  );
 // .get("/anonymize-users-and-installers", async ({ set }) => {
 //   if (process.env.NODE_ENV === "production") {
 //     set.status = 404;
