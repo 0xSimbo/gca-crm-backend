@@ -34,10 +34,10 @@ export class FractionEventService {
     if (
       !process.env.RABBITMQ_ADMIN_USER ||
       !process.env.RABBITMQ_ADMIN_PASSWORD ||
-      !process.env.RABBITMQ_QUEUE
+      !process.env.RABBITMQ_QUEUE_NAME
     ) {
       throw new Error(
-        "RABBITMQ_ADMIN_USER, RABBITMQ_ADMIN_PASSWORD, and RABBITMQ_QUEUE must be set"
+        "RABBITMQ_ADMIN_USER, RABBITMQ_ADMIN_PASSWORD, and RABBITMQ_QUEUE_NAME must be set"
       );
     }
 
@@ -51,7 +51,7 @@ export class FractionEventService {
     this.listener = createGlowEventListener({
       username: process.env.RABBITMQ_ADMIN_USER,
       password: process.env.RABBITMQ_ADMIN_PASSWORD,
-      queueName: process.env.RABBITMQ_QUEUE,
+      queueName: process.env.RABBITMQ_QUEUE_NAME,
       zoneId: 0,
     });
 

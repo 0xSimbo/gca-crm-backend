@@ -262,7 +262,7 @@ if (process.env.SLACK_BOT_TOKEN) {
 if (
   process.env.RABBITMQ_ADMIN_USER &&
   process.env.RABBITMQ_ADMIN_PASSWORD &&
-  process.env.RABBITMQ_QUEUE
+  process.env.RABBITMQ_QUEUE_NAME
 ) {
   const fractionEventService = initializeFractionEventService();
 
@@ -291,7 +291,7 @@ if (
   });
 } else {
   console.warn(
-    "⚠️ Fraction event service not initialized - missing environment variables (RABBITMQ_ADMIN_USER, RABBITMQ_ADMIN_PASSWORD, RABBITMQ_QUEUE)"
+    "⚠️ Fraction event service not initialized - missing environment variables (RABBITMQ_ADMIN_USER, RABBITMQ_ADMIN_PASSWORD, RABBITMQ_QUEUE_NAME)"
   );
 }
 
