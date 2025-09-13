@@ -262,33 +262,40 @@ if (process.env.SLACK_BOT_TOKEN) {
 if (
   process.env.RABBITMQ_ADMIN_USER &&
   process.env.RABBITMQ_ADMIN_PASSWORD &&
-  process.env.RABBITMQ_QUEUE_NAME
+  process.env.RABBITMQ_QUEUE_NAME &&
+  process.env.NODE_ENV
 ) {
-  const fractionEventService = initializeFractionEventService();
+  if (process.env.NODE_ENV === "staging") {
+    console.log(
+      "⚠️ Fraction event service not initialized - staging environment"
+    );
+  } else {
+    const fractionEventService = initializeFractionEventService();
 
-  fractionEventService
-    .startListener()
-    .then(() => {
-      console.log("✅ Fraction event service started successfully");
-    })
-    .catch((error) => {
-      console.error("❌ Failed to start fraction event service:", error);
+    fractionEventService
+      .startListener()
+      .then(() => {
+        console.log("✅ Fraction event service started successfully");
+      })
+      .catch((error) => {
+        console.error("❌ Failed to start fraction event service:", error);
+      });
+
+    // Graceful shutdown
+    process.on("SIGINT", async () => {
+      console.log("Shutting down gracefully...");
+      await fractionEventService.stopListener();
+      await fractionEventService.disconnect();
+      process.exit(0);
     });
 
-  // Graceful shutdown
-  process.on("SIGINT", async () => {
-    console.log("Shutting down gracefully...");
-    await fractionEventService.stopListener();
-    await fractionEventService.disconnect();
-    process.exit(0);
-  });
-
-  process.on("SIGTERM", async () => {
-    console.log("Shutting down gracefully...");
-    await fractionEventService.stopListener();
-    await fractionEventService.disconnect();
-    process.exit(0);
-  });
+    process.on("SIGTERM", async () => {
+      console.log("Shutting down gracefully...");
+      await fractionEventService.stopListener();
+      await fractionEventService.disconnect();
+      process.exit(0);
+    });
+  }
 } else {
   console.warn(
     "⚠️ Fraction event service not initialized - missing environment variables (RABBITMQ_ADMIN_USER, RABBITMQ_ADMIN_PASSWORD, RABBITMQ_QUEUE_NAME)"
