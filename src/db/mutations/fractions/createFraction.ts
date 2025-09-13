@@ -32,7 +32,7 @@ export interface CreateFractionParams {
  * @returns The created fraction with the generated ID
  * @throws Error if the application already has a filled fraction
  */
-export async function createFraction(params: CreateFractionParams) {
+export async function createFraction(params: CreateFractionParams, tx?: any) {
   // Validate sponsor split percentage
   if (!VALID_SPONSOR_SPLIT_PERCENTAGES.includes(params.sponsorSplitPercent)) {
     throw new Error(
@@ -74,7 +74,10 @@ export async function createFraction(params: CreateFractionParams) {
     status: FRACTION_STATUS.DRAFT,
   };
 
-  const result = await db.insert(fractions).values(fractionData).returning();
+  const result = await (tx || db)
+    .insert(fractions)
+    .values(fractionData)
+    .returning();
 
   return result[0];
 }

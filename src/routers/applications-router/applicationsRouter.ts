@@ -2041,6 +2041,19 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               )}`;
             }
 
+            // Determine the effective maxSplits value
+            let effectiveMaxSplits = application.maxSplits;
+            if (!effectiveMaxSplits || effectiveMaxSplits === "0") {
+              // Get the default maxSplits if application doesn't have a custom value
+              const defaultMaxSplitsResult = await findActiveDefaultMaxSplits();
+              if (defaultMaxSplitsResult.length > 0) {
+                effectiveMaxSplits =
+                  defaultMaxSplitsResult[0].maxSplits.toString();
+              } else {
+                throw new Error("No default maxSplits found");
+              }
+            }
+
             // Check if there's an existing active fraction for this application
             const existingFraction = await findLatestFractionByApplicationId(
               application.id
@@ -2063,43 +2076,39 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               updateFields.publishedOnAuctionTimestamp = new Date();
             }
 
-            await updateApplication(application.id, updateFields);
-
-            let fraction;
-
-            // If there's an existing uncommitted fraction, update it; otherwise create a new one
-            if (existingFraction && !existingFraction.isCommittedOnChain) {
-              // Update the existing fraction with the new sponsor split percentage
-              // Keep the same expirationAt to maintain the original 4-week deadline
-              fraction = await db
-                .update(fractions)
-                .set({
-                  sponsorSplitPercent,
-                  updatedAt: new Date(),
-                })
-                .where(eq(fractions.id, existingFraction.id))
-                .returning();
-              fraction = fraction[0];
-            } else {
-              // Create a new fraction entry for this application
-              fraction = await createFraction({
-                applicationId: application.id,
-                createdBy: userId,
-                sponsorSplitPercent,
-              });
-            }
-
-            // Determine the effective maxSplits value
-            let effectiveMaxSplits = application.maxSplits;
-            if (!effectiveMaxSplits || effectiveMaxSplits === "0") {
-              // Get the default maxSplits if application doesn't have a custom value
-              const defaultMaxSplitsResult = await findActiveDefaultMaxSplits();
-              if (defaultMaxSplitsResult.length > 0) {
-                effectiveMaxSplits =
-                  defaultMaxSplitsResult[0].maxSplits.toString();
+            let fraction: any;
+            await db.transaction(async (tx) => {
+              // If there's an existing uncommitted fraction, update it; otherwise create a new one
+              if (existingFraction && !existingFraction.isCommittedOnChain) {
+                // Update the existing fraction with the new sponsor split percentage
+                // Keep the same expirationAt to maintain the original 4-week deadline
+                fraction = await tx
+                  .update(fractions)
+                  .set({
+                    sponsorSplitPercent,
+                    updatedAt: new Date(),
+                  })
+                  .where(eq(fractions.id, existingFraction.id))
+                  .returning();
+                fraction = fraction[0];
               } else {
-                effectiveMaxSplits = "0"; // Fallback if no default is set
+                // Create a new fraction entry for this application
+                fraction = await createFraction(
+                  {
+                    applicationId: application.id,
+                    createdBy: userId,
+                    sponsorSplitPercent,
+                  },
+                  tx
+                );
               }
+
+              await updateApplication(application.id, updateFields);
+            });
+
+            if (!fraction) {
+              console.error("Failed to create or update fraction", fraction);
+              throw new Error("Failed to create or update fraction");
             }
 
             return {
