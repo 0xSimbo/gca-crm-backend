@@ -5,51 +5,91 @@ import {
   applications,
   fractions,
   fractionSplits,
+  type FractionType,
+  type FractionSplitType,
+  type ZoneType,
+  type ApplicationEnquiryFieldsCRSInsertType,
+  type ApplicationAuditFieldsCRSInsertType,
 } from "../../schema";
 import { formatUnits } from "viem";
 import { ApplicationStatusEnum } from "../../../types/api-types/Application";
 import { FRACTION_STATUS } from "../../../constants/fractions";
 
+type SponsorWallet = {
+  walletAddress: string;
+  fractions: number;
+};
+
+type StringifiedApplicationResult = {
+  finalProtocolFee: string;
+  finalProtocolFeeBigInt: string;
+  paymentAmount: string;
+  auditFees: string;
+  maxSplits: string;
+  sponsorWallets?: SponsorWallet[];
+  sponsorSplitPercent?: number;
+  [key: string]: any;
+};
+
 function stringifyApplicationFields(
-  application: any,
+  application: any, // Keep flexible for now since query structure varies
   zone: any,
   enquiryFieldsCRS?: any,
   auditFieldsCRS?: any
-) {
-  // Aggregate sponsor wallets from fraction splits
-  const sponsorWallets: Array<{ walletAddress: string; fractions: number }> =
-    [];
+): StringifiedApplicationResult {
+  // Find the filled fraction (there should only be one)
+  const filledFraction = application.fractions?.find(
+    (fraction: any) =>
+      fraction.isFilled && fraction.status === FRACTION_STATUS.FILLED
+  );
 
-  if (application.fractions && application.fractions.length > 0) {
-    const walletMap = new Map<string, number>();
+  // Aggregate sponsor wallets ONLY from filled fractions
+  const sponsorWallets: SponsorWallet[] = [];
+  let sponsorSplitPercent: number | undefined;
 
-    application.fractions.forEach((fraction: any) => {
-      if (fraction.splits && fraction.splits.length > 0) {
-        fraction.splits.forEach((split: any) => {
-          const currentCount = walletMap.get(split.buyer) || 0;
-          walletMap.set(split.buyer, currentCount + 1);
-        });
-      }
-    });
+  if (filledFraction) {
+    // Get the sponsor split percentage from the filled fraction
+    sponsorSplitPercent = filledFraction.sponsorSplitPercent;
 
-    // Convert map to array format
-    walletMap.forEach((fractions, walletAddress) => {
-      sponsorWallets.push({ walletAddress, fractions });
-    });
+    // Count fractions purchased by each wallet from the filled fraction's splits
+    if (filledFraction.splits && filledFraction.splits.length > 0) {
+      const walletMap = new Map<string, number>();
 
-    // Sort by number of fractions purchased (descending)
-    sponsorWallets.sort((a, b) => b.fractions - a.fractions);
+      filledFraction.splits.forEach((split: FractionSplitType) => {
+        const currentCount = walletMap.get(split.buyer) || 0;
+        walletMap.set(split.buyer, currentCount + 1);
+      });
+
+      // Convert map to array format
+      walletMap.forEach((fractionCount, walletAddress) => {
+        sponsorWallets.push({ walletAddress, fractions: fractionCount });
+      });
+
+      // Sort by number of fractions purchased (descending)
+      sponsorWallets.sort((a, b) => b.fractions - a.fractions);
+    }
   }
+  // Helper function to safely convert to bigint
+  const toBigInt = (
+    value: bigint | string | null | undefined,
+    defaultValue: bigint = BigInt(0)
+  ): bigint => {
+    if (value === undefined || value === null) return defaultValue;
+    return typeof value === "string" ? BigInt(value) : value;
+  };
+
+  const finalProtocolFeeBigInt = toBigInt(application.finalProtocolFee);
+  const paymentAmountBigInt = toBigInt(application.paymentAmount);
+  const auditFeesBigInt = toBigInt(application.auditFees);
+  const maxSplitsBigInt = toBigInt(application.maxSplits);
+
   return {
     ...application,
-    finalProtocolFee: formatUnits(
-      (application.finalProtocolFee || BigInt(0)) as bigint,
-      6
-    ),
-    finalProtocolFeeBigInt: application.finalProtocolFee.toString(),
-    paymentAmount: application.paymentAmount.toString(),
-    auditFees: application.auditFees?.toString() || "0",
-    maxSplits: application.maxSplits?.toString() || "0",
+    finalProtocolFee: formatUnits(finalProtocolFeeBigInt, 6),
+    finalProtocolFeeBigInt: finalProtocolFeeBigInt.toString(),
+    paymentAmount: paymentAmountBigInt.toString(),
+    auditFees: auditFeesBigInt.toString(),
+    maxSplits: maxSplitsBigInt.toString(),
     ...enquiryFieldsCRS,
     ...auditFieldsCRS,
     zone,
@@ -92,6 +132,7 @@ function stringifyApplicationFields(
         ? auditFieldsCRS.netCarbonCreditEarningWeekly.toString()
         : undefined,
     sponsorWallets: sponsorWallets.length > 0 ? sponsorWallets : undefined,
+    sponsorSplitPercent,
   };
 }
 
@@ -292,6 +333,23 @@ export const findCompletedApplication = async ({
       payer: true,
     },
     with: {
+      fractions: {
+        where: eq(fractions.status, FRACTION_STATUS.FILLED),
+        columns: {
+          id: true,
+          status: true,
+          totalSteps: true,
+          splitsSold: true,
+        },
+        with: {
+          splits: {
+            columns: {
+              buyer: true,
+              amount: true,
+            },
+          },
+        },
+      },
       zone: {
         columns: {
           id: true,
