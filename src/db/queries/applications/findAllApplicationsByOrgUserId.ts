@@ -31,8 +31,6 @@ export const findAllApplicationsByOrgUserId = async (
           maxSplits: true,
           preInstallVisitDate: true,
           afterInstallVisitDate: true,
-          sponsorSplitPercent: true,
-          isPublishedOnAuction: true,
         },
         with: {
           enquiryFieldsCRS: {

@@ -71,7 +71,7 @@ import { findAllApplicationsOwnersByIds } from "../../db/queries/applications/fi
 import { createOrganizationApplicationBatch } from "../../db/mutations/organizations/createOrganizationApplicationBatch";
 import { deleteOrganizationApplicationBatch } from "../../db/mutations/organizations/deleteOrganizationApplicationBatch";
 import { findAllApplicationsByOrgUserId } from "../../db/queries/applications/findAllApplicationsByOrgUserId";
-import { eq } from "drizzle-orm";
+import { eq, and, not } from "drizzle-orm";
 import { findFirstOrgMemberwithShareAllApplications } from "../../db/queries/organizations/findFirstOrgMemberwithShareAllApplications";
 import { findOrganizationsMemberByUserIdAndOrganizationIds } from "../../db/queries/organizations/findOrganizationsMemberByUserIdAndOrganizationIds";
 import { findUsedTxHash } from "../../db/queries/applications/findUsedTxHash";
@@ -93,13 +93,18 @@ import { publicApplicationsRoutes } from "./publicRoutes";
 import { approveOrAskRoutes } from "./approveOrAskRoutes";
 import { organizationApplicationRoutes } from "./organizationApplicationRoutes";
 import { parseUnits } from "viem";
-import { createFraction } from "../../db/mutations/fractions/createFraction";
+import {
+  createFraction,
+  validateFractionCanBeModified,
+  createSafeFractionUpdateWhere,
+} from "../../db/mutations/fractions/createFraction";
 import { findLatestFractionByApplicationId } from "../../db/queries/fractions/findFractionsByApplicationId";
 import {
   MIN_SPONSOR_SPLIT_PERCENT,
   MAX_SPONSOR_SPLIT_PERCENT,
   SPONSOR_SPLIT_INCREMENT,
   VALID_SPONSOR_SPLIT_PERCENTAGES,
+  FRACTION_STATUS,
 } from "../../constants/fractions";
 import { findActiveDefaultMaxSplits } from "../../db/queries/defaultMaxSplits/findActiveDefaultMaxSplits";
 
@@ -2059,6 +2064,15 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               application.id
             );
             if (existingFraction) {
+              // CRITICAL: Prevent any modification of filled fractions
+              if (
+                existingFraction.isFilled ||
+                existingFraction.status === FRACTION_STATUS.FILLED
+              ) {
+                set.status = 400;
+                return `Cannot modify fraction: fraction is already filled and cannot be changed`;
+              }
+
               // If there's an active fraction, don't allow reducing the sponsor split percentage
               if (sponsorSplitPercent <= existingFraction.sponsorSplitPercent) {
                 set.status = 400;
@@ -2066,29 +2080,25 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               }
             }
 
-            const updateFields: any = {
-              sponsorSplitPercent,
-              sponsorSplitUpdatedAt: new Date(),
-            };
-
-            if (!application.isPublishedOnAuction) {
-              updateFields.isPublishedOnAuction = true;
-              updateFields.publishedOnAuctionTimestamp = new Date();
-            }
+            // No need to update application fields anymore since we use fractions
 
             let fraction: any;
             await db.transaction(async (tx) => {
               // If there's an existing uncommitted fraction, update it; otherwise create a new one
               if (existingFraction && !existingFraction.isCommittedOnChain) {
+                // CRITICAL: Double-check fraction can be modified before updating
+                validateFractionCanBeModified(existingFraction);
+
                 // Update the existing fraction with the new sponsor split percentage
                 // Keep the same expirationAt to maintain the original 4-week deadline
+                // Use safe update WHERE clause to ensure we never update filled fractions
                 fraction = await tx
                   .update(fractions)
                   .set({
                     sponsorSplitPercent,
                     updatedAt: new Date(),
                   })
-                  .where(eq(fractions.id, existingFraction.id))
+                  .where(createSafeFractionUpdateWhere(existingFraction.id))
                   .returning();
                 fraction = fraction[0];
               } else {
@@ -2102,8 +2112,6 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                   tx
                 );
               }
-
-              await updateApplication(application.id, updateFields);
             });
 
             if (!fraction) {

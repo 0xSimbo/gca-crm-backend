@@ -22,8 +22,6 @@ export const findAllApplicationsAssignedToGca = async (gcaAddress: string) => {
       revisedKwhGeneratedPerYear: true,
       preInstallVisitDate: true,
       afterInstallVisitDate: true,
-      sponsorSplitPercent: true,
-      isPublishedOnAuction: true,
     },
     with: {
       enquiryFieldsCRS: {

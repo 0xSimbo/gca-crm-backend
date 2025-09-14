@@ -831,12 +831,6 @@ export const applications = pgTable("applications", {
   isDocumentsCorrupted: boolean("is_documents_corrupted")
     .notNull()
     .default(false),
-  isPublishedOnAuction: boolean("is_published_on_auction")
-    .notNull()
-    .default(false),
-  publishedOnAuctionTimestamp: timestamp("published_on_auction_timestamp"),
-  sponsorSplitPercent: integer("sponsor_split_percent"),
-  sponsorSplitUpdatedAt: timestamp("sponsor_split_updated_at"),
   // null if application just got created
   updatedAt: timestamp("updatedAt"),
   declarationOfIntentionSignature: varchar(

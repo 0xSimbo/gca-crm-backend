@@ -1,10 +1,11 @@
-import { and, lt, eq, gt } from "drizzle-orm";
+import { and, lt, eq, gt, not } from "drizzle-orm";
 import { db } from "../../db/db";
 import { fractions } from "../../db/schema";
 import {
   MAX_SPONSOR_SPLIT_PERCENT,
   SPONSOR_SPLIT_INCREMENT,
   FRACTION_STALE_PERIOD_MS,
+  FRACTION_STATUS,
 } from "../../constants/fractions";
 
 /**
@@ -34,10 +35,13 @@ export async function incrementStaleFractions() {
       .from(fractions)
       .where(
         and(
-          // Not committed on-chain
-          eq(fractions.isCommittedOnChain, false),
           // Haven't been updated in the past 7 days
           lt(fractions.updatedAt, staleThreshold),
+          // Not cancelled
+          not(eq(fractions.status, FRACTION_STATUS.CANCELLED)),
+          // CRITICAL: Not filled (filled fractions cannot be modified)
+          eq(fractions.isFilled, false),
+          not(eq(fractions.status, FRACTION_STATUS.FILLED)),
           // Not expired yet
           gt(fractions.expirationAt, now),
           // Current sponsor split is less than max (80%)
@@ -58,6 +62,14 @@ export async function incrementStaleFractions() {
 
     // Update each fraction
     for (const fraction of staleFractions) {
+      // Double-check that fraction is not filled before updating
+      if (fraction.isFilled || fraction.status === FRACTION_STATUS.FILLED) {
+        console.warn(
+          `[incrementStaleFractions] Skipping filled fraction ${fraction.id}`
+        );
+        continue;
+      }
+
       const newSponsorSplit = Math.min(
         fraction.sponsorSplitPercent + SPONSOR_SPLIT_INCREMENT,
         MAX_SPONSOR_SPLIT_PERCENT
@@ -67,13 +79,20 @@ export async function incrementStaleFractions() {
         `[incrementStaleFractions] Updating fraction ${fraction.id}: ${fraction.sponsorSplitPercent}% -> ${newSponsorSplit}%`
       );
 
+      // Add WHERE clause to ensure we only update non-filled fractions
       const updated = await db
         .update(fractions)
         .set({
           sponsorSplitPercent: newSponsorSplit,
           updatedAt: now,
         })
-        .where(eq(fractions.id, fraction.id))
+        .where(
+          and(
+            eq(fractions.id, fraction.id),
+            eq(fractions.isFilled, false),
+            not(eq(fractions.status, FRACTION_STATUS.FILLED))
+          )
+        )
         .returning();
 
       if (updated.length > 0) {

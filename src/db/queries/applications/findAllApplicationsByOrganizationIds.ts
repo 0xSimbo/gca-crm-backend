@@ -21,8 +21,6 @@ export const findAllApplicationsByOrganizationIds = async (
           status: true,
           createdAt: true,
           updatedAt: true,
-          sponsorSplitPercent: true,
-          isPublishedOnAuction: true,
           currentStep: true,
           roundRobinStatus: true,
           gcaAddress: true,

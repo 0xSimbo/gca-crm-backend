@@ -5,7 +5,7 @@ import {
   fractionSplits,
   FractionSplitInsertType,
 } from "../../schema";
-import { eq, sql } from "drizzle-orm";
+import { eq, sql, and, not } from "drizzle-orm";
 import { generateUniqueFractionId } from "../../../utils/fractions/generateFractionId";
 import {
   FRACTION_LIFETIME_MS,
@@ -22,6 +22,35 @@ export interface CreateFractionParams {
   applicationId: string;
   createdBy: string;
   sponsorSplitPercent: number;
+}
+
+/**
+ * Validates that a fraction can be modified (not filled)
+ *
+ * @param fraction - The fraction to validate
+ * @throws Error if the fraction is filled and cannot be modified
+ */
+export function validateFractionCanBeModified(fraction: any) {
+  if (fraction.isFilled || fraction.status === FRACTION_STATUS.FILLED) {
+    throw new Error(
+      `Cannot modify fraction ${fraction.id}: fraction is filled and immutable`
+    );
+  }
+}
+
+/**
+ * Creates a safe WHERE clause that ensures we never update filled fractions
+ * This should be used in all fraction update operations
+ *
+ * @param fractionId - The fraction ID to update
+ * @returns A WHERE clause that includes safety checks
+ */
+export function createSafeFractionUpdateWhere(fractionId: string) {
+  return and(
+    eq(fractions.id, fractionId),
+    eq(fractions.isFilled, false),
+    not(eq(fractions.status, FRACTION_STATUS.FILLED))
+  );
 }
 
 /**

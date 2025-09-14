@@ -37,8 +37,9 @@ import {
   Devices,
   Documents,
   zones,
+  fractions,
 } from "../../db/schema";
-import { eq, inArray, and, asc, desc, exists, sql } from "drizzle-orm";
+import { eq, inArray, and, asc, desc, exists, sql, gt } from "drizzle-orm";
 import { completeApplicationWithDocumentsAndCreateFarmWithDevices } from "../../db/mutations/applications/completeApplicationWithDocumentsAndCreateFarm";
 import { getPubkeysAndShortIds } from "../devices/get-pubkeys-and-short-ids";
 import { findAllAuditFeesPaidApplicationsByZoneId } from "../../db/queries/applications/findAllAuditFeesPaidApplicationsByZoneId";
@@ -48,7 +49,6 @@ import {
   TRANSFER_TYPES,
 } from "@glowlabs-org/utils/browser";
 import { getUniqueStarNameForApplicationId } from "../farms/farmsRouter";
-import { findActiveFractionByApplicationId } from "../../db/queries/fractions/findFractionsByApplicationId";
 import { findFractionById } from "../../db/queries/fractions/findFractionsByApplicationId";
 import { markFractionAsFilled } from "../../db/mutations/fractions/createFraction";
 import { getFractionEventService } from "../../services/eventListener";
@@ -164,25 +164,17 @@ export const publicApplicationsRoutes = new Elysia()
         }
 
         // Build where conditions
-        let whereConditions = and(
+        const baseConditions = [
           eq(applications.status, ApplicationStatusEnum.waitingForPayment),
-          eq(applications.isPublishedOnAuction, true)
-        );
+        ];
 
         // Add zoneId filter if specified
         if (parsedZoneId !== undefined) {
-          whereConditions = and(
-            whereConditions,
-            eq(applications.zoneId, parsedZoneId)
-          );
+          baseConditions.push(eq(applications.zoneId, parsedZoneId));
         }
 
-        // Note: Payment currency filtering is done in JavaScript after the query
-        // due to complexities with JSON column querying in SQL
-
         // Add zone filter for accepting sponsors - join with zones table
-        whereConditions = and(
-          whereConditions,
+        baseConditions.push(
           exists(
             db
               .select()
@@ -196,18 +188,35 @@ export const publicApplicationsRoutes = new Elysia()
           )
         );
 
+        // Add filter to only show applications that have active fractions
+        baseConditions.push(
+          exists(
+            db
+              .select()
+              .from(fractions)
+              .where(
+                and(
+                  eq(fractions.applicationId, applications.id),
+                  inArray(fractions.status, ["draft", "committed"]),
+                  gt(fractions.expirationAt, new Date())
+                )
+              )
+          )
+        );
+
+        const whereConditions = and(...baseConditions);
+
+        // Note: Payment currency filtering is done in JavaScript after the query
+        // due to complexities with JSON column querying in SQL
+
         // Determine sort order for SQL
         const sortOrderFn = sortOrder === "desc" ? desc : asc;
         let orderByClause;
 
         switch (sortBy) {
-          case "publishedOnAuctionTimestamp":
-            orderByClause = sortOrderFn(
-              applications.publishedOnAuctionTimestamp
-            );
-            break;
           case "sponsorSplitPercent":
-            orderByClause = sortOrderFn(applications.sponsorSplitPercent);
+            // Sort by fraction sponsor split percent instead
+            orderByClause = sortOrderFn(fractions.sponsorSplitPercent);
             break;
           case "finalProtocolFee":
             orderByClause = sortOrderFn(applications.finalProtocolFee);
@@ -236,8 +245,8 @@ export const publicApplicationsRoutes = new Elysia()
             }
             break;
           default:
-            // Default sort by publishedOnAuctionTimestamp descending
-            orderByClause = desc(applications.publishedOnAuctionTimestamp);
+            // Default sort by fraction creation date descending
+            orderByClause = desc(fractions.createdAt);
             break;
         }
 
@@ -250,9 +259,6 @@ export const publicApplicationsRoutes = new Elysia()
             zoneId: true,
             status: true,
             createdAt: true,
-            isPublishedOnAuction: true,
-            publishedOnAuctionTimestamp: true,
-            sponsorSplitPercent: true,
             finalProtocolFee: true,
             paymentCurrency: true,
             paymentEventType: true,
@@ -314,6 +320,30 @@ export const publicApplicationsRoutes = new Elysia()
                 url: true,
               },
             },
+            fractions: {
+              where: and(
+                inArray(fractions.status, ["draft", "committed"]),
+                gt(fractions.expirationAt, new Date())
+              ),
+              columns: {
+                id: true,
+                nonce: true,
+                status: true,
+                sponsorSplitPercent: true,
+                createdAt: true,
+                expirationAt: true,
+                isCommittedOnChain: true,
+                isFilled: true,
+                totalSteps: true,
+                splitsSold: true,
+                step: true,
+                token: true,
+                owner: true,
+                txHash: true,
+              },
+              orderBy: desc(fractions.createdAt),
+              limit: 1, // Get only the latest active fraction
+            },
           },
         });
 
@@ -330,32 +360,25 @@ export const publicApplicationsRoutes = new Elysia()
           });
         }
 
-        // Get active fractions for all applications in parallel
-        const applicationIds = filteredApplications.map((app) => app.id);
-        const activeFractionsPromises = applicationIds.map((id) =>
-          findActiveFractionByApplicationId(id)
-        );
-        const activeFractions = await Promise.all(activeFractionsPromises);
-
-        // Create a map for quick lookup
-        const fractionMap = new Map();
-        activeFractions.forEach((fraction, index) => {
-          if (fraction) {
-            fractionMap.set(applicationIds[index], fraction);
-          }
+        // Filter out applications without active fractions (double-check SQL filtering)
+        filteredApplications = filteredApplications.filter((app) => {
+          return app.fractions && app.fractions.length > 0;
         });
 
         return filteredApplications.map((app) => {
-          const activeFraction = fractionMap.get(app.id);
+          // Get the active fraction directly from the query result
+          const activeFraction =
+            app.fractions && app.fractions.length > 0 ? app.fractions[0] : null;
 
           return {
             id: app.id,
             userId: app.userId,
             status: app.status,
             createdAt: app.createdAt,
-            isPublishedOnAuction: app.isPublishedOnAuction,
-            publishedOnAuctionTimestamp: app.publishedOnAuctionTimestamp,
-            sponsorSplitPercent: app.sponsorSplitPercent,
+            // Use fraction data instead of application fields
+            isPublishedOnAuction: !!activeFraction, // Has fraction = published on auction
+            publishedOnAuctionTimestamp: activeFraction?.createdAt || null,
+            sponsorSplitPercent: activeFraction?.sponsorSplitPercent || null,
             finalProtocolFee: app.finalProtocolFee?.toString(),
             paymentCurrency: app.paymentCurrency,
             paymentEventType: app.paymentEventType,
@@ -451,7 +474,7 @@ export const publicApplicationsRoutes = new Elysia()
       }),
       detail: {
         summary: "Get auction applications available for sponsorship",
-        description: `Returns applications that are waiting for payment, published on auction, and in zones accepting sponsors. Supports filtering by zoneId and paymentCurrency, and sorting by publishedOnAuctionTimestamp, sponsorSplitPercent, finalProtocolFee, or paymentCurrency. When sorting by paymentCurrency with a specific currency filter, sorts by lowest price for that currency. Includes application price quotes, related data, and active fraction information (if any) showing funding progress, steps sold, amounts raised, and expiration details.`,
+        description: `Returns applications that are waiting for payment, published on auction, in zones accepting sponsors, and have active fractions available for purchase. Only applications with active fractions (draft or committed status, not expired) are returned. Supports filtering by zoneId and paymentCurrency, and sorting by publishedOnAuctionTimestamp, sponsorSplitPercent, finalProtocolFee, or paymentCurrency. When sorting by paymentCurrency with a specific currency filter, sorts by lowest price for that currency. Includes application price quotes, related data, and active fraction information showing funding progress, steps sold, amounts raised, and expiration details.`,
         tags: [TAG.APPLICATIONS],
       },
     }
@@ -1031,9 +1054,6 @@ export const publicApplicationsRoutes = new Elysia()
             afterInstallVisitDateConfirmedTimestamp: new Date(),
             finalProtocolFee: BigInt(12668490000),
             revisedEstimatedProtocolFees: "12668",
-            sponsorSplitPercent: 50,
-            isPublishedOnAuction: true,
-            publishedOnAuctionTimestamp: new Date(),
           });
 
           await tx.insert(ApplicationsEncryptedMasterKeys).values({

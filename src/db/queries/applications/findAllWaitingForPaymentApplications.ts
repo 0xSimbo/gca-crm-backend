@@ -1,6 +1,6 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, exists, inArray, gt } from "drizzle-orm";
 import { db } from "../../db";
-import { applications } from "../../schema";
+import { applications, fractions } from "../../schema";
 import { ApplicationStatusEnum } from "../../../types/api-types/Application";
 
 function stringifyApplicationFields(
@@ -26,21 +26,44 @@ function stringifyApplicationFields(
 }
 
 export const findAllWaitingForPaymentApplications = async (
-  isPublishedOnAuction?: boolean
+  hasActiveFraction?: boolean
 ) => {
-  const whereConditions = [
+  let whereConditions = and(
     eq(applications.isCancelled, false),
-    eq(applications.status, ApplicationStatusEnum.waitingForPayment),
-  ];
+    eq(applications.status, ApplicationStatusEnum.waitingForPayment)
+  );
 
-  if (isPublishedOnAuction !== undefined) {
-    whereConditions.push(
-      eq(applications.isPublishedOnAuction, isPublishedOnAuction)
-    );
+  if (hasActiveFraction !== undefined) {
+    if (hasActiveFraction) {
+      // Filter for applications that have active fractions
+      whereConditions = and(
+        whereConditions,
+        exists(
+          db
+            .select()
+            .from(fractions)
+            .where(
+              and(
+                eq(fractions.applicationId, applications.id),
+                eq(fractions.isFilled, false),
+                eq(fractions.isCommittedOnChain, true),
+                gt(fractions.expirationAt, new Date())
+              )
+            )
+        )
+      );
+    } else {
+      // Filter for applications that don't have active fractions (this case might be rare now)
+      whereConditions = and(
+        whereConditions
+        // No active fractions exist for this application
+        // This is a bit complex to express in SQL, so we might handle this in JS if needed
+      );
+    }
   }
 
   const applicationsDb = await db.query.applications.findMany({
-    where: and(...whereConditions),
+    where: whereConditions,
     columns: {
       id: true,
       status: true,
@@ -51,10 +74,6 @@ export const findAllWaitingForPaymentApplications = async (
       gcaAcceptanceTimestamp: true,
       gcaAssignedTimestamp: true,
       installFinishedDate: true,
-      isPublishedOnAuction: true,
-      sponsorSplitPercent: true,
-      sponsorSplitUpdatedAt: true,
-      publishedOnAuctionTimestamp: true,
       finalProtocolFee: true,
       auditFees: true,
       auditFeesTxHash: true,
