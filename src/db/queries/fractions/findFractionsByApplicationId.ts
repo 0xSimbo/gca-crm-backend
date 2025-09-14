@@ -115,3 +115,25 @@ export async function hasFilledFraction(
 
   return result.length > 0;
 }
+
+/**
+ * Finds the filled fraction for an application
+ *
+ * @param applicationId - The application ID
+ * @returns The filled fraction or null if none exist
+ */
+export async function findFilledFractionByApplicationId(applicationId: string) {
+  const result = await db
+    .select()
+    .from(fractions)
+    .where(
+      and(
+        eq(fractions.applicationId, applicationId),
+        eq(fractions.status, FRACTION_STATUS.FILLED)
+      )
+    )
+    .orderBy(desc(fractions.createdAt))
+    .limit(1);
+
+  return result[0] || null;
+}

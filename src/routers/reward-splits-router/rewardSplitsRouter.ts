@@ -20,6 +20,10 @@ import { findAllApplicationsRewardSplitsByUserId } from "../../db/queries/reward
 import { updateSplits } from "../../db/mutations/reward-splits/updateSplits";
 import { findAllRewardSplits } from "../../db/queries/rewardSplits/findAllRewardSplits";
 import { findActiveDefaultMaxSplits } from "../../db/queries/defaultMaxSplits/findActiveDefaultMaxSplits";
+import {
+  findActiveFractionByApplicationId,
+  findFilledFractionByApplicationId,
+} from "../../db/queries/fractions/findFractionsByApplicationId";
 
 export const rewardSplitsRouter = new Elysia({ prefix: "/rewardsSplits" })
   .get("/all", async ({ set }) => {
@@ -137,6 +141,93 @@ export const rewardSplitsRouter = new Elysia({ prefix: "/rewardsSplits" })
           detail: {
             summary: "Get All reward splits by Application ID",
             description: `Get all reward splits by application, if application is not owned by user, it will throw an error if your are not an admin or GCA`,
+            tags: [TAG.REWARD_SPLITS],
+          },
+        }
+      )
+      .get(
+        "/final-splits-by-application-id",
+        async ({ query: { id }, set, userId }) => {
+          if (!id) throw new Error("applicationId is required");
+          try {
+            const application = await FindFirstApplicationById(id);
+            if (!application) {
+              set.status = 404;
+              return "Application not found";
+            }
+
+            // Check authorization
+            if (application?.userId !== userId) {
+              const account = await findFirstAccountById(userId);
+              if (
+                !account ||
+                (account.role !== "ADMIN" && account.role !== "GCA")
+              ) {
+                set.status = 401;
+                return "Unauthorized";
+              }
+            }
+
+            // Get base reward splits
+            const rewardSplits = await findAllRewardSplitsByApplicationId(id);
+
+            // Check for active or filled fraction
+            const filledFraction = await findFilledFractionByApplicationId(id);
+            const activeFraction =
+              filledFraction || (await findActiveFractionByApplicationId(id));
+
+            // If no fraction exists, return the original splits
+            if (!activeFraction) {
+              return rewardSplits.map((split) => ({
+                ...split,
+                finalGlowSplitPercent: split.glowSplitPercent,
+                finalUsdgSplitPercent: split.usdgSplitPercent,
+                hasFraction: false,
+                sponsorSplitPercent: null,
+              }));
+            }
+
+            // Calculate final splits accounting for sponsor percentage
+            const sponsorSplitPercent = activeFraction.sponsorSplitPercent || 0;
+            const remainingGlowPercent = 100 - sponsorSplitPercent;
+
+            return rewardSplits.map((split) => ({
+              ...split,
+              // Original splits
+              originalGlowSplitPercent: split.glowSplitPercent,
+              originalUsdgSplitPercent: split.usdgSplitPercent,
+              // Final splits after sponsor allocation
+              finalGlowSplitPercent: (
+                (parseFloat(split.glowSplitPercent) * remainingGlowPercent) /
+                100
+              ).toFixed(2),
+              finalUsdgSplitPercent: "0", // USDG becomes 0 when there's a fraction
+              // Fraction info
+              hasFraction: true,
+              fractionId: activeFraction.id,
+              fractionStatus: activeFraction.status,
+              sponsorSplitPercent: sponsorSplitPercent,
+              isFilled: activeFraction.isFilled || false,
+            }));
+          } catch (e) {
+            if (e instanceof Error) {
+              set.status = 400;
+              return e.message;
+            }
+            console.log(
+              "[rewardSplitsRouter] /final-splits-by-application-id",
+              e
+            );
+            throw new Error("Error Occured");
+          }
+        },
+        {
+          query: t.Object({
+            id: t.String(),
+          }),
+          detail: {
+            summary: "Get Final reward splits by Application ID",
+            description: `Get final reward splits for an application, accounting for sponsor percentages from fractions. If a fraction exists (active or filled), the GLW splits are reduced by the sponsor percentage and USDG splits become 0. For example, if wallet 1 has 20% GLW and wallet 2 has 80% GLW, with a 50% sponsor split, the final splits become 10% and 40% respectively.`,
             tags: [TAG.REWARD_SPLITS],
           },
         }

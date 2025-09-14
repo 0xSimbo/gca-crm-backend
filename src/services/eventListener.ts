@@ -108,13 +108,27 @@ export class FractionEventService {
           "[FractionEventService] Successfully processed fraction.sold event for:",
           event.payload.fractionId
         );
-      } catch (error) {
+      } catch (error: any) {
+        // Check if this is a duplicate key error
+        if (
+          error.code === "23505" ||
+          error.message?.includes("duplicate key")
+        ) {
+          console.log(
+            "[FractionEventService] Duplicate fraction split detected (likely due to concurrent processing), ignoring:",
+            event.payload.transactionHash,
+            event.payload.logIndex
+          );
+          // This is not a real error - the split was already recorded
+          return;
+        }
+
         console.error(
           "[FractionEventService] Error processing fraction.sold event:",
           error
         );
 
-        // Record the failed operation for retry
+        // Only record as failed operation if it's not a duplicate key error
         try {
           await recordFailedFractionOperation({
             fractionId: event.payload.fractionId,
@@ -205,13 +219,27 @@ export class FractionEventService {
           "[FractionEventService] Successfully marked fraction as committed:",
           event.payload.fractionId
         );
-      } catch (error) {
+      } catch (error: any) {
+        // Check if this is a duplicate key error or already committed error
+        if (
+          error.code === "23505" ||
+          error.message?.includes("duplicate key") ||
+          error.message?.includes("already committed")
+        ) {
+          console.log(
+            "[FractionEventService] Fraction already committed (likely due to concurrent processing), ignoring:",
+            event.payload.fractionId
+          );
+          // This is not a real error - the fraction was already committed
+          return;
+        }
+
         console.error(
           "[FractionEventService] Error processing fraction.created event:",
           error
         );
 
-        // Record the failed operation for retry
+        // Only record as failed operation if it's not a duplicate/already committed error
         try {
           await recordFailedFractionOperation({
             fractionId: event.payload.fractionId,
@@ -265,13 +293,28 @@ export class FractionEventService {
             event.payload.fractionId
           );
         }
-      } catch (error) {
+      } catch (error: any) {
+        // Check if this is a duplicate key error or already processed error
+        if (
+          error.code === "23505" ||
+          error.message?.includes("duplicate key") ||
+          error.message?.includes("already cancelled") ||
+          error.message?.includes("already filled")
+        ) {
+          console.log(
+            "[FractionEventService] Fraction status already updated (likely due to concurrent processing), ignoring:",
+            event.payload.fractionId
+          );
+          // This is not a real error - the status was already updated
+          return;
+        }
+
         console.error(
           "[FractionEventService] Error processing fraction.closed event:",
           error
         );
 
-        // Record the failed operation for retry
+        // Only record as failed operation if it's not a duplicate/already processed error
         try {
           await recordFailedFractionOperation({
             fractionId: event.payload.fractionId,

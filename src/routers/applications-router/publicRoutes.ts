@@ -49,7 +49,10 @@ import {
   TRANSFER_TYPES,
 } from "@glowlabs-org/utils/browser";
 import { getUniqueStarNameForApplicationId } from "../farms/farmsRouter";
-import { findFractionById } from "../../db/queries/fractions/findFractionsByApplicationId";
+import {
+  findFractionById,
+  findActiveFractionByApplicationId,
+} from "../../db/queries/fractions/findFractionsByApplicationId";
 import { markFractionAsFilled } from "../../db/mutations/fractions/createFraction";
 import { getFractionEventService } from "../../services/eventListener";
 
@@ -726,6 +729,15 @@ export const publicApplicationsRoutes = new Elysia()
           return "Application is not waiting for payment";
         }
 
+        // CRITICAL: Check if there's an active fraction for this application
+        const activeFraction = await findActiveFractionByApplicationId(
+          application.id
+        );
+        if (activeFraction) {
+          set.status = 400;
+          return `Cannot finalize direct payment: application has an active fraction (${activeFraction.id}) that must be completed through the fraction system instead`;
+        }
+
         if (BigInt(application.finalProtocolFeeBigInt) === BigInt(0)) {
           console.error("Final Protocol Fee is not set");
           set.status = 400;
@@ -874,7 +886,7 @@ export const publicApplicationsRoutes = new Elysia()
       }),
       detail: {
         summary: "Finalize Payment",
-        description: `Finalize Payment and update the application status to paymentConfirmed`,
+        description: `Finalize direct payment for applications without active fractions. If an application has an active fraction, payment must go through the fraction system instead. Updates the application status to paymentConfirmed and creates the farm.`,
         tags: [TAG.APPLICATIONS],
       },
     }
