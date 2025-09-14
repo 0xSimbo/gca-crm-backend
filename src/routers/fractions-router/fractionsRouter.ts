@@ -11,8 +11,67 @@ import {
   findActiveFractionByApplicationId,
 } from "../../db/queries/fractions/findFractionsByApplicationId";
 import { findFractionSplits } from "../../db/queries/fractions/findFractionSplits";
+import { findActiveDefaultMaxSplits } from "../../db/queries/defaultMaxSplits/findActiveDefaultMaxSplits";
 
 export const fractionsRouter = new Elysia({ prefix: "/fractions" })
+  .get(
+    "/default-max-splits",
+    async ({ query: { applicationId }, set }) => {
+      if (!applicationId) {
+        set.status = 400;
+        return "applicationId is required";
+      }
+
+      try {
+        // Get the application to check if it has a custom maxSplits value
+        const application = await FindFirstApplicationById(applicationId);
+        if (!application) {
+          set.status = 404;
+          return "Application not found";
+        }
+
+        // If application has a custom maxSplits value (not 0), return it
+        if (application.maxSplits && application.maxSplits !== "0") {
+          return {
+            maxSplits: application.maxSplits.toString(),
+            isDefault: false,
+            source: "application_override",
+          };
+        }
+
+        // Otherwise, get the default maxSplits
+        const defaultMaxSplitsResult = await findActiveDefaultMaxSplits();
+        if (defaultMaxSplitsResult.length === 0) {
+          set.status = 404;
+          return "No default maxSplits configuration found";
+        }
+
+        return {
+          maxSplits: defaultMaxSplitsResult[0].maxSplits.toString(),
+          isDefault: true,
+          source: "default_configuration",
+        };
+      } catch (e) {
+        if (e instanceof Error) {
+          set.status = 400;
+          return e.message;
+        }
+        console.log("[fractionsRouter] /default-max-splits", e);
+        throw new Error("Error Occured");
+      }
+    },
+    {
+      query: t.Object({
+        applicationId: t.String(),
+      }),
+      detail: {
+        summary: "Get default or application-specific maxSplits value",
+        description:
+          "Returns the maxSplits value for an application - either the application-specific override or the default configuration. This determines the maximum number of fraction splits that can be sold for the application.",
+        tags: [TAG.APPLICATIONS],
+      },
+    }
+  )
   .use(bearerplugin())
   .guard(bearerGuard, (app) =>
     app

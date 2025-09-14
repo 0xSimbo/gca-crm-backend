@@ -209,53 +209,13 @@ export const publicApplicationsRoutes = new Elysia()
 
         const whereConditions = and(...baseConditions);
 
-        // Note: Payment currency filtering is done in JavaScript after the query
-        // due to complexities with JSON column querying in SQL
-
-        // Determine sort order for SQL
-        const sortOrderFn = sortOrder === "desc" ? desc : asc;
-        let orderByClause;
-
-        switch (sortBy) {
-          case "sponsorSplitPercent":
-            // Sort by fraction sponsor split percent instead
-            orderByClause = sortOrderFn(fractions.sponsorSplitPercent);
-            break;
-          case "finalProtocolFee":
-            orderByClause = sortOrderFn(applications.finalProtocolFee);
-            break;
-          case "paymentCurrency":
-            if (paymentCurrency) {
-              // Sort by the price of the specific currency using a subquery
-              orderByClause = sortOrderFn(
-                sql`(
-                  SELECT MIN(CAST(${ApplicationPriceQuotes.prices}::json->>${paymentCurrency} AS BIGINT))
-                  FROM ${ApplicationPriceQuotes}
-                  WHERE ${ApplicationPriceQuotes.applicationId} = ${applications.id}
-                  AND ${ApplicationPriceQuotes.prices}::json->>${paymentCurrency} IS NOT NULL
-                  AND CAST(${ApplicationPriceQuotes.prices}::json->>${paymentCurrency} AS BIGINT) > 0
-                )`
-              );
-            } else {
-              // Sort by number of available currencies using a subquery
-              orderByClause = sortOrderFn(
-                sql`(
-                  SELECT COUNT(DISTINCT json_object_keys(${ApplicationPriceQuotes.prices}))
-                  FROM ${ApplicationPriceQuotes}
-                  WHERE ${ApplicationPriceQuotes.applicationId} = ${applications.id}
-                )`
-              );
-            }
-            break;
-          default:
-            // Default sort by fraction creation date descending
-            orderByClause = desc(fractions.createdAt);
-            break;
-        }
+        // Note: Payment currency filtering and sorting are done in JavaScript after the query
+        // due to complexities with JSON column querying in SQL and cross-table sorting
 
         const auctionApplications = await db.query.applications.findMany({
           where: whereConditions,
-          orderBy: orderByClause,
+          // Remove orderBy from the main query since it's causing issues with joins
+          // We'll sort in JavaScript after the query
           columns: {
             id: true,
             userId: true,
@@ -367,6 +327,77 @@ export const publicApplicationsRoutes = new Elysia()
         filteredApplications = filteredApplications.filter((app) => {
           return app.fractions && app.fractions.length > 0;
         });
+
+        // Apply sorting in JavaScript since SQL orderBy was causing issues with joins
+        if (sortBy && filteredApplications.length > 0) {
+          const sortMultiplier = sortOrder === "desc" ? -1 : 1;
+
+          filteredApplications.sort((a, b) => {
+            let aValue: any;
+            let bValue: any;
+
+            switch (sortBy) {
+              case "sponsorSplitPercent":
+                aValue = a.fractions?.[0]?.sponsorSplitPercent || 0;
+                bValue = b.fractions?.[0]?.sponsorSplitPercent || 0;
+                break;
+              case "finalProtocolFee":
+                aValue = Number(a.finalProtocolFee || 0);
+                bValue = Number(b.finalProtocolFee || 0);
+                break;
+              case "paymentCurrency":
+                if (paymentCurrency) {
+                  // Sort by the price of the specific currency
+                  const aQuote = a.applicationPriceQuotes.find(
+                    (q) =>
+                      q.prices &&
+                      q.prices[paymentCurrency] &&
+                      Number(q.prices[paymentCurrency]) > 0
+                  );
+                  const bQuote = b.applicationPriceQuotes.find(
+                    (q) =>
+                      q.prices &&
+                      q.prices[paymentCurrency] &&
+                      Number(q.prices[paymentCurrency]) > 0
+                  );
+                  aValue = aQuote
+                    ? Number(aQuote.prices[paymentCurrency])
+                    : Infinity;
+                  bValue = bQuote
+                    ? Number(bQuote.prices[paymentCurrency])
+                    : Infinity;
+                } else {
+                  // Sort by number of available currencies
+                  aValue = a.applicationPriceQuotes.reduce((count, quote) => {
+                    return (
+                      count +
+                      (quote.prices ? Object.keys(quote.prices).length : 0)
+                    );
+                  }, 0);
+                  bValue = b.applicationPriceQuotes.reduce((count, quote) => {
+                    return (
+                      count +
+                      (quote.prices ? Object.keys(quote.prices).length : 0)
+                    );
+                  }, 0);
+                }
+                break;
+              default:
+                // Default sort by fraction creation date
+                aValue = a.fractions?.[0]?.createdAt
+                  ? new Date(a.fractions[0].createdAt).getTime()
+                  : 0;
+                bValue = b.fractions?.[0]?.createdAt
+                  ? new Date(b.fractions[0].createdAt).getTime()
+                  : 0;
+                break;
+            }
+
+            if (aValue < bValue) return -1 * sortMultiplier;
+            if (aValue > bValue) return 1 * sortMultiplier;
+            return 0;
+          });
+        }
 
         return filteredApplications.map((app) => {
           // Get the active fraction directly from the query result
