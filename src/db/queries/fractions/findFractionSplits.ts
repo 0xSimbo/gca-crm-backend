@@ -1,6 +1,7 @@
+import { FRACTION_STATUS } from "../../../constants/fractions";
 import { db } from "../../db";
 import { fractionSplits, fractions } from "../../schema";
-import { eq, desc, and } from "drizzle-orm";
+import { eq, desc, and, not } from "drizzle-orm";
 
 /**
  * Calculate the number of steps purchased from step price and amount
@@ -144,4 +145,31 @@ export async function findSplitsByWalletAndFraction(
       )
     )
     .orderBy(desc(fractionSplits.createdAt));
+}
+
+/**
+ * Find recent fraction splits activity with fraction details
+ *
+ * @param limit - Number of recent splits to return (default: 50)
+ * @returns Array of recent fraction splits with fraction information
+ */
+export async function findRecentSplitsActivity(limit: number = 50) {
+  return await db
+    .select({
+      split: fractionSplits,
+      fraction: {
+        id: fractions.id,
+        applicationId: fractions.applicationId,
+        status: fractions.status,
+        sponsorSplitPercent: fractions.sponsorSplitPercent,
+        totalSteps: fractions.totalSteps,
+        splitsSold: fractions.splitsSold,
+        isFilled: fractions.isFilled,
+      },
+    })
+    .from(fractionSplits)
+    .innerJoin(fractions, eq(fractionSplits.fractionId, fractions.id))
+    .orderBy(desc(fractionSplits.createdAt))
+    .where(not(eq(fractions.status, FRACTION_STATUS.CANCELLED)))
+    .limit(limit);
 }

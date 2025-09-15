@@ -13,6 +13,7 @@ import {
 import {
   findFractionSplits,
   findSplitsByWalletAndFraction,
+  findRecentSplitsActivity,
 } from "../../db/queries/fractions/findFractionSplits";
 import { findActiveDefaultMaxSplits } from "../../db/queries/defaultMaxSplits/findActiveDefaultMaxSplits";
 import { checksumAddress } from "viem";
@@ -105,7 +106,7 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
 
         // Get splits for this wallet and fraction
         const splits = await findSplitsByWalletAndFraction(
-          checksumAddress(walletAddress as `0x${string}`),
+          walletAddress.toLowerCase(),
           fractionId
         );
 
@@ -155,6 +156,128 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
         summary: "Get fraction splits owned by wallet for a specific fraction",
         description:
           "Returns all fraction splits purchased by a specific wallet address for a specific fraction, including transaction details and purchase summary with total steps purchased and amount spent.",
+        tags: [TAG.APPLICATIONS],
+      },
+    }
+  )
+  .get(
+    "/splits-activity",
+    async ({ query: { limit, walletAddress }, set }) => {
+      try {
+        const parsedLimit = limit ? parseInt(limit) : 50;
+        if (isNaN(parsedLimit) || parsedLimit < 1 || parsedLimit > 200) {
+          set.status = 400;
+          return "Limit must be a number between 1 and 200";
+        }
+
+        // Get recent splits activity
+        const recentActivity = await findRecentSplitsActivity(parsedLimit);
+
+        // Filter by wallet address if provided
+        let filteredActivity = recentActivity;
+        if (walletAddress) {
+          // Validate wallet address format
+          if (!/^0x[a-fA-F0-9]{40}$/.test(walletAddress)) {
+            set.status = 400;
+            return "Invalid wallet address format";
+          }
+
+          filteredActivity = recentActivity.filter(
+            (activity) =>
+              activity.split.buyer.toLowerCase() === walletAddress.toLowerCase()
+          );
+        }
+
+        // Transform the data for better API response
+        const activityData = filteredActivity.map((activity) => {
+          const { split, fraction } = activity;
+
+          // Calculate progress percentage
+          const progressPercent =
+            fraction.totalSteps && fraction.splitsSold
+              ? Math.round((fraction.splitsSold / fraction.totalSteps) * 100)
+              : 0;
+
+          return {
+            // Split transaction details
+            transactionHash: split.transactionHash,
+            blockNumber: split.blockNumber,
+            buyer: split.buyer,
+            creator: split.creator,
+            stepsPurchased: split.stepsPurchased,
+            amount: split.amount,
+            step: split.step,
+            timestamp: split.timestamp,
+            purchaseDate: split.createdAt,
+
+            // Fraction context
+            fractionId: fraction.id,
+            applicationId: fraction.applicationId,
+            fractionStatus: fraction.status,
+            isFilled: fraction.isFilled,
+            progressPercent,
+
+            // Purchase value calculation
+            stepPrice: split.step,
+            totalValue: split.amount,
+          };
+        });
+
+        return {
+          activity: activityData,
+          summary: {
+            totalTransactions: filteredActivity.length,
+            totalStepsPurchased: filteredActivity.reduce(
+              (sum, activity) => sum + (activity.split.stepsPurchased || 0),
+              0
+            ),
+            totalAmountSpent: filteredActivity
+              .reduce((sum, activity) => {
+                try {
+                  return sum + BigInt(activity.split.amount);
+                } catch {
+                  return sum;
+                }
+              }, BigInt(0))
+              .toString(),
+            uniqueBuyers: new Set(
+              filteredActivity.map((activity) =>
+                activity.split.buyer.toLowerCase()
+              )
+            ).size,
+            uniqueFractions: new Set(
+              filteredActivity.map((activity) => activity.fraction.id)
+            ).size,
+          },
+        };
+      } catch (e) {
+        if (e instanceof Error) {
+          set.status = 400;
+          return e.message;
+        }
+        console.log("[fractionsRouter] /splits-activity", e);
+        throw new Error("Error Occured");
+      }
+    },
+    {
+      query: t.Object({
+        limit: t.Optional(
+          t.String({
+            description:
+              "Number of recent splits to return (1-200, default: 50)",
+          })
+        ),
+        walletAddress: t.Optional(
+          t.String({
+            pattern: "^0x[a-fA-F0-9]{40}$",
+            description: "Filter by specific wallet address",
+          })
+        ),
+      }),
+      detail: {
+        summary: "Get recent fraction splits purchase activity",
+        description:
+          "Returns recent fraction purchase activity across all fractions, with optional filtering by wallet address. Includes transaction details, fraction context, progress information, and activity summary statistics.",
         tags: [TAG.APPLICATIONS],
       },
     }
