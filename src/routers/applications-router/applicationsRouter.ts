@@ -97,8 +97,12 @@ import {
   createFraction,
   validateFractionCanBeModified,
   createSafeFractionUpdateWhere,
+  markFractionAsExpired,
 } from "../../db/mutations/fractions/createFraction";
-import { findLatestFractionByApplicationId } from "../../db/queries/fractions/findFractionsByApplicationId";
+import {
+  findActiveFractionByApplicationId,
+  findLatestFractionByApplicationId,
+} from "../../db/queries/fractions/findFractionsByApplicationId";
 import {
   MIN_SPONSOR_SPLIT_PERCENT,
   MAX_SPONSOR_SPLIT_PERCENT,
@@ -2060,23 +2064,36 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
             }
 
             // Check if there's an existing active fraction for this application
-            const existingFraction = await findLatestFractionByApplicationId(
+            const latestFraction = await findLatestFractionByApplicationId(
               application.id
             );
-            if (existingFraction) {
+
+            // Check if the existing fraction is expired and mark it as expired
+            if (latestFraction && latestFraction.expirationAt < new Date()) {
+              console.log(
+                `[publish-application-to-auction] Marking expired fraction as expired: ${latestFraction.id}`
+              );
+              await markFractionAsExpired(latestFraction.id);
+            }
+
+            const activeFraction = await findActiveFractionByApplicationId(
+              application.id
+            );
+
+            if (activeFraction) {
               // CRITICAL: Prevent any modification of filled fractions
               if (
-                existingFraction.isFilled ||
-                existingFraction.status === FRACTION_STATUS.FILLED
+                activeFraction.isFilled ||
+                activeFraction.status === FRACTION_STATUS.FILLED
               ) {
                 set.status = 400;
                 return `Cannot modify fraction: fraction is already filled and cannot be changed`;
               }
 
               // If there's an active fraction, don't allow reducing the sponsor split percentage
-              if (sponsorSplitPercent <= existingFraction.sponsorSplitPercent) {
+              if (sponsorSplitPercent <= activeFraction.sponsorSplitPercent) {
                 set.status = 400;
-                return `Cannot reduce sponsor split percentage below the current active fraction (${existingFraction.sponsorSplitPercent}%). Current attempt: ${sponsorSplitPercent}%`;
+                return `Cannot reduce sponsor split percentage below the current active fraction (${activeFraction.sponsorSplitPercent}%). Current attempt: ${sponsorSplitPercent}%`;
               }
             }
 
@@ -2085,9 +2102,9 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
             let fraction: any;
             await db.transaction(async (tx) => {
               // If there's an existing uncommitted fraction, update it; otherwise create a new one
-              if (existingFraction && !existingFraction.isCommittedOnChain) {
+              if (activeFraction && !activeFraction.isCommittedOnChain) {
                 // CRITICAL: Double-check fraction can be modified before updating
-                validateFractionCanBeModified(existingFraction);
+                validateFractionCanBeModified(activeFraction);
 
                 // Update the existing fraction with the new sponsor split percentage
                 // Keep the same expirationAt to maintain the original 4-week deadline
@@ -2098,7 +2115,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                     sponsorSplitPercent,
                     updatedAt: new Date(),
                   })
-                  .where(createSafeFractionUpdateWhere(existingFraction.id))
+                  .where(createSafeFractionUpdateWhere(activeFraction.id))
                   .returning();
                 fraction = fraction[0];
               } else {

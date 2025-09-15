@@ -1241,7 +1241,6 @@ export const publicApplicationsRoutes = new Elysia()
       },
     }
   )
-
   .get(
     "/application-price-quotes",
     async ({ query, set }) => {
