@@ -1900,8 +1900,9 @@ export const fractionSplits = pgTable(
     logIndex: integer("log_index").notNull(),
     creator: varchar("creator", { length: 42 }).notNull(),
     buyer: varchar("buyer", { length: 42 }).notNull(),
-    step: varchar("step", { length: 78 }).notNull(), // Step number as string
+    step: varchar("step", { length: 78 }).notNull(), // Step price as string (18 decimals)
     amount: varchar("amount", { length: 78 }).notNull(), // Amount as string (18 decimals)
+    stepsPurchased: integer("steps_purchased").notNull(), // Number of steps purchased (amount / step)
     timestamp: integer("timestamp").notNull(), // Unix timestamp
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },

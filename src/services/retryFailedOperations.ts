@@ -11,6 +11,7 @@ import {
   markFractionAsCommitted,
   markFractionAsCancelled,
 } from "../db/mutations/fractions/createFraction";
+import { calculateStepsPurchased } from "../db/queries/fractions/findFractionSplits";
 
 /**
  * Retries a single failed operation
@@ -27,6 +28,12 @@ async function retrySingleOperation(operation: any) {
       case "split":
         if (operation.eventPayload) {
           const payload = operation.eventPayload as any;
+
+          const stepsPurchased = calculateStepsPurchased(
+            payload.step,
+            payload.amount
+          );
+
           const splitParams: CreateFractionSplitParams = {
             fractionId: payload.fractionId,
             transactionHash: payload.transactionHash,
@@ -34,6 +41,7 @@ async function retrySingleOperation(operation: any) {
             logIndex: payload.logIndex,
             creator: payload.creator,
             buyer: payload.buyer,
+            stepsPurchased: stepsPurchased,
             step: payload.step,
             amount: payload.amount,
             timestamp: payload.timestamp,

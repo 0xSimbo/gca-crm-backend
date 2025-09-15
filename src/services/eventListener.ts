@@ -9,11 +9,15 @@ import {
   markFractionAsCommitted,
   markFractionAsCancelled,
 } from "../db/mutations/fractions/createFraction";
-import { findFractionSplitByTxHash } from "../db/queries/fractions/findFractionSplits";
+import {
+  findFractionSplitByTxHash,
+  calculateStepsPurchased,
+} from "../db/queries/fractions/findFractionSplits";
 import { findFractionById } from "../db/queries/fractions/findFractionsByApplicationId";
 import { forwarderAddresses } from "../constants/addresses";
 import { FRACTION_STATUS } from "../constants/fractions";
 import { recordFailedFractionOperation } from "../db/mutations/fractions/failedFractionOperations";
+import { verifyFractionSoldTransaction } from "../utils/verifyFractionTransaction";
 
 export class FractionEventService {
   private listener?: ReturnType<typeof createGlowEventListener>;
@@ -82,6 +86,41 @@ export class FractionEventService {
           return;
         }
 
+        // CRITICAL: Verify the event payload against on-chain transaction data
+        const verification = await verifyFractionSoldTransaction(event.payload);
+        if (!verification.isValid) {
+          console.error(
+            "[FractionEventService] Transaction verification failed:",
+            verification.error,
+            "Event payload:",
+            event.payload
+          );
+
+          // Record this as a failed operation for investigation
+          await recordFailedFractionOperation({
+            fractionId: event.payload.fractionId,
+            operationType: "split",
+            eventType: "fraction.sold",
+            eventPayload: event.payload,
+            error: new Error(
+              `Transaction verification failed: ${verification.error}`
+            ),
+          });
+          return;
+        }
+
+        console.log(
+          "[FractionEventService] Transaction verification passed for:",
+          event.payload.transactionHash,
+          event.payload.logIndex
+        );
+
+        // Calculate steps purchased from step price and amount
+        const stepsPurchased = calculateStepsPurchased(
+          event.payload.step,
+          event.payload.amount
+        );
+
         // Record the fraction split
         const params: CreateFractionSplitParams = {
           fractionId: event.payload.fractionId,
@@ -92,6 +131,7 @@ export class FractionEventService {
           buyer: event.payload.buyer,
           step: event.payload.step,
           amount: event.payload.amount,
+          stepsPurchased: stepsPurchased,
           timestamp: event.payload.timestamp,
         };
 

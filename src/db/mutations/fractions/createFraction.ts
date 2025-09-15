@@ -173,6 +173,7 @@ export interface CreateFractionSplitParams {
   buyer: string;
   step: string;
   amount: string;
+  stepsPurchased: number;
   timestamp: number;
 }
 
@@ -220,6 +221,7 @@ export async function recordFractionSplit(params: CreateFractionSplitParams) {
       buyer: params.buyer,
       step: params.step,
       amount: params.amount,
+      stepsPurchased: params.stepsPurchased,
       timestamp: params.timestamp,
       createdAt: new Date(),
     };
@@ -229,11 +231,11 @@ export async function recordFractionSplit(params: CreateFractionSplitParams) {
       .values(splitData)
       .returning();
 
-    // Increment the splitsSold counter
+    // Increment the splitsSold counter by the number of steps purchased
     const [updatedFraction] = await tx
       .update(fractions)
       .set({
-        splitsSold: sql`${fractions.splitsSold} + 1`,
+        splitsSold: sql`${fractions.splitsSold} + ${params.stepsPurchased}`,
         updatedAt: new Date(),
       })
       .where(eq(fractions.id, params.fractionId))

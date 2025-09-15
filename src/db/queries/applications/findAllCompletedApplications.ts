@@ -17,7 +17,7 @@ import { FRACTION_STATUS } from "../../../constants/fractions";
 
 type SponsorWallet = {
   walletAddress: string;
-  fractions: number;
+  fractions: number; // Actually represents steps purchased, kept as 'fractions' for API compatibility
 };
 
 type StringifiedApplicationResult = {
@@ -51,21 +51,23 @@ function stringifyApplicationFields(
     // Get the sponsor split percentage from the filled fraction
     sponsorSplitPercent = filledFraction.sponsorSplitPercent;
 
-    // Count fractions purchased by each wallet from the filled fraction's splits
+    // Count steps purchased by each wallet from the filled fraction's splits
     if (filledFraction.splits && filledFraction.splits.length > 0) {
       const walletMap = new Map<string, number>();
 
       filledFraction.splits.forEach((split: FractionSplitType) => {
         const currentCount = walletMap.get(split.buyer) || 0;
-        walletMap.set(split.buyer, currentCount + 1);
+        // Use stepsPurchased instead of just counting transactions
+        const stepsPurchased = split.stepsPurchased || 1; // Fallback to 1 for backward compatibility
+        walletMap.set(split.buyer, currentCount + stepsPurchased);
       });
 
       // Convert map to array format
-      walletMap.forEach((fractionCount, walletAddress) => {
-        sponsorWallets.push({ walletAddress, fractions: fractionCount });
+      walletMap.forEach((stepsCount, walletAddress) => {
+        sponsorWallets.push({ walletAddress, fractions: stepsCount });
       });
 
-      // Sort by number of fractions purchased (descending)
+      // Sort by number of steps purchased (descending)
       sponsorWallets.sort((a, b) => b.fractions - a.fractions);
     }
   }
@@ -179,6 +181,7 @@ export const findAllCompletedApplications = async (withDocuments?: boolean) => {
             columns: {
               buyer: true,
               amount: true,
+              stepsPurchased: true,
             },
           },
         },
@@ -346,6 +349,7 @@ export const findCompletedApplication = async ({
             columns: {
               buyer: true,
               amount: true,
+              stepsPurchased: true,
             },
           },
         },

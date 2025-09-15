@@ -3,6 +3,42 @@ import { fractionSplits, fractions } from "../../schema";
 import { eq, desc, and } from "drizzle-orm";
 
 /**
+ * Calculate the number of steps purchased from step price and amount
+ * @param stepPrice - Price per step (18 decimals)
+ * @param amount - Total amount paid (18 decimals)
+ * @returns Number of steps purchased (always an integer)
+ */
+export function calculateStepsPurchased(
+  stepPrice: string,
+  amount: string
+): number {
+  try {
+    const stepPriceBigInt = BigInt(stepPrice);
+    const amountBigInt = BigInt(amount);
+
+    if (stepPriceBigInt === 0n) {
+      return 0;
+    }
+
+    // Calculate steps: amount / stepPrice
+    // Using BigInt division which automatically floors the result
+    const stepsPurchased = amountBigInt / stepPriceBigInt;
+
+    // Convert to number - BigInt division already gives us a whole number
+    const result = Number(stepsPurchased);
+
+    // Safety check: ensure we return an integer
+    return Math.floor(result);
+  } catch (error) {
+    console.error("Error calculating steps purchased:", error, {
+      stepPrice,
+      amount,
+    });
+    return 0;
+  }
+}
+
+/**
  * Find all splits for a specific fraction
  *
  * @param fractionId - The fraction ID
