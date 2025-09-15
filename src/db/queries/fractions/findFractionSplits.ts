@@ -122,3 +122,26 @@ export async function findSplitsByCreator(
     .orderBy(desc(fractionSplits.createdAt))
     .limit(limit);
 }
+
+/**
+ * Find splits by wallet address and fraction ID
+ *
+ * @param walletAddress - The wallet address (buyer)
+ * @param fractionId - The fraction ID
+ * @returns Array of fraction splits for the specific wallet and fraction
+ */
+export async function findSplitsByWalletAndFraction(
+  walletAddress: string,
+  fractionId: string
+) {
+  return await db
+    .select()
+    .from(fractionSplits)
+    .where(
+      and(
+        eq(fractionSplits.buyer, walletAddress),
+        eq(fractionSplits.fractionId, fractionId)
+      )
+    )
+    .orderBy(desc(fractionSplits.createdAt));
+}

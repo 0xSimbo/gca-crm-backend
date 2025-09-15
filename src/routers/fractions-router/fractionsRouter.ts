@@ -10,8 +10,12 @@ import {
   findFractionById,
   findActiveFractionByApplicationId,
 } from "../../db/queries/fractions/findFractionsByApplicationId";
-import { findFractionSplits } from "../../db/queries/fractions/findFractionSplits";
+import {
+  findFractionSplits,
+  findSplitsByWalletAndFraction,
+} from "../../db/queries/fractions/findFractionSplits";
 import { findActiveDefaultMaxSplits } from "../../db/queries/defaultMaxSplits/findActiveDefaultMaxSplits";
+import { checksumAddress } from "viem";
 
 export const fractionsRouter = new Elysia({ prefix: "/fractions" })
   .get(
@@ -68,6 +72,89 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
         summary: "Get default or application-specific maxSplits value",
         description:
           "Returns the maxSplits value for an application - either the application-specific override or the default configuration. This determines the maximum number of fraction splits that can be sold for the application.",
+        tags: [TAG.APPLICATIONS],
+      },
+    }
+  )
+  .get(
+    "/splits-by-wallet",
+    async ({ query: { walletAddress, fractionId }, set }) => {
+      if (!walletAddress) {
+        set.status = 400;
+        return "walletAddress is required";
+      }
+
+      if (!fractionId) {
+        set.status = 400;
+        return "fractionId is required";
+      }
+
+      try {
+        // Validate wallet address format
+        if (!/^0x[a-fA-F0-9]{40}$/.test(walletAddress)) {
+          set.status = 400;
+          return "Invalid wallet address format";
+        }
+
+        // Validate fraction exists
+        const fraction = await findFractionById(fractionId);
+        if (!fraction) {
+          set.status = 404;
+          return "Fraction not found";
+        }
+
+        // Get splits for this wallet and fraction
+        const splits = await findSplitsByWalletAndFraction(
+          checksumAddress(walletAddress as `0x${string}`),
+          fractionId
+        );
+
+        // Calculate totals
+        const totalStepsPurchased = splits.reduce(
+          (sum, split) => sum + (split.stepsPurchased || 0),
+          0
+        );
+        const totalAmountSpent = splits.reduce((sum, split) => {
+          try {
+            return sum + BigInt(split.amount);
+          } catch {
+            return sum;
+          }
+        }, BigInt(0));
+
+        return {
+          walletAddress,
+          fractionId,
+          splits,
+          summary: {
+            totalTransactions: splits.length,
+            totalStepsPurchased,
+            totalAmountSpent: totalAmountSpent.toString(),
+          },
+        };
+      } catch (e) {
+        if (e instanceof Error) {
+          set.status = 400;
+          return e.message;
+        }
+        console.log("[fractionsRouter] /splits-by-wallet", e);
+        throw new Error("Error Occured");
+      }
+    },
+    {
+      query: t.Object({
+        walletAddress: t.String({
+          pattern: "^0x[a-fA-F0-9]{40}$",
+          description: "Ethereum wallet address",
+        }),
+        fractionId: t.String({
+          description: "Fraction ID (bytes32 hex string)",
+        }),
+      }),
+      detail: {
+        summary: "Get fraction splits owned by wallet for a specific fraction",
+        description:
+          "Returns all fraction splits purchased by a specific wallet address for a specific fraction, including transaction details and purchase summary with total steps purchased and amount spent.",
         tags: [TAG.APPLICATIONS],
       },
     }
