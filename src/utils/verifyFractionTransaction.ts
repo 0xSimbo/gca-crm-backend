@@ -41,41 +41,48 @@ export async function verifyFractionSoldTransaction(eventPayload: {
       };
     }
 
-    // Find the FractionSold event log at the specified index
-    const targetLog = receipt.logs[eventPayload.logIndex];
-    if (!targetLog) {
-      return {
-        isValid: false,
-        error: `Log not found at index ${eventPayload.logIndex}`,
-      };
-    }
-
-    // Verify the log is from the correct contract
+    // Find the FractionSold event log by searching through all logs (following getForwarderDataFromTxHashReceipt.ts pattern)
     const fractionContractAddress = forwarderAddresses.OFFCHAIN_FRACTIONS;
-    if (
-      targetLog.address.toLowerCase() !== fractionContractAddress.toLowerCase()
-    ) {
+
+    const fractionSoldLog = receipt.logs.find((log) => {
+      if (log.address.toLowerCase() !== fractionContractAddress.toLowerCase()) {
+        return false;
+      }
+      try {
+        const decoded = decodeEventLog({
+          abi: OFFCHAIN_FRACTIONS_ABI as unknown as Abi,
+          eventName: "FractionSold",
+          data: log.data,
+          topics: log.topics,
+        });
+        return decoded?.eventName === "FractionSold";
+      } catch {
+        return false;
+      }
+    });
+
+    if (!fractionSoldLog) {
       return {
         isValid: false,
-        error: `Log address ${targetLog.address} does not match fraction contract ${fractionContractAddress}`,
+        error: `FractionSold event not found in transaction logs. Contract: ${fractionContractAddress}`,
       };
     }
 
     // Decode the FractionSold event
-    let decodedEvent;
-    try {
-      decodedEvent = decodeEventLog({
-        abi: OFFCHAIN_FRACTIONS_ABI as unknown as Abi,
-        eventName: "FractionSold",
-        data: targetLog.data,
-        topics: targetLog.topics,
-      }) as any;
-    } catch (decodeError) {
-      return {
-        isValid: false,
-        error: `Failed to decode FractionSold event: ${decodeError}`,
-      };
-    }
+    type FractionSoldEventArgs = {
+      id: string;
+      creator: string;
+      buyer: string;
+      step: bigint;
+      amount: bigint;
+    };
+
+    const decodedEvent = decodeEventLog({
+      abi: OFFCHAIN_FRACTIONS_ABI as unknown as Abi,
+      eventName: "FractionSold",
+      data: fractionSoldLog.data,
+      topics: fractionSoldLog.topics,
+    }) as unknown as { eventName: "FractionSold"; args: FractionSoldEventArgs };
 
     // Verify the decoded event data matches the event payload
     const onChainData = {
