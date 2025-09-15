@@ -175,6 +175,7 @@ export const findAllCompletedApplications = async (withDocuments?: boolean) => {
           status: true,
           totalSteps: true,
           splitsSold: true,
+          sponsorSplitPercent: true,
         },
         with: {
           splits: {
@@ -343,6 +344,7 @@ export const findCompletedApplication = async ({
           status: true,
           totalSteps: true,
           splitsSold: true,
+          sponsorSplitPercent: true,
         },
         with: {
           splits: {
