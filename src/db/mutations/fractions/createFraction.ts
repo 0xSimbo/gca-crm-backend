@@ -14,9 +14,8 @@ import {
 } from "../../../constants/fractions";
 import { hasFilledFraction } from "../../queries/fractions/findFractionsByApplicationId";
 import { FindFirstApplicationById } from "../../queries/applications/findFirstApplicationById";
-import { completeApplicationWithDocumentsAndCreateFarmWithDevices } from "../applications/completeApplicationWithDocumentsAndCreateFarm";
-import { getUniqueStarNameForApplicationId } from "../../../routers/farms/farmsRouter";
 import { getFractionEventService } from "../../../services/eventListener";
+import { completeApplicationAndCreateFarm } from "../../../routers/applications-router/publicRoutes";
 
 export interface CreateFractionParams {
   applicationId: string;
@@ -300,33 +299,16 @@ export async function recordFractionSplit(params: CreateFractionSplitParams) {
           application.auditFields?.devices &&
           application.auditFields?.devices.length > 0
         ) {
-          // Get unique farm name
-          const farmName = await getUniqueStarNameForApplicationId(
-            application.id
-          );
-          if (!farmName) {
-            console.error(
-              "[recordFractionSplit] Failed to get a unique farm name for application:",
-              application.id
-            );
-            return transactionResult;
-          }
-
-          await completeApplicationWithDocumentsAndCreateFarmWithDevices({
-            protocolFeePaymentHash: params.transactionHash,
+          // Use the completeApplicationAndCreateFarm helper which includes solar farm sync
+          await completeApplicationAndCreateFarm({
+            application,
+            txHash: params.transactionHash,
             paymentDate: new Date(params.timestamp * 1000),
             paymentCurrency: "GLW",
             paymentEventType: "OnchainFractionRoundFilled",
             paymentAmount: paymentAmount,
-            applicationId: application.id,
-            gcaId: application.gcaAddress || application.gca?.id,
-            userId: application.userId || application.user?.id,
-            devices: application.auditFields?.devices || [],
             protocolFee: BigInt(application.finalProtocolFeeBigInt),
             protocolFeeAdditionalPaymentTxHash: null,
-            lat: application.enquiryFields?.lat || "0",
-            lng: application.enquiryFields?.lng || "0",
-            farmName,
             payer: transactionResult.fraction.owner!,
           });
 

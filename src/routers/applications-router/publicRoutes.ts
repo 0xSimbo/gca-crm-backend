@@ -60,7 +60,7 @@ import { getFractionEventService } from "../../services/eventListener";
  * Helper function to complete an application and create a farm with devices
  * This is shared between direct payment and fraction-based payment flows
  */
-async function completeApplicationAndCreateFarm({
+export async function completeApplicationAndCreateFarm({
   application,
   txHash,
   paymentDate,
@@ -112,15 +112,16 @@ async function completeApplicationAndCreateFarm({
     }
   );
 
-  // Trigger hub solar farms sync
-  try {
-    await fetch(
-      "https://glow-impact-backend-staging.up.railway.app/hub-solar-farms-sync-trigger"
-    );
-  } catch (error) {
-    console.error("Failed to trigger hub solar farms sync:", error);
-    // Don't fail the main operation if sync trigger fails
-  }
+  // Trigger hub solar farms sync after 20 seconds delay
+  setTimeout(async () => {
+    try {
+      await fetch(
+        `${process.env.CONTROL_API_URL}/hub-solar-farms-sync-trigger`
+      );
+    } catch (error) {
+      console.error("Failed to trigger hub solar farms sync:", error);
+    }
+  }, 20000); // 20 seconds delay
 
   // Emit event in production
   if (process.env.NODE_ENV === "production") {
