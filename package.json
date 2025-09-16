@@ -21,7 +21,7 @@
     "@elysiajs/eden": "1.1.2",
     "@elysiajs/swagger": "1.0.5",
     "@glowlabs-org/events-sdk": "^1.0.19",
-    "@glowlabs-org/utils": "^0.2.109",
+    "@glowlabs-org/utils": "^0.2.110",
     "@neondatabase/serverless": "^0.9.4",
     "@slack/web-api": "^7.10.0",
     "@types/heic-convert": "^2.1.0",
