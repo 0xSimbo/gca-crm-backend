@@ -16,6 +16,7 @@ import {
   findRecentSplitsActivity,
 } from "../../db/queries/fractions/findFractionSplits";
 import { findActiveDefaultMaxSplits } from "../../db/queries/defaultMaxSplits/findActiveDefaultMaxSplits";
+import { findRefundableFractionsByWallet } from "../../db/queries/fractions/findRefundableFractions";
 import { checksumAddress } from "viem";
 
 export const fractionsRouter = new Elysia({ prefix: "/fractions" })
@@ -278,6 +279,85 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
         summary: "Get recent fraction splits purchase activity",
         description:
           "Returns recent fraction purchase activity across all fractions, with optional filtering by wallet address. Includes transaction details, fraction context, progress information, and activity summary statistics.",
+        tags: [TAG.APPLICATIONS],
+      },
+    }
+  )
+  .get(
+    "/refundable-by-wallet",
+    async ({ query: { walletAddress }, set }) => {
+      if (!walletAddress) {
+        set.status = 400;
+        return "walletAddress is required";
+      }
+
+      try {
+        // Validate wallet address format
+        if (!/^0x[a-fA-F0-9]{40}$/.test(walletAddress)) {
+          set.status = 400;
+          return "Invalid wallet address format";
+        }
+
+        // Get all refundable fractions for this wallet
+        const refundableFractions = await findRefundableFractionsByWallet(
+          walletAddress.toLowerCase()
+        );
+
+        // Calculate summary statistics
+        const totalRefundableAmount = refundableFractions.reduce(
+          (sum, item) => {
+            try {
+              return sum + BigInt(item.refundDetails.estimatedRefundAmount);
+            } catch {
+              return sum;
+            }
+          },
+          BigInt(0)
+        );
+
+        const totalStepsPurchased = refundableFractions.reduce(
+          (sum, item) => sum + item.userPurchaseData.totalStepsPurchased,
+          0
+        );
+
+        return {
+          walletAddress,
+          refundableFractions,
+          summary: {
+            totalRefundableFractions: refundableFractions.length,
+            totalRefundableAmount: totalRefundableAmount.toString(),
+            totalStepsPurchased,
+            // Group by status for frontend display
+            byStatus: {
+              expired: refundableFractions.filter(
+                (item) => item.fraction.status === "expired"
+              ).length,
+              cancelled: refundableFractions.filter(
+                (item) => item.fraction.status === "cancelled"
+              ).length,
+            },
+          },
+        };
+      } catch (e) {
+        if (e instanceof Error) {
+          set.status = 400;
+          return e.message;
+        }
+        console.log("[fractionsRouter] /refundable-by-wallet", e);
+        throw new Error("Error Occured");
+      }
+    },
+    {
+      query: t.Object({
+        walletAddress: t.String({
+          pattern: "^0x[a-fA-F0-9]{40}$",
+          description: "Ethereum wallet address",
+        }),
+      }),
+      detail: {
+        summary: "Get all refundable fractions for a wallet",
+        description:
+          "Returns all fractions where the wallet has purchased splits and the fractions are either expired or cancelled (and not filled), allowing for refunds. Includes all necessary data for the frontend to process refunds through the smart contract's claimRefund function.",
         tags: [TAG.APPLICATIONS],
       },
     }
