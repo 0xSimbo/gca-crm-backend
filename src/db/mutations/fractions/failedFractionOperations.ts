@@ -10,7 +10,14 @@ const SLACK_CHANNEL = "#devs";
 
 export interface RecordFailedOperationParams {
   fractionId?: string;
-  operationType: "create" | "commit" | "fill" | "split" | "expire" | "cancel";
+  operationType:
+    | "create"
+    | "commit"
+    | "fill"
+    | "split"
+    | "expire"
+    | "cancel"
+    | "refund";
   eventType?: string;
   eventPayload?: any;
   error: Error;

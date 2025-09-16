@@ -1865,7 +1865,7 @@ export const fractions = pgTable(
     // Fields added for on-chain fraction commitment
     token: varchar("token", { length: 42 }), // ERC20 token address
     owner: varchar("owner", { length: 42 }), // Owner address that must match
-    step: varchar("step", { length: 78 }), // Price in GLW (18 decimals) as string
+    step: numeric("step", { precision: 78, scale: 0 }), // Price in GLW (18 decimals)
     totalSteps: integer("total_steps"), // Total number of steps
     splitsSold: integer("splits_sold").notNull().default(0), // Counter for sold splits
     status: varchar("status", { length: 20 }).notNull().default("draft"), // draft, committed, cancelled, filled, expired
@@ -1900,8 +1900,8 @@ export const fractionSplits = pgTable(
     logIndex: integer("log_index").notNull(),
     creator: varchar("creator", { length: 42 }).notNull(),
     buyer: varchar("buyer", { length: 42 }).notNull(),
-    step: varchar("step", { length: 78 }).notNull(), // Step price as string (18 decimals)
-    amount: varchar("amount", { length: 78 }).notNull(), // Amount as string (18 decimals)
+    step: numeric("step", { precision: 78, scale: 0 }).notNull(), // Step price (in token decimals)
+    amount: numeric("amount", { precision: 78, scale: 0 }).notNull(), // Amount (in token decimals)
     stepsPurchased: integer("steps_purchased").notNull(), // Number of steps purchased (amount / step)
     timestamp: integer("timestamp").notNull(), // Unix timestamp
     createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -1919,6 +1919,41 @@ export const fractionSplits = pgTable(
 export type FractionSplitType = InferSelectModel<typeof fractionSplits>;
 export type FractionSplitInsertType = typeof fractionSplits.$inferInsert;
 
+/**
+ * Tracks fraction refunds issued to users
+ */
+export const fractionRefunds = pgTable(
+  "fraction_refunds",
+  {
+    id: serial("id").primaryKey(),
+    fractionId: varchar("fraction_id", { length: 66 })
+      .notNull()
+      .references(() => fractions.id, { onDelete: "cascade" }),
+    transactionHash: varchar("transaction_hash", { length: 66 }).notNull(),
+    blockNumber: varchar("block_number", { length: 20 }).notNull(),
+    logIndex: integer("log_index").notNull(),
+    creator: varchar("creator", { length: 42 }).notNull(), // Fraction creator address
+    user: varchar("user", { length: 42 }).notNull(), // User who received the refund
+    refundTo: varchar("refund_to", { length: 42 }).notNull(), // Address where refund was sent
+    amount: numeric("amount", { precision: 78, scale: 0 }).notNull(), // Refund amount in the token decimals
+    timestamp: integer("timestamp").notNull(), // Unix timestamp
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    fractionIdUserIndex: uniqueIndex(
+      "fraction_refunds_fraction_id_user_unique_ix"
+    ).on(t.fractionId, t.user), // Ensure one refund per user per fraction
+    txHashLogIndex: uniqueIndex(
+      "fraction_refunds_tx_hash_log_index_unique_ix"
+    ).on(t.transactionHash, t.logIndex),
+    userIndex: index("fraction_refunds_user_ix").on(t.user),
+    fractionIdIndex: index("fraction_refunds_fraction_id_ix").on(t.fractionId),
+  })
+);
+
+export type FractionRefundType = InferSelectModel<typeof fractionRefunds>;
+export type FractionRefundInsertType = typeof fractionRefunds.$inferInsert;
+
 export const FractionsRelations = relations(fractions, ({ one, many }) => ({
   application: one(applications, {
     fields: [fractions.applicationId],
@@ -1929,6 +1964,7 @@ export const FractionsRelations = relations(fractions, ({ one, many }) => ({
     references: [wallets.id],
   }),
   splits: many(fractionSplits),
+  refunds: many(fractionRefunds),
 }));
 
 export const FractionSplitsRelations = relations(fractionSplits, ({ one }) => ({
@@ -1946,6 +1982,28 @@ export const FractionSplitsRelations = relations(fractionSplits, ({ one }) => ({
   }),
 }));
 
+export const FractionRefundsRelations = relations(
+  fractionRefunds,
+  ({ one }) => ({
+    fraction: one(fractions, {
+      fields: [fractionRefunds.fractionId],
+      references: [fractions.id],
+    }),
+    creatorWallet: one(wallets, {
+      fields: [fractionRefunds.creator],
+      references: [wallets.id],
+    }),
+    userWallet: one(wallets, {
+      fields: [fractionRefunds.user],
+      references: [wallets.id],
+    }),
+    refundToWallet: one(wallets, {
+      fields: [fractionRefunds.refundTo],
+      references: [wallets.id],
+    }),
+  })
+);
+
 /**
  * Tracks failed fraction operations for retry and monitoring
  */
@@ -1954,8 +2012,8 @@ export const failedFractionOperations = pgTable(
   {
     id: serial("id").primaryKey(),
     fractionId: varchar("fraction_id", { length: 66 }),
-    operationType: varchar("operation_type", { length: 50 }).notNull(), // 'create', 'commit', 'fill', 'split', 'expire', 'cancel'
-    eventType: varchar("event_type", { length: 50 }), // 'fraction.created', 'fraction.sold', 'fraction.closed'
+    operationType: varchar("operation_type", { length: 50 }).notNull(), // 'create', 'commit', 'fill', 'split', 'expire', 'cancel', 'refund'
+    eventType: varchar("event_type", { length: 50 }), // 'fraction.created', 'fraction.sold', 'fraction.closed', 'fraction.refunded'
     eventPayload: json("event_payload"), // Store the full event payload for retry
     errorMessage: text("error_message").notNull(),
     errorStack: text("error_stack"),

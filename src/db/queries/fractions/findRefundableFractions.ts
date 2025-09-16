@@ -1,6 +1,6 @@
-import { and, eq, inArray, or, sql } from "drizzle-orm";
+import { and, eq, inArray, or, sql, notExists } from "drizzle-orm";
 import { db } from "../../db";
-import { fractions, fractionSplits } from "../../schema";
+import { fractions, fractionSplits, fractionRefunds } from "../../schema";
 import { FRACTION_STATUS } from "../../../constants/fractions";
 
 /**
@@ -43,7 +43,19 @@ export async function findRefundableFractionsByWallet(walletAddress: string) {
           FRACTION_STATUS.EXPIRED,
           FRACTION_STATUS.CANCELLED,
         ]),
-        eq(fractions.isFilled, false)
+        eq(fractions.isFilled, false),
+        // Exclude fractions where this user has already been refunded
+        notExists(
+          db
+            .select()
+            .from(fractionRefunds)
+            .where(
+              and(
+                eq(fractionRefunds.fractionId, fractions.id),
+                eq(fractionRefunds.user, walletAddress.toLowerCase())
+              )
+            )
+        )
       )
     );
 
@@ -115,7 +127,19 @@ export async function getRefundableSplitDetails(
           FRACTION_STATUS.EXPIRED,
           FRACTION_STATUS.CANCELLED,
         ]),
-        eq(fractions.isFilled, false)
+        eq(fractions.isFilled, false),
+        // Exclude if user has already been refunded
+        notExists(
+          db
+            .select()
+            .from(fractionRefunds)
+            .where(
+              and(
+                eq(fractionRefunds.fractionId, fractionId),
+                eq(fractionRefunds.user, walletAddress.toLowerCase())
+              )
+            )
+        )
       )
     )
     .limit(1);

@@ -18,6 +18,10 @@ import { forwarderAddresses } from "../constants/addresses";
 import { FRACTION_STATUS } from "../constants/fractions";
 import { recordFailedFractionOperation } from "../db/mutations/fractions/failedFractionOperations";
 import { verifyFractionSoldTransaction } from "../utils/verifyFractionTransaction";
+import {
+  recordFractionRefund,
+  findFractionRefundByTxHash,
+} from "../db/mutations/fractions/recordFractionRefund";
 
 export class FractionEventService {
   private listener?: ReturnType<typeof createGlowEventListener>;
@@ -360,6 +364,93 @@ export class FractionEventService {
             fractionId: event.payload.fractionId,
             operationType: "cancel",
             eventType: "fraction.closed",
+            eventPayload: event.payload,
+            error: error as Error,
+          });
+        } catch (recordError) {
+          console.error(
+            "[FractionEventService] Failed to record failed operation:",
+            recordError
+          );
+        }
+      }
+    });
+
+    // Listen for fraction.refunded events
+    this.listener.onEvent("fraction.refunded", "v2-alpha", async (event) => {
+      try {
+        console.log(
+          "[FractionEventService] Received fraction.refunded event:",
+          event.payload.fractionId,
+          "for user:",
+          event.payload.user
+        );
+
+        if (event.environment !== environment) {
+          return;
+        }
+
+        // Check if we already processed this refund event (idempotency)
+        const existingRefund = await findFractionRefundByTxHash(
+          event.payload.transactionHash,
+          event.payload.logIndex
+        );
+
+        if (existingRefund) {
+          console.log(
+            "[FractionEventService] Refund already processed, skipping:",
+            event.payload.transactionHash,
+            event.payload.logIndex
+          );
+          return;
+        }
+
+        // Record the fraction refund
+        await recordFractionRefund({
+          fractionId: event.payload.fractionId,
+          transactionHash: event.payload.transactionHash,
+          blockNumber: event.payload.blockNumber,
+          logIndex: event.payload.logIndex,
+          creator: event.payload.creator,
+          user: event.payload.user,
+          refundTo: event.payload.refundTo,
+          amount: event.payload.amount,
+          timestamp: event.payload.timestamp,
+        });
+
+        console.log(
+          "[FractionEventService] Successfully recorded fraction refund for user:",
+          event.payload.user,
+          "on fraction:",
+          event.payload.fractionId
+        );
+      } catch (error: any) {
+        // Check if this is a duplicate key error
+        if (
+          error.code === "23505" ||
+          error.message?.includes("duplicate key") ||
+          error.message?.includes("already recorded")
+        ) {
+          console.log(
+            "[FractionEventService] Duplicate refund detected (likely due to concurrent processing), ignoring:",
+            event.payload.transactionHash,
+            event.payload.logIndex
+          );
+          // This is not a real error - the refund was already recorded
+          return;
+        }
+
+        console.error(
+          "[FractionEventService] Error processing fraction.refunded event:",
+          error
+        );
+
+        // Only record as failed operation if it's not a duplicate key error
+        try {
+          await recordFailedFractionOperation({
+            fractionId: event.payload.fractionId,
+            operationType: "refund",
+            eventType: "fraction.refunded",
             eventPayload: event.payload,
             error: error as Error,
           });
