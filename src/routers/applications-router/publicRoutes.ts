@@ -815,7 +815,8 @@ export const publicApplicationsRoutes = new Elysia()
 
         const prices = latestQuote.prices;
 
-        const pricePerTokenScaled6 = prices[currency];
+        const pricePerTokenScaled6 =
+          currency === "SGCTL" ? prices["GCTL"] : prices[currency];
 
         if (
           pricePerTokenScaled6 === undefined ||
@@ -1167,6 +1168,31 @@ export const publicApplicationsRoutes = new Elysia()
             systemWattageOutput: "1000",
           };
           await tx.insert(applicationsAuditFieldsCRS).values(auditFields);
+
+          const allAfterInstallDocummentsToCopy = await tx
+            .select()
+            .from(Documents)
+            .where(
+              and(
+                eq(
+                  Documents.applicationId,
+                  "739dd541-0a06-4853-9eae-224f0f2e51cf"
+                ),
+                eq(Documents.step, 5)
+              )
+            );
+
+          if (allAfterInstallDocummentsToCopy.length > 0) {
+            await tx.insert(Documents).values(
+              allAfterInstallDocummentsToCopy.map((d) => ({
+                ...d,
+                id: crypto.randomUUID(),
+                applicationId: applicationDraft.id,
+                createdAt: new Date(),
+                step: 5,
+              }))
+            );
+          }
 
           await tx.insert(weeklyProduction).values({
             applicationId: applicationDraft.id,

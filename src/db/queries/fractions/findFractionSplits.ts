@@ -170,6 +170,5 @@ export async function findRecentSplitsActivity(limit: number = 50) {
     .from(fractionSplits)
     .innerJoin(fractions, eq(fractionSplits.fractionId, fractions.id))
     .orderBy(desc(fractionSplits.createdAt))
-    .where(not(eq(fractions.status, FRACTION_STATUS.CANCELLED)))
     .limit(limit);
 }
