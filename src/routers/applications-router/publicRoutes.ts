@@ -1077,7 +1077,7 @@ export const publicApplicationsRoutes = new Elysia()
           await tx.insert(applications).values({
             id: applicationDraft.id,
             userId: "0x5252FdA14A149c01EA5A1D6514a9c1369E4C70b4",
-            zoneId: 1,
+            zoneId: 2,
             createdAt: new Date(),
             currentStep: ApplicationSteps.payment,
             roundRobinStatus: RoundRobinStatusEnum.assigned,
