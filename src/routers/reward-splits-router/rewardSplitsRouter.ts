@@ -320,13 +320,6 @@ export const rewardSplitsRouter = new Elysia({ prefix: "/rewardsSplits" })
             }
 
             if (
-              application.status !== ApplicationStatusEnum.draft &&
-              application.rewardSplits.length !== 0
-            ) {
-              set.status = 400;
-              return "Application is not Draft";
-            }
-            if (
               application.currentStep <
               ApplicationSteps.inspectionAndPtoDocuments
             ) {
