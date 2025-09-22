@@ -439,7 +439,7 @@ export const publicApplicationsRoutes = new Elysia()
                   isFilled: activeFraction.isFilled,
                   totalSteps: activeFraction.totalSteps,
                   splitsSold: activeFraction.splitsSold,
-                  step: activeFraction.step, // Price per step in GLW
+                  step: activeFraction.step, // Price per step in token decimals
                   token: activeFraction.token,
                   owner: activeFraction.owner,
                   txHash: activeFraction.txHash,

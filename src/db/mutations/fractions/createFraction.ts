@@ -21,6 +21,7 @@ export interface CreateFractionParams {
   applicationId: string;
   createdBy: string;
   sponsorSplitPercent: number;
+  type?: "launchpad" | "mining-center";
 }
 
 /**
@@ -100,6 +101,7 @@ export async function createFraction(params: CreateFractionParams, tx?: any) {
     filledAt: null,
     expirationAt,
     status: FRACTION_STATUS.DRAFT,
+    type: params.type || "launchpad",
   };
 
   const result = await (tx || db)
@@ -115,9 +117,9 @@ export async function createFraction(params: CreateFractionParams, tx?: any) {
  *
  * @param fractionId - The fraction ID
  * @param txHash - The transaction hash
- * @param token - The token address (must be GLW)
+ * @param token - The token address (GLW for launchpad, USDC for mining-center)
  * @param owner - The owner address
- * @param step - The price in GLW (18 decimals) for each fraction
+ * @param step - The price in token decimals for each fraction
  * @param totalSteps - The total number of steps
  */
 export async function markFractionAsCommitted(
@@ -299,12 +301,18 @@ export async function recordFractionSplit(params: CreateFractionSplitParams) {
           application.auditFields?.devices &&
           application.auditFields?.devices.length > 0
         ) {
+          // Determine payment currency based on fraction type
+          const paymentCurrency =
+            transactionResult.fraction.type === "mining-center"
+              ? "USDC"
+              : "GLW";
+
           // Use the completeApplicationAndCreateFarm helper which includes solar farm sync
           await completeApplicationAndCreateFarm({
             application,
             txHash: params.transactionHash,
             paymentDate: new Date(params.timestamp * 1000),
-            paymentCurrency: "GLW",
+            paymentCurrency,
             paymentEventType: "OnchainFractionRoundFilled",
             paymentAmount: paymentAmount,
             protocolFee: BigInt(application.finalProtocolFeeBigInt),

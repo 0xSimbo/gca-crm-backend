@@ -224,14 +224,43 @@ export class FractionEventService {
           return;
         }
 
-        // Validate token address is GLW
+        // Validate token address is GLW or USDC (for mining-center fractions)
         const glwAddress = forwarderAddresses.GLW.toLowerCase();
-        if (event.payload.token.toLowerCase() !== glwAddress) {
+        const usdcAddress = forwarderAddresses.USDC.toLowerCase();
+        const validTokens = [glwAddress, usdcAddress];
+
+        if (!validTokens.includes(event.payload.token.toLowerCase())) {
           console.error(
             "[FractionEventService] Invalid token address:",
             event.payload.token,
-            "Expected GLW:",
-            forwarderAddresses.GLW
+            "Expected GLW or USDC:",
+            { GLW: forwarderAddresses.GLW, USDC: forwarderAddresses.USDC }
+          );
+          return;
+        }
+
+        // Check if the token matches the fraction type
+        const isUsdcToken = event.payload.token.toLowerCase() === usdcAddress;
+        const isMiningShopFraction = fraction.type === "mining-center";
+
+        if (isUsdcToken && !isMiningShopFraction) {
+          console.error(
+            "[FractionEventService] USDC token used for non-mining-center fraction:",
+            event.payload.fractionId,
+            "Fraction type:",
+            fraction.type
+          );
+          return;
+        }
+
+        if (!isUsdcToken && isMiningShopFraction) {
+          console.error(
+            "[FractionEventService] Non-USDC token used for mining-center fraction:",
+            event.payload.fractionId,
+            "Token:",
+            event.payload.token,
+            "Expected USDC:",
+            forwarderAddresses.USDC
           );
           return;
         }

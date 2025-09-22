@@ -18,6 +18,7 @@ import {
 import { findActiveDefaultMaxSplits } from "../../db/queries/defaultMaxSplits/findActiveDefaultMaxSplits";
 import { findRefundableFractionsByWallet } from "../../db/queries/fractions/findRefundableFractions";
 import { checksumAddress } from "viem";
+import { createFraction } from "../../db/mutations/fractions/createFraction";
 
 export const fractionsRouter = new Elysia({ prefix: "/fractions" })
   .get(
@@ -362,6 +363,53 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
       },
     }
   )
+  .get(
+    "/by-id",
+    async ({ query: { fractionId }, set }) => {
+      if (!fractionId) {
+        set.status = 400;
+        return "fractionId is required";
+      }
+
+      try {
+        const fraction = await findFractionById(fractionId);
+        if (!fraction) {
+          set.status = 404;
+          return "Fraction not found";
+        }
+
+        const application = await FindFirstApplicationById(
+          fraction.applicationId
+        );
+        if (!application) {
+          set.status = 404;
+          return "Associated application not found";
+        }
+
+        return {
+          ...fraction,
+          farmId: application.farmId,
+        };
+      } catch (e) {
+        if (e instanceof Error) {
+          set.status = 400;
+          return e.message;
+        }
+        console.log("[fractionsRouter] /by-id", e);
+        throw new Error("Error Occured");
+      }
+    },
+    {
+      query: t.Object({
+        fractionId: t.String(),
+      }),
+      detail: {
+        summary: "Get fraction by ID",
+        description: "Returns a specific fraction by its ID",
+        tags: [TAG.APPLICATIONS],
+      },
+    }
+  )
   .use(bearerplugin())
   .guard(bearerGuard, (app) =>
     app
@@ -421,65 +469,7 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
           },
         }
       )
-      .get(
-        "/by-id",
-        async ({ query: { fractionId }, set, userId }) => {
-          if (!fractionId) {
-            set.status = 400;
-            return "fractionId is required";
-          }
 
-          try {
-            const fraction = await findFractionById(fractionId);
-            if (!fraction) {
-              set.status = 404;
-              return "Fraction not found";
-            }
-
-            const application = await FindFirstApplicationById(
-              fraction.applicationId
-            );
-            if (!application) {
-              set.status = 404;
-              return "Associated application not found";
-            }
-
-            // Check if user has access to this fraction
-            if (
-              application.userId !== userId &&
-              fraction.createdBy !== userId
-            ) {
-              const account = await findFirstAccountById(userId);
-              if (
-                !account ||
-                (account.role !== "ADMIN" && account.role !== "GCA")
-              ) {
-                set.status = 401;
-                return "Unauthorized";
-              }
-            }
-
-            return fraction;
-          } catch (e) {
-            if (e instanceof Error) {
-              set.status = 400;
-              return e.message;
-            }
-            console.log("[fractionsRouter] /by-id", e);
-            throw new Error("Error Occured");
-          }
-        },
-        {
-          query: t.Object({
-            fractionId: t.String(),
-          }),
-          detail: {
-            summary: "Get fraction by ID",
-            description: "Returns a specific fraction by its ID",
-            tags: [TAG.APPLICATIONS],
-          },
-        }
-      )
       .get(
         "/active-by-application-id",
         async ({ query: { applicationId }, set, userId }) => {
@@ -598,6 +588,88 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
           detail: {
             summary: "Get fraction splits by fraction ID",
             description: "Returns all splits (sales) for a specific fraction",
+            tags: [TAG.APPLICATIONS],
+          },
+        }
+      )
+      .post(
+        "/create-mining-center-listing",
+        async ({
+          body: { applicationId, sponsorSplitPercent },
+          set,
+          userId,
+        }) => {
+          try {
+            // Validate required fields
+            if (!applicationId) {
+              set.status = 400;
+              return "applicationId is required";
+            }
+
+            if (
+              sponsorSplitPercent === undefined ||
+              sponsorSplitPercent === null
+            ) {
+              set.status = 400;
+              return "sponsorSplitPercent is required";
+            }
+
+            // Check if application exists and user has access
+            const application = await FindFirstApplicationById(applicationId);
+            if (!application) {
+              set.status = 404;
+              return "Application not found";
+            }
+
+            // Check if user has access to this application
+            if (application.userId !== userId) {
+              const account = await findFirstAccountById(userId);
+              if (
+                !account ||
+                (account.role !== "ADMIN" && account.role !== "GCA")
+              ) {
+                set.status = 401;
+                return "Unauthorized";
+              }
+            }
+
+            // Create the mining-center fraction
+            const fraction = await createFraction({
+              applicationId,
+              createdBy: userId,
+              sponsorSplitPercent,
+              type: "mining-center",
+            });
+
+            return {
+              success: true,
+              fraction,
+              message: "Mining-center fraction created successfully",
+            };
+          } catch (e) {
+            if (e instanceof Error) {
+              set.status = 400;
+              return e.message;
+            }
+            console.log("[fractionsRouter] /create-mining-center-listing", e);
+            throw new Error("Error Occurred");
+          }
+        },
+        {
+          body: t.Object({
+            applicationId: t.String({
+              description: "The ID of the application to create a fraction for",
+            }),
+            sponsorSplitPercent: t.Number({
+              minimum: 0,
+              maximum: 100,
+              description: "Sponsor split percentage (0-100)",
+            }),
+          }),
+          detail: {
+            summary: "Create a new mining-center fraction",
+            description:
+              "Creates a new mining-center type fraction for an application. Mining-center fractions use USDC tokens",
             tags: [TAG.APPLICATIONS],
           },
         }

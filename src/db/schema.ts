@@ -1865,10 +1865,11 @@ export const fractions = pgTable(
     // Fields added for on-chain fraction commitment
     token: varchar("token", { length: 42 }), // ERC20 token address
     owner: varchar("owner", { length: 42 }), // Owner address that must match
-    step: numeric("step", { precision: 78, scale: 0 }), // Price in GLW (18 decimals)
+    step: numeric("step", { precision: 78, scale: 0 }), // Price per step in token decimals (GLW 18 decimals, USDC 6 decimals)
     totalSteps: integer("total_steps"), // Total number of steps
     splitsSold: integer("splits_sold").notNull().default(0), // Counter for sold splits
     status: varchar("status", { length: 20 }).notNull().default("draft"), // draft, committed, cancelled, filled, expired
+    type: varchar("type", { length: 20 }).notNull().default("launchpad"), // launchpad, mining-center
   },
   (t) => ({
     applicationIdNonceIndex: uniqueIndex("application_id_nonce_unique_ix").on(
