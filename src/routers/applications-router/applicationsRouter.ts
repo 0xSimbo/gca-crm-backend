@@ -2120,11 +2120,23 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                 fraction = fraction[0];
               } else {
                 // Create a new fraction entry for this application
+                // Validate sponsor split percentage
+                if (
+                  !VALID_SPONSOR_SPLIT_PERCENTAGES.includes(sponsorSplitPercent)
+                ) {
+                  throw new Error(
+                    `Invalid sponsor split percentage: ${sponsorSplitPercent}. Must be one of: ${VALID_SPONSOR_SPLIT_PERCENTAGES.join(
+                      ", "
+                    )}`
+                  );
+                }
+
                 fraction = await createFraction(
                   {
                     applicationId: application.id,
                     createdBy: userId,
                     sponsorSplitPercent,
+                    type: "launchpad",
                   },
                   tx
                 );

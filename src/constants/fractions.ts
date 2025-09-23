@@ -11,7 +11,8 @@ export const SPONSOR_SPLIT_INCREMENT = 10;
 export const VALID_SPONSOR_SPLIT_PERCENTAGES = [20, 30, 40, 50, 60, 70, 80];
 
 // Time periods (in milliseconds)
-export const FRACTION_LIFETIME_MS = 4 * 7 * 24 * 60 * 60 * 1000; // 4 weeks
+export const LAUNCHPAD_FRACTION_LIFETIME_MS = 4 * 7 * 24 * 60 * 60 * 1000; // 4 weeks
+export const MINING_CENTER_FRACTION_LIFETIME_MS = 1 * 7 * 24 * 60 * 60 * 1000; // 1 week
 export const FRACTION_STALE_PERIOD_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 // Time periods (in days for easier reading)

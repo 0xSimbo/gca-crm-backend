@@ -8,9 +8,10 @@ import {
 import { eq, sql, and, not } from "drizzle-orm";
 import { generateUniqueFractionId } from "../../../utils/fractions/generateFractionId";
 import {
-  FRACTION_LIFETIME_MS,
+  LAUNCHPAD_FRACTION_LIFETIME_MS,
   FRACTION_STATUS,
   VALID_SPONSOR_SPLIT_PERCENTAGES,
+  MINING_CENTER_FRACTION_LIFETIME_MS,
 } from "../../../constants/fractions";
 import { hasFilledFraction } from "../../queries/fractions/findFractionsByApplicationId";
 import { FindFirstApplicationById } from "../../queries/applications/findFirstApplicationById";
@@ -62,15 +63,6 @@ export function createSafeFractionUpdateWhere(fractionId: string) {
  * @throws Error if the application already has a filled fraction
  */
 export async function createFraction(params: CreateFractionParams, tx?: any) {
-  // Validate sponsor split percentage
-  if (!VALID_SPONSOR_SPLIT_PERCENTAGES.includes(params.sponsorSplitPercent)) {
-    throw new Error(
-      `Invalid sponsor split percentage: ${
-        params.sponsorSplitPercent
-      }. Must be one of: ${VALID_SPONSOR_SPLIT_PERCENTAGES.join(", ")}`
-    );
-  }
-
   // Check if the application already has a filled fraction
   const alreadyFilled = await hasFilledFraction(params.applicationId);
   if (alreadyFilled) {
@@ -84,7 +76,12 @@ export async function createFraction(params: CreateFractionParams, tx?: any) {
   );
 
   const now = new Date();
-  const expirationAt = new Date(now.getTime() + FRACTION_LIFETIME_MS);
+  const expirationAt = new Date(
+    now.getTime() +
+      (params.type === "mining-center"
+        ? MINING_CENTER_FRACTION_LIFETIME_MS
+        : LAUNCHPAD_FRACTION_LIFETIME_MS)
+  );
 
   const fractionData: FractionInsertType = {
     id: fractionId,

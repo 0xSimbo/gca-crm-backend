@@ -1236,14 +1236,20 @@ export const publicApplicationsRoutes = new Elysia()
           await tx.insert(RewardSplits).values([
             {
               walletAddress: "0x34b50C3A7f004c65CEF59aa29cC9102C46d4c9bA",
-              glowSplitPercent: "50",
+              glowSplitPercent: "40",
               usdgSplitPercent: "10",
               applicationId: applicationDraft.id,
             },
             {
               walletAddress: "0x5252FdA14A149c01EA5A1D6514a9c1369E4C70c8",
-              glowSplitPercent: "50",
+              glowSplitPercent: "40",
               usdgSplitPercent: "90",
+              applicationId: applicationDraft.id,
+            },
+            {
+              walletAddress: "0x5252FdA14A149c01EA5A1D6514a9c1369E4C70b4",
+              glowSplitPercent: "10",
+              usdgSplitPercent: "0",
               applicationId: applicationDraft.id,
             },
           ]);
