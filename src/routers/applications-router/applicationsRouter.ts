@@ -2011,7 +2011,11 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
       )
       .post(
         "/publish-application-to-auction",
-        async ({ body, set, userId }) => {
+        async ({
+          body: { applicationId, sponsorSplitPercent, stepPrice },
+          set,
+          userId,
+        }) => {
           try {
             const user = await findFirstUserById(userId);
             if (!user) {
@@ -2019,9 +2023,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               return "Unauthorized";
             }
 
-            const application = await FindFirstApplicationById(
-              body.applicationId
-            );
+            const application = await FindFirstApplicationById(applicationId);
 
             if (!application) {
               set.status = 404;
@@ -2037,8 +2039,6 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               set.status = 400;
               return "Application is not in the correct step";
             }
-
-            const sponsorSplitPercent = body.sponsorSplitPercent;
 
             if (
               !Number.isInteger(sponsorSplitPercent) ||
@@ -2136,6 +2136,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                     applicationId: application.id,
                     createdBy: userId,
                     sponsorSplitPercent,
+                    stepPrice,
                     type: "launchpad",
                   },
                   tx
@@ -2174,6 +2175,9 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
             sponsorSplitPercent: t.Number({
               minimum: MIN_SPONSOR_SPLIT_PERCENT,
               maximum: MAX_SPONSOR_SPLIT_PERCENT,
+            }),
+            stepPrice: t.String({
+              description: "Price per step in token decimals (optional)",
             }),
           }),
           detail: {

@@ -22,6 +22,7 @@ export interface CreateFractionParams {
   applicationId: string;
   createdBy: string;
   sponsorSplitPercent: number;
+  stepPrice: string; // Price per step in token decimals
   type?: "launchpad" | "mining-center";
 }
 
@@ -89,6 +90,8 @@ export async function createFraction(params: CreateFractionParams, tx?: any) {
     nonce,
     createdBy: params.createdBy,
     sponsorSplitPercent: params.sponsorSplitPercent,
+    step: params.stepPrice || null, // Store stepPrice in the step field
+    stepPrice: params.stepPrice,
     createdAt: now,
     updatedAt: now,
     isCommittedOnChain: false,
