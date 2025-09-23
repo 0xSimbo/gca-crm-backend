@@ -158,3 +158,56 @@ export async function findMiningCenterFractionsByUserId(userId: string) {
     )
     .orderBy(desc(fractions.createdAt));
 }
+
+/**
+ * Finds active (draft or committed) fractions for a given user
+ *
+ * @param userId - The user ID (wallet address)
+ * @returns Array of active fractions for the user
+ */
+export async function findActiveFractionsByUserId(userId: string) {
+  const now = new Date();
+  return await db
+    .select()
+    .from(fractions)
+    .where(
+      and(
+        eq(fractions.createdBy, userId.toLowerCase()),
+        inArray(fractions.status, [
+          FRACTION_STATUS.DRAFT,
+          FRACTION_STATUS.COMMITTED,
+        ]),
+        gt(fractions.expirationAt, now),
+        ne(fractions.type, "mining-center")
+      )
+    )
+    .orderBy(desc(fractions.createdAt));
+}
+
+/**
+ * Checks if a user has any active (draft or committed) fractions
+ * By default, excludes mining-center fractions since they have different validation rules
+ *
+ * @param userId - The user ID (wallet address)
+ * @param includeType - Include only fractions of this type (optional)
+ * @returns True if the user has active fractions, false otherwise
+ */
+export async function hasActiveFractions(userId: string): Promise<boolean> {
+  const now = new Date();
+  const conditions = [
+    eq(fractions.createdBy, userId.toLowerCase()),
+    inArray(fractions.status, [
+      FRACTION_STATUS.DRAFT,
+      FRACTION_STATUS.COMMITTED,
+    ]),
+    gt(fractions.expirationAt, now),
+  ];
+
+  const result = await db
+    .select({ id: fractions.id })
+    .from(fractions)
+    .where(and(...conditions))
+    .limit(1);
+
+  return result.length > 0;
+}

@@ -13,7 +13,10 @@ import {
   VALID_SPONSOR_SPLIT_PERCENTAGES,
   MINING_CENTER_FRACTION_LIFETIME_MS,
 } from "../../../constants/fractions";
-import { hasFilledFraction } from "../../queries/fractions/findFractionsByApplicationId";
+import {
+  hasFilledFraction,
+  hasActiveFractions,
+} from "../../queries/fractions/findFractionsByApplicationId";
 import { FindFirstApplicationById } from "../../queries/applications/findFirstApplicationById";
 import { getFractionEventService } from "../../../services/eventListener";
 import { completeApplicationAndCreateFarm } from "../../../routers/applications-router/publicRoutes";
@@ -72,8 +75,20 @@ export async function createFraction(params: CreateFractionParams, tx?: any) {
     );
   }
 
+  // Check if the user already has active fractions (draft or committed)
+  // For launchpad fractions, we don't allow multiple active fractions
+  // For mining-center fractions, we only check for other mining-center fractions
+  const fractionType = params.type || "launchpad";
+  const userHasActiveFractions = await hasActiveFractions(params.createdBy);
+
+  if (userHasActiveFractions) {
+    throw new Error(
+      `Cannot create fraction: user already has an active ${fractionType} fraction (draft or committed)`
+    );
+  }
+
   const { fractionId, nonce } = await generateUniqueFractionId(
-    params.applicationId
+    params.createdBy
   );
 
   const now = new Date();

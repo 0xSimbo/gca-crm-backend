@@ -77,6 +77,7 @@ export const wallets = pgTable("wallets", {
   totalGlowRewards: bigint("total_glow_rewards", { mode: "bigint" })
     .default(sql`'0'::bigint`)
     .notNull(),
+  fractionNonce: integer("fraction_nonce").notNull().default(0), // Track nonce for fraction creation per wallet
 });
 
 /**
