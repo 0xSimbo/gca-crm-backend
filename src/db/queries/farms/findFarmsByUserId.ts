@@ -10,12 +10,8 @@ export const findFarmsByUserId = async (userId: string) => {
       name: true,
       region: true,
       regionFullName: true,
-      signalType: true,
-      totalGlowRewards: true,
-      totalUSDGRewards: true,
       createdAt: true,
       auditCompleteDate: true,
-      protocolFee: true,
     },
     with: {
       devices: {
@@ -28,6 +24,12 @@ export const findFarmsByUserId = async (userId: string) => {
           disabledAt: true,
         },
       },
+      zone: {
+        columns: {
+          id: true,
+          name: true,
+        },
+      },
       application: {
         columns: {
           id: true,
@@ -37,6 +39,5 @@ export const findFarmsByUserId = async (userId: string) => {
       },
     },
   });
-
   return userFarms;
 };
