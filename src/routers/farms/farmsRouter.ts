@@ -7,6 +7,7 @@ import { bearerGuard } from "../../guards/bearerGuard";
 import { jwtHandler } from "../../handlers/jwtHandler";
 import { findFirstAccountById } from "../../db/queries/accounts/findFirstAccountById";
 import { findFirstFarmIdByShortId } from "../../db/queries/farms/findFirstFarmIdByShortId";
+import { findFarmsByUserId } from "../../db/queries/farms/findFarmsByUserId";
 import { db } from "../../db/db";
 import { createHash } from "crypto"; // Node.js built-in
 import { farms } from "../../db/schema";
@@ -322,6 +323,34 @@ export const farmsRouter = new Elysia({ prefix: "/farms" })
           detail: {
             summary: "",
             description: ``,
+            tags: [TAG.FARMS],
+          },
+        }
+      )
+      .get(
+        "/my-farms", // Get all farms for the authenticated user
+        async ({ set, userId }) => {
+          try {
+            const userFarms = await findFarmsByUserId(userId);
+            return {
+              farms: userFarms,
+              total: userFarms.length,
+            };
+          } catch (e) {
+            if (e instanceof Error) {
+              set.status = 400;
+              return e.message;
+            }
+            console.log("[farmsRouter] /my-farms", e);
+            set.status = 500;
+            return "Internal Server Error";
+          }
+        },
+        {
+          detail: {
+            summary: "Get all farms for the authenticated user",
+            description:
+              "Returns all farms owned by the authenticated user with their details, devices, and application information",
             tags: [TAG.FARMS],
           },
         }
