@@ -1,4 +1,4 @@
-import { eq, desc, and, gt, inArray } from "drizzle-orm";
+import { eq, desc, and, gt, inArray, ne } from "drizzle-orm";
 import { db } from "../../db";
 import { fractions } from "../../schema";
 import { FRACTION_STATUS } from "../../../constants/fractions";
@@ -19,7 +19,8 @@ export async function findFractionsByApplicationId(applicationId: string) {
         inArray(fractions.status, [
           FRACTION_STATUS.DRAFT,
           FRACTION_STATUS.COMMITTED,
-        ])
+        ]),
+        ne(fractions.type, "mining-center")
       )
     )
     .orderBy(fractions.createdAt);
@@ -57,7 +58,8 @@ export async function findLatestFractionByApplicationId(applicationId: string) {
         inArray(fractions.status, [
           FRACTION_STATUS.DRAFT,
           FRACTION_STATUS.COMMITTED,
-        ])
+        ]),
+        ne(fractions.type, "mining-center")
       )
     )
     .orderBy(desc(fractions.createdAt))
@@ -84,7 +86,8 @@ export async function findActiveFractionByApplicationId(applicationId: string) {
           FRACTION_STATUS.DRAFT,
           FRACTION_STATUS.COMMITTED,
         ]),
-        gt(fractions.expirationAt, now)
+        gt(fractions.expirationAt, now),
+        ne(fractions.type, "mining-center")
       )
     )
     .orderBy(desc(fractions.createdAt))
@@ -108,7 +111,8 @@ export async function hasFilledFraction(
     .where(
       and(
         eq(fractions.applicationId, applicationId),
-        eq(fractions.status, FRACTION_STATUS.FILLED)
+        eq(fractions.status, FRACTION_STATUS.FILLED),
+        ne(fractions.type, "mining-center")
       )
     )
     .limit(1);
@@ -129,11 +133,28 @@ export async function findFilledFractionByApplicationId(applicationId: string) {
     .where(
       and(
         eq(fractions.applicationId, applicationId),
-        eq(fractions.status, FRACTION_STATUS.FILLED)
+        eq(fractions.status, FRACTION_STATUS.FILLED),
+        ne(fractions.type, "mining-center")
       )
     )
     .orderBy(desc(fractions.createdAt))
     .limit(1);
 
   return result[0] || null;
+}
+
+/**
+ * Finds all mining-center fractions for a given user
+ *
+ * @param userId - The user ID
+ * @returns Array of mining-center fractions for the user
+ */
+export async function findMiningCenterFractionsByUserId(userId: string) {
+  return await db
+    .select()
+    .from(fractions)
+    .where(
+      and(eq(fractions.createdBy, userId), eq(fractions.type, "mining-center"))
+    )
+    .orderBy(desc(fractions.createdAt));
 }

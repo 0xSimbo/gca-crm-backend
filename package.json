@@ -1,6 +1,6 @@
 {
   "name": "@glowlabs-org/crm-bindings",
-  "version": "0.1.0-alpha.107",
+  "version": "0.1.0-alpha.108",
   "description": "A library containing all API bindings for the Elysia App",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
@@ -21,7 +21,7 @@
     "@elysiajs/eden": "1.1.2",
     "@elysiajs/swagger": "1.0.5",
     "@glowlabs-org/events-sdk": "^1.0.20",
-    "@glowlabs-org/utils": "^0.2.119",
+    "@glowlabs-org/utils": "^0.2.126",
     "@neondatabase/serverless": "^0.9.4",
     "@slack/web-api": "^7.10.0",
     "@types/heic-convert": "^2.1.0",

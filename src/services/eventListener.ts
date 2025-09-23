@@ -241,9 +241,9 @@ export class FractionEventService {
 
         // Check if the token matches the fraction type
         const isUsdcToken = event.payload.token.toLowerCase() === usdcAddress;
-        const isMiningShopFraction = fraction.type === "mining-center";
+        const isMiningCenterFraction = fraction.type === "mining-center";
 
-        if (isUsdcToken && !isMiningShopFraction) {
+        if (isUsdcToken && !isMiningCenterFraction) {
           console.error(
             "[FractionEventService] USDC token used for non-mining-center fraction:",
             event.payload.fractionId,
@@ -253,7 +253,7 @@ export class FractionEventService {
           return;
         }
 
-        if (!isUsdcToken && isMiningShopFraction) {
+        if (!isUsdcToken && isMiningCenterFraction) {
           console.error(
             "[FractionEventService] Non-USDC token used for mining-center fraction:",
             event.payload.fractionId,

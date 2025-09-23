@@ -9,6 +9,7 @@ import {
   findFractionsByApplicationId,
   findFractionById,
   findActiveFractionByApplicationId,
+  findMiningCenterFractionsByUserId,
 } from "../../db/queries/fractions/findFractionsByApplicationId";
 import {
   findFractionSplits,
@@ -19,6 +20,7 @@ import { findActiveDefaultMaxSplits } from "../../db/queries/defaultMaxSplits/fi
 import { findRefundableFractionsByWallet } from "../../db/queries/fractions/findRefundableFractions";
 import { checksumAddress } from "viem";
 import { createFraction } from "../../db/mutations/fractions/createFraction";
+import { forwarderAddresses } from "../../constants/addresses";
 
 export const fractionsRouter = new Elysia({ prefix: "/fractions" })
   .get(
@@ -469,7 +471,6 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
           },
         }
       )
-
       .get(
         "/active-by-application-id",
         async ({ query: { applicationId }, set, userId }) => {
@@ -633,6 +634,14 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
               }
             }
 
+            if (
+              userId.toLowerCase() !==
+              forwarderAddresses.FOUNDATION_HUB_MANAGER_WALLET.toLowerCase()
+            ) {
+              set.status = 401;
+              return "Unauthorized";
+            }
+
             // Create the mining-center fraction
             const fraction = await createFraction({
               applicationId,
@@ -670,6 +679,66 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
             summary: "Create a new mining-center fraction",
             description:
               "Creates a new mining-center type fraction for an application. Mining-center fractions use USDC tokens",
+            tags: [TAG.APPLICATIONS],
+          },
+        }
+      )
+      .get(
+        "/mining-center",
+        async ({ set, userId }) => {
+          try {
+            // Get all mining-center fractions for the authenticated user
+            const miningCenterFractions =
+              await findMiningCenterFractionsByUserId(userId);
+
+            // Calculate summary statistics
+            const summary = {
+              totalFractions: miningCenterFractions.length,
+              totalStepsAvailable: miningCenterFractions.reduce(
+                (sum, fraction) => sum + (fraction.totalSteps || 0),
+                0
+              ),
+              totalStepsSold: miningCenterFractions.reduce(
+                (sum, fraction) => sum + (fraction.splitsSold || 0),
+                0
+              ),
+              statusBreakdown: {
+                draft: miningCenterFractions.filter((f) => f.status === "draft")
+                  .length,
+                committed: miningCenterFractions.filter(
+                  (f) => f.status === "committed"
+                ).length,
+                filled: miningCenterFractions.filter(
+                  (f) => f.status === "filled"
+                ).length,
+                cancelled: miningCenterFractions.filter(
+                  (f) => f.status === "cancelled"
+                ).length,
+                expired: miningCenterFractions.filter(
+                  (f) => f.status === "expired"
+                ).length,
+              },
+            };
+
+            return {
+              fractions: miningCenterFractions,
+              summary,
+            };
+          } catch (e) {
+            if (e instanceof Error) {
+              set.status = 400;
+              return e.message;
+            }
+            console.log("[fractionsRouter] /mining-center", e);
+            throw new Error("Error Occurred");
+          }
+        },
+        {
+          detail: {
+            summary:
+              "Get all mining-center fractions for the authenticated user",
+            description:
+              "Returns all mining-center type fractions created by the authenticated user, including summary statistics about the fractions' status and progress.",
             tags: [TAG.APPLICATIONS],
           },
         }
