@@ -39,7 +39,7 @@ import {
   zones,
   fractions,
 } from "../../db/schema";
-import { eq, inArray, and, asc, desc, exists, sql, gt } from "drizzle-orm";
+import { eq, inArray, and, asc, desc, exists, sql, gt, ne } from "drizzle-orm";
 import { completeApplicationWithDocumentsAndCreateFarmWithDevices } from "../../db/mutations/applications/completeApplicationWithDocumentsAndCreateFarm";
 import { getPubkeysAndShortIds } from "../devices/get-pubkeys-and-short-ids";
 import { findAllAuditFeesPaidApplicationsByZoneId } from "../../db/queries/applications/findAllAuditFeesPaidApplicationsByZoneId";
@@ -202,7 +202,8 @@ export const publicApplicationsRoutes = new Elysia()
                 and(
                   eq(fractions.applicationId, applications.id),
                   inArray(fractions.status, ["draft", "committed"]),
-                  gt(fractions.expirationAt, new Date())
+                  gt(fractions.expirationAt, new Date()),
+                  ne(fractions.type, "mining-center")
                 )
               )
           )

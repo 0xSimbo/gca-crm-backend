@@ -652,7 +652,7 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
 
             return {
               success: true,
-              fraction,
+              fractionId: fraction.id,
               message: "Mining-center fraction created successfully",
             };
           } catch (e) {
