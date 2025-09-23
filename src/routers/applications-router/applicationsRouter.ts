@@ -2154,7 +2154,6 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               applicationId: application.id,
               sponsorSplitPercent,
               nonce: fraction.nonce,
-              maxSplits: effectiveMaxSplits,
               expirationAt: fraction.expirationAt,
             };
           } catch (e) {
