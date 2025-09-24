@@ -2012,7 +2012,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
       .post(
         "/publish-application-to-auction",
         async ({
-          body: { applicationId, sponsorSplitPercent, stepPrice },
+          body: { applicationId, sponsorSplitPercent, stepPrice, rewardScore },
           set,
           userId,
         }) => {
@@ -2137,6 +2137,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                     createdBy: userId,
                     sponsorSplitPercent,
                     stepPrice,
+                    rewardScore,
                     type: "launchpad",
                   },
                   tx
@@ -2176,8 +2177,15 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               maximum: MAX_SPONSOR_SPLIT_PERCENT,
             }),
             stepPrice: t.String({
-              description: "Price per step in token decimals (optional)",
+              description: "Price per step in token decimals",
             }),
+            rewardScore: t.Optional(
+              t.Number({
+                minimum: 1,
+                description:
+                  "Reward score for launchpad fractions (e.g., 50, 100, 200)",
+              })
+            ),
           }),
           detail: {
             summary: "Publish Application to auction",

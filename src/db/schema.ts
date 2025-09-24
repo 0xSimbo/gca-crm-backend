@@ -1872,6 +1872,7 @@ export const fractions = pgTable(
     splitsSold: integer("splits_sold").notNull().default(0), // Counter for sold splits
     status: varchar("status", { length: 20 }).notNull().default("draft"), // draft, committed, cancelled, filled, expired
     type: varchar("type", { length: 20 }).notNull().default("launchpad"), // launchpad, mining-center
+    rewardScore: integer("reward_score"), // Reward score for launchpad fractions (nullable, e.g., 50, 100, 200)
   },
   (t) => ({
     applicationIdNonceIndex: uniqueIndex("application_id_nonce_unique_ix").on(

@@ -26,6 +26,7 @@ export interface CreateFractionParams {
   createdBy: string;
   sponsorSplitPercent: number;
   stepPrice: string; // Price per step in token decimals
+  rewardScore?: number; // Reward score for launchpad fractions (optional, only used for launchpad type, e.g., 50, 100, 200)
   type?: "launchpad" | "mining-center";
 }
 
@@ -94,7 +95,7 @@ export async function createFraction(params: CreateFractionParams, tx?: any) {
   const now = new Date();
   const expirationAt = new Date(
     now.getTime() +
-      (params.type === "mining-center"
+      (fractionType === "mining-center"
         ? MINING_CENTER_FRACTION_LIFETIME_MS
         : LAUNCHPAD_FRACTION_LIFETIME_MS)
   );
@@ -107,6 +108,8 @@ export async function createFraction(params: CreateFractionParams, tx?: any) {
     sponsorSplitPercent: params.sponsorSplitPercent,
     step: params.stepPrice || null, // Store stepPrice in the step field
     stepPrice: params.stepPrice,
+    rewardScore:
+      fractionType === "launchpad" ? params.rewardScore ?? null : null, // Only save rewardScore for launchpad fractions
     createdAt: now,
     updatedAt: now,
     isCommittedOnChain: false,
@@ -116,7 +119,7 @@ export async function createFraction(params: CreateFractionParams, tx?: any) {
     filledAt: null,
     expirationAt,
     status: FRACTION_STATUS.DRAFT,
-    type: params.type || "launchpad",
+    type: fractionType,
   };
 
   const result = await (tx || db)
