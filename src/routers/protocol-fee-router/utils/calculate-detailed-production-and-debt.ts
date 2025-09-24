@@ -94,6 +94,8 @@ export async function calculateDetailedProductionAndDebt({
     totalCarbonDebtProduced * Math.pow(1 + disasterRisk, commitmentPeriod); // F23
   const weeklyTotalCarbonDebt =
     adjustedTotalCarbonDebt / (weeksPerYear * commitmentPeriod); // F24
+  const netCarbonCreditEarningsWeekly =
+    adjustedWeeklyCarbonCredits - weeklyTotalCarbonDebt; // B26
 
   return {
     weeklyProduction: {
@@ -139,6 +141,11 @@ export async function calculateDetailedProductionAndDebt({
           weeklyPowerProductionMWh,
           carbonOffsetsPerMWH: average_carbon_certificates,
         },
+      },
+      netCarbonCreditEarningsWeekly: {
+        value: netCarbonCreditEarningsWeekly,
+        formula: "adjustedWeeklyCarbonCredits - weeklyTotalCarbonDebt",
+        variables: { adjustedWeeklyCarbonCredits, weeklyTotalCarbonDebt },
       },
       adjustedWeeklyCarbonCredits: {
         value: adjustedWeeklyCarbonCredits,

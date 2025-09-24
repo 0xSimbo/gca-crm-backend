@@ -1,206 +1,206 @@
 export const statesWithEscalatorFees = [
   {
     state: "Hawaii",
-    percent: 0.0436,
+    percent: 0.0453,
   },
   {
     state: "Kentucky",
-    percent: 0.0339,
+    percent: 0.0342,
   },
   {
     state: "California",
-    percent: 0.0334,
+    percent: 0.0454,
   },
   {
     state: "Wisconsin",
-    percent: 0.033,
+    percent: 0.0349,
   },
   {
     state: "Massachusetts",
-    percent: 0.033,
+    percent: 0.044,
   },
   {
     state: "Indiana",
-    percent: 0.031200000000000002,
+    percent: 0.0299,
   },
   {
     state: "Alabama",
-    percent: 0.0308,
+    percent: 0.0307,
   },
   {
     state: "West Virginia",
-    percent: 0.0304,
+    percent: 0.0356,
   },
   {
     state: "Michigan",
-    percent: 0.0296,
+    percent: 0.0319,
   },
   {
     state: "Washington",
-    percent: 0.029500000000000002,
+    percent: 0.0345,
   },
   {
     state: "Tennessee",
-    percent: 0.0292,
+    percent: 0.0279,
   },
   {
     state: "Oregon",
-    percent: 0.028999999999999998,
+    percent: 0.037,
   },
   {
     state: "Nevada",
-    percent: 0.028900000000000002,
+    percent: 0.0304,
   },
   {
     state: "Connecticut",
-    percent: 0.0288,
+    percent: 0.0373,
   },
   {
     state: "Idaho",
-    percent: 0.0286,
+    percent: 0.0316,
   },
   {
     state: "Alaska",
-    percent: 0.028399999999999998,
+    percent: 0.0322,
   },
   {
     state: "Minnesota",
-    percent: 0.0273,
+    percent: 0.0293,
   },
   {
     state: "Colorado",
-    percent: 0.026600000000000002,
+    percent: 0.0288,
   },
   {
     state: "Rhode Island",
-    percent: 0.0263,
+    percent: 0.0413,
   },
   {
     state: "Oklahoma",
-    percent: 0.0259,
+    percent: 0.025,
   },
   {
     state: "South Carolina",
-    percent: 0.0255,
+    percent: 0.0251,
   },
   {
     state: "New Hampshire",
-    percent: 0.0253,
+    percent: 0.0209,
   },
   {
     state: "Kansas",
-    percent: 0.0245,
+    percent: 0.0254,
   },
   {
     state: "Georgia",
-    percent: 0.024,
+    percent: 0.0257,
   },
   {
     state: "District of Columbia",
-    percent: 0.0239,
+    percent: 0.0323,
   },
   {
     state: "Mississippi",
-    percent: 0.023799999999999998,
+    percent: 0.029,
   },
   {
     state: "Wyoming",
-    percent: 0.023399999999999997,
+    percent: 0.0271,
   },
   {
     state: "Montana",
-    percent: 0.0233,
-  },
-  {
-    state: "Maine",
-    percent: 0.023,
-  },
-  {
-    state: "Vermont",
     percent: 0.0229,
   },
   {
+    state: "Maine",
+    percent: 0.0243,
+  },
+  {
+    state: "Vermont",
+    percent: 0.0238,
+  },
+  {
     state: "Virginia",
-    percent: 0.0225,
+    percent: 0.0268,
   },
   {
     state: "Maryland",
-    percent: 0.022400000000000003,
+    percent: 0.0307,
   },
   {
     state: "North Dakota",
-    percent: 0.022400000000000003,
+    percent: 0.023,
   },
   {
     state: "Louisiana",
-    percent: 0.0223,
+    percent: 0.0194,
   },
   {
     state: "Missouri",
-    percent: 0.0222,
+    percent: 0.0242,
   },
   {
     state: "Texas",
-    percent: 0.022099999999999998,
+    percent: 0.0274,
   },
   {
     state: "Florida",
-    percent: 0.022000000000000002,
+    percent: 0.0241,
   },
   {
     state: "South Dakota",
-    percent: 0.0219,
+    percent: 0.0229,
   },
   {
     state: "Nebraska",
-    percent: 0.0218,
+    percent: 0.0239,
   },
   {
     state: "Ohio",
-    percent: 0.0196,
+    percent: 0.0248,
   },
   {
     state: "Pennsylvania",
-    percent: 0.0195,
+    percent: 0.0281,
   },
   {
     state: "Iowa",
-    percent: 0.018799999999999997,
+    percent: 0.0203,
   },
   {
     state: "Utah",
-    percent: 0.0187,
+    percent: 0.0244,
   },
   {
     state: "New Mexico",
-    percent: 0.018500000000000003,
+    percent: 0.0203,
   },
   {
     state: "New York",
-    percent: 0.018000000000000002,
+    percent: 0.0227,
   },
   {
     state: "Illinois",
-    percent: 0.0169,
+    percent: 0.0249,
   },
   {
     state: "Arkansas",
-    percent: 0.0169,
+    percent: 0.0209,
   },
   {
     state: "North Carolina",
-    percent: 0.0165,
+    percent: 0.0225,
   },
   {
     state: "Delaware",
-    percent: 0.0161,
+    percent: 0.0244,
   },
   {
     state: "Arizona",
-    percent: 0.015700000000000002,
+    percent: 0.0205,
   },
   {
     state: "New Jersey",
-    percent: 0.013300000000000001,
+    percent: 0.0211,
   },
 ];
