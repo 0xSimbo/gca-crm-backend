@@ -2114,6 +2114,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                   .set({
                     sponsorSplitPercent,
                     updatedAt: new Date(),
+                    rewardScore,
                   })
                   .where(createSafeFractionUpdateWhere(activeFraction.id))
                   .returning();
@@ -2179,13 +2180,11 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
             stepPrice: t.String({
               description: "Price per step in token decimals",
             }),
-            rewardScore: t.Optional(
-              t.Number({
-                minimum: 1,
-                description:
-                  "Reward score for launchpad fractions (e.g., 50, 100, 200)",
-              })
-            ),
+            rewardScore: t.Number({
+              minimum: 1,
+              description:
+                "Reward score for launchpad fractions (e.g., 50, 100, 200)",
+            }),
           }),
           detail: {
             summary: "Publish Application to auction",

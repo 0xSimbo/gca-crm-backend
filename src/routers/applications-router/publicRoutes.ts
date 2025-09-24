@@ -299,6 +299,7 @@ export const publicApplicationsRoutes = new Elysia()
                 expirationAt: true,
                 isCommittedOnChain: true,
                 isFilled: true,
+                rewardScore: true,
                 totalSteps: true,
                 splitsSold: true,
                 step: true,
@@ -444,6 +445,7 @@ export const publicApplicationsRoutes = new Elysia()
                   token: activeFraction.token,
                   owner: activeFraction.owner,
                   txHash: activeFraction.txHash,
+                  rewardScore: activeFraction.rewardScore,
                   // Calculate progress percentage
                   progressPercent:
                     activeFraction.totalSteps && activeFraction.splitsSold
