@@ -259,7 +259,6 @@ export const publicApplicationsRoutes = new Elysia()
             enquiryFieldsCRS: {
               columns: {
                 address: true,
-                farmOwnerName: true,
                 lat: true,
                 lng: true,
                 estimatedKWhGeneratedPerYear: true,

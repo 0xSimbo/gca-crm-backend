@@ -220,6 +220,7 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
             fractionStatus: fraction.status,
             isFilled: fraction.isFilled,
             progressPercent,
+            rewardScore: fraction.rewardScore,
 
             // Purchase value calculation
             stepPrice: split.step,

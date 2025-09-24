@@ -3,6 +3,10 @@ import { protocolFeeAssumptions } from "../../../constants/protocol-fee-assumpti
 import { Coordinates } from "../../../types";
 
 interface CalculateDetailedProductionAndDebtArgs extends Coordinates {
+  /**
+   * Nameplate power in MW (kept as `powerOutputMWH` for compatibility).
+   * Energy per week is computed as MW * sunHours/day * 7.
+   */
   powerOutputMWH: number;
   averageSunlightHoursPerDay?: number;
   averageCarbonCertificatesPerMWH?: number;
@@ -20,7 +24,7 @@ export async function calculateDetailedProductionAndDebt({
   averageSunlightHoursPerDay,
   averageCarbonCertificatesPerMWH,
 }: CalculateDetailedProductionAndDebtArgs): Promise<DetailedProductionAndDebtResult> {
-  // Get sunlight hours and carbon offset per MWh
+  // === Inputs / lookups ===
   let average_sunlight: number;
   let average_carbon_certificates: number;
 
@@ -45,37 +49,57 @@ export async function calculateDetailedProductionAndDebt({
         : result.average_carbon_certificates;
   }
 
-  // Constants
-  const adjustmentDueToUncertainty =
-    protocolFeeAssumptions.uncertaintyMultiplier; // 0.35
-  const disasterRisk = protocolFeeAssumptions.disasterRisk; // 0.0017
-  const commitmentPeriod = protocolFeeAssumptions.commitmentPeriod; // 10
-  const totalCarbonDebtAdjustedKWh = 3.1104; // fixed for now
+  // === Constants (mirror the sheet) ===
   const daysPerWeek = 7;
   const weeksPerYear = 52;
 
-  // --- Weekly Production ---
-  const weeklyPowerProductionMWh =
-    powerOutputMWH * daysPerWeek * average_sunlight;
-  const weeklyCarbonCredits =
-    weeklyPowerProductionMWh * average_carbon_certificates;
-  const adjustedWeeklyCarbonCredits =
-    weeklyCarbonCredits * (1 - adjustmentDueToUncertainty);
+  const {
+    carbonFootprint, // g CO2 / kWh (B2)
+    solarIrradiation, // h / year       (B4)
+    performanceRatio, //                (B5)
+    panelLifetime, // years          (B6)
+    uncertaintyMultiplier, // 35%            (B8)
+    disasterRisk, // 0.17%          (F21)
+    commitmentPeriod, // years          (F22 / B13)
+  } = protocolFeeAssumptions;
 
-  // --- Weekly Carbon Debt ---
-  const convertToKW = powerOutputMWH * 1000;
-  const totalCarbonDebtProduced =
-    totalCarbonDebtAdjustedKWh * powerOutputMWH * 1000;
+  // === Sheet left block: carbon debt per kWh ===
+  // B3: grams -> metric tons
+  const gramsToMetricTons = 1 / 1_000_000;
+
+  // B7: total carbon debt per kWh (raw, before uncertainty)
+  const totalCarbonDebtPerKWh =
+    carbonFootprint *
+    gramsToMetricTons *
+    solarIrradiation *
+    performanceRatio *
+    panelLifetime;
+
+  // B9: adjusted carbon debt per kWh (adds uncertainty)
+  const totalCarbonDebtAdjustedKWh =
+    totalCarbonDebtPerKWh * (1 + uncertaintyMultiplier);
+
+  // --- Weekly Production (B17–B23) ---
+  const weeklyPowerProductionMWh =
+    powerOutputMWH * average_sunlight * daysPerWeek; // B19
+  const weeklyCarbonCredits =
+    weeklyPowerProductionMWh * average_carbon_certificates; // B21
+  const adjustedWeeklyCarbonCredits =
+    weeklyCarbonCredits * (1 - uncertaintyMultiplier); // B23
+
+  // --- Weekly Carbon Debt (E17–F24) ---
+  const convertToKW = powerOutputMWH * 1000; // F19
+  const totalCarbonDebtProduced = totalCarbonDebtAdjustedKWh * convertToKW; // F20
   const adjustedTotalCarbonDebt =
-    totalCarbonDebtProduced * Math.pow(1 + disasterRisk, commitmentPeriod);
+    totalCarbonDebtProduced * Math.pow(1 + disasterRisk, commitmentPeriod); // F23
   const weeklyTotalCarbonDebt =
-    adjustedTotalCarbonDebt / (weeksPerYear * commitmentPeriod);
+    adjustedTotalCarbonDebt / (weeksPerYear * commitmentPeriod); // F24
 
   return {
     weeklyProduction: {
       powerOutputMWH: {
         value: powerOutputMWH,
-        formula: "input",
+        formula: "input (MW nameplate)",
         variables: { powerOutputMWH },
       },
       hoursOfSunlightPerDay: {
@@ -95,13 +119,13 @@ export async function calculateDetailedProductionAndDebt({
         variables: { latitude, longitude },
       },
       adjustmentDueToUncertainty: {
-        value: adjustmentDueToUncertainty,
+        value: uncertaintyMultiplier,
         formula: "fixed",
-        variables: { adjustmentDueToUncertainty },
+        variables: { uncertaintyMultiplier },
       },
       weeklyPowerProductionMWh: {
         value: weeklyPowerProductionMWh,
-        formula: "powerOutputMWH * hoursOfSunlightPerDay * daysPerWeek",
+        formula: "powerOutputMWH * hoursOfSunlightPerDay * 7",
         variables: {
           powerOutputMWH,
           hoursOfSunlightPerDay: average_sunlight,
@@ -119,18 +143,35 @@ export async function calculateDetailedProductionAndDebt({
       adjustedWeeklyCarbonCredits: {
         value: adjustedWeeklyCarbonCredits,
         formula: "weeklyCarbonCredits * (1 - adjustmentDueToUncertainty)",
-        variables: { weeklyCarbonCredits, adjustmentDueToUncertainty },
+        variables: {
+          weeklyCarbonCredits,
+          adjustmentDueToUncertainty: uncertaintyMultiplier,
+        },
       },
     },
     weeklyCarbonDebt: {
+      totalCarbonDebtPerKWh: {
+        value: totalCarbonDebtPerKWh,
+        formula:
+          "(carbonFootprint/1e6) * solarIrradiation * performanceRatio * panelLifetime",
+        variables: {
+          carbonFootprint,
+          solarIrradiation,
+          performanceRatio,
+          panelLifetime,
+        },
+      },
       totalCarbonDebtAdjustedKWh: {
         value: totalCarbonDebtAdjustedKWh,
-        formula: "fixed",
-        variables: { totalCarbonDebtAdjustedKWh },
+        formula: "totalCarbonDebtPerKWh * (1 + uncertaintyMultiplier)",
+        variables: {
+          totalCarbonDebtPerKWh,
+          uncertaintyMultiplier,
+        },
       },
       powerOutputMWH: {
         value: powerOutputMWH,
-        formula: "input",
+        formula: "input (MW nameplate)",
         variables: { powerOutputMWH },
       },
       convertToKW: {
@@ -140,8 +181,8 @@ export async function calculateDetailedProductionAndDebt({
       },
       totalCarbonDebtProduced: {
         value: totalCarbonDebtProduced,
-        formula: "totalCarbonDebtAdjustedKWh * powerOutputMWH * 1000",
-        variables: { totalCarbonDebtAdjustedKWh, powerOutputMWH },
+        formula: "totalCarbonDebtAdjustedKWh * convertToKW",
+        variables: { totalCarbonDebtAdjustedKWh, convertToKW },
       },
       disasterRisk: {
         value: disasterRisk,
@@ -157,20 +198,12 @@ export async function calculateDetailedProductionAndDebt({
         value: adjustedTotalCarbonDebt,
         formula:
           "totalCarbonDebtProduced * (1 + disasterRisk) ** commitmentPeriod",
-        variables: {
-          totalCarbonDebtProduced,
-          disasterRisk,
-          commitmentPeriod,
-        },
+        variables: { totalCarbonDebtProduced, disasterRisk, commitmentPeriod },
       },
       weeklyTotalCarbonDebt: {
         value: weeklyTotalCarbonDebt,
-        formula: "adjustedTotalCarbonDebt / (weeksPerYear * commitmentPeriod)",
-        variables: {
-          adjustedTotalCarbonDebt,
-          weeksPerYear,
-          commitmentPeriod,
-        },
+        formula: "adjustedTotalCarbonDebt / (52 * commitmentPeriod)",
+        variables: { adjustedTotalCarbonDebt, commitmentPeriod, weeksPerYear },
       },
     },
   };
