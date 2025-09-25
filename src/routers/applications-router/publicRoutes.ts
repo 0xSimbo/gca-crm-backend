@@ -55,6 +55,7 @@ import {
 } from "../../db/queries/fractions/findFractionsByApplicationId";
 import { markFractionAsFilled } from "../../db/mutations/fractions/createFraction";
 import { getFractionEventService } from "../../services/eventListener";
+import { FRACTION_STATUS } from "../../constants/fractions";
 
 /**
  * Helper function to complete an application and create a farm with devices
@@ -201,7 +202,8 @@ export const publicApplicationsRoutes = new Elysia()
               .where(
                 and(
                   eq(fractions.applicationId, applications.id),
-                  inArray(fractions.status, ["draft", "committed"]),
+                  eq(fractions.status, FRACTION_STATUS.COMMITTED),
+                  eq(fractions.isCommittedOnChain, true),
                   gt(fractions.expirationAt, new Date()),
                   ne(fractions.type, "mining-center")
                 )
