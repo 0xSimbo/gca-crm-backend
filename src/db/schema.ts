@@ -1673,6 +1673,7 @@ export const weeklyProduction = pgTable(
       precision: 20,
       scale: 8,
     }).notNull(),
+    updatedAt: timestamp("updated_at"),
   },
   (t) => ({
     uniqueApplicationId: uniqueIndex(
@@ -1741,6 +1742,7 @@ export const weeklyCarbonDebt = pgTable(
       precision: 20,
       scale: 8,
     }).notNull(),
+    updatedAt: timestamp("updated_at"),
   },
   (t) => ({
     uniqueApplicationId: uniqueIndex(

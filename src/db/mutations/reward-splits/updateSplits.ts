@@ -5,7 +5,6 @@ import {
   RewardSplits,
   applications,
 } from "../../schema";
-import { ApplicationStatusEnum } from "../../../types/api-types/Application";
 
 export const updateSplits = async (
   values: RewardSplitsInsertType[],
@@ -29,12 +28,5 @@ export const updateSplits = async (
     if (res.length === 0) {
       tx.rollback();
     }
-
-    await tx
-      .update(applications)
-      .set({
-        status: ApplicationStatusEnum.waitingForApproval,
-      })
-      .where(eq(applications.id, applicationId));
   });
 };

@@ -1903,7 +1903,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                 .onConflictDoUpdate({
                   target: [weeklyProduction.applicationId],
                   set: {
-                    createdAt: new Date(),
+                    updatedAt: new Date(),
                     powerOutputMWH:
                       body.weeklyProduction.powerOutputMWH.toString(),
                     hoursOfSunlightPerDay:
@@ -1943,7 +1943,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                 .onConflictDoUpdate({
                   target: [weeklyCarbonDebt.applicationId],
                   set: {
-                    createdAt: new Date(),
+                    updatedAt: new Date(),
                     totalCarbonDebtAdjustedKWh:
                       body.weeklyCarbonDebt.totalCarbonDebtAdjustedKWh.toString(),
                     convertToKW: body.weeklyCarbonDebt.convertToKW.toString(),

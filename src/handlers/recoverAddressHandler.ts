@@ -20,7 +20,7 @@ export const recoverAddressHandler = async (
     {
       name: "Glow Crm",
       version: "1",
-      chainId: 1,
+      chainId: process.env.NODE_ENV === "staging" ? 11155111 : 1,
     },
     types,
     {

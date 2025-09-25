@@ -11,7 +11,7 @@ import {
   zones,
 } from "../../db/schema";
 import { db } from "../../db/db";
-import { and, eq, not, or, sql } from "drizzle-orm";
+import { and, eq, isNull, ne, not, or, sql } from "drizzle-orm";
 import postgres from "postgres";
 import { PG_DATABASE_URL, PG_ENV } from "../../db/PG_ENV";
 import { getProtocolWeek } from "../../utils/getProtocolWeek";
@@ -960,6 +960,201 @@ export const adminRouter = new Elysia({ prefix: "/admin" })
         query: t.Object({
           operationId: t.String(),
         }),
+      },
+    }
+  )
+  .get(
+    "/reset-applications-to-draft",
+    async ({ set }) => {
+      try {
+        if (process.env.NODE_ENV === "production") {
+          set.status = 404;
+          return { message: "Not allowed in production" };
+        }
+
+        console.log("Searching for applications to reset to draft status...");
+
+        // Find applications with status "waiting-for-approval", null installFinishedDate, and on step 4
+        const applicationsToReset = await db.query.applications.findMany({
+          where: (app, { and, eq, isNull }) =>
+            and(
+              eq(app.status, ApplicationStatusEnum.waitingForApproval),
+              isNull(app.installFinishedDate),
+              eq(app.currentStep, ApplicationSteps.inspectionAndPtoDocuments)
+            ),
+          columns: {
+            id: true,
+            status: true,
+            installFinishedDate: true,
+            currentStep: true,
+            createdAt: true,
+          },
+        });
+
+        if (applicationsToReset.length === 0) {
+          return {
+            message: "No applications found matching criteria",
+            updated: 0,
+            criteria: {
+              status: "waiting-for-approval",
+              installFinishedDate: "null",
+              currentStep: "4 (inspectionAndPtoDocuments)",
+            },
+          };
+        }
+
+        console.log(
+          `Found ${applicationsToReset.length} applications to reset`
+        );
+
+        // Update applications to draft status
+        const updateResult = await db
+          .update(applications)
+          .set({
+            status: ApplicationStatusEnum.draft,
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(applications.status, ApplicationStatusEnum.waitingForApproval),
+              isNull(applications.installFinishedDate),
+              eq(
+                applications.currentStep,
+                ApplicationSteps.inspectionAndPtoDocuments
+              )
+            )
+          )
+          .returning({
+            id: applications.id,
+            status: applications.status,
+          });
+
+        console.log(
+          `Successfully updated ${updateResult.length} applications to draft status`
+        );
+
+        set.status = 200;
+        return {
+          message: `Successfully reset ${updateResult.length} applications to draft status`,
+          updated: updateResult.length,
+          criteria: {
+            status: "waiting-for-approval",
+            installFinishedDate: "null",
+            currentStep: "4 (inspectionAndPtoDocuments)",
+          },
+          updatedApplications: updateResult.map((app) => ({
+            id: app.id,
+            newStatus: app.status,
+          })),
+        };
+      } catch (error) {
+        console.error("Error resetting applications to draft:", error);
+        set.status = 500;
+        return {
+          message: "Error resetting applications to draft",
+          error: error instanceof Error ? error.message : "Unknown error",
+        };
+      }
+    },
+    {
+      detail: {
+        summary: "Reset applications to draft status",
+        description:
+          "Finds all applications with status 'waiting-for-approval', null installFinishedDate, and currentStep 4 (inspectionAndPtoDocuments), " +
+          "then moves them back to 'draft' status. This is useful for cleaning up applications " +
+          "that are stuck in the approval process without an installation date.",
+        tags: ["admin", "applications", "maintenance"],
+      },
+    }
+  )
+  .get(
+    "/patch-gca-address",
+    async ({ set }) => {
+      try {
+        if (process.env.NODE_ENV === "production") {
+          set.status = 404;
+          return { message: "Not allowed in production" };
+        }
+
+        const targetGcaAddress = "0xA9A58D16F454A4FA5F7f00Bbe583A86F2C5446dd";
+
+        console.log(
+          `Updating all applications to use GCA address: ${targetGcaAddress}`
+        );
+
+        // Find all applications that don't have the target GCA address
+        const applicationsToUpdate = await db.query.applications.findMany({
+          where: (app, { ne, or, isNull }) =>
+            or(ne(app.gcaAddress, targetGcaAddress), isNull(app.gcaAddress)),
+          columns: {
+            id: true,
+            gcaAddress: true,
+            status: true,
+            createdAt: true,
+          },
+        });
+
+        if (applicationsToUpdate.length === 0) {
+          return {
+            message: "All applications already have the correct GCA address",
+            targetGcaAddress,
+            updated: 0,
+          };
+        }
+
+        console.log(
+          `Found ${applicationsToUpdate.length} applications to update`
+        );
+
+        // Update all applications to use the target GCA address
+        const updateResult = await db
+          .update(applications)
+          .set({
+            gcaAddress: targetGcaAddress,
+            updatedAt: new Date(),
+          })
+          .where(
+            or(
+              not(eq(applications.gcaAddress, targetGcaAddress)),
+              isNull(applications.gcaAddress)
+            )
+          )
+          .returning({
+            id: applications.id,
+            gcaAddress: applications.gcaAddress,
+          });
+
+        console.log(
+          `Successfully updated ${updateResult.length} applications with new GCA address`
+        );
+
+        set.status = 200;
+        return {
+          message: `Successfully updated ${updateResult.length} applications with new GCA address`,
+          targetGcaAddress,
+          updated: updateResult.length,
+          totalFound: applicationsToUpdate.length,
+          updatedApplications: updateResult.map((app) => ({
+            id: app.id,
+            newGcaAddress: app.gcaAddress,
+          })),
+        };
+      } catch (error) {
+        console.error("Error patching GCA address:", error);
+        set.status = 500;
+        return {
+          message: "Error patching GCA address",
+          error: error instanceof Error ? error.message : "Unknown error",
+        };
+      }
+    },
+    {
+      detail: {
+        summary: "Patch GCA address for all applications",
+        description:
+          "Updates the gcaAddress field for all applications to use the specified GCA address (0xA9A58D16F454A4FA5F7f00Bbe583A86F2C5446dd). " +
+          "This is useful for standardizing GCA assignments across all applications.",
+        tags: ["admin", "applications", "gca"],
       },
     }
   );
