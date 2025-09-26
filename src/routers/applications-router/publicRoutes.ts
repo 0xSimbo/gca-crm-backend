@@ -159,7 +159,7 @@ export const publicApplicationsRoutes = new Elysia()
     "/sponsor-listings-applications",
     async ({ query, set }) => {
       try {
-        const { zoneId, sortBy, sortOrder, paymentCurrency } = query;
+        const { zoneId, sortBy, sortOrder, paymentCurrency, type } = query;
 
         // Parse zoneId if provided
         const parsedZoneId = zoneId !== undefined ? Number(zoneId) : undefined;
@@ -169,9 +169,19 @@ export const publicApplicationsRoutes = new Elysia()
         }
 
         // Build where conditions
-        const baseConditions = [
-          eq(applications.status, ApplicationStatusEnum.waitingForPayment),
-        ];
+        const baseConditions = [];
+
+        // Add status filter based on type
+        if (type === "mining-center") {
+          baseConditions.push(
+            eq(applications.status, ApplicationStatusEnum.completed)
+          );
+        } else {
+          // For launchpad type or when type is not specified
+          baseConditions.push(
+            eq(applications.status, ApplicationStatusEnum.waitingForPayment)
+          );
+        }
 
         // Add zoneId filter if specified
         if (parsedZoneId !== undefined) {
@@ -194,20 +204,28 @@ export const publicApplicationsRoutes = new Elysia()
         );
 
         // Add filter to only show applications that have active fractions
+        const fractionConditions = [
+          eq(fractions.applicationId, applications.id),
+          eq(fractions.status, FRACTION_STATUS.COMMITTED),
+          eq(fractions.isCommittedOnChain, true),
+          gt(fractions.expirationAt, new Date()),
+        ];
+
+        // Filter by fraction type
+        if (type) {
+          // If type is specified, filter for that specific type
+          fractionConditions.push(eq(fractions.type, type));
+        } else {
+          // Default behavior: exclude mining-center fractions
+          fractionConditions.push(ne(fractions.type, "mining-center"));
+        }
+
         baseConditions.push(
           exists(
             db
               .select()
               .from(fractions)
-              .where(
-                and(
-                  eq(fractions.applicationId, applications.id),
-                  eq(fractions.status, FRACTION_STATUS.COMMITTED),
-                  eq(fractions.isCommittedOnChain, true),
-                  gt(fractions.expirationAt, new Date()),
-                  ne(fractions.type, "mining-center")
-                )
-              )
+              .where(and(...fractionConditions))
           )
         );
 
@@ -260,7 +278,6 @@ export const publicApplicationsRoutes = new Elysia()
             },
             enquiryFieldsCRS: {
               columns: {
-                address: true,
                 lat: true,
                 lng: true,
                 estimatedKWhGeneratedPerYear: true,
@@ -289,7 +306,10 @@ export const publicApplicationsRoutes = new Elysia()
             fractions: {
               where: and(
                 inArray(fractions.status, ["draft", "committed"]),
-                gt(fractions.expirationAt, new Date())
+                gt(fractions.expirationAt, new Date()),
+                type
+                  ? eq(fractions.type, type)
+                  : ne(fractions.type, "mining-center")
               ),
               columns: {
                 id: true,
@@ -303,6 +323,7 @@ export const publicApplicationsRoutes = new Elysia()
                 rewardScore: true,
                 totalSteps: true,
                 splitsSold: true,
+                stepPrice: true,
                 step: true,
                 token: true,
                 owner: true,
@@ -442,6 +463,7 @@ export const publicApplicationsRoutes = new Elysia()
                   isFilled: activeFraction.isFilled,
                   totalSteps: activeFraction.totalSteps,
                   splitsSold: activeFraction.splitsSold,
+                  stepPrice: activeFraction.stepPrice,
                   step: activeFraction.step, // Price per step in token decimals
                   token: activeFraction.token,
                   owner: activeFraction.owner,
@@ -510,10 +532,13 @@ export const publicApplicationsRoutes = new Elysia()
           ])
         ),
         sortOrder: t.Optional(t.Union([t.Literal("asc"), t.Literal("desc")])),
+        type: t.Optional(
+          t.Union([t.Literal("launchpad"), t.Literal("mining-center")])
+        ),
       }),
       detail: {
         summary: "Get auction applications available for sponsorship",
-        description: `Returns applications that are waiting for payment, published on auction, in zones accepting sponsors, and have active fractions available for purchase. Only applications with active fractions (draft or committed status, not expired) are returned. Supports filtering by zoneId and paymentCurrency, and sorting by publishedOnAuctionTimestamp, sponsorSplitPercent, finalProtocolFee, or paymentCurrency. When sorting by paymentCurrency with a specific currency filter, sorts by lowest price for that currency. Includes application price quotes, related data, and active fraction information showing funding progress, steps sold, amounts raised, and expiration details.`,
+        description: `Returns applications with active fractions available for purchase. The application status depends on the fraction type: 'launchpad' (default) returns applications waiting for payment in zones accepting sponsors, while 'mining-center' returns completed applications. Only applications with active fractions (draft or committed status, not expired) are returned. Supports filtering by zoneId, paymentCurrency, and fraction type. Sorting options include publishedOnAuctionTimestamp, sponsorSplitPercent, finalProtocolFee, or paymentCurrency. When sorting by paymentCurrency with a specific currency filter, sorts by lowest price for that currency. Includes application price quotes, related data, and active fraction information showing funding progress, steps sold, amounts raised, and expiration details.`,
         tags: [TAG.APPLICATIONS],
       },
     }
