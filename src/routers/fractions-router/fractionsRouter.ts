@@ -192,41 +192,57 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
           );
         }
 
-        // Transform the data for better API response
-        const activityData = filteredActivity.map((activity) => {
-          const { split, fraction } = activity;
+        // Transform the data for better API response, filtering out invalid tokens
+        const activityData = filteredActivity
+          .map((activity) => {
+            const { split, fraction } = activity;
 
-          // Calculate progress percentage
-          const progressPercent =
-            fraction.totalSteps && fraction.splitsSold
-              ? Math.round((fraction.splitsSold / fraction.totalSteps) * 100)
-              : 0;
+            // Calculate progress percentage
+            const progressPercent =
+              fraction.totalSteps && fraction.splitsSold
+                ? Math.round((fraction.splitsSold / fraction.totalSteps) * 100)
+                : 0;
 
-          return {
-            // Split transaction details
-            transactionHash: split.transactionHash,
-            blockNumber: split.blockNumber,
-            buyer: split.buyer,
-            creator: split.creator,
-            stepsPurchased: split.stepsPurchased,
-            amount: split.amount,
-            step: split.step,
-            timestamp: split.timestamp,
-            purchaseDate: split.createdAt,
+            const currency =
+              forwarderAddresses.USDC.toLowerCase() ===
+              fraction.token!.toLowerCase()
+                ? "USDC"
+                : fraction.token!.toLowerCase() ===
+                  forwarderAddresses.GLW.toLowerCase()
+                ? "GLW"
+                : undefined;
 
-            // Fraction context
-            fractionId: fraction.id,
-            applicationId: fraction.applicationId,
-            fractionStatus: fraction.status,
-            isFilled: fraction.isFilled,
-            progressPercent,
-            rewardScore: fraction.rewardScore,
+            // Return null for invalid tokens to filter them out
+            if (!currency) {
+              return null;
+            }
 
-            // Purchase value calculation
-            stepPrice: split.step,
-            totalValue: split.amount,
-          };
-        });
+            return {
+              // Split transaction details
+              transactionHash: split.transactionHash,
+              blockNumber: split.blockNumber,
+              buyer: split.buyer,
+              creator: split.creator,
+              stepsPurchased: split.stepsPurchased,
+              amount: split.amount,
+              step: split.step,
+              timestamp: split.timestamp,
+              purchaseDate: split.createdAt,
+              currency,
+              // Fraction context
+              fractionId: fraction.id,
+              applicationId: fraction.applicationId,
+              fractionStatus: fraction.status,
+              isFilled: fraction.isFilled,
+              progressPercent,
+              rewardScore: fraction.rewardScore,
+
+              // Purchase value calculation
+              stepPrice: split.step,
+              totalValue: split.amount,
+            };
+          })
+          .filter((activity) => activity !== null);
 
         return {
           activity: activityData,

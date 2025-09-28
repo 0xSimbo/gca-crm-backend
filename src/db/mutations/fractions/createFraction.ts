@@ -20,6 +20,9 @@ import {
 import { FindFirstApplicationById } from "../../queries/applications/findFirstApplicationById";
 import { getFractionEventService } from "../../../services/eventListener";
 import { completeApplicationAndCreateFarm } from "../../../routers/applications-router/publicRoutes";
+import { createSlackClient } from "../../../slack/create-slack-client";
+
+const SLACK_CHANNEL = "#devs";
 
 export interface CreateFractionParams {
   applicationId: string;
@@ -171,7 +174,7 @@ export async function markFractionAsCommitted(
  * @param fractionId - The fraction ID
  */
 export async function markFractionAsFilled(fractionId: string) {
-  return await db
+  const result = await db
     .update(fractions)
     .set({
       isFilled: true,
@@ -181,6 +184,32 @@ export async function markFractionAsFilled(fractionId: string) {
     })
     .where(eq(fractions.id, fractionId))
     .returning();
+
+  // Send Slack notification when fraction is filled
+  if (result[0] && process.env.SLACK_BOT_TOKEN) {
+    try {
+      const slackBot = createSlackClient(process.env.SLACK_BOT_TOKEN);
+      const fraction = result[0];
+      const slackMessage =
+        `🎉 *Fraction Manually Filled*\n\n` +
+        `*Fraction ID:* ${fractionId}\n` +
+        `*Application ID:* ${fraction.applicationId}\n` +
+        `*Type:* ${fraction.type}\n` +
+        `*Time:* ${new Date().toISOString()}\n` +
+        `*Environment:* ${process.env.NODE_ENV || "unknown"}\n\n` +
+        `_This fraction was marked as filled manually._`;
+
+      await slackBot.api.sendMessage(SLACK_CHANNEL, slackMessage);
+    } catch (slackError) {
+      console.error(
+        "[markFractionAsFilled] Failed to send Slack notification:",
+        slackError
+      );
+      // Don't fail the operation if Slack notification fails
+    }
+  }
+
+  return result;
 }
 
 export interface CreateFractionSplitParams {
@@ -196,6 +225,13 @@ export interface CreateFractionSplitParams {
   timestamp: number;
 }
 
+export interface RecordFractionSplitResult {
+  split: any | null;
+  fraction: any;
+  shouldCompleteApplication: boolean;
+  wasAlreadyFilled?: boolean;
+}
+
 /**
  * Records a fraction split sale and increments the splitsSold counter
  * If splitsSold reaches totalSteps, marks the fraction as filled and completes the application
@@ -203,7 +239,9 @@ export interface CreateFractionSplitParams {
  * @param params - The fraction split parameters from the blockchain event
  * @returns The created fraction split and updated fraction
  */
-export async function recordFractionSplit(params: CreateFractionSplitParams) {
+export async function recordFractionSplit(
+  params: CreateFractionSplitParams
+): Promise<RecordFractionSplitResult> {
   // First, check the fraction status before starting the transaction
   const fraction = await db
     .select()
@@ -213,6 +251,20 @@ export async function recordFractionSplit(params: CreateFractionSplitParams) {
 
   if (!fraction[0]) {
     throw new Error(`Fraction not found: ${params.fractionId}`);
+  }
+
+  // If fraction is already filled, this is likely a race condition where multiple events
+  // were processed concurrently. This is not an error - just skip processing.
+  if (fraction[0].status === FRACTION_STATUS.FILLED) {
+    console.log(
+      `[recordFractionSplit] Fraction ${params.fractionId} is already filled, skipping split processing (likely race condition)`
+    );
+    return {
+      split: null,
+      fraction: fraction[0],
+      shouldCompleteApplication: false,
+      wasAlreadyFilled: true,
+    };
   }
 
   // Validate fraction is in a valid state to record splits
@@ -277,6 +329,33 @@ export async function recordFractionSplit(params: CreateFractionSplitParams) {
         })
         .where(eq(fractions.id, params.fractionId))
         .returning();
+
+      // Send Slack notification when fraction is filled
+      if (process.env.SLACK_BOT_TOKEN) {
+        try {
+          const slackBot = createSlackClient(process.env.SLACK_BOT_TOKEN);
+          const slackMessage =
+            `🎉 *Fraction Filled Successfully!*\n\n` +
+            `*Fraction ID:* ${params.fractionId}\n` +
+            `*Application ID:* ${filledFraction.applicationId}\n` +
+            `*Total Steps:* ${filledFraction.totalSteps}\n` +
+            `*Splits Sold:* ${filledFraction.splitsSold}\n` +
+            `*Step Price:* ${filledFraction.step}\n` +
+            `*Token:* ${filledFraction.token || "N/A"}\n` +
+            `*Type:* ${filledFraction.type}\n` +
+            `*Transaction:* ${params.transactionHash}\n` +
+            `*Time:* ${new Date().toISOString()}\n` +
+            `*Environment:* ${process.env.NODE_ENV || "unknown"}`;
+
+          await slackBot.api.sendMessage(SLACK_CHANNEL, slackMessage);
+        } catch (slackError) {
+          console.error(
+            "[recordFractionSplit] Failed to send Slack notification:",
+            slackError
+          );
+          // Don't fail the operation if Slack notification fails
+        }
+      }
 
       return {
         split: createdSplit,

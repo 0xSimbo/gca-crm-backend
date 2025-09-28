@@ -141,6 +141,15 @@ export class FractionEventService {
 
         const result = await recordFractionSplit(params);
 
+        // Check if the fraction was already filled (race condition)
+        if (result.wasAlreadyFilled) {
+          console.log(
+            "[FractionEventService] Fraction was already filled, skipped processing (race condition):",
+            event.payload.fractionId
+          );
+          return;
+        }
+
         if (result.fraction.isFilled) {
           console.log(
             "[FractionEventService] Fraction is now fully filled:",
@@ -153,7 +162,7 @@ export class FractionEventService {
           event.payload.fractionId
         );
       } catch (error: any) {
-        // Check if this is a duplicate key error
+        // Check if this is a duplicate key error or race condition
         if (
           error.code === "23505" ||
           error.message?.includes("duplicate key")
@@ -167,12 +176,28 @@ export class FractionEventService {
           return;
         }
 
+        // Check if this is a race condition where fraction is already filled
+        if (
+          error.message?.includes(
+            "Cannot record split for fraction in status: filled"
+          ) ||
+          error.message?.includes("fraction is already filled")
+        ) {
+          console.log(
+            "[FractionEventService] Fraction already filled (race condition), ignoring:",
+            event.payload.fractionId,
+            event.payload.transactionHash
+          );
+          // This is not a real error - just a race condition
+          return;
+        }
+
         console.error(
           "[FractionEventService] Error processing fraction.sold event:",
           error
         );
 
-        // Only record as failed operation if it's not a duplicate key error
+        // Only record as failed operation if it's not a duplicate key error or race condition
         try {
           await recordFailedFractionOperation({
             fractionId: event.payload.fractionId,

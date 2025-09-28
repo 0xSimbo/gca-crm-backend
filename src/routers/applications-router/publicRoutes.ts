@@ -246,6 +246,7 @@ export const publicApplicationsRoutes = new Elysia()
             createdAt: true,
             finalProtocolFee: true,
             paymentCurrency: true,
+            farmId: true,
             paymentEventType: true,
           },
           with: {
@@ -442,6 +443,7 @@ export const publicApplicationsRoutes = new Elysia()
             paymentCurrency: app.paymentCurrency,
             paymentEventType: app.paymentEventType,
             zone: app.zone,
+            farmId: app.farmId,
             applicationPriceQuotes: app.applicationPriceQuotes,
             enquiryFields: app.enquiryFieldsCRS,
             auditFields: app.auditFieldsCRS,
