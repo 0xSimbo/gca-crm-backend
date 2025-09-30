@@ -11,10 +11,10 @@ import {
   zones,
 } from "../../db/schema";
 import { db } from "../../db/db";
-import { and, eq, isNull, ne, not, or, sql } from "drizzle-orm";
+import { and, eq, isNull, isNotNull, ne, not, or, sql } from "drizzle-orm";
 import postgres from "postgres";
 import { PG_DATABASE_URL, PG_ENV } from "../../db/PG_ENV";
-import { getProtocolWeek } from "../../utils/getProtocolWeek";
+import { getProtocolWeek, getCurrentEpoch } from "../../utils/getProtocolWeek";
 import { updateWalletRewardsForWeek } from "../../crons/update-wallet-rewards";
 import { findAllPermissions } from "../../db/queries/permissions/findAllPermissions";
 import { permissions } from "../../types/api-types/Permissions";
@@ -964,197 +964,201 @@ export const adminRouter = new Elysia({ prefix: "/admin" })
     }
   )
   .get(
-    "/reset-applications-to-draft",
+    "/farms-data-export",
     async ({ set }) => {
       try {
-        if (process.env.NODE_ENV === "production") {
-          set.status = 404;
-          return { message: "Not allowed in production" };
-        }
+        console.log("Fetching farms data for export...");
 
-        console.log("Searching for applications to reset to draft status...");
+        // Get all farms with their associated data
+        const farmsData = await db.query.farms.findMany({
+          with: {
+            rewardSplits: true,
+            devices: true,
+          },
+        });
 
-        // Find applications with status "waiting-for-approval", null installFinishedDate, and on step 4
-        const applicationsToReset = await db.query.applications.findMany({
-          where: (app, { and, eq, isNull }) =>
+        // Get all applications with completed status
+        const allApplications = await db.query.applications.findMany({
+          where: (app, { and, eq, isNotNull }) =>
             and(
-              eq(app.status, ApplicationStatusEnum.waitingForApproval),
-              isNull(app.installFinishedDate),
-              eq(app.currentStep, ApplicationSteps.inspectionAndPtoDocuments)
+              isNotNull(app.farmId),
+              eq(app.status, ApplicationStatusEnum.completed),
+              eq(app.currentStep, ApplicationSteps.payment)
             ),
-          columns: {
-            id: true,
-            status: true,
-            installFinishedDate: true,
-            currentStep: true,
-            createdAt: true,
-          },
         });
 
-        if (applicationsToReset.length === 0) {
-          return {
-            message: "No applications found matching criteria",
-            updated: 0,
-            criteria: {
-              status: "waiting-for-approval",
-              installFinishedDate: "null",
-              currentStep: "4 (inspectionAndPtoDocuments)",
-            },
-          };
+        // Get all audit fields
+        const allAuditFields =
+          await db.query.applicationsAuditFieldsCRS.findMany();
+
+        // Fetch device lifetime metrics from API
+        console.log("Fetching device lifetime metrics...");
+        let deviceMetrics: any[] = [];
+        try {
+          const response = await fetch(
+            "https://glow-green-api.simonnfts.workers.dev/devices-lifetime-metrics"
+          );
+          const data = await response.json();
+          if (data.res?.success && Array.isArray(data.res.data)) {
+            deviceMetrics = data.res.data;
+          }
+        } catch (error) {
+          console.error("Error fetching device metrics:", error);
         }
 
-        console.log(
-          `Found ${applicationsToReset.length} applications to reset`
-        );
+        const farms: Record<string, any> = {};
+        const protocolDeposits: Array<any> = [];
 
-        // Update applications to draft status
-        const updateResult = await db
-          .update(applications)
-          .set({
-            status: ApplicationStatusEnum.draft,
-            updatedAt: new Date(),
-          })
-          .where(
-            and(
-              eq(applications.status, ApplicationStatusEnum.waitingForApproval),
-              isNull(applications.installFinishedDate),
-              eq(
-                applications.currentStep,
-                ApplicationSteps.inspectionAndPtoDocuments
-              )
-            )
-          )
-          .returning({
-            id: applications.id,
-            status: applications.status,
-          });
+        // Process each farm
+        for (const farm of farmsData) {
+          // Find the application for this farm
+          const app = allApplications.find((a) => a.farmId === farm.id);
+          if (!app) {
+            console.log(`No completed application found for farm ${farm.id}`);
+            continue;
+          }
 
-        console.log(
-          `Successfully updated ${updateResult.length} applications to draft status`
-        );
+          const auditFields = allAuditFields.find(
+            (af) => af.applicationId === app.id
+          );
+          if (!auditFields) {
+            console.log(`No audit fields found for farm ${farm.id}`);
+            continue;
+          }
+
+          // Get net weekly carbon credits and multiply by 1e6
+          const netWeeklyCarbonCredits = parseFloat(
+            auditFields.netCarbonCreditEarningWeekly || "0"
+          );
+          const netWeeklyCarbonCredits6Decimals = netWeeklyCarbonCredits;
+
+          // Validate reward splits sum to 100%
+          let glowSplitSum = 0;
+          let usdgSplitSum = 0;
+
+          for (const split of farm.rewardSplits) {
+            glowSplitSum += parseFloat(split.glowSplitPercent);
+            usdgSplitSum += parseFloat(split.usdgSplitPercent);
+          }
+
+          // Check if splits sum to 100 (with small tolerance for floating point errors)
+          const tolerance = 0;
+          if (Math.abs(glowSplitSum - 100) > tolerance) {
+            console.error(
+              `Farm ${farm.id}: Glow splits sum to ${glowSplitSum}% instead of 100%`
+            );
+            continue;
+          }
+
+          if (Math.abs(usdgSplitSum - 100) > tolerance) {
+            console.error(
+              `Farm ${farm.id}: USDG splits sum to ${usdgSplitSum}% instead of 100%`
+            );
+            continue;
+          }
+
+          // Format reward splits (multiply by 1e4 to get 6 decimals from percentage with 2 decimals)
+          const rewardsSplits = farm.rewardSplits.map((split) => ({
+            walletAddress: split.walletAddress,
+            glowSplitPercent6Decimals: BigInt(
+              parseFloat(split.glowSplitPercent) * 1e4
+            ).toString(),
+            depositSplitPercent6Decimals: BigInt(
+              parseFloat(split.usdgSplitPercent) * 1e4
+            ).toString(),
+          }));
+
+          // Find first protocol week for this farm based on its devices
+          let firstProtocolWeek: number | null = null;
+
+          if (farm.devices && farm.devices.length > 0) {
+            const farmDeviceWeeks: number[] = [];
+
+            for (const device of farm.devices) {
+              // Find matching device metrics by publicKey or shortId
+              const deviceMetric = deviceMetrics.find(
+                (dm) =>
+                  dm.hexlifiedPublicKey === device.publicKey ||
+                  dm.shortId === Number(device.shortId)
+              );
+
+              if (
+                deviceMetric &&
+                deviceMetric.weeklyData &&
+                deviceMetric.weeklyData.length > 0
+              ) {
+                // Get all week numbers for this device
+                const weekNumbers = deviceMetric.weeklyData.map(
+                  (wd: any) => wd.weekNumber
+                );
+                farmDeviceWeeks.push(...weekNumbers);
+              }
+            }
+
+            // Find the minimum week number across all devices
+            if (farmDeviceWeeks.length > 0) {
+              firstProtocolWeek = Math.min(...farmDeviceWeeks);
+            }
+          }
+
+          farms[farm.id] = {
+            net_weekly_carbon_credits: netWeeklyCarbonCredits6Decimals,
+            rewards_splits: rewardsSplits,
+            first_reward_week: firstProtocolWeek,
+          };
+
+          // Process protocol deposits
+          const paymentTxHashes = [
+            app.paymentTxHash,
+            app.additionalPaymentTxHash,
+          ].filter(Boolean);
+
+          for (const txHash of paymentTxHashes) {
+            if (!txHash) continue;
+
+            try {
+              const paymentInfo = await getProtocolFeePaymentFromTxHashReceipt(
+                txHash
+              );
+
+              const paymentTimestamp = paymentInfo.paymentDate.getTime() / 1000;
+              const weekProvided = getCurrentEpoch(paymentTimestamp);
+
+              protocolDeposits.push({
+                corresponding_farm: farm.id,
+                usdg_provided: paymentInfo.amount,
+                week_provided: weekProvided,
+              });
+            } catch (error) {
+              console.error(
+                `Error processing payment tx ${txHash} for farm ${farm.id}:`,
+                error
+              );
+            }
+          }
+        }
 
         set.status = 200;
         return {
-          message: `Successfully reset ${updateResult.length} applications to draft status`,
-          updated: updateResult.length,
-          criteria: {
-            status: "waiting-for-approval",
-            installFinishedDate: "null",
-            currentStep: "4 (inspectionAndPtoDocuments)",
-          },
-          updatedApplications: updateResult.map((app) => ({
-            id: app.id,
-            newStatus: app.status,
-          })),
+          farms,
+          protocol_deposits: protocolDeposits,
         };
       } catch (error) {
-        console.error("Error resetting applications to draft:", error);
+        console.error("Error fetching farms data export:", error);
         set.status = 500;
         return {
-          message: "Error resetting applications to draft",
+          message: "Error fetching farms data",
           error: error instanceof Error ? error.message : "Unknown error",
         };
       }
     },
     {
       detail: {
-        summary: "Reset applications to draft status",
+        summary: "Export farms data with protocol deposits",
         description:
-          "Finds all applications with status 'waiting-for-approval', null installFinishedDate, and currentStep 4 (inspectionAndPtoDocuments), " +
-          "then moves them back to 'draft' status. This is useful for cleaning up applications " +
-          "that are stuck in the approval process without an installation date.",
-        tags: ["admin", "applications", "maintenance"],
-      },
-    }
-  )
-  .get(
-    "/patch-gca-address",
-    async ({ set }) => {
-      try {
-        if (process.env.NODE_ENV === "production") {
-          set.status = 404;
-          return { message: "Not allowed in production" };
-        }
-
-        const targetGcaAddress = "0xA9A58D16F454A4FA5F7f00Bbe583A86F2C5446dd";
-
-        console.log(
-          `Updating all applications to use GCA address: ${targetGcaAddress}`
-        );
-
-        // Find all applications that don't have the target GCA address
-        const applicationsToUpdate = await db.query.applications.findMany({
-          where: (app, { ne, or, isNull }) =>
-            or(ne(app.gcaAddress, targetGcaAddress), isNull(app.gcaAddress)),
-          columns: {
-            id: true,
-            gcaAddress: true,
-            status: true,
-            createdAt: true,
-          },
-        });
-
-        if (applicationsToUpdate.length === 0) {
-          return {
-            message: "All applications already have the correct GCA address",
-            targetGcaAddress,
-            updated: 0,
-          };
-        }
-
-        console.log(
-          `Found ${applicationsToUpdate.length} applications to update`
-        );
-
-        // Update all applications to use the target GCA address
-        const updateResult = await db
-          .update(applications)
-          .set({
-            gcaAddress: targetGcaAddress,
-            updatedAt: new Date(),
-          })
-          .where(
-            or(
-              not(eq(applications.gcaAddress, targetGcaAddress)),
-              isNull(applications.gcaAddress)
-            )
-          )
-          .returning({
-            id: applications.id,
-            gcaAddress: applications.gcaAddress,
-          });
-
-        console.log(
-          `Successfully updated ${updateResult.length} applications with new GCA address`
-        );
-
-        set.status = 200;
-        return {
-          message: `Successfully updated ${updateResult.length} applications with new GCA address`,
-          targetGcaAddress,
-          updated: updateResult.length,
-          totalFound: applicationsToUpdate.length,
-          updatedApplications: updateResult.map((app) => ({
-            id: app.id,
-            newGcaAddress: app.gcaAddress,
-          })),
-        };
-      } catch (error) {
-        console.error("Error patching GCA address:", error);
-        set.status = 500;
-        return {
-          message: "Error patching GCA address",
-          error: error instanceof Error ? error.message : "Unknown error",
-        };
-      }
-    },
-    {
-      detail: {
-        summary: "Patch GCA address for all applications",
-        description:
-          "Updates the gcaAddress field for all applications to use the specified GCA address (0xA9A58D16F454A4FA5F7f00Bbe583A86F2C5446dd). " +
-          "This is useful for standardizing GCA assignments across all applications.",
-        tags: ["admin", "applications", "gca"],
+          "Returns all farms with their net weekly carbon credits, reward splits, " +
+          "and protocol deposits including the week each deposit was made.",
+        tags: ["admin", "farms", "export"],
       },
     }
   );
