@@ -47,17 +47,10 @@ import {
   zones,
   fractions,
 } from "../../db/schema";
-
-import { convertKWhToMWh } from "../../utils/format/convertKWhToMWh";
 import { findFirstUserById } from "../../db/queries/users/findFirstUserById";
 import { findOrganizationMemberByUserId } from "../../db/queries/organizations/findOrganizationMemberByUserId";
-import { findAllApplicationsByOrganizationId } from "../../db/queries/applications/findAllApplicationsByOrganizationId";
-import { findOrganizationById } from "../../db/queries/organizations/findOrganizationById";
 import { PermissionsEnum } from "../../types/api-types/Permissions";
-import { createOrganizationApplication } from "../../db/mutations/organizations/createOrganizationApplication";
-import { deleteOrganizationApplication } from "../../db/mutations/organizations/deleteOrganizationApplication";
 import { findFirstOrganizationApplicationByApplicationId } from "../../db/queries/applications/findFirstOrganizationApplicationByApplicationId";
-import { findAllOrganizationMembers } from "../../db/queries/organizations/findAllOrganizationMembers";
 import { findFirstDelegatedUserByUserId } from "../../db/queries/gcaDelegatedUsers/findFirstDelegatedUserByUserId";
 import { findAllUserJoinedOrganizations } from "../../db/queries/organizations/findAllUserJoinedOrganizations";
 import { findFirstDelegatedEncryptedMasterKeyByApplicationIdAndOrganizationUserId } from "../../db/queries/organizations/findFirstDelegatedEncryptedMasterKeyByApplicationIdAndOrganizationUserId";
@@ -67,20 +60,11 @@ import { findFirstApplicationMasterKeyByApplicationIdAndUserId } from "../../db/
 import { findAllApplicationsWithoutMasterKey } from "../../db/queries/applications/findAllApplicationsWithoutMasterKey";
 import { createApplicationEncryptedMasterKeysForUsers } from "../../db/mutations/applications/createApplicationEncryptedMasterKeysForUsers";
 import { findAllApplications } from "../../db/queries/applications/findAllApplications";
-import { findAllApplicationsOwnersByIds } from "../../db/queries/applications/findAllApplicationsOwnersByIds";
-import { createOrganizationApplicationBatch } from "../../db/mutations/organizations/createOrganizationApplicationBatch";
-import { deleteOrganizationApplicationBatch } from "../../db/mutations/organizations/deleteOrganizationApplicationBatch";
-import { findAllApplicationsByOrgUserId } from "../../db/queries/applications/findAllApplicationsByOrgUserId";
 import { eq, and, not } from "drizzle-orm";
-import { findFirstOrgMemberwithShareAllApplications } from "../../db/queries/organizations/findFirstOrgMemberwithShareAllApplications";
 import { findOrganizationsMemberByUserIdAndOrganizationIds } from "../../db/queries/organizations/findOrganizationsMemberByUserIdAndOrganizationIds";
-import { findUsedTxHash } from "../../db/queries/applications/findUsedTxHash";
 import { patchDeclarationOfIntention } from "../../db/mutations/applications/patchDeclarationOfIntention";
 import { createGlowEventEmitter, eventTypes } from "@glowlabs-org/events-sdk";
-import { weeklyProduction, weeklyCarbonDebt } from "../../db/schema";
 import {
-  WeeklyProductionSchema,
-  WeeklyCarbonDebtSchema,
   EnquiryQueryBody,
   DeclarationOfIntentionMissingQueryBody,
   PreInstallDocumentsQueryBody,
@@ -1369,14 +1353,9 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               return "Application already linked with a farm";
             }
 
-            const applicationWeeklyProduction =
-              await db.query.weeklyProduction.findFirst({
-                where: eq(weeklyProduction.applicationId, application.id),
-              });
-
-            if (!applicationWeeklyProduction) {
+            if (!application.auditFields) {
               set.status = 400;
-              return "Application is not completed, weeklyProduction is not set";
+              return "Application audit fields not found";
             }
 
             await handleCreateWithoutPIIDocumentsAndCompleteApplicationAudit(
@@ -1399,6 +1378,12 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                   ptoObtainedDate: body.ptoObtainedDate,
                   locationWithoutPII: body.locationWithoutPII,
                   revisedInstallFinishedDate: body.revisedInstallFinishedDate,
+                  averageSunlightHoursPerDay: body.averageSunlightHoursPerDay,
+                  adjustedWeeklyCarbonCredits: body.adjustedWeeklyCarbonCredits,
+                  weeklyTotalCarbonDebt: body.weeklyTotalCarbonDebt,
+                  netCarbonCreditEarningWeekly:
+                    body.netCarbonCreditEarningWeekly,
+                  systemWattageOutput: body.systemWattageOutput,
                 },
               }
             );
@@ -1417,12 +1402,11 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                 BigInt(
                   Math.floor(
                     Number(
-                      applicationWeeklyProduction.adjustedWeeklyCarbonCredits
+                      application.auditFields.netCarbonCreditEarningWeekly
                     ) * 1e6
                   )
                 ) * BigInt("1000000")
-              ) // 6 -> 12 decimals
-                .toString();
+              ).toString();
               emitter
                 .emit({
                   eventType: eventTypes.auditPushed,
@@ -1526,6 +1510,12 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                 minLength: 1, // in bigint 6 decimals
               }),
             }),
+            // Added: auditor sheet numeric strings
+            averageSunlightHoursPerDay: t.String(),
+            adjustedWeeklyCarbonCredits: t.String(),
+            weeklyTotalCarbonDebt: t.String(),
+            netCarbonCreditEarningWeekly: t.String(),
+            systemWattageOutput: t.String(),
           }),
           detail: {
             summary: "",
@@ -1874,110 +1864,17 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               };
             }
 
-            const netCarbonCreditEarningWeekly = (
-              Number(application.auditFields?.adjustedWeeklyCarbonCredits) -
-              Number(application.auditFields?.weeklyTotalCarbonDebt)
-            ).toString();
-
             await db.transaction(async (tx) => {
-              await tx
-                .insert(weeklyProduction)
-                .values({
-                  applicationId: body.applicationId,
-                  createdAt: new Date(),
-                  powerOutputMWH:
-                    body.weeklyProduction.powerOutputMWH.toString(),
-                  hoursOfSunlightPerDay:
-                    body.weeklyProduction.hoursOfSunlightPerDay.toString(),
-                  carbonOffsetsPerMWH:
-                    body.weeklyProduction.carbonOffsetsPerMWH.toString(),
-                  adjustmentDueToUncertainty:
-                    body.weeklyProduction.adjustmentDueToUncertainty.toString(),
-                  weeklyPowerProductionMWh:
-                    body.weeklyProduction.weeklyPowerProductionMWh.toString(),
-                  weeklyCarbonCredits:
-                    body.weeklyProduction.weeklyCarbonCredits.toString(),
-                  adjustedWeeklyCarbonCredits:
-                    body.weeklyProduction.adjustedWeeklyCarbonCredits.toString(),
-                } as any)
-                .onConflictDoUpdate({
-                  target: [weeklyProduction.applicationId],
-                  set: {
-                    updatedAt: new Date(),
-                    powerOutputMWH:
-                      body.weeklyProduction.powerOutputMWH.toString(),
-                    hoursOfSunlightPerDay:
-                      body.weeklyProduction.hoursOfSunlightPerDay.toString(),
-                    carbonOffsetsPerMWH:
-                      body.weeklyProduction.carbonOffsetsPerMWH.toString(),
-                    adjustmentDueToUncertainty:
-                      body.weeklyProduction.adjustmentDueToUncertainty.toString(),
-                    weeklyPowerProductionMWh:
-                      body.weeklyProduction.weeklyPowerProductionMWh.toString(),
-                    weeklyCarbonCredits:
-                      body.weeklyProduction.weeklyCarbonCredits.toString(),
-                    adjustedWeeklyCarbonCredits:
-                      body.weeklyProduction.adjustedWeeklyCarbonCredits.toString(),
-                  },
-                });
-
-              // Insert into weeklyCarbonDebt
-              await tx
-                .insert(weeklyCarbonDebt)
-                .values({
-                  applicationId: body.applicationId,
-                  createdAt: new Date(),
-                  totalCarbonDebtAdjustedKWh:
-                    body.weeklyCarbonDebt.totalCarbonDebtAdjustedKWh.toString(),
-                  convertToKW: body.weeklyCarbonDebt.convertToKW.toString(),
-                  totalCarbonDebtProduced:
-                    body.weeklyCarbonDebt.totalCarbonDebtProduced.toString(),
-                  disasterRisk: body.weeklyCarbonDebt.disasterRisk.toString(),
-                  commitmentPeriod:
-                    body.weeklyCarbonDebt.commitmentPeriod.toString(),
-                  adjustedTotalCarbonDebt:
-                    body.weeklyCarbonDebt.adjustedTotalCarbonDebt.toString(),
-                  weeklyTotalCarbonDebt:
-                    body.weeklyCarbonDebt.weeklyTotalCarbonDebt.toString(),
-                } as any)
-                .onConflictDoUpdate({
-                  target: [weeklyCarbonDebt.applicationId],
-                  set: {
-                    updatedAt: new Date(),
-                    totalCarbonDebtAdjustedKWh:
-                      body.weeklyCarbonDebt.totalCarbonDebtAdjustedKWh.toString(),
-                    convertToKW: body.weeklyCarbonDebt.convertToKW.toString(),
-                    totalCarbonDebtProduced:
-                      body.weeklyCarbonDebt.totalCarbonDebtProduced.toString(),
-                    disasterRisk: body.weeklyCarbonDebt.disasterRisk.toString(),
-                    commitmentPeriod: body.weeklyCarbonDebt.commitmentPeriod,
-                    adjustedTotalCarbonDebt:
-                      body.weeklyCarbonDebt.adjustedTotalCarbonDebt.toString(),
-                    weeklyTotalCarbonDebt:
-                      body.weeklyCarbonDebt.weeklyTotalCarbonDebt.toString(),
-                  },
-                });
-
-              // Update application with the specified fields
               await updateApplicationCRSFields(
                 body.applicationId,
                 {
                   lat: body.lat.toString(),
                   lng: body.lng.toString(),
                 },
-                {
-                  systemWattageOutput: `${body.weeklyCarbonDebt.convertToKW.toString()} kW-DC`,
-                  netCarbonCreditEarningWeekly:
-                    netCarbonCreditEarningWeekly.toString(),
-                  weeklyTotalCarbonDebt:
-                    body.weeklyCarbonDebt.weeklyTotalCarbonDebt.toString(),
-                  averageSunlightHoursPerDay:
-                    body.weeklyProduction.hoursOfSunlightPerDay.toString(),
-                  adjustedWeeklyCarbonCredits:
-                    body.weeklyProduction.adjustedWeeklyCarbonCredits.toString(),
-                }
+                {}
               );
             });
+            //TODO: do i need to pass second arg here?
 
             return { success: true };
           } catch (e) {
@@ -1988,23 +1885,23 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
         {
           body: t.Object({
             applicationId: t.String(),
-            weeklyProduction: t.Object(WeeklyProductionSchema),
-            weeklyCarbonDebt: t.Object(WeeklyCarbonDebtSchema),
-            lat: t.Numeric({
-              example: 38.234242,
-              minimum: -90,
-              maximum: 90,
-            }),
+            lat: t.Numeric({ example: 38.234242, minimum: -90, maximum: 90 }),
             lng: t.Numeric({
               example: -111.123412,
               minimum: -180,
               maximum: 180,
             }),
+            // audit sheet values to persist into applicationsAuditFieldsCRS
+            averageSunlightHoursPerDay: t.String(),
+            adjustedWeeklyCarbonCredits: t.String(),
+            weeklyTotalCarbonDebt: t.String(),
+            netCarbonCreditEarningWeekly: t.String(),
+            systemWattageOutput: t.Optional(t.String()), //TODO: why optional?
           }),
           detail: {
-            summary: "Patch production and carbon debt for an application",
+            summary: "Patch application location",
             description:
-              "Update application with systemWattageOutput, netCarbonCreditEarningWeekly, weeklyTotalCarbonDebt, averageSunlightHoursPerDay, lat, lng and insert weeklyProduction and weeklyCarbonDebt records.",
+              "Update application lat/lng and rely on auditFields for production/debt values.",
             tags: [TAG.APPLICATIONS],
           },
         }

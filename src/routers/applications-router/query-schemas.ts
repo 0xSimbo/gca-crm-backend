@@ -1,24 +1,6 @@
 import { t } from "elysia";
 
-export const WeeklyProductionSchema = {
-  powerOutputMWH: t.Numeric({ minimum: 0 }),
-  hoursOfSunlightPerDay: t.Numeric({ minimum: 0 }),
-  carbonOffsetsPerMWH: t.Numeric({ minimum: 0 }),
-  adjustmentDueToUncertainty: t.Numeric({ minimum: 0, maximum: 1 }),
-  weeklyPowerProductionMWh: t.Numeric({ minimum: 0 }),
-  weeklyCarbonCredits: t.Numeric({ minimum: 0 }),
-  adjustedWeeklyCarbonCredits: t.Numeric({ minimum: 0 }),
-};
-
-export const WeeklyCarbonDebtSchema = {
-  totalCarbonDebtAdjustedKWh: t.Numeric({ minimum: 0 }),
-  convertToKW: t.Numeric({ minimum: 0 }),
-  totalCarbonDebtProduced: t.Numeric({ minimum: 0 }),
-  disasterRisk: t.Numeric({ minimum: 0, maximum: 1 }),
-  commitmentPeriod: t.Numeric({ minimum: 1 }),
-  adjustedTotalCarbonDebt: t.Numeric({ minimum: 0 }),
-  weeklyTotalCarbonDebt: t.Numeric({ minimum: 0 }),
-};
+// Removed weekly production/debt schemas
 
 // --- Moved from applicationsRouter.ts ---
 

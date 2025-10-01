@@ -1,17 +1,12 @@
 import { Elysia, t } from "elysia";
 import {
-  ApplicationEnquiryFieldsCRSInsertType,
-  ApplicationInsertType,
   applications,
   deviceRewards,
   farmRewards,
-  requirementSets,
   wallets,
   walletWeeklyRewards,
-  zones,
 } from "../../db/schema";
 import { db } from "../../db/db";
-import { and, eq, isNull, isNotNull, ne, not, or, sql } from "drizzle-orm";
 import postgres from "postgres";
 import { PG_DATABASE_URL, PG_ENV } from "../../db/PG_ENV";
 import { getProtocolWeek, getCurrentEpoch } from "../../utils/getProtocolWeek";
@@ -19,730 +14,19 @@ import { updateWalletRewardsForWeek } from "../../crons/update-wallet-rewards";
 import { findAllPermissions } from "../../db/queries/permissions/findAllPermissions";
 import { permissions } from "../../types/api-types/Permissions";
 import { createPermission } from "../../db/mutations/permissions/createPermission";
-import { downloadFile, uploadFile } from "../../utils/r2/upload-to-r2";
-import { Documents } from "../../db/schema";
-import convert from "heic-convert";
-import fs from "fs";
-import path from "path";
-import { OpenAI } from "openai";
-import { updateUser } from "../../db/mutations/users/updateUser";
-import { updateInstaller } from "../../db/mutations/installers/updateInstaller";
 import {
   ApplicationStatusEnum,
   ApplicationSteps,
 } from "../../types/api-types/Application";
-import {
-  applicationsDraft,
-  ApplicationsEncryptedMasterKeys,
-  applicationsEnquiryFieldsCRS,
-  applicationsAuditFieldsCRS,
-  weeklyProduction,
-  weeklyCarbonDebt,
-  RewardSplits,
-  Devices,
-  farms,
-  ApplicationPriceQuotes,
-} from "../../db/schema";
-import { RoundRobinStatusEnum } from "../../types/api-types/Application";
-import { parseCoordinates } from "../../utils/parseCoordinates";
-import { HubFarm } from "../../types/HubFarm";
-import { getFarmsStatus } from "../devices/get-pubkeys-and-short-ids";
-import { getProtocolFeePaymentFromTransactionHash } from "../../subgraph/queries/getProtocolFeePaymentFromTransactionHash";
+import { farms } from "../../db/schema";
 import { getProtocolFeePaymentFromTxHashReceipt } from "../../utils/getProtocolFeePaymentFromTxHashReceipt";
-import { getPubkeysAndShortIds } from "../devices/get-pubkeys-and-short-ids";
-import { getRegionFromLatAndLng } from "../../utils/getRegionFromLatAndLng";
-import { Coordinates } from "../../types/geography.types";
 import { getDevicesLifetimeMetrics } from "../../crons/update-farm-rewards/get-devices-lifetime-metrics";
 import { updateDeviceRewardsForWeek } from "../../crons/update-farm-rewards/update-device-rewards-for-week";
 import { updateFarmRewardsForWeek } from "../../crons/update-farm-rewards/update-farm-rewards-for-week";
 import { manualRetryFailedOperation } from "../../services/retryFailedOperations";
-
-function parseAuditDate(input?: string): Date | undefined {
-  if (!input) return undefined;
-  const trimmed = input.trim();
-  const withoutPrefix = trimmed.replace(
-    /^(after|on or after|on|before|approx\.?|around)\s+/i,
-    ""
-  );
-  const deordinal = withoutPrefix.replace(/(\d+)(st|nd|rd|th)/gi, "$1");
-
-  const monthMap: Record<string, number> = {
-    jan: 0,
-    january: 0,
-    feb: 1,
-    february: 1,
-    mar: 2,
-    march: 2,
-    apr: 3,
-    april: 3,
-    may: 4,
-    jun: 5,
-    june: 5,
-    jul: 6,
-    july: 6,
-    aug: 7,
-    august: 7,
-    sep: 8,
-    sept: 8,
-    september: 8,
-    oct: 9,
-    october: 9,
-    nov: 10,
-    november: 10,
-    dec: 11,
-    december: 11,
-  };
-
-  // Try "Month Day Year" format (e.g., "April 16 2024")
-  const rx1 =
-    /(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+(\d{1,2})(?:,)?\s+(\d{4})/i;
-  const m1 = deordinal.match(rx1);
-  if (m1) {
-    const mi = monthMap[m1[1].toLowerCase()];
-    const day = parseInt(m1[2], 10);
-    const year = parseInt(m1[3], 10);
-    if (!Number.isNaN(mi) && !Number.isNaN(day) && !Number.isNaN(year)) {
-      return new Date(year, mi, day);
-    }
-  }
-
-  // Try "Day of Month Year" format (e.g., "16 of April 2024")
-  const rx2 =
-    /(\d{1,2})\s+of\s+(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+(\d{4})/i;
-  const m2 = deordinal.match(rx2);
-  if (m2) {
-    const day = parseInt(m2[1], 10);
-    const mi = monthMap[m2[2].toLowerCase()];
-    const year = parseInt(m2[3], 10);
-    if (!Number.isNaN(mi) && !Number.isNaN(day) && !Number.isNaN(year)) {
-      return new Date(year, mi, day);
-    }
-  }
-
-  const fallback = new Date(deordinal);
-  if (!Number.isNaN(fallback.getTime())) return fallback;
-  return undefined;
-}
-
-async function patchFarmsFromAudits(dryRun: boolean = false) {
-  const audits: HubFarm[] = await fetch(`https://glow.org/api/audits`).then(
-    (r) => r.json()
-  );
-  if (!audits || audits.length === 0) {
-    return {
-      createdFarms: 0,
-      createdDevices: 0,
-      plannedFarms: [],
-      plannedDevices: [],
-    };
-  }
-
-  const allActiveShortIds = Array.from(
-    new Set(
-      audits.flatMap((a) => (a.activeShortIds || []).map((n) => String(n)))
-    )
-  );
-  const allPrevShortIds = Array.from(
-    new Set(
-      audits.flatMap((a) => (a.previousShortIds || []).map((n) => String(n)))
-    )
-  );
-  const allShortIds = Array.from(
-    new Set([...allActiveShortIds, ...allPrevShortIds])
-  );
-
-  // Build shortId -> publicKey map from all known GCA server URLs
-  const gcas = await db.query.Gcas.findMany();
-  const serverUrls = Array.from(
-    new Set(
-      gcas.flatMap((g) => (Array.isArray(g.serverUrls) ? g.serverUrls : []))
-    )
-  );
-  const shortIdToPubkey: Record<string, string> = {};
-  for (const url of serverUrls) {
-    try {
-      const pairs = await getPubkeysAndShortIds(url);
-      for (const p of pairs) {
-        const key = String(p.shortId);
-        if (!shortIdToPubkey[key]) shortIdToPubkey[key] = p.pubkey;
-      }
-    } catch (e) {
-      console.error("error fetching pubkeys from", url, e);
-    }
-  }
-
-  const existingDevices = await db.query.Devices.findMany({
-    where: (d, { inArray }) => inArray(d.shortId, allShortIds),
-    with: {
-      farm: {
-        columns: { id: true },
-      },
-    },
-  });
-
-  const shortIdToDevice: Record<string, any> = {};
-  for (const dev of existingDevices) shortIdToDevice[dev.shortId] = dev;
-
-  const { legacy } = await getFarmsStatus();
-
-  let createdFarms = 0;
-  let createdDevices = 0;
-  const plannedFarms: Array<{
-    name: string;
-    zoneId: number;
-    auditCompleteDate: string;
-    protocolFeePaymentHash: string;
-    gcaId: string;
-    userId: string;
-    rewardSplits: Array<{
-      walletAddress: string;
-      glowSplitPercent: string;
-      usdgSplitPercent: string;
-    }>;
-    activeShortIds: string[];
-  }> = [];
-  const plannedDevices: Array<{
-    shortId: string;
-    farmId: string | null;
-    farmName: string;
-  }> = [];
-
-  for (const auditEntry of audits) {
-    const auditShortIds = (auditEntry.activeShortIds || []).map((n) =>
-      String(n)
-    );
-    const prevShortIds = (auditEntry.previousShortIds || []).map((n) =>
-      String(n)
-    );
-    if (auditShortIds.length === 0) continue;
-
-    const existingAny = auditShortIds
-      .map((sid) => shortIdToDevice[sid])
-      .find(Boolean);
-
-    let targetFarmId: string | null = existingAny
-      ? (existingAny.farmId as string)
-      : null;
-
-    if (!existingAny) {
-      const legacyHit = legacy.find((l) =>
-        auditShortIds.some((sid) => l.short_id === Number(sid))
-      );
-      if (!legacyHit) {
-        console.log(
-          "No legacy hit found for farm",
-          auditEntry.humanReadableName
-        );
-        continue;
-      }
-      const auditDate = new Date(legacyHit.timestamp_audited_completed * 1000);
-      const paymentTxHash = legacyHit?.payment_tx_hash || `0x${"0".repeat(64)}`;
-      const rewardSplit = legacyHit?.reward_splits;
-
-      if (!rewardSplit || rewardSplit.length === 0) {
-        console.log("No reward split found for farm", auditEntry.farmName);
-        continue;
-      }
-
-      if (!auditEntry.summary.address.coordinates) {
-        console.log(
-          "No coordinates found for farm",
-          auditEntry.humanReadableName
-        );
-        continue;
-      }
-
-      const receipt = legacyHit
-        ? await getProtocolFeePaymentFromTransactionHash(paymentTxHash)
-        : null;
-      const ownerUserId =
-        receipt?.user?.id || "0x0000000000000000000000000000000000000000";
-      const region = await getRegionFromLatAndLng(
-        String(parseCoordinates(auditEntry.summary.address.coordinates)?.lat),
-        String(parseCoordinates(auditEntry.summary.address.coordinates)?.lng)
-      );
-      console.log("region", region);
-      const farmValues = {
-        zoneId: 1,
-        auditCompleteDate: auditDate,
-        protocolFeePaymentHash: paymentTxHash,
-        gcaId: "0x63a74612274FbC6ca3f7096586aF01Fd986d69cE",
-        userId: ownerUserId,
-        name:
-          (auditEntry.humanReadableName as string | undefined) || "__UNSET__",
-        region: region?.region,
-        regionFullName: region?.regionFullName,
-        signalType: region?.signalType,
-      };
-
-      if (dryRun) {
-        plannedFarms.push({
-          name: farmValues.name,
-          zoneId: farmValues.zoneId,
-          auditCompleteDate: farmValues.auditCompleteDate.toISOString(),
-          protocolFeePaymentHash: farmValues.protocolFeePaymentHash,
-          gcaId: farmValues.gcaId,
-          userId: farmValues.userId,
-          rewardSplits: rewardSplit.map((r: any) => ({
-            walletAddress: r.walletAddress,
-            glowSplitPercent: r.glowSplitPercent.toString(),
-            usdgSplitPercent: r.usdgSplitPercent.toString(),
-          })),
-          activeShortIds: auditShortIds,
-        });
-        createdFarms += 1;
-      } else {
-        await db.transaction(async (tx) => {
-          const farmInsert = await tx
-            .insert(farms)
-            .values(farmValues)
-            .returning({ id: farms.id });
-
-          if (rewardSplit.length > 0) {
-            await tx.insert(RewardSplits).values(
-              rewardSplit.map((r: any) => ({
-                farmId: farmInsert[0].id,
-                walletAddress: r.walletAddress,
-                glowSplitPercent: r.glowSplitPercent.toString(),
-                usdgSplitPercent: r.usdgSplitPercent.toString(),
-              }))
-            );
-          }
-
-          targetFarmId = farmInsert[0].id;
-          createdFarms += 1;
-
-          for (const sid of auditShortIds) {
-            if (!shortIdToDevice[sid]) {
-              const mappedPub = shortIdToPubkey[sid] || `unknown_short_${sid}`;
-              const deviceInsert = await tx
-                .insert(Devices)
-                .values({
-                  farmId: targetFarmId!,
-                  publicKey: mappedPub,
-                  shortId: sid,
-                  isEnabled: true,
-                  enabledAt: auditDate,
-                  previousPublicKey:
-                    prevShortIds.length > 0
-                      ? shortIdToPubkey[prevShortIds[0]]
-                      : null,
-                })
-                .returning({ id: Devices.id, shortId: Devices.shortId });
-              shortIdToDevice[sid] = {
-                ...deviceInsert[0],
-                farmId: targetFarmId,
-              } as any;
-              createdDevices += 1;
-            }
-          }
-          for (const sid of prevShortIds) {
-            if (!shortIdToDevice[sid]) {
-              const mappedPub =
-                shortIdToPubkey[sid] || `unknown_prev_short_${sid}`;
-              const deviceInsert = await tx
-                .insert(Devices)
-                .values({
-                  farmId: targetFarmId!,
-                  publicKey: mappedPub,
-                  shortId: sid,
-                  isEnabled: false,
-                  enabledAt: auditDate,
-                })
-                .returning({ id: Devices.id, shortId: Devices.shortId });
-              shortIdToDevice[sid] = {
-                ...deviceInsert[0],
-                farmId: targetFarmId,
-              } as any;
-              createdDevices += 1;
-            }
-          }
-        });
-      }
-    }
-
-    if (dryRun) {
-      // plan devices for a new farm
-      for (const sid of auditShortIds) {
-        if (!shortIdToDevice[sid]) {
-          plannedDevices.push({
-            shortId: sid,
-            farmId: null,
-            farmName:
-              (auditEntry.humanReadableName as string | undefined) ||
-              "__UNSET__",
-          });
-          shortIdToDevice[sid] = { id: `planned_${sid}`, farmId: null } as any;
-          createdDevices += 1;
-        }
-      }
-      for (const sid of prevShortIds) {
-        if (!shortIdToDevice[sid]) {
-          plannedDevices.push({
-            shortId: sid,
-            farmId: null,
-            farmName:
-              (auditEntry.humanReadableName as string | undefined) ||
-              "__UNSET__",
-          });
-          shortIdToDevice[sid] = { id: `planned_${sid}`, farmId: null } as any;
-          createdDevices += 1;
-        }
-      }
-    }
-  }
-
-  return { createdFarms, createdDevices, plannedFarms, plannedDevices };
-}
+import { isNull, eq, not, or } from "drizzle-orm";
 
 export const adminRouter = new Elysia({ prefix: "/admin" })
-  .get(
-    "/create-completed-application-from-sources",
-    async ({ set }) => {
-      try {
-        if (process.env.NODE_ENV === "production") {
-          set.status = 404;
-          return { message: "Not allowed" };
-        }
-
-        // Ensure all farms from audits exist before proceeding
-        await patchFarmsFromAudits();
-
-        let applicationsPatch = [];
-        const allFarmsWithoutApplications = await db.query.farms.findMany({
-          columns: {
-            id: true,
-            userId: true,
-            zoneId: true,
-            gcaId: true,
-            name: true,
-          },
-        });
-
-        for (const farm of allFarmsWithoutApplications) {
-          const farmIdParam = farm.id;
-
-          const matchingApplication = await db.query.applications.findFirst({
-            where: (a, { eq }) => eq(a.farmId, farmIdParam),
-          });
-
-          if (matchingApplication) {
-            continue;
-          }
-
-          const devices = await db.query.Devices.findMany({
-            where: (d, { eq }) => eq(d.farmId, farmIdParam),
-          });
-
-          if (devices.length === 0) {
-            set.status = 400;
-            return { message: "Farm has no devices" };
-          }
-
-          function toBigIntFrom6Decimals(value?: string) {
-            if (!value) return BigInt(0);
-            const [intPart, fracPartRaw = ""] = value.split(".");
-            const fracPart = (fracPartRaw + "000000").slice(0, 6);
-            return BigInt(intPart + fracPart);
-          }
-
-          const userId = farm.userId;
-          const zoneId = farm.zoneId || 1;
-          const gcaAddress = farm.gcaId;
-          const now = new Date();
-
-          const { legacy } = await getFarmsStatus();
-
-          const legacyFarm = legacy.find((f) =>
-            devices.find((d) => f.short_id === Number(d.shortId))
-          );
-
-          // Fetch audits API and locate entry
-          const audits: HubFarm[] = await fetch(
-            `https://glow.org/api/audits`
-          ).then((r) => r.json());
-          const auditEntry = audits.find((a) =>
-            devices.find(
-              (d) =>
-                a.activeShortIds.includes(Number(d.shortId)) ||
-                a.previousShortIds.includes(Number(d.shortId))
-            )
-          );
-
-          if (!legacyFarm || !auditEntry) {
-            set.status = 404;
-            return {
-              message:
-                "Legacy or audit data not found for farm " +
-                farm.id +
-                " " +
-                farm.name,
-            };
-          }
-
-          const finalProtocolFeeStr =
-            auditEntry.summary.carbonFootprintAndProduction.protocolFees.replace(
-              /[^0-9.]/g,
-              ""
-            );
-          const paymentTxHash = legacyFarm.payment_tx_hash;
-
-          const electricityPriceStr =
-            auditEntry?.summary?.installationAndOperations?.electricityPrice?.replace(
-              /[^0-9.]/g,
-              ""
-            );
-          const addressLocation =
-            auditEntry?.summary?.address?.location || farm.name || "unknown";
-          const coordsStr = auditEntry?.summary?.address?.coordinates || "";
-          const coords = parseCoordinates(coordsStr);
-          const latStr = coords ? String(coords.lat) : "0";
-          const lngStr = coords ? String(coords.lng) : "0";
-          const avgSunStr =
-            auditEntry?.summary?.carbonFootprintAndProduction?.averageSunlightPerDay?.replace(
-              /[^0-9.]/g,
-              ""
-            );
-          const adjWeeklyCreditsStr =
-            auditEntry?.summary?.carbonFootprintAndProduction?.adjustedWeeklyCarbonCredit?.replace(
-              /[^0-9.]/g,
-              ""
-            );
-          const weeklyDebtStr =
-            auditEntry?.summary?.carbonFootprintAndProduction?.weeklyTotalCarbonDebt?.replace(
-              /[^0-9.]/g,
-              ""
-            );
-          const netWeeklyStr =
-            auditEntry?.summary?.carbonFootprintAndProduction?.netCarbonCreditEarningWeekly?.replace(
-              /[^0-9.]/g,
-              ""
-            );
-          const systemWattageOutput = auditEntry?.summary
-            ?.carbonFootprintAndProduction?.systemWattageOutput as
-            | string
-            | undefined;
-
-          const matchDC = systemWattageOutput?.match(/([0-9.]+)\s*kW\s*DC/i);
-
-          const dcKW = matchDC ? Number(matchDC[1]) : undefined;
-          const estimatedKWhPerYear = dcKW ? String(dcKW) : 0;
-          const enquiryEstimatedQuotePerWatt = electricityPriceStr;
-
-          const panelsQty = auditEntry?.summary?.solarPanels?.quantity as
-            | number
-            | undefined;
-          const panelsBrand = auditEntry?.summary?.solarPanels
-            ?.brandAndModel as string | undefined;
-          const panelsWarranty = auditEntry?.summary?.solarPanels?.warranty as
-            | string
-            | undefined;
-          const ptoDateStr = auditEntry?.summary?.installationAndOperations
-            ?.ptoDate as string | undefined;
-          const ptoDate = parseAuditDate(ptoDateStr);
-          const installDateStr = auditEntry?.summary?.installationAndOperations
-            ?.installationDate as string | undefined;
-          const auditCompleteDate = parseAuditDate(auditEntry?.auditDate);
-          const installDate = parseAuditDate(installDateStr);
-
-          const receipt = await getProtocolFeePaymentFromTransactionHash(
-            paymentTxHash
-          );
-
-          if (!receipt) {
-            set.status = 404;
-            return { message: "Receipt not found" };
-          }
-
-          const paymentDate = new Date(Number(receipt.blockTimestamp) * 1000);
-
-          await db.transaction(async (tx) => {
-            const [draft] = await tx
-              .insert(applicationsDraft)
-              .values({ createdAt: paymentDate, userId })
-              .returning();
-
-            await tx
-              .update(farms)
-              .set({
-                auditCompleteDate,
-              })
-              .where(eq(farms.id, farm.id));
-
-            const app: ApplicationInsertType = {
-              id: draft.id,
-              userId,
-              zoneId,
-              farmId: farm.id,
-              createdAt: installDate || now,
-              currentStep: ApplicationSteps.payment,
-              roundRobinStatus: RoundRobinStatusEnum.assigned,
-              status: ApplicationStatusEnum.completed,
-              isCancelled: false,
-              isDocumentsCorrupted: false,
-              gcaAddress,
-              gcaAssignedTimestamp: installDate || paymentDate,
-              gcaAcceptanceTimestamp: paymentDate || paymentDate,
-              gcaAcceptanceSignature: null,
-              installFinishedDate: installDate || paymentDate,
-              revisedKwhGeneratedPerYear: estimatedKWhPerYear.toString(),
-              revisedCostOfPowerPerKWh: electricityPriceStr || null,
-              finalProtocolFee: toBigIntFrom6Decimals(finalProtocolFeeStr),
-              paymentDate,
-              paymentTxHash: paymentTxHash,
-              additionalPaymentTxHash: null,
-              paymentCurrency: "USDG",
-              paymentEventType: "PayProtocolFee",
-              payer: receipt.user.id,
-              allowedZones: [1],
-              finalQuotePerWatt: electricityPriceStr,
-            };
-
-            // console.log("app", app);
-
-            const applicationInsert = await tx
-              .insert(applications)
-              .values(app)
-              .returning({
-                id: applications.id,
-              });
-
-            if (auditEntry.auditDocuments.length > 0) {
-              await tx.insert(Documents).values(
-                auditEntry.auditDocuments.map((a) => ({
-                  applicationId: applicationInsert[0].id,
-                  name: a.name,
-                  createdAt: new Date(),
-                  step: ApplicationSteps.payment,
-                  url: a.link,
-                  type: a.link.split(".").pop() || "pdf",
-                }))
-              );
-            }
-            if (
-              auditEntry.afterInstallPictures &&
-              auditEntry.afterInstallPictures.length > 0
-            ) {
-              await tx.insert(Documents).values(
-                auditEntry.afterInstallPictures.map((a, i) => ({
-                  applicationId: applicationInsert[0].id,
-                  name: `misc_after_install_pictures_img_${i}`,
-                  createdAt: new Date(),
-                  step: ApplicationSteps.payment,
-                  url: a.link,
-                  type: a.link.split(".").pop() || "jpg",
-                }))
-              );
-            }
-            if (
-              auditEntry.preInstallPictures &&
-              auditEntry.preInstallPictures.length > 0
-            ) {
-              await tx.insert(Documents).values(
-                auditEntry.preInstallPictures.map((a, i) => ({
-                  applicationId: applicationInsert[0].id,
-                  name: `misc_pre_install_pictures_img_${i}`,
-                  createdAt: new Date(),
-                  step: ApplicationSteps.payment,
-                  url: a.link,
-                  type: a.link.split(".").pop() || "jpg",
-                }))
-              );
-            }
-
-            await tx.insert(ApplicationsEncryptedMasterKeys).values({
-              applicationId: draft.id,
-              userId,
-              encryptedMasterKey: "",
-            });
-
-            const enquiryFieldsCRS: ApplicationEnquiryFieldsCRSInsertType = {
-              applicationId: draft.id,
-              address: addressLocation,
-              farmOwnerName: "unknown-owner",
-              farmOwnerEmail: "owner@example.com",
-              farmOwnerPhone: "0000000000",
-              lat: latStr,
-              lng: lngStr,
-              estimatedCostOfPowerPerKWh: electricityPriceStr || "0",
-              estimatedKWhGeneratedPerYear: estimatedKWhPerYear.toString(),
-              enquiryEstimatedFees: finalProtocolFeeStr,
-              enquiryEstimatedQuotePerWatt: enquiryEstimatedQuotePerWatt,
-              estimatedAdjustedWeeklyCredits: adjWeeklyCreditsStr || "0",
-              installerName: "Jeff  Barlow",
-              installerCompanyName: "Glow Solutions LLC ",
-              installerEmail: "Jeff@glowsolutions.org",
-              installerPhone: "8016313214",
-            };
-
-            await tx
-              .insert(applicationsEnquiryFieldsCRS)
-              .values(enquiryFieldsCRS);
-
-            await tx.insert(applicationsAuditFieldsCRS).values({
-              applicationId: draft.id,
-              averageSunlightHoursPerDay: avgSunStr || "0",
-              adjustedWeeklyCarbonCredits: adjWeeklyCreditsStr || "0",
-              weeklyTotalCarbonDebt: weeklyDebtStr || "0",
-              netCarbonCreditEarningWeekly: netWeeklyStr || "0",
-              solarPanelsQuantity: panelsQty,
-              solarPanelsBrandAndModel: panelsBrand,
-              solarPanelsWarranty: panelsWarranty?.replace(/[^0-9.]/g, ""),
-              finalEnergyCost: electricityPriceStr,
-              systemWattageOutput: systemWattageOutput,
-              ptoObtainedDate: ptoDate,
-              locationWithoutPII: addressLocation,
-              revisedInstallFinishedDate: installDate,
-              devices: devices,
-            });
-
-            await tx.insert(weeklyProduction).values({
-              applicationId: draft.id,
-              createdAt: new Date(),
-              powerOutputMWH: "0.01066",
-              hoursOfSunlightPerDay: "5.71",
-              carbonOffsetsPerMWH: "0.4402",
-              adjustmentDueToUncertainty: "0.35",
-              weeklyPowerProductionMWh: "0.4260802",
-              weeklyCarbonCredits: "0.187560504",
-              adjustedWeeklyCarbonCredits: "0.1219143276",
-            });
-
-            await tx.insert(weeklyCarbonDebt).values({
-              applicationId: draft.id,
-              createdAt: new Date(),
-              totalCarbonDebtAdjustedKWh: "3.1104",
-              convertToKW: "10.66",
-              totalCarbonDebtProduced: "33.156864",
-              disasterRisk: "0.0017",
-              commitmentPeriod: 10,
-              adjustedTotalCarbonDebt: "33.71476342",
-              weeklyTotalCarbonDebt: "0.06483608349",
-            });
-
-            return draft.id;
-          });
-          console.log("Application created for farm", farm.id);
-        }
-        set.status = 201;
-        return { message: "success" };
-        // return { message: "success", applicationsPatch };
-      } catch (error) {
-        console.error("Error creating application from sources", error);
-        set.status = 500;
-        return { message: "error" };
-      }
-    },
-    {
-      detail: {
-        summary:
-          "Dev-only: Create completed application linked to a farm from legacy JSON and audits API",
-        description:
-          "Derives data from src/db/scripts/legacy-farms.json and https://glow.org/api/audits, then creates a completed application with required relations.",
-        tags: ["admin", "applications"],
-      },
-    }
-  )
   .get("/update-rewards-for-all-weeks", async () => {
     return { message: "dev only" };
     const lastWeek = getProtocolWeek() - 1;
@@ -1159,6 +443,97 @@ export const adminRouter = new Elysia({ prefix: "/admin" })
           "Returns all farms with their net weekly carbon credits, reward splits, " +
           "and protocol deposits including the week each deposit was made.",
         tags: ["admin", "farms", "export"],
+      },
+    }
+  )
+  .get(
+    "/patch-gca-address",
+    async ({ set }) => {
+      try {
+        if (process.env.NODE_ENV === "production") {
+          set.status = 404;
+          return { message: "Not allowed in production" };
+        }
+
+        const targetGcaAddress = "0xA9A58D16F454A4FA5F7f00Bbe583A86F2C5446dd";
+
+        console.log(
+          `Updating all applications to use GCA address: ${targetGcaAddress}`
+        );
+
+        // Find all applications that don't have the target GCA address
+        const applicationsToUpdate = await db.query.applications.findMany({
+          where: (app, { ne, or, isNull }) =>
+            or(ne(app.gcaAddress, targetGcaAddress), isNull(app.gcaAddress)),
+          columns: {
+            id: true,
+            gcaAddress: true,
+            status: true,
+            createdAt: true,
+          },
+        });
+
+        if (applicationsToUpdate.length === 0) {
+          return {
+            message: "All applications already have the correct GCA address",
+            targetGcaAddress,
+            updated: 0,
+          };
+        }
+
+        console.log(
+          `Found ${applicationsToUpdate.length} applications to update`
+        );
+
+        // Update all applications to use the target GCA address
+        const updateResult = await db
+          .update(applications)
+          .set({
+            gcaAddress: targetGcaAddress,
+            updatedAt: new Date(),
+          })
+          .where(
+            or(
+              not(eq(applications.gcaAddress, targetGcaAddress)),
+              isNull(applications.gcaAddress)
+            )
+          )
+          .returning({
+            id: applications.id,
+            gcaAddress: applications.gcaAddress,
+          });
+
+        console.log(
+          `Successfully updated ${updateResult.length} applications with new GCA address`
+        );
+
+        set.status = 200;
+        return {
+          message: `Successfully updated ${updateResult.length} applications with new GCA address`,
+          targetGcaAddress,
+          updated: updateResult.length,
+          totalFound: applicationsToUpdate.length,
+          updatedApplications: updateResult.map((app) => ({
+            id: app.id,
+            newGcaAddress: app.gcaAddress,
+          })),
+        };
+      } catch (error) {
+        console.error("Error patching GCA address:", error);
+        set.status = 500;
+        return {
+          message: "Error patching GCA address",
+          error: error instanceof Error ? error.message : "Unknown error",
+        };
+      }
+    },
+    {
+      detail: {
+        summary: "Patch GCA address for all applications",
+        description:
+          "Updates the gcaAddress field for all applications to use the specified GCA address (0xA9A58D16F454A4FA5F7f00Bbe583A86F2C5446dd). " +
+          "This is useful for standardizing GCA assignments across all applications.",
+        tags: ["admin", "applications", "gca"],
       },
     }
   );

@@ -28,8 +28,6 @@ import {
   applications,
   ApplicationsEncryptedMasterKeys,
   applicationsEnquiryFieldsCRS,
-  weeklyProduction,
-  weeklyCarbonDebt,
   ApplicationPriceQuotes,
   RewardSplits,
   applicationsAuditFieldsCRS,
@@ -291,8 +289,6 @@ export const publicApplicationsRoutes = new Elysia()
                 adjustedWeeklyCarbonCredits: true,
               },
             },
-            weeklyProduction: true,
-            weeklyCarbonDebt: true,
             documents: {
               where: and(
                 eq(Documents.isEncrypted, false),
@@ -447,8 +443,6 @@ export const publicApplicationsRoutes = new Elysia()
             applicationPriceQuotes: app.applicationPriceQuotes,
             enquiryFields: app.enquiryFieldsCRS,
             auditFields: app.auditFieldsCRS,
-            weeklyProduction: app.weeklyProduction,
-            weeklyCarbonDebt: app.weeklyCarbonDebt,
             afterInstallPictures: app.documents.filter((d) =>
               d.name.includes("after_install_pictures")
             ),
@@ -1139,24 +1133,47 @@ export const publicApplicationsRoutes = new Elysia()
               "Il7u5piKaYbRYY6HGNxzabsb25Bb/hcTZwoprPv6cWqlsXfXeXeJ4FQrPmca2n6imFkfXGkmETSjtYJ3i2LurLA9tpYACOfzCqDubFe7sBKeYBQm4gf3kTS3zn6UIsFglpUAtYLewhBicYkTKq2wkfmDJqxc4hn4VASo3cTNnKCq43ecPWLTPqXn6LHfIy3l3yPaPeW/bx/Y0Y9eA+aZAR19EqfmGL57MJE+jvEdh7VPo7Z6kAG0WdYn4eGyzLbcsl/j8kQYxHpONs9SDLjXrUY0ILN9ul0LSDuOzwJYWn8k6JaKH+mdoFTdYybJ7OzzsdmxD11Sxu2b8gwRFVJntg==",
           });
 
-          await tx.insert(applicationsEnquiryFieldsCRS).values({
-            applicationId: applicationDraft.id,
-            address: "sentinel-address",
-            farmOwnerName: "sentinel-owner",
-            farmOwnerEmail: "owner@example.com",
-            farmOwnerPhone: "0000000000",
-            lat: "41.94593",
-            lng: "-111.83126",
-            estimatedCostOfPowerPerKWh: "0.13",
-            estimatedKWhGeneratedPerYear: "7.9",
-            estimatedAdjustedWeeklyCredits: "0.12",
-            enquiryEstimatedFees: "2216207000",
-            enquiryEstimatedQuotePerWatt: "0.13",
-            installerName: "sentinel-installer",
-            installerCompanyName: "sentinel-company",
-            installerEmail: "installer@example.com",
-            installerPhone: "0000000000",
-          });
+          await tx
+            .insert(applicationsEnquiryFieldsCRS)
+            .values({
+              applicationId: applicationDraft.id,
+              address: "sentinel-address",
+              farmOwnerName: "sentinel-owner",
+              farmOwnerEmail: "owner@example.com",
+              farmOwnerPhone: "0000000000",
+              lat: "41.94593",
+              lng: "-111.83126",
+              estimatedCostOfPowerPerKWh: "0.13",
+              estimatedKWhGeneratedPerYear: "7.9",
+              estimatedAdjustedWeeklyCredits: "0.12",
+              enquiryEstimatedFees: "2216207000",
+              enquiryEstimatedQuotePerWatt: "0.13",
+              installerName: "sentinel-installer",
+              installerCompanyName: "sentinel-company",
+              installerEmail: "installer@example.com",
+              installerPhone: "0000000000",
+            })
+            .onConflictDoUpdate({
+              target: [applicationsEnquiryFieldsCRS.applicationId],
+              set: {
+                address: "sentinel-address",
+                farmOwnerName: "sentinel-owner",
+                farmOwnerEmail: "owner@example.com",
+                farmOwnerPhone: "0000000000",
+                lat: "41.94593",
+                lng: "-111.83126",
+                estimatedCostOfPowerPerKWh: "0.13",
+                estimatedKWhGeneratedPerYear: "7.9",
+                estimatedAdjustedWeeklyCredits: "0.12",
+                enquiryEstimatedFees: "2216207000",
+                enquiryEstimatedQuotePerWatt: "0.13",
+                installerName: "sentinel-installer",
+                installerCompanyName: "sentinel-company",
+                installerEmail: "installer@example.com",
+                installerPhone: "0000000000",
+                updatedAt: new Date(),
+              },
+            });
 
           const pubKeysAndShortIds = await getPubkeysAndShortIds(
             "http://95.217.194.59:35015"
@@ -1198,7 +1215,13 @@ export const publicApplicationsRoutes = new Elysia()
             ],
             systemWattageOutput: "1000",
           };
-          await tx.insert(applicationsAuditFieldsCRS).values(auditFields);
+          await tx
+            .insert(applicationsAuditFieldsCRS)
+            .values(auditFields)
+            .onConflictDoUpdate({
+              target: [applicationsAuditFieldsCRS.applicationId],
+              set: { ...auditFields, updatedAt: new Date() },
+            });
 
           const allAfterInstallDocummentsToCopy = await tx
             .select()
@@ -1224,30 +1247,6 @@ export const publicApplicationsRoutes = new Elysia()
               }))
             );
           }
-
-          await tx.insert(weeklyProduction).values({
-            applicationId: applicationDraft.id,
-            createdAt: new Date(),
-            powerOutputMWH: "0.0079",
-            hoursOfSunlightPerDay: "4.74816609",
-            carbonOffsetsPerMWH: "0.67384823",
-            adjustmentDueToUncertainty: "0.35",
-            weeklyPowerProductionMWh: "0.26257358",
-            weeklyCarbonCredits: "0.17693474",
-            adjustedWeeklyCarbonCredits: "0.11500758",
-          });
-
-          await tx.insert(weeklyCarbonDebt).values({
-            applicationId: applicationDraft.id,
-            createdAt: new Date(),
-            totalCarbonDebtAdjustedKWh: "3.1104",
-            convertToKW: "7.9",
-            totalCarbonDebtProduced: "24.57216",
-            disasterRisk: "0.0017",
-            commitmentPeriod: 10,
-            adjustedTotalCarbonDebt: "24.99309686",
-            weeklyTotalCarbonDebt: "0.04806365",
-          });
 
           await tx.insert(ApplicationPriceQuotes).values({
             applicationId: applicationDraft.id,

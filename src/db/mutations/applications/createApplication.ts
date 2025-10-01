@@ -136,6 +136,10 @@ export const createApplication = async (
     await tx
       .insert(applicationsEnquiryFieldsCRS)
       .values(applicationEnquiryFields)
+      .onConflictDoUpdate({
+        target: [applicationsEnquiryFieldsCRS.applicationId],
+        set: { ...applicationEnquiryFields, updatedAt: new Date() },
+      })
       .returning({ id: applicationsEnquiryFieldsCRS.id });
 
     const documents: DocumentsInsertType[] = [

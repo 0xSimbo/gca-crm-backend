@@ -36,8 +36,6 @@ export const findAllApplicationsByUserId = async (userId: string) => {
           requirementSet: true,
         },
       },
-      weeklyCarbonDebt: true,
-      weeklyProduction: true,
     },
   });
   return applicationsDb.map((application) => ({

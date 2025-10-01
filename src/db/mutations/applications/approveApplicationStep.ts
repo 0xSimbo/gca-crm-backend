@@ -27,9 +27,15 @@ export const approveApplicationStep = async (
       .returning({ status: applications.status });
 
     if (applicationAuditFields) {
-      await tx.insert(applicationsAuditFieldsCRS).values({
-        ...applicationAuditFields,
-      });
+      await tx
+        .insert(applicationsAuditFieldsCRS)
+        .values({
+          ...applicationAuditFields,
+        })
+        .onConflictDoUpdate({
+          target: [applicationsAuditFieldsCRS.applicationId],
+          set: { ...applicationAuditFields, updatedAt: new Date() },
+        });
     }
 
     await tx.insert(ApplicationStepApprovals).values({

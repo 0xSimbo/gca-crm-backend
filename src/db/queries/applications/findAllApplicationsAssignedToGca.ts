@@ -39,8 +39,6 @@ export const findAllApplicationsAssignedToGca = async (gcaAddress: string) => {
           contactValue: true,
         },
       },
-      weeklyCarbonDebt: true,
-      weeklyProduction: true,
     },
   });
   return applicationsDb.map(

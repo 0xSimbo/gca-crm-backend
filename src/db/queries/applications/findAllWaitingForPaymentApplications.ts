@@ -103,8 +103,6 @@ export const findAllWaitingForPaymentApplications = async (
           usdgSplitPercent: true,
         },
       },
-      weeklyCarbonDebt: true,
-      weeklyProduction: true,
     },
   });
 

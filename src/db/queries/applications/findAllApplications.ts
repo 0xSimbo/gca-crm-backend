@@ -31,8 +31,6 @@ export const findAllApplications = async () => {
           contactValue: true,
         },
       },
-      weeklyCarbonDebt: true,
-      weeklyProduction: true,
     },
   });
   return applicationsDb.map(
