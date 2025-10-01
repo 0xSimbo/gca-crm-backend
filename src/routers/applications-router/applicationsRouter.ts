@@ -1353,11 +1353,6 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               return "Application already linked with a farm";
             }
 
-            if (!application.auditFields) {
-              set.status = 400;
-              return "Application audit fields not found";
-            }
-
             await handleCreateWithoutPIIDocumentsAndCompleteApplicationAudit(
               application,
               gcaId,
@@ -1400,11 +1395,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
 
               const expectedProduction_12Decimals = (
                 BigInt(
-                  Math.floor(
-                    Number(
-                      application.auditFields.netCarbonCreditEarningWeekly
-                    ) * 1e6
-                  )
+                  Math.floor(Number(body.netCarbonCreditEarningWeekly) * 1e6)
                 ) * BigInt("1000000")
               ).toString();
               emitter
