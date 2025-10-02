@@ -1393,10 +1393,8 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                 application.finalProtocolFee
               ).toString();
 
-              const expectedProduction_12Decimals = (
-                BigInt(
-                  Math.floor(Number(body.netCarbonCreditEarningWeekly) * 1e6)
-                ) * BigInt("1000000")
+              const expectedProduction_12Decimals = BigInt(
+                Math.trunc(Number(body.netCarbonCreditEarningWeekly) * 1e12)
               ).toString();
               emitter
                 .emit({
