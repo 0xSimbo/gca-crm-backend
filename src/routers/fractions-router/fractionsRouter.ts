@@ -613,7 +613,7 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
       .post(
         "/create-mining-center-listing",
         async ({
-          body: { applicationId, sponsorSplitPercent, stepPrice },
+          body: { applicationId, sponsorSplitPercent, stepPrice, totalSteps },
           set,
           userId,
         }) => {
@@ -665,6 +665,7 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
               createdBy: userId,
               sponsorSplitPercent,
               stepPrice,
+              totalSteps,
               type: "mining-center",
             });
 
@@ -692,6 +693,10 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
               minimum: 0,
               maximum: 100,
               description: "Sponsor split percentage (0-100)",
+            }),
+            totalSteps: t.Number({
+              minimum: 1,
+              description: "Total number of steps",
             }),
             stepPrice: t.String({
               description: "Price per step in token decimals (optional)",

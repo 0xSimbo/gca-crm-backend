@@ -29,6 +29,7 @@ export interface CreateFractionParams {
   createdBy: string;
   sponsorSplitPercent: number;
   stepPrice: string; // Price per step in token decimals
+  totalSteps: number; // Total number of steps
   rewardScore?: number; // Reward score for launchpad fractions (optional, only used for launchpad type, e.g., 50, 100, 200)
   type?: "launchpad" | "mining-center";
 }
@@ -111,6 +112,7 @@ export async function createFraction(params: CreateFractionParams, tx?: any) {
     sponsorSplitPercent: params.sponsorSplitPercent,
     step: params.stepPrice || null, // Store stepPrice in the step field
     stepPrice: params.stepPrice,
+    totalSteps: params.totalSteps,
     rewardScore:
       fractionType === "launchpad" ? params.rewardScore ?? null : null, // Only save rewardScore for launchpad fractions
     createdAt: now,

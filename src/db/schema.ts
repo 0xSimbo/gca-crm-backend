@@ -1730,7 +1730,7 @@ export const fractions = pgTable(
     token: varchar("token", { length: 42 }), // ERC20 token address
     owner: varchar("owner", { length: 42 }), // Owner address that must match
     step: numeric("step", { precision: 78, scale: 0 }), // Price per step in token decimals (GLW 18 decimals, USDC 6 decimals)
-    totalSteps: integer("total_steps"), // Total number of steps
+    totalSteps: integer("total_steps").notNull(), // Total number of steps
     stepPrice: numeric("step_price", { precision: 78, scale: 0 }).notNull(), // Price per step in token decimals (GLW 18 decimals, USDC 6 decimals)
     splitsSold: integer("splits_sold").notNull().default(0), // Counter for sold splits
     status: varchar("status", { length: 20 }).notNull().default("draft"), // draft, committed, cancelled, filled, expired
