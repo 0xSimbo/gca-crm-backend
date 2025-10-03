@@ -416,7 +416,6 @@ export async function recordFractionSplit(
             paymentAmount: paymentAmount,
             protocolFee: BigInt(application.finalProtocolFeeBigInt),
             protocolFeeAdditionalPaymentTxHash: null,
-            payer: transactionResult.fraction.owner!,
           });
 
           console.log(

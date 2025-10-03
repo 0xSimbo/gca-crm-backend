@@ -309,7 +309,6 @@ export const handleCreateWithoutPIIDocumentsAndCompleteApplicationAudit =
         lat: application.enquiryFields?.lat,
         lng: application.enquiryFields?.lng,
         farmName: application.enquiryFields?.farmOwnerName,
-        payer: txData.user.id,
       });
       console.log(
         "completeApplicationWithDocumentsAndCreateFarmWithDevices done"

@@ -68,7 +68,6 @@ export async function completeApplicationAndCreateFarm({
   paymentAmount,
   protocolFee,
   protocolFeeAdditionalPaymentTxHash = null,
-  payer,
 }: {
   application: any;
   txHash: string;
@@ -78,7 +77,6 @@ export async function completeApplicationAndCreateFarm({
   paymentAmount: string;
   protocolFee: bigint;
   protocolFeeAdditionalPaymentTxHash?: string | null;
-  payer: string;
 }) {
   if (application.status === ApplicationStatusEnum.completed) {
     throw new Error("Application is already completed");
@@ -107,7 +105,6 @@ export async function completeApplicationAndCreateFarm({
       lat: application.enquiryFields?.lat || "0",
       lng: application.enquiryFields?.lng || "0",
       farmName,
-      payer,
     }
   );
 
@@ -136,7 +133,7 @@ export async function completeApplicationAndCreateFarm({
         schemaVersion: "v2-alpha",
         payload: {
           applicationId: application.id,
-          payer,
+          payer: "0x0000000000000000000000000000000000000000",
           amount_6Decimals: paymentAmount,
           txHash,
           paymentCurrency,
@@ -915,7 +912,6 @@ export const publicApplicationsRoutes = new Elysia()
           paymentAmount: body.amount,
           protocolFee: BigInt(application.finalProtocolFeeBigInt),
           protocolFeeAdditionalPaymentTxHash: null,
-          payer: body.from,
         });
 
         return { farmId };

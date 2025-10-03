@@ -168,7 +168,6 @@ export const findAllCompletedApplications = async (withDocuments?: boolean) => {
       paymentEventType: true,
       paymentCurrency: true,
       paymentAmount: true,
-      payer: true,
     },
     with: {
       fractions: {
@@ -341,7 +340,6 @@ export const findCompletedApplication = async ({
       paymentAmount: true,
       paymentCurrency: true,
       paymentEventType: true,
-      payer: true,
     },
     with: {
       fractions: {

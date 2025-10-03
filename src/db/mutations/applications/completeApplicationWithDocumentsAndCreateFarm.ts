@@ -32,7 +32,6 @@ import { getRegionFromLatAndLng } from "../../../utils/getRegionFromLatAndLng";
  * @param lat - The latitude of the farm.
  * @param lng - The longitude of the farm.
  * @param farmName - The name of the farm.
- * @param payer - The payer of the protocol fee.
  */
 export const completeApplicationWithDocumentsAndCreateFarmWithDevices = async ({
   applicationId,
@@ -46,7 +45,6 @@ export const completeApplicationWithDocumentsAndCreateFarmWithDevices = async ({
   lat,
   lng,
   farmName,
-  payer,
   paymentCurrency,
   paymentEventType,
   paymentAmount,
@@ -62,7 +60,6 @@ export const completeApplicationWithDocumentsAndCreateFarmWithDevices = async ({
   lat: string;
   lng: string;
   farmName: string;
-  payer: string;
   paymentCurrency: string;
   paymentEventType: string;
   paymentAmount: string;
@@ -84,7 +81,6 @@ export const completeApplicationWithDocumentsAndCreateFarmWithDevices = async ({
         protocolFeePaymentHash,
         protocolFeeAdditionalPaymentTxHash,
         applicationId,
-        payer,
         paymentCurrency,
         paymentEventType,
       }
@@ -158,7 +154,6 @@ export const completeApplicationWithDocumentsAndCreateFarmWithDevices = async ({
         paymentCurrency,
         paymentEventType,
         paymentAmount,
-        payer,
         farmId: farmInsert[0].farmId,
       })
       .where(and(eq(applications.id, applicationId)))
