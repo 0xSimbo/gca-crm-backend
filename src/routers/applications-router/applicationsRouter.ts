@@ -1378,7 +1378,10 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                   weeklyTotalCarbonDebt: body.weeklyTotalCarbonDebt,
                   netCarbonCreditEarningWeekly:
                     body.netCarbonCreditEarningWeekly,
-                  systemWattageOutput: body.systemWattageOutput,
+                  systemWattageOutput: `${body.systemWattageOutput.replace(
+                    " kW-DC | kW-AC",
+                    ""
+                  )} kW-DC`,
                 },
               }
             );
