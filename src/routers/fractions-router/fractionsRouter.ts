@@ -229,6 +229,7 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
               timestamp: split.timestamp,
               purchaseDate: split.createdAt,
               currency,
+              fractionType: fraction.type,
               // Fraction context
               fractionId: fraction.id,
               applicationId: fraction.applicationId,
@@ -376,7 +377,6 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
               isFilled: fraction.isFilled,
               progressPercent,
               rewardScore: fraction.rewardScore,
-
               // Purchase value calculation
               stepPrice: split.step,
               totalValue: split.amount,

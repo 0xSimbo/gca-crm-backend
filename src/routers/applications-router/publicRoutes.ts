@@ -495,12 +495,7 @@ export const publicApplicationsRoutes = new Elysia()
               : null,
           };
         });
-        return [
-          ...returnApplications,
-          ...returnApplications,
-          ...returnApplications,
-          ...returnApplications,
-        ];
+        return returnApplications;
       } catch (e) {
         if (e instanceof Error) {
           set.status = 400;
