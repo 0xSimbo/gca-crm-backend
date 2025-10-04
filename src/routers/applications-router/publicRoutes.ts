@@ -417,8 +417,7 @@ export const publicApplicationsRoutes = new Elysia()
             return 0;
           });
         }
-
-        return filteredApplications.map((app) => {
+        const returnApplications = filteredApplications.map((app) => {
           // Get the active fraction directly from the query result
           const activeFraction =
             app.fractions && app.fractions.length > 0 ? app.fractions[0] : null;
@@ -496,6 +495,12 @@ export const publicApplicationsRoutes = new Elysia()
               : null,
           };
         });
+        return [
+          ...returnApplications,
+          ...returnApplications,
+          ...returnApplications,
+          ...returnApplications,
+        ];
       } catch (e) {
         if (e instanceof Error) {
           set.status = 400;

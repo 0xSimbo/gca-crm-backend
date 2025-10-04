@@ -304,6 +304,146 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
     }
   )
   .get(
+    "/splits-activity-by-type",
+    async ({ query: { limit, fractionType }, set }) => {
+      try {
+        const parsedLimit = limit ? parseInt(limit) : 50;
+        if (isNaN(parsedLimit) || parsedLimit < 1 || parsedLimit > 200) {
+          set.status = 400;
+          return "Limit must be a number between 1 and 200";
+        }
+
+        if (!fractionType) {
+          set.status = 400;
+          return "fractionType is required";
+        }
+
+        if (fractionType !== "mining-center" && fractionType !== "launchpad") {
+          set.status = 400;
+          return "fractionType must be either 'mining-center' or 'launchpad'";
+        }
+
+        // Get recent splits activity
+        const recentActivity = await findRecentSplitsActivity(parsedLimit);
+
+        // Filter by fraction type
+        const filteredActivity = recentActivity.filter(
+          (activity) => activity.fraction.type === fractionType
+        );
+
+        // Transform the data for better API response, filtering out invalid tokens
+        const activityData = filteredActivity
+          .map((activity) => {
+            const { split, fraction } = activity;
+
+            // Calculate progress percentage
+            const progressPercent =
+              fraction.totalSteps && fraction.splitsSold
+                ? Math.round((fraction.splitsSold / fraction.totalSteps) * 100)
+                : 0;
+
+            const currency =
+              forwarderAddresses.USDC.toLowerCase() ===
+              fraction.token!.toLowerCase()
+                ? "USDC"
+                : fraction.token!.toLowerCase() ===
+                  forwarderAddresses.GLW.toLowerCase()
+                ? "GLW"
+                : undefined;
+
+            // Return null for invalid tokens to filter them out
+            if (!currency) {
+              return null;
+            }
+
+            return {
+              // Split transaction details
+              transactionHash: split.transactionHash,
+              blockNumber: split.blockNumber,
+              buyer: split.buyer,
+              creator: split.creator,
+              stepsPurchased: split.stepsPurchased,
+              amount: split.amount,
+              step: split.step,
+              timestamp: split.timestamp,
+              purchaseDate: split.createdAt,
+              currency,
+              // Fraction context
+              fractionId: fraction.id,
+              applicationId: fraction.applicationId,
+              fractionType: fraction.type,
+              fractionStatus: fraction.status,
+              isFilled: fraction.isFilled,
+              progressPercent,
+              rewardScore: fraction.rewardScore,
+
+              // Purchase value calculation
+              stepPrice: split.step,
+              totalValue: split.amount,
+            };
+          })
+          .filter((activity) => activity !== null);
+
+        return {
+          activity: activityData,
+          fractionType,
+          summary: {
+            totalTransactions: filteredActivity.length,
+            totalStepsPurchased: filteredActivity.reduce(
+              (sum, activity) => sum + (activity.split.stepsPurchased || 0),
+              0
+            ),
+            totalAmountSpent: filteredActivity
+              .reduce((sum, activity) => {
+                try {
+                  return sum + BigInt(activity.split.amount);
+                } catch {
+                  return sum;
+                }
+              }, BigInt(0))
+              .toString(),
+            uniqueBuyers: new Set(
+              filteredActivity.map((activity) =>
+                activity.split.buyer.toLowerCase()
+              )
+            ).size,
+            uniqueFractions: new Set(
+              filteredActivity.map((activity) => activity.fraction.id)
+            ).size,
+          },
+        };
+      } catch (e) {
+        if (e instanceof Error) {
+          set.status = 400;
+          return e.message;
+        }
+        console.log("[fractionsRouter] /splits-activity-by-type", e);
+        throw new Error("Error Occured");
+      }
+    },
+    {
+      query: t.Object({
+        limit: t.Optional(
+          t.String({
+            description:
+              "Number of recent splits to return (1-200, default: 50)",
+          })
+        ),
+        fractionType: t.String({
+          description:
+            "Filter by fraction type: 'mining-center' or 'launchpad'",
+        }),
+      }),
+      detail: {
+        summary:
+          "Get recent fraction splits purchase activity by fraction type",
+        description:
+          "Returns recent fraction purchase activity filtered by fraction type (mining-center or launchpad). Includes transaction details, fraction context, progress information, and activity summary statistics.",
+        tags: [TAG.APPLICATIONS],
+      },
+    }
+  )
+  .get(
     "/refundable-by-wallet",
     async ({ query: { walletAddress }, set }) => {
       if (!walletAddress) {

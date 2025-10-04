@@ -167,6 +167,7 @@ export async function findRecentSplitsActivity(limit: number = 50) {
         isFilled: fractions.isFilled,
         rewardScore: fractions.rewardScore,
         token: fractions.token,
+        type: fractions.type,
       },
     })
     .from(fractionSplits)
