@@ -90,7 +90,6 @@ import {
 import {
   MIN_SPONSOR_SPLIT_PERCENT,
   MAX_SPONSOR_SPLIT_PERCENT,
-  SPONSOR_SPLIT_INCREMENT,
   VALID_SPONSOR_SPLIT_PERCENTAGES,
   FRACTION_STATUS,
 } from "../../constants/fractions";
@@ -2088,7 +2087,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
           }),
           detail: {
             summary: "Publish Application to auction",
-            description: `Set sponsorSplitPercent (${MIN_SPONSOR_SPLIT_PERCENT}-${MAX_SPONSOR_SPLIT_PERCENT} inclusive, steps of ${SPONSOR_SPLIT_INCREMENT}). If not yet published, also toggle isPublishedOnAuction and set publishedOnAuctionTimestamp. If already published, only updates sponsorSplitPercent and sponsorSplitUpdatedAt.`,
+            description: `Set sponsorSplitPercent (${MIN_SPONSOR_SPLIT_PERCENT}-${MAX_SPONSOR_SPLIT_PERCENT} inclusive, in 1% steps). If not yet published, also toggle isPublishedOnAuction and set publishedOnAuctionTimestamp. If already published, only updates sponsorSplitPercent and sponsorSplitUpdatedAt.`,
             tags: [TAG.APPLICATIONS],
           },
         }

@@ -3,9 +3,9 @@ import { db } from "../../db/db";
 import { fractions } from "../../db/schema";
 import {
   MAX_SPONSOR_SPLIT_PERCENT,
-  SPONSOR_SPLIT_INCREMENT,
   FRACTION_STALE_PERIOD_MS,
   FRACTION_STATUS,
+  getNextSponsorSplitIncrement,
 } from "../../constants/fractions";
 
 /**
@@ -15,7 +15,10 @@ import {
  * 1. Fraction is not committed on-chain (isCommittedOnChain = false)
  * 2. Fraction hasn't been updated in the past 7 days
  * 3. Fraction has not expired (expirationAt > now)
- * 4. Current sponsor split is less than 80%
+ * 4. Current sponsor split is less than 90%
+ *
+ * Increment logic: Rounds up to the next 10% increment
+ * Examples: 5% -> 10%, 23% -> 30%, 87% -> 90%
  */
 export async function incrementStaleFractions() {
   const now = new Date();
@@ -44,7 +47,7 @@ export async function incrementStaleFractions() {
           not(eq(fractions.status, FRACTION_STATUS.FILLED)),
           // Not expired yet
           gt(fractions.expirationAt, now),
-          // Current sponsor split is less than max (80%)
+          // Current sponsor split is less than max (90%)
           lt(fractions.sponsorSplitPercent, MAX_SPONSOR_SPLIT_PERCENT)
         )
       );
@@ -70,9 +73,8 @@ export async function incrementStaleFractions() {
         continue;
       }
 
-      const newSponsorSplit = Math.min(
-        fraction.sponsorSplitPercent + SPONSOR_SPLIT_INCREMENT,
-        MAX_SPONSOR_SPLIT_PERCENT
+      const newSponsorSplit = getNextSponsorSplitIncrement(
+        fraction.sponsorSplitPercent
       );
 
       console.log(
