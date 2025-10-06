@@ -15,10 +15,10 @@ import {
  * 1. Fraction is not committed on-chain (isCommittedOnChain = false)
  * 2. Fraction hasn't been updated in the past 7 days
  * 3. Fraction has not expired (expirationAt > now)
- * 4. Current sponsor split is less than 90%
+ * 4. Current sponsor split is less than 95%
  *
  * Increment logic: Rounds up to the next 10% increment
- * Examples: 5% -> 10%, 23% -> 30%, 87% -> 90%
+ * Examples: 5% -> 10%, 23% -> 30%, 87% -> 90%, 90% -> 95%
  */
 export async function incrementStaleFractions() {
   const now = new Date();
@@ -40,7 +40,7 @@ export async function incrementStaleFractions() {
           not(eq(fractions.status, FRACTION_STATUS.FILLED)),
           // Not expired yet
           gt(fractions.expirationAt, now),
-          // Current sponsor split is less than max (90%)
+          // Current sponsor split is less than max (95%)
           lt(fractions.sponsorSplitPercent, MAX_SPONSOR_SPLIT_PERCENT)
         )
       );

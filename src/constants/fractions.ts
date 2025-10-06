@@ -4,9 +4,9 @@
 
 // Sponsor split percentage limits
 export const MIN_SPONSOR_SPLIT_PERCENT = 5;
-export const MAX_SPONSOR_SPLIT_PERCENT = 90;
+export const MAX_SPONSOR_SPLIT_PERCENT = 95;
 
-// Valid sponsor split percentages - any integer from 5% to 90%
+// Valid sponsor split percentages - any integer from 5% to 95%
 export const VALID_SPONSOR_SPLIT_PERCENTAGES = Array.from(
   { length: MAX_SPONSOR_SPLIT_PERCENT - MIN_SPONSOR_SPLIT_PERCENT + 1 },
   (_, i) => MIN_SPONSOR_SPLIT_PERCENT + i
@@ -14,7 +14,7 @@ export const VALID_SPONSOR_SPLIT_PERCENTAGES = Array.from(
 
 /**
  * Calculate the next 10% increment from the current sponsor split percent
- * Examples: 5% -> 10%, 23% -> 30%, 30% -> 40%, 87% -> 90%, 90% -> 90%
+ * Examples: 5% -> 10%, 23% -> 30%, 30% -> 40%, 87% -> 90%, 90% -> 95%, 95% -> 95%
  */
 export function getNextSponsorSplitIncrement(currentPercent: number): number {
   if (currentPercent >= MAX_SPONSOR_SPLIT_PERCENT) {
