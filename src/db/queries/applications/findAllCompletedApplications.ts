@@ -139,6 +139,9 @@ function stringifyApplicationFields(
 }
 
 export const findAllCompletedApplications = async (withDocuments?: boolean) => {
+  //TODO: Remove this filter after 2025-10-07
+  // Temporary filter: exclude applications with paymentDate after 2025-10-01 (inclusive day)
+  const paymentDateCutoff = new Date("2025-10-01T23:59:59.999Z");
   const applicationsDb = await db.query.applications.findMany({
     where: and(
       eq(applications.isCancelled, false),
@@ -259,6 +262,10 @@ export const findAllCompletedApplications = async (withDocuments?: boolean) => {
     },
   });
   return applicationsDb
+    .filter(
+      (application) =>
+        !application.paymentDate || application.paymentDate <= paymentDateCutoff
+    )
     .map(({ enquiryFieldsCRS, auditFieldsCRS, zone, ...application }) =>
       stringifyApplicationFields(
         application,
