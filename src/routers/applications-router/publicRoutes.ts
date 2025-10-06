@@ -105,6 +105,7 @@ export async function completeApplicationAndCreateFarm({
       lat: application.enquiryFields?.lat || "0",
       lng: application.enquiryFields?.lng || "0",
       farmName,
+      zoneId: application.zoneId,
     }
   );
 

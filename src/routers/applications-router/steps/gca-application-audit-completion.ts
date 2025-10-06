@@ -293,7 +293,6 @@ export const handleCreateWithoutPIIDocumentsAndCompleteApplicationAudit =
       args.applicationAuditFields
     );
     if (txData && application.paymentTxHash && application.paymentDate) {
-      console.log("completeApplicationWithDocumentsAndCreateFarmWithDevices");
       await completeApplicationWithDocumentsAndCreateFarmWithDevices({
         protocolFeePaymentHash: application.paymentTxHash,
         paymentDate: application.paymentDate,
@@ -309,6 +308,7 @@ export const handleCreateWithoutPIIDocumentsAndCompleteApplicationAudit =
         lat: application.enquiryFields?.lat,
         lng: application.enquiryFields?.lng,
         farmName: application.enquiryFields?.farmOwnerName,
+        zoneId: application.zoneId,
       });
       console.log(
         "completeApplicationWithDocumentsAndCreateFarmWithDevices done"
