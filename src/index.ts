@@ -124,9 +124,11 @@ const app = new Elysia()
       async run() {
         try {
           const result = await incrementStaleFractions();
-          console.log(
-            `[Cron] Increment Stale Fractions: Updated ${result.updated} fractions`
-          );
+          if (result.updated > 0) {
+            console.log(
+              `[Cron] Increment Stale Fractions: Updated ${result.updated} fractions`
+            );
+          }
         } catch (error) {
           console.error("[Cron] Error in Increment Stale Fractions:", error);
         }

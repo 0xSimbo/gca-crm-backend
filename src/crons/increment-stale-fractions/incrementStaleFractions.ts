@@ -24,13 +24,6 @@ export async function incrementStaleFractions() {
   const now = new Date();
   const staleThreshold = new Date(now.getTime() - FRACTION_STALE_PERIOD_MS);
 
-  console.log(
-    `[incrementStaleFractions] Starting cron at ${now.toISOString()}`
-  );
-  console.log(
-    `[incrementStaleFractions] Stale threshold: ${staleThreshold.toISOString()}`
-  );
-
   try {
     // Find fractions that meet the criteria for incrementing
     const staleFractions = await db
