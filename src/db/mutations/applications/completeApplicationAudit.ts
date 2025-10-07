@@ -177,6 +177,9 @@ export const completeApplicationAudit = async (
       .values({
         applicationId: applicationId,
         ...applicationAuditFields,
+        revisedInstallFinishedDate: new Date(
+          applicationAuditFields.revisedInstallFinishedDate
+        ),
         devices: devices,
       })
       .onConflictDoUpdate({
