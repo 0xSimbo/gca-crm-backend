@@ -457,13 +457,13 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
           return "fractionType must be either 'mining-center' or 'launchpad'";
         }
 
-        // Get recent splits activity
-        const recentActivity = await findRecentSplitsActivity(parsedLimit);
+        // Get recent splits activity (filtered by type at the query level)
+        const recentActivity = await findRecentSplitsActivity(parsedLimit, {
+          fractionType,
+        });
 
-        // Filter by fraction type
-        const filteredActivity = recentActivity.filter(
-          (activity) => activity.fraction.type === fractionType
-        );
+        // Already filtered by query above
+        const filteredActivity = recentActivity;
 
         const applicationIds = new Set(
           filteredActivity.map(({ fraction }) => fraction.applicationId)

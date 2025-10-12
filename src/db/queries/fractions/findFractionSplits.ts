@@ -1,7 +1,6 @@
-import { FRACTION_STATUS } from "../../../constants/fractions";
 import { db } from "../../db";
 import { fractionSplits, fractions } from "../../schema";
-import { eq, desc, and, not } from "drizzle-orm";
+import { eq, desc, and } from "drizzle-orm";
 
 /**
  * Calculate the number of steps purchased from step price and amount
@@ -153,8 +152,11 @@ export async function findSplitsByWalletAndFraction(
  * @param limit - Number of recent splits to return (default: 50)
  * @returns Array of recent fraction splits with fraction information
  */
-export async function findRecentSplitsActivity(limit: number = 50) {
-  return await db
+export async function findRecentSplitsActivity(
+  limit: number = 50,
+  options?: { fractionType?: "launchpad" | "mining-center" }
+) {
+  const baseQuery = db
     .select({
       split: fractionSplits,
       fraction: {
@@ -171,7 +173,13 @@ export async function findRecentSplitsActivity(limit: number = 50) {
       },
     })
     .from(fractionSplits)
-    .innerJoin(fractions, eq(fractionSplits.fractionId, fractions.id))
+    .innerJoin(fractions, eq(fractionSplits.fractionId, fractions.id));
+
+  const filteredQuery = options?.fractionType
+    ? baseQuery.where(eq(fractions.type, options.fractionType))
+    : baseQuery;
+
+  return await filteredQuery
     .orderBy(desc(fractionSplits.createdAt))
     .limit(limit);
 }
