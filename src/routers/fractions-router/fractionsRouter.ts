@@ -21,8 +21,129 @@ import { findRefundableFractionsByWallet } from "../../db/queries/fractions/find
 import { checksumAddress } from "viem";
 import { createFraction } from "../../db/mutations/fractions/createFraction";
 import { forwarderAddresses } from "../../constants/addresses";
+import { getFractionsSummary } from "../../db/queries/fractions/getFractionsSummary";
+import { getAvailableFractions } from "../../db/queries/fractions/getAvailableFractions";
 
 export const fractionsRouter = new Elysia({ prefix: "/fractions" })
+  .get(
+    "/summary",
+    async ({ set }) => {
+      try {
+        const summary = await getFractionsSummary();
+
+        return summary;
+      } catch (e) {
+        if (e instanceof Error) {
+          set.status = 400;
+          return e.message;
+        }
+        console.log("[fractionsRouter] /summary", e);
+        throw new Error("Error Occured");
+      }
+    },
+    {
+      detail: {
+        summary: "Get high-level fraction sales summary",
+        description:
+          "Returns totals for GLW delegated via launchpad fractions and USD volume from mining-center fractions. Only filled fractions contribute to the totals.",
+        tags: [TAG.APPLICATIONS],
+      },
+    }
+  )
+  .get(
+    "/available",
+    async ({ query: { type }, set }) => {
+      try {
+        if (type && type !== "launchpad" && type !== "mining-center") {
+          set.status = 400;
+          return "type must be either 'launchpad' or 'mining-center'";
+        }
+
+        const fractions = await getAvailableFractions({ type });
+
+        const computeSummary = (items: typeof fractions) => {
+          const totalCount = items.length;
+          let totalStepsRemaining = BigInt(0);
+          let totalValueRemaining = BigInt(0);
+
+          const fractionsWithDerived = items.map((fraction) => {
+            const remainingSteps =
+              BigInt(fraction.totalSteps ?? 0) -
+              BigInt(fraction.splitsSold ?? 0);
+            const boundedRemainingSteps =
+              remainingSteps > BigInt(0) ? remainingSteps : BigInt(0);
+
+            let remainingValue = BigInt(0);
+            if (fraction.stepPrice) {
+              try {
+                remainingValue =
+                  BigInt(fraction.stepPrice) * boundedRemainingSteps;
+              } catch {
+                remainingValue = BigInt(0);
+              }
+            }
+
+            totalStepsRemaining += boundedRemainingSteps;
+            totalValueRemaining += remainingValue;
+
+            return {
+              ...fraction,
+              remainingSteps: boundedRemainingSteps.toString(),
+              remainingValue: remainingValue.toString(),
+            };
+          });
+
+          return {
+            summary: {
+              totalCount,
+              totalStepsRemaining: totalStepsRemaining.toString(),
+              totalValueRemaining: totalValueRemaining.toString(),
+            },
+            fractions: fractionsWithDerived,
+          };
+        };
+
+        if (type) {
+          return {
+            type,
+            ...computeSummary(fractions),
+          };
+        }
+
+        const launchpadFractions = fractions.filter(
+          (fraction) => fraction.type === "launchpad"
+        );
+        const miningCenterFractions = fractions.filter(
+          (fraction) => fraction.type === "mining-center"
+        );
+
+        return {
+          launchpad: computeSummary(launchpadFractions),
+          miningCenter: computeSummary(miningCenterFractions),
+        };
+      } catch (e) {
+        if (e instanceof Error) {
+          set.status = 400;
+          return e.message;
+        }
+        console.log("[fractionsRouter] /available", e);
+        throw new Error("Error Occured");
+      }
+    },
+    {
+      query: t.Object({
+        type: t.Optional(
+          t.Union([t.Literal("launchpad"), t.Literal("mining-center")])
+        ),
+      }),
+      detail: {
+        summary: "Get currently available fractions",
+        description:
+          "Returns committed fractions that have not expired yet. Optionally filter by fraction type to retrieve available launchpad or mining-center listings.",
+        tags: [TAG.APPLICATIONS],
+      },
+    }
+  )
   .get(
     "/default-max-splits",
     async ({ query: { applicationId }, set }) => {
