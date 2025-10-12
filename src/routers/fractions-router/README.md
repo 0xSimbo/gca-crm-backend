@@ -57,7 +57,7 @@ This document describes the unauthenticated routes exposed by `fractionsRouter.t
 - **Response**
   - `activity[]`
     - Split fields: `transactionHash`, `blockNumber`, `buyer`, `creator`, `stepsPurchased`, `amount`, `step`, `timestamp`, `purchaseDate`, `currency` (`USDC`|`GLW`).
-    - Fraction fields: `fractionId`, `applicationId`, `fractionStatus`, `isFilled`, `progressPercent`, `rewardScore`, `fractionType`.
+    - Fraction fields: `fractionId`, `applicationId`, `farmName`, `fractionStatus`, `isFilled`, `progressPercent`, `rewardScore`, `fractionType`.
     - Calculated `stepPrice` (`string`) and `totalValue` (`string`).
   - `summary`
     - `totalTransactions` (`number`).
@@ -70,6 +70,7 @@ This document describes the unauthenticated routes exposed by `fractionsRouter.t
 
 - Query params: `fractionType` (`launchpad` | `mining-center`), optional `limit` (`1-200`, default `50`).
 - Same payload shape as `/splits-activity`, scoped to the requested type, with an extra top-level `fractionType` field mirroring the filter.
+  - Each activity item also includes `farmName` alongside `fractionId` and `applicationId`.
 
 ## `GET /fractions/refundable-by-wallet`
 

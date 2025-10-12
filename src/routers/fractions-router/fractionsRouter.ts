@@ -23,6 +23,7 @@ import { createFraction } from "../../db/mutations/fractions/createFraction";
 import { forwarderAddresses } from "../../constants/addresses";
 import { getFractionsSummary } from "../../db/queries/fractions/getFractionsSummary";
 import { getAvailableFractions } from "../../db/queries/fractions/getAvailableFractions";
+import { getUniqueStarNameForApplicationId } from "../farms/farmsRouter";
 
 export const fractionsRouter = new Elysia({ prefix: "/fractions" })
   .get(
@@ -298,6 +299,16 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
         // Get recent splits activity
         const recentActivity = await findRecentSplitsActivity(parsedLimit);
 
+        const applicationIds = new Set(
+          recentActivity.map(({ fraction }) => fraction.applicationId)
+        );
+
+        const farmNameCache = new Map<string, string | undefined>();
+        for (const appId of applicationIds) {
+          const farmName = await getUniqueStarNameForApplicationId(appId);
+          farmNameCache.set(appId, farmName);
+        }
+
         // Filter by wallet address if provided
         let filteredActivity = recentActivity;
         if (walletAddress) {
@@ -354,6 +365,7 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
               // Fraction context
               fractionId: fraction.id,
               applicationId: fraction.applicationId,
+              farmName: farmNameCache.get(fraction.applicationId) ?? null,
               fractionStatus: fraction.status,
               isFilled: fraction.isFilled,
               progressPercent,
@@ -453,6 +465,16 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
           (activity) => activity.fraction.type === fractionType
         );
 
+        const applicationIds = new Set(
+          filteredActivity.map(({ fraction }) => fraction.applicationId)
+        );
+
+        const farmNameCache = new Map<string, string | undefined>();
+        for (const appId of applicationIds) {
+          const farmName = await getUniqueStarNameForApplicationId(appId);
+          farmNameCache.set(appId, farmName);
+        }
+
         // Transform the data for better API response, filtering out invalid tokens
         const activityData = filteredActivity
           .map((activity) => {
@@ -493,6 +515,7 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
               // Fraction context
               fractionId: fraction.id,
               applicationId: fraction.applicationId,
+              farmName: farmNameCache.get(fraction.applicationId) ?? null,
               fractionType: fraction.type,
               fractionStatus: fraction.status,
               isFilled: fraction.isFilled,
