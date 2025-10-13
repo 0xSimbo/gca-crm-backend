@@ -1,6 +1,7 @@
 import { db } from "../../db";
 import { fractionSplits, fractions } from "../../schema";
 import { eq, desc, and } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 
 /**
  * Calculate the number of steps purchased from step price and amount
@@ -152,18 +153,123 @@ export async function findSplitsByWalletAndFraction(
  * @param limit - Number of recent splits to return (default: 50)
  * @returns Array of recent fraction splits with fraction information
  */
+export interface RecentSplitRow {
+  split: {
+    fractionId: string;
+    transactionHash: string;
+    blockNumber: string;
+    buyer: string;
+    creator: string;
+    stepsPurchased: number;
+    amount: string;
+    step: string;
+    timestamp: number;
+    createdAt: Date;
+  };
+  fraction: {
+    id: string;
+    applicationId: string;
+    status: string;
+    totalSteps: number | null;
+    splitsSold: number | null;
+    isFilled: boolean;
+    rewardScore: number | null;
+    token: string | null;
+    type: string;
+  };
+}
+
 export async function findRecentSplitsActivity(
   limit: number = 50,
-  options?: { fractionType?: "launchpad" | "mining-center" }
-) {
-  const baseQuery = db
+  options?: {
+    fractionType?: "launchpad" | "mining-center";
+    buyerAddress?: string;
+  }
+): Promise<RecentSplitRow[]> {
+  // If filtering by type, push the filter into the join and apply the limit on the final result
+  if (options?.fractionType) {
+    return await db
+      .select({
+        split: {
+          fractionId: fractionSplits.fractionId,
+          transactionHash: fractionSplits.transactionHash,
+          blockNumber: fractionSplits.blockNumber,
+          buyer: fractionSplits.buyer,
+          creator: fractionSplits.creator,
+          stepsPurchased: fractionSplits.stepsPurchased,
+          amount: fractionSplits.amount,
+          step: fractionSplits.step,
+          timestamp: fractionSplits.timestamp,
+          createdAt: fractionSplits.createdAt,
+        },
+        fraction: {
+          id: fractions.id,
+          applicationId: fractions.applicationId,
+          status: fractions.status,
+          totalSteps: fractions.totalSteps,
+          splitsSold: fractions.splitsSold,
+          isFilled: fractions.isFilled,
+          rewardScore: fractions.rewardScore,
+          token: fractions.token,
+          type: fractions.type,
+        },
+      })
+      .from(fractionSplits)
+      .innerJoin(fractions, eq(fractionSplits.fractionId, fractions.id))
+      .where(
+        and(
+          eq(fractions.type, options.fractionType),
+          options.buyerAddress
+            ? eq(fractionSplits.buyer, options.buyerAddress.toLowerCase())
+            : sql`true`
+        )
+      )
+      .orderBy(desc(fractionSplits.createdAt))
+      .limit(limit);
+  }
+
+  // Fast path: grab the top N recent splits first (optionally filtered by buyer), then join to fractions
+  const recentSplitsSubquery = db
     .select({
-      split: fractionSplits,
+      fractionId: fractionSplits.fractionId,
+      transactionHash: fractionSplits.transactionHash,
+      blockNumber: fractionSplits.blockNumber,
+      buyer: fractionSplits.buyer,
+      creator: fractionSplits.creator,
+      stepsPurchased: fractionSplits.stepsPurchased,
+      amount: fractionSplits.amount,
+      step: fractionSplits.step,
+      timestamp: fractionSplits.timestamp,
+      createdAt: fractionSplits.createdAt,
+    })
+    .from(fractionSplits)
+    .where(
+      options?.buyerAddress
+        ? eq(fractionSplits.buyer, options.buyerAddress.toLowerCase())
+        : sql`true`
+    )
+    .orderBy(desc(fractionSplits.createdAt))
+    .limit(limit)
+    .as("recent_splits");
+
+  return await db
+    .select({
+      split: {
+        fractionId: recentSplitsSubquery.fractionId,
+        transactionHash: recentSplitsSubquery.transactionHash,
+        blockNumber: recentSplitsSubquery.blockNumber,
+        buyer: recentSplitsSubquery.buyer,
+        creator: recentSplitsSubquery.creator,
+        stepsPurchased: recentSplitsSubquery.stepsPurchased,
+        amount: recentSplitsSubquery.amount,
+        step: recentSplitsSubquery.step,
+        timestamp: recentSplitsSubquery.timestamp,
+        createdAt: recentSplitsSubquery.createdAt,
+      },
       fraction: {
         id: fractions.id,
         applicationId: fractions.applicationId,
         status: fractions.status,
-        sponsorSplitPercent: fractions.sponsorSplitPercent,
         totalSteps: fractions.totalSteps,
         splitsSold: fractions.splitsSold,
         isFilled: fractions.isFilled,
@@ -172,14 +278,7 @@ export async function findRecentSplitsActivity(
         type: fractions.type,
       },
     })
-    .from(fractionSplits)
-    .innerJoin(fractions, eq(fractionSplits.fractionId, fractions.id));
-
-  const filteredQuery = options?.fractionType
-    ? baseQuery.where(eq(fractions.type, options.fractionType))
-    : baseQuery;
-
-  return await filteredQuery
-    .orderBy(desc(fractionSplits.createdAt))
-    .limit(limit);
+    .from(recentSplitsSubquery)
+    .innerJoin(fractions, eq(recentSplitsSubquery.fractionId, fractions.id))
+    .orderBy(desc(recentSplitsSubquery.createdAt));
 }

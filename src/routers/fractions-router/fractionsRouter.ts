@@ -24,6 +24,7 @@ import { forwarderAddresses } from "../../constants/addresses";
 import { getFractionsSummary } from "../../db/queries/fractions/getFractionsSummary";
 import { getAvailableFractions } from "../../db/queries/fractions/getAvailableFractions";
 import { getUniqueStarNameForApplicationId } from "../farms/farmsRouter";
+import { getFarmNamesByApplicationIds } from "../../db/queries/farms/getFarmNamesByApplicationIds";
 
 export const fractionsRouter = new Elysia({ prefix: "/fractions" })
   .get(
@@ -297,31 +298,25 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
         }
 
         // Get recent splits activity
-        const recentActivity = await findRecentSplitsActivity(parsedLimit);
+        const recentActivity = await findRecentSplitsActivity(parsedLimit, {
+          buyerAddress: walletAddress,
+        });
 
-        const applicationIds = new Set(
-          recentActivity.map(({ fraction }) => fraction.applicationId)
+        const applicationIds = Array.from(
+          new Set(recentActivity.map(({ fraction }) => fraction.applicationId))
         );
 
-        const farmNameCache = new Map<string, string | undefined>();
-        for (const appId of applicationIds) {
-          const farmName = await getUniqueStarNameForApplicationId(appId);
-          farmNameCache.set(appId, farmName);
-        }
+        // Batch fetch farm names
+        const farmNamesMap = await getFarmNamesByApplicationIds(applicationIds);
 
         // Filter by wallet address if provided
+        // Already filtered if walletAddress provided
         let filteredActivity = recentActivity;
         if (walletAddress) {
-          // Validate wallet address format
           if (!/^0x[a-fA-F0-9]{40}$/.test(walletAddress)) {
             set.status = 400;
             return "Invalid wallet address format";
           }
-
-          filteredActivity = recentActivity.filter(
-            (activity) =>
-              activity.split.buyer.toLowerCase() === walletAddress.toLowerCase()
-          );
         }
 
         // Transform the data for better API response, filtering out invalid tokens
@@ -365,7 +360,7 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
               // Fraction context
               fractionId: fraction.id,
               applicationId: fraction.applicationId,
-              farmName: farmNameCache.get(fraction.applicationId) ?? null,
+              farmName: farmNamesMap.get(fraction.applicationId) || null,
               fractionStatus: fraction.status,
               isFilled: fraction.isFilled,
               progressPercent,
@@ -465,15 +460,14 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
         // Already filtered by query above
         const filteredActivity = recentActivity;
 
-        const applicationIds = new Set(
-          filteredActivity.map(({ fraction }) => fraction.applicationId)
+        const applicationIds = Array.from(
+          new Set(
+            filteredActivity.map(({ fraction }) => fraction.applicationId)
+          )
         );
 
-        const farmNameCache = new Map<string, string | undefined>();
-        for (const appId of applicationIds) {
-          const farmName = await getUniqueStarNameForApplicationId(appId);
-          farmNameCache.set(appId, farmName);
-        }
+        // Batch fetch farm names
+        const farmNamesMap = await getFarmNamesByApplicationIds(applicationIds);
 
         // Transform the data for better API response, filtering out invalid tokens
         const activityData = filteredActivity
@@ -515,7 +509,7 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
               // Fraction context
               fractionId: fraction.id,
               applicationId: fraction.applicationId,
-              farmName: farmNameCache.get(fraction.applicationId) ?? null,
+              farmName: farmNamesMap.get(fraction.applicationId) || null,
               fractionType: fraction.type,
               fractionStatus: fraction.status,
               isFilled: fraction.isFilled,

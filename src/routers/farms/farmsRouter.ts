@@ -12,7 +12,7 @@ import { db } from "../../db/db";
 import { createHash } from "crypto"; // Node.js built-in
 import { farms } from "../../db/schema";
 import { eq } from "drizzle-orm";
-import { getAllUniqueNames } from "./generateNames";
+import { getDeterministicStarName } from "./helpers";
 
 /**
  * Returns a unique star name for a given applicationId, checking for collisions in the farms table.
@@ -23,15 +23,9 @@ export async function getUniqueStarNameForApplicationId(
   applicationId: string,
   maxAttempts = 10
 ): Promise<string | undefined> {
-  const allNames = getAllUniqueNames();
-
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    const hash = createHash("sha256")
-      .update(applicationId + attempt)
-      .digest("hex");
-    const hashInt = parseInt(hash.slice(0, 12), 16);
-    const index = hashInt % allNames.length;
-    const name = allNames[index];
+    const seed = `${applicationId}-${attempt}`;
+    const name = getDeterministicStarName(seed);
     if (!name) continue;
     const exists = await db.query.farms.findFirst({
       where: (farms, { ilike }) => ilike(farms.name, name),
