@@ -66,14 +66,13 @@ export class FractionEventService {
     // Listen for fraction.sold events
     this.listener.onEvent("fraction.sold", "v2-alpha", async (event) => {
       try {
+        if (event.environment !== environment) {
+          return;
+        }
         console.log(
           "[FractionEventService] Received fraction.sold event:",
           event.payload.fractionId
         );
-
-        if (event.environment !== environment) {
-          return;
-        }
 
         // Check if we already processed this event (idempotency)
         const existingSplit = await findFractionSplitByTxHash(
@@ -218,6 +217,9 @@ export class FractionEventService {
     // Listen for fraction.created events and mark as committed
     this.listener.onEvent("fraction.created", "v2-alpha", async (event) => {
       try {
+        if (event.environment !== environment) {
+          return;
+        }
         console.log(
           "[FractionEventService] Received fraction.created event:",
           event.payload.fractionId,
@@ -225,10 +227,6 @@ export class FractionEventService {
           event.payload.totalSteps,
           "total steps"
         );
-
-        if (event.environment !== environment) {
-          return;
-        }
 
         // Find the fraction in the database
         const fraction = await findFractionById(event.payload.fractionId);

@@ -19,7 +19,12 @@ export async function getFractionsSummary(): Promise<FractionsSummary> {
       splitsSold: fractions.splitsSold,
     })
     .from(fractions)
-    .where(eq(fractions.status, FRACTION_STATUS.FILLED));
+    .where(
+      inArray(fractions.status, [
+        FRACTION_STATUS.FILLED,
+        FRACTION_STATUS.COMMITTED,
+      ])
+    );
 
   let launchpadTotal = BigInt(0);
   let miningCenterTotal = BigInt(0);
@@ -32,6 +37,7 @@ export async function getFractionsSummary(): Promise<FractionsSummary> {
       ? BigInt(fraction.stepPrice)
       : BigInt(0);
     const soldSteps = BigInt(fraction.splitsSold ?? 0);
+    if (soldSteps === BigInt(0)) continue;
     const total = stepPrice * soldSteps;
 
     if (fraction.type === "launchpad") {
