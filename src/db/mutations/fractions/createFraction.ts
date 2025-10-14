@@ -74,7 +74,8 @@ export function createSafeFractionUpdateWhere(fractionId: string) {
 export async function createFraction(params: CreateFractionParams, tx?: any) {
   // Check if the application already has a filled fraction
   const alreadyFilled = await hasFilledFraction(params.applicationId);
-  if (alreadyFilled) {
+  const fractionType = params.type || "launchpad";
+  if (alreadyFilled?.type === fractionType) {
     throw new Error(
       "Cannot create fraction: application already has a filled fraction"
     );
@@ -83,7 +84,7 @@ export async function createFraction(params: CreateFractionParams, tx?: any) {
   // Check if the user already has active fractions (draft or committed)
   // For launchpad fractions, we don't allow multiple active fractions
   // For mining-center fractions, we only check for other mining-center fractions
-  const fractionType = params.type || "launchpad";
+
   const userHasActiveFractions = await hasActiveFractions(params.createdBy);
 
   if (userHasActiveFractions) {

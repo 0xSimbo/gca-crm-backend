@@ -102,22 +102,23 @@ export async function findActiveFractionByApplicationId(applicationId: string) {
  * @param applicationId - The application ID
  * @returns True if the application has a filled fraction, false otherwise
  */
-export async function hasFilledFraction(
-  applicationId: string
-): Promise<boolean> {
-  const result = await db
-    .select({ id: fractions.id })
+export async function hasFilledFraction(applicationId: string): Promise<{
+  id: string;
+  type: string;
+} | null> {
+  const res = await db
+    .select({ id: fractions.id, type: fractions.type })
     .from(fractions)
     .where(
       and(
         eq(fractions.applicationId, applicationId),
-        eq(fractions.status, FRACTION_STATUS.FILLED),
-        eq(fractions.type, "launchpad")
+        eq(fractions.status, FRACTION_STATUS.FILLED)
       )
     )
     .limit(1);
 
-  return result.length > 0;
+  const fraction = res[0] || null;
+  return fraction;
 }
 
 /**
