@@ -112,7 +112,7 @@ export async function hasFilledFraction(
       and(
         eq(fractions.applicationId, applicationId),
         eq(fractions.status, FRACTION_STATUS.FILLED),
-        ne(fractions.type, "mining-center")
+        eq(fractions.type, "launchpad")
       )
     )
     .limit(1);
