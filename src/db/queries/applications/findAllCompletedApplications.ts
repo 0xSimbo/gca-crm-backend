@@ -175,6 +175,7 @@ export const findAllCompletedApplications = async (withDocuments?: boolean) => {
           totalSteps: true,
           splitsSold: true,
           sponsorSplitPercent: true,
+          type: true,
         },
         with: {
           splits: {
