@@ -1,4 +1,4 @@
-import { and, eq, inArray, or, sql, notExists } from "drizzle-orm";
+import { and, eq, inArray, or, sql, notExists, ne } from "drizzle-orm";
 import { db } from "../../db";
 import { fractions, fractionSplits, fractionRefunds } from "../../schema";
 import { FRACTION_STATUS } from "../../../constants/fractions";
@@ -55,7 +55,8 @@ export async function findRefundableFractionsByWallet(walletAddress: string) {
                 eq(fractionRefunds.user, walletAddress.toLowerCase())
               )
             )
-        )
+        ),
+        ne(fractions.type, "mining-center")
       )
     );
 
