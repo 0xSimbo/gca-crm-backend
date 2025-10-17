@@ -71,6 +71,21 @@ function stringifyApplicationFields(
       sponsorWallets.sort((a, b) => b.fractions - a.fractions);
     }
   }
+
+  // Convert bigint amounts in splits to strings
+  const processedFractions = application.fractions?.map((fraction: any) => ({
+    ...fraction,
+    splits: fraction.splits?.map((split: any) => ({
+      ...split,
+      amount:
+        split.amount !== undefined && split.amount !== null
+          ? typeof split.amount === "bigint"
+            ? split.amount.toString()
+            : String(split.amount)
+          : split.amount,
+    })),
+  }));
+
   // Helper function to safely convert to bigint
   const toBigInt = (
     value: bigint | string | null | undefined,
@@ -87,6 +102,7 @@ function stringifyApplicationFields(
 
   return {
     ...application,
+    fractions: processedFractions,
     finalProtocolFee: formatUnits(finalProtocolFeeBigInt, 6),
     finalProtocolFeeBigInt: finalProtocolFeeBigInt.toString(),
     paymentAmount: paymentAmountBigInt.toString(),
