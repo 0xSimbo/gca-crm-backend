@@ -29,7 +29,7 @@ export function getNextSponsorSplitIncrement(currentPercent: number): number {
 
 // Time periods (in milliseconds)
 export const LAUNCHPAD_FRACTION_LIFETIME_MS = 4 * 7 * 24 * 60 * 60 * 1000; // 4 weeks
-export const MINING_CENTER_FRACTION_LIFETIME_MS = 1 * 7 * 24 * 60 * 60 * 1000; // 1 week
+export const MINING_CENTER_FRACTION_LIFETIME_MS = 6 * 24 * 60 * 60 * 1000; // 6 days
 export const FRACTION_STALE_PERIOD_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 // Time periods (in days for easier reading)
