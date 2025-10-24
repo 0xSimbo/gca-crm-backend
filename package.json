@@ -35,7 +35,7 @@
     "keccak256": "^1.0.6",
     "merkletreejs": "^0.3.11",
     "nanoid": "^5.0.7",
-    "openai": "^5.9.0",
+    "openai": "^6.6.0",
     "p-limit": "^6.2.0",
     "pg": "^8.11.5",
     "postgres": "^3.4.4",

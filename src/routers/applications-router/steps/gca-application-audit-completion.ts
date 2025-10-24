@@ -181,6 +181,17 @@ export const handleCreateWithoutPIIDocumentsAndCompleteApplicationAudit =
     }
 
     if (args.miscDocuments) {
+      // Validate that at least 3 pictures show solar panels
+      const picturesShowingSolarPanels = args.miscDocuments.filter(
+        (misc) => misc.isShowingSolarPanels
+      );
+
+      if (picturesShowingSolarPanels.length < 3) {
+        throw new Error(
+          `At least 3 pictures must show solar panels. Found ${picturesShowingSolarPanels.length} picture(s) with solar panels.`
+        );
+      }
+
       documents.push(
         ...args.miscDocuments.map((misc) => ({
           name: misc.documentName,
