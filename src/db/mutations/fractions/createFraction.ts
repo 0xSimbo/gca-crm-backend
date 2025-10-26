@@ -24,6 +24,86 @@ import { createSlackClient } from "../../../slack/create-slack-client";
 
 const SLACK_CHANNEL = "#devs";
 
+/**
+ * Calculates the next Saturday at 2:00 PM ET
+ * @returns Date object set to the following Saturday at 2:00 PM Eastern Time (stored as UTC)
+ */
+function getNextSaturdayAt2PMET(): Date {
+  const now = new Date();
+
+  // Get current time formatted in ET timezone
+  const etString = now.toLocaleString("en-US", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
+
+  // Parse the ET string to get current ET date/time components
+  const [datePart, timePart] = etString.split(", ");
+  const [month, day, year] = datePart.split("/").map(Number);
+  const [hour] = timePart.split(":").map(Number);
+
+  // Create a date object for "now" in ET
+  const currentET = new Date(year, month - 1, day, hour);
+  const currentDayOfWeek = currentET.getDay(); // 0 = Sunday, 6 = Saturday
+
+  // Calculate days to add to get to next Saturday
+  let daysToAdd: number;
+  if (currentDayOfWeek === 6) {
+    // It's Saturday
+    if (hour < 14) {
+      // Before 2 PM, use today
+      daysToAdd = 0;
+    } else {
+      // After 2 PM, use next Saturday
+      daysToAdd = 7;
+    }
+  } else {
+    // Calculate days until next Saturday
+    daysToAdd = (6 - currentDayOfWeek + 7) % 7;
+    if (daysToAdd === 0) daysToAdd = 7; // If somehow 0, go to next week
+  }
+
+  // Calculate the target Saturday
+  const targetSaturday = new Date(
+    year,
+    month - 1,
+    day + daysToAdd,
+    14,
+    0,
+    0,
+    0
+  );
+
+  // Format target date as a string to convert back considering ET timezone
+  const targetYear = targetSaturday.getFullYear();
+  const targetMonth = String(targetSaturday.getMonth() + 1).padStart(2, "0");
+  const targetDay = String(targetSaturday.getDate()).padStart(2, "0");
+
+  // Create a date string for Saturday at 2 PM in ET timezone format
+  // We need to find what UTC time corresponds to 2 PM ET on that day
+  const targetDateString = `${targetYear}-${targetMonth}-${targetDay}T14:00:00`;
+
+  // Create a temporary date and format it in ET to calculate the offset
+  const tempDate = new Date(targetDateString);
+  const tempET = new Date(
+    tempDate.toLocaleString("en-US", { timeZone: "America/New_York" })
+  );
+
+  // Calculate the difference between UTC and ET for that specific date
+  const offset = tempDate.getTime() - tempET.getTime();
+
+  // Apply the offset to get the correct UTC time for 2 PM ET on that Saturday
+  const utcDate = new Date(new Date(targetDateString).getTime() - offset);
+
+  return utcDate;
+}
+
 export interface CreateFractionParams {
   applicationId: string;
   createdBy: string;
@@ -98,12 +178,13 @@ export async function createFraction(params: CreateFractionParams, tx?: any) {
   );
 
   const now = new Date();
-  const expirationAt = new Date(
-    now.getTime() +
-      (fractionType === "mining-center"
-        ? MINING_CENTER_FRACTION_LIFETIME_MS
-        : LAUNCHPAD_FRACTION_LIFETIME_MS)
-  );
+
+  // For mining-center fractions, expire on the following Saturday at 2:00 PM ET
+  // For launchpad fractions, use the standard lifetime
+  const expirationAt =
+    fractionType === "mining-center"
+      ? getNextSaturdayAt2PMET()
+      : new Date(now.getTime() + LAUNCHPAD_FRACTION_LIFETIME_MS);
 
   const fractionData: FractionInsertType = {
     id: fractionId,
