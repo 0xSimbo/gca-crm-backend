@@ -267,7 +267,7 @@ if (
   process.env.RABBITMQ_QUEUE_NAME &&
   process.env.NODE_ENV
 ) {
-  if (process.env.NODE_ENV === "staging") {
+  if (process.env.NODE_ENV === "staging" || process.env.RUN_LOCAL === "true") {
     console.log(
       "⚠️ Fraction event service not initialized - staging environment"
     );

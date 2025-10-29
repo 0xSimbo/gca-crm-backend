@@ -164,6 +164,7 @@ export interface RecentSplitRow {
     amount: string;
     step: string;
     timestamp: number;
+    rewardScore: number | null;
     createdAt: Date;
   };
   fraction: {
@@ -200,6 +201,7 @@ export async function findRecentSplitsActivity(
           amount: fractionSplits.amount,
           step: fractionSplits.step,
           timestamp: fractionSplits.timestamp,
+          rewardScore: fractionSplits.rewardScore,
           createdAt: fractionSplits.createdAt,
         },
         fraction: {
@@ -240,6 +242,7 @@ export async function findRecentSplitsActivity(
       amount: fractionSplits.amount,
       step: fractionSplits.step,
       timestamp: fractionSplits.timestamp,
+      rewardScore: fractionSplits.rewardScore,
       createdAt: fractionSplits.createdAt,
     })
     .from(fractionSplits)
@@ -264,6 +267,7 @@ export async function findRecentSplitsActivity(
         amount: recentSplitsSubquery.amount,
         step: recentSplitsSubquery.step,
         timestamp: recentSplitsSubquery.timestamp,
+        rewardScore: recentSplitsSubquery.rewardScore,
         createdAt: recentSplitsSubquery.createdAt,
       },
       fraction: {

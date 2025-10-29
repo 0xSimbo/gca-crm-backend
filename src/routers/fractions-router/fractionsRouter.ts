@@ -514,7 +514,7 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
               fractionStatus: fraction.status,
               isFilled: fraction.isFilled,
               progressPercent,
-              rewardScore: fraction.rewardScore,
+              rewardScore: split.rewardScore || fraction.rewardScore,
               // Purchase value calculation
               stepPrice: split.step,
               totalValue: split.amount,
@@ -707,6 +707,7 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
       },
     }
   )
+
   .use(bearerplugin())
   .guard(bearerGuard, (app) =>
     app

@@ -1770,6 +1770,7 @@ export const fractionSplits = pgTable(
     amount: numeric("amount", { precision: 78, scale: 0 }).notNull(), // Amount (in token decimals)
     stepsPurchased: integer("steps_purchased").notNull(), // Number of steps purchased (amount / step)
     timestamp: integer("timestamp").notNull(), // Unix timestamp
+    rewardScore: integer("reward_score"), // Snapshot reward score at time of split (launchpad only)
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (t) => ({

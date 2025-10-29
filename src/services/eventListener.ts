@@ -14,6 +14,10 @@ import {
   calculateStepsPurchased,
 } from "../db/queries/fractions/findFractionSplits";
 import { findFractionById } from "../db/queries/fractions/findFractionsByApplicationId";
+import { FindFirstApplicationById } from "../db/queries/applications/findFirstApplicationById";
+import { db } from "../db/db";
+import { fractionSplits } from "../db/schema";
+import { eq } from "drizzle-orm";
 import { forwarderAddresses } from "../constants/addresses";
 import { FRACTION_STATUS } from "../constants/fractions";
 import { recordFailedFractionOperation } from "../db/mutations/fractions/failedFractionOperations";
@@ -139,6 +143,109 @@ export class FractionEventService {
         };
 
         const result = await recordFractionSplit(params);
+
+        // Snapshot reward score for launchpad fractions on each sale
+        try {
+          if (
+            result?.fraction &&
+            result.fraction.type === "launchpad" 
+          ) {
+            // Gather inputs for control API
+            const application = await FindFirstApplicationById(
+              result.fraction.applicationId
+            );
+
+            const expectedWeeklyCarbonCredits = Number(
+              application?.auditFields?.netCarbonCreditEarningWeekly || 0
+            );
+
+            const regionId = application?.zoneId;
+
+            const stepStr = (result.fraction.step || result.fraction.stepPrice || "0") as string;
+            const totalStepsNum = Number(result.fraction.totalSteps || 0);
+
+            let protocolDepositAmount = "0";
+            try {
+              protocolDepositAmount = (
+                BigInt(stepStr) * BigInt(totalStepsNum)
+              ).toString();
+            } catch {
+              protocolDepositAmount = "0";
+            }
+
+            if (
+              expectedWeeklyCarbonCredits > 0 &&
+              regionId &&
+              protocolDepositAmount !== "0"
+            ) {
+              if (!process.env.CONTROL_API_URL) {
+                console.warn(
+                  "[FractionEventService] CONTROL_API_URL not set; skipping reward score snapshot"
+                );
+                return;
+              }
+              const body = {
+                userId: result.fraction.createdBy,
+                sponsorSplitPercent: result.fraction.sponsorSplitPercent,
+                protocolDepositAmount,
+                paymentCurrency: "GLW" as const,
+                expectedWeeklyCarbonCredits,
+                regionId,
+              };
+
+              try {
+                const resp = await fetch(
+                  `${process.env.CONTROL_API_URL}/farms/estimate-reward-score`,
+                  {
+                    method: "POST",
+                    headers: { "content-type": "application/json" },
+                    body: JSON.stringify(body),
+                  }
+                );
+
+                if (resp.ok) {
+                  const data = await resp.json();
+                  const rawScore =
+                    (data && (data.rewardScore ?? data.data?.rewardScore)) || 0;
+                  const parsed = Number(rawScore);
+                  const rewardScore = Number.isFinite(parsed)
+                    ? Math.ceil(parsed)
+                    : 0;
+
+                  // Persist snapshot on the just-created split (only if > 0)
+                  if (rewardScore > 0 && result.split?.id !== undefined) {
+                    await db
+                      .update(fractionSplits)
+                      .set({ rewardScore })
+                      .where(eq(fractionSplits.id, result.split.id));
+                  }
+
+                  console.log(
+                    "[FractionEventService] Split rewardScore snapshot result:",
+                    rewardScore
+                  );
+                } else {
+                  const errText = await resp.text().catch(() => "");
+                  console.warn(
+                    "[FractionEventService] Failed to fetch reward score (non-OK):",
+                    resp.status,
+                    errText
+                  );
+                }
+              } catch (apiErr) {
+                console.warn(
+                  "[FractionEventService] Control API call failed for reward score:",
+                  apiErr
+                );
+              }
+            }
+          }
+        } catch (snapshotErr) {
+          console.warn(
+            "[FractionEventService] Failed to snapshot reward score:",
+            snapshotErr
+          );
+        }
 
         // Check if the fraction was already filled (race condition)
         if (result.wasAlreadyFilled) {
