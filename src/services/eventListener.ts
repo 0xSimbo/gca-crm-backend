@@ -146,10 +146,7 @@ export class FractionEventService {
 
         // Snapshot reward score for launchpad fractions on each sale
         try {
-          if (
-            result?.fraction &&
-            result.fraction.type === "launchpad" 
-          ) {
+          if (result?.fraction && result.fraction.type === "launchpad") {
             // Gather inputs for control API
             const application = await FindFirstApplicationById(
               result.fraction.applicationId
@@ -161,7 +158,9 @@ export class FractionEventService {
 
             const regionId = application?.zoneId;
 
-            const stepStr = (result.fraction.step || result.fraction.stepPrice || "0") as string;
+            const stepStr = (result.fraction.step ||
+              result.fraction.stepPrice ||
+              "0") as string;
             const totalStepsNum = Number(result.fraction.totalSteps || 0);
 
             let protocolDepositAmount = "0";
@@ -172,7 +171,15 @@ export class FractionEventService {
             } catch {
               protocolDepositAmount = "0";
             }
-
+            console.log(
+              "[reward score] expectedWeeklyCarbonCredits",
+              expectedWeeklyCarbonCredits
+            );
+            console.log("[reward score] regionId", regionId);
+            console.log(
+              "[reward score] protocolDepositAmount",
+              protocolDepositAmount
+            );
             if (
               expectedWeeklyCarbonCredits > 0 &&
               regionId &&
