@@ -25,6 +25,7 @@
     "@neondatabase/serverless": "^0.9.4",
     "@slack/web-api": "^7.10.0",
     "@types/heic-convert": "^2.1.0",
+    "decimal.js-light": "^2.5.1",
     "dotenv": "^16.4.5",
     "drizzle-orm": "^0.30.1",
     "elysia": "1.1.1",
