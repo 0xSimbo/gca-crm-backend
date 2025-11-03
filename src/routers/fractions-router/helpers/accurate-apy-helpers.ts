@@ -1,6 +1,7 @@
 import { db } from "../../../db/db";
 import { fractionSplits, fractions, applications } from "../../../db/schema";
-import { eq, inArray } from "drizzle-orm";
+import { eq, inArray, gt, lte, and } from "drizzle-orm";
+import { getEpochEndDate } from "./apy-helpers";
 
 interface FarmPurchase {
   farmId: string;
@@ -91,6 +92,133 @@ export async function getWalletFarmPurchases(
 ): Promise<FarmPurchase[]> {
   const batchResult = await getBatchWalletFarmPurchases([walletAddress]);
   return batchResult.get(walletAddress.toLowerCase()) || [];
+}
+
+export async function getPurchasesUpToWeek(
+  walletAddress: string,
+  upToWeek: number
+): Promise<{
+  totalGlwDelegated: bigint;
+  totalUsdcSpent: bigint;
+}> {
+  const epochEndDate = getEpochEndDate(upToWeek);
+  const walletLower = walletAddress.toLowerCase();
+
+  const purchases = await db
+    .select({
+      split: fractionSplits,
+      fraction: fractions,
+    })
+    .from(fractionSplits)
+    .innerJoin(fractions, eq(fractionSplits.fractionId, fractions.id))
+    .where(
+      and(
+        eq(fractionSplits.buyer, walletLower),
+        lte(fractionSplits.createdAt, epochEndDate)
+      )
+    );
+
+  let totalGlwDelegated = BigInt(0);
+  let totalUsdcSpent = BigInt(0);
+
+  for (const purchase of purchases) {
+    const amount = BigInt(purchase.split.amount);
+    if (purchase.fraction.type === "launchpad") {
+      totalGlwDelegated += amount;
+    } else if (purchase.fraction.type === "mining-center") {
+      totalUsdcSpent += amount;
+    }
+  }
+
+  return {
+    totalGlwDelegated,
+    totalUsdcSpent,
+  };
+}
+
+export async function getPurchasesAfterWeek(
+  walletAddress: string,
+  afterWeek: number
+): Promise<{
+  totalGlwDelegatedAfter: bigint;
+  totalUsdcSpentAfter: bigint;
+}> {
+  const epochEndDate = getEpochEndDate(afterWeek);
+  const walletLower = walletAddress.toLowerCase();
+
+  const purchases = await db
+    .select({
+      split: fractionSplits,
+      fraction: fractions,
+    })
+    .from(fractionSplits)
+    .innerJoin(fractions, eq(fractionSplits.fractionId, fractions.id))
+    .where(
+      and(
+        eq(fractionSplits.buyer, walletLower),
+        gt(fractionSplits.createdAt, epochEndDate)
+      )
+    );
+
+  let totalGlwDelegatedAfter = BigInt(0);
+  let totalUsdcSpentAfter = BigInt(0);
+
+  for (const purchase of purchases) {
+    const amount = BigInt(purchase.split.amount);
+    if (purchase.fraction.type === "launchpad") {
+      totalGlwDelegatedAfter += amount;
+    } else if (purchase.fraction.type === "mining-center") {
+      totalUsdcSpentAfter += amount;
+    }
+  }
+
+  return {
+    totalGlwDelegatedAfter,
+    totalUsdcSpentAfter,
+  };
+}
+
+export async function getFarmPurchasesAfterWeek(
+  farmId: string,
+  afterWeek: number
+): Promise<{
+  totalGlwDelegatedAfter: bigint;
+  totalUsdcSpentAfter: bigint;
+}> {
+  const epochEndDate = getEpochEndDate(afterWeek);
+
+  const purchases = await db
+    .select({
+      split: fractionSplits,
+      fraction: fractions,
+      application: applications,
+    })
+    .from(fractionSplits)
+    .innerJoin(fractions, eq(fractionSplits.fractionId, fractions.id))
+    .innerJoin(applications, eq(fractions.applicationId, applications.id))
+    .where(
+      and(
+        eq(applications.farmId, farmId),
+        gt(fractionSplits.createdAt, epochEndDate)
+      )
+    );
+
+  let totalGlwDelegatedAfter = BigInt(0);
+  let totalUsdcSpentAfter = BigInt(0);
+
+  for (const purchase of purchases) {
+    const amount = BigInt(purchase.split.amount);
+    if (purchase.fraction.type === "launchpad") {
+      totalGlwDelegatedAfter += amount;
+    } else if (purchase.fraction.type === "mining-center") {
+      totalUsdcSpentAfter += amount;
+    }
+  }
+
+  return {
+    totalGlwDelegatedAfter,
+    totalUsdcSpentAfter,
+  };
 }
 
 export function calculateFarmAPYFromRewards(

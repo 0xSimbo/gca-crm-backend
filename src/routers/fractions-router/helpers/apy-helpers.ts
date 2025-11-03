@@ -67,7 +67,7 @@ export interface FarmRewardBreakdown {
 }
 
 export function getWeekRange(): { startWeek: number; endWeek: number } {
-  const lastCompletedWeek = getProtocolWeek() - 1;
+  const lastCompletedWeek = getProtocolWeek() - 2;
   const startWeek = 97;
   const endWeek =
     lastCompletedWeek >= startWeek ? lastCompletedWeek : startWeek;
@@ -280,10 +280,18 @@ export async function aggregateWalletRewards(
     const farmRewards = data.farmRewards || [];
 
     for (const reward of farmRewards) {
-      const launchpadInflation = BigInt(reward.walletInflationFromLaunchpad || "0");
-      const launchpadDeposit = BigInt(reward.walletProtocolDepositFromLaunchpad || "0");
-      const miningCenterInflation = BigInt(reward.walletInflationFromMiningCenter || "0");
-      const miningCenterDeposit = BigInt(reward.walletProtocolDepositFromMiningCenter || "0");
+      const launchpadInflation = BigInt(
+        reward.walletInflationFromLaunchpad || "0"
+      );
+      const launchpadDeposit = BigInt(
+        reward.walletProtocolDepositFromLaunchpad || "0"
+      );
+      const miningCenterInflation = BigInt(
+        reward.walletInflationFromMiningCenter || "0"
+      );
+      const miningCenterDeposit = BigInt(
+        reward.walletProtocolDepositFromMiningCenter || "0"
+      );
 
       const delegatorReward = launchpadInflation + launchpadDeposit;
       const minerReward = miningCenterInflation + miningCenterDeposit;

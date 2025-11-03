@@ -41,6 +41,9 @@ import {
   calculateAccurateWalletAPY,
   getWalletFarmPurchases,
   getBatchWalletFarmPurchases,
+  getPurchasesUpToWeek,
+  getPurchasesAfterWeek,
+  getFarmPurchasesAfterWeek,
 } from "./helpers/accurate-apy-helpers";
 
 export const fractionsRouter = new Elysia({ prefix: "/fractions" })
@@ -360,16 +363,13 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
             }
           }
 
-          let totalGlwDelegated = BigInt(0);
-          let totalMiningCenterVolume = BigInt(0);
+          const purchasesUpToWeek = await getPurchasesUpToWeek(
+            walletLower,
+            actualEndWeek
+          );
 
-          for (const purchase of farmPurchases) {
-            if (purchase.type === "launchpad") {
-              totalGlwDelegated += purchase.amountInvested;
-            } else if (purchase.type === "mining-center") {
-              totalMiningCenterVolume += purchase.amountInvested;
-            }
-          }
+          const totalGlwDelegated = purchasesUpToWeek.totalGlwDelegated;
+          const totalMiningCenterVolume = purchasesUpToWeek.totalUsdcSpent;
 
           const accurateAPY = await calculateAccurateWalletAPY(
             walletLower,
@@ -407,6 +407,11 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
             }
           }
 
+          const purchasesAfterWeek = await getPurchasesAfterWeek(
+            walletLower,
+            actualEndWeek
+          );
+
           return {
             type: "wallet",
             walletAddress: walletLower,
@@ -424,6 +429,12 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
             weekRange: {
               startWeek: actualStartWeek,
               endWeek: actualEndWeek,
+            },
+            delegatedAfterWeekRange: {
+              totalGlwDelegatedAfter:
+                purchasesAfterWeek.totalGlwDelegatedAfter.toString(),
+              totalUsdcSpentAfter:
+                purchasesAfterWeek.totalUsdcSpentAfter.toString(),
             },
             rewards: {
               delegator: {
@@ -459,6 +470,11 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
             return "Farm not found or has no rewards";
           }
 
+          const farmPurchasesAfterWeek = await getFarmPurchasesAfterWeek(
+            farmId,
+            actualEndWeek
+          );
+
           return {
             type: "farm",
             farmId,
@@ -468,6 +484,12 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
             weekRange: {
               startWeek: actualStartWeek,
               endWeek: actualEndWeek,
+            },
+            delegatedAfterWeekRange: {
+              totalGlwDelegatedAfter:
+                farmPurchasesAfterWeek.totalGlwDelegatedAfter.toString(),
+              totalUsdcSpentAfter:
+                farmPurchasesAfterWeek.totalUsdcSpentAfter.toString(),
             },
             rewards: {
               delegator: {
