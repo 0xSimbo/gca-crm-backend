@@ -23,6 +23,7 @@ export async function getFractionsSummary(): Promise<FractionsSummary> {
       inArray(fractions.status, [
         FRACTION_STATUS.FILLED,
         FRACTION_STATUS.COMMITTED,
+        FRACTION_STATUS.EXPIRED,
       ])
     );
 
