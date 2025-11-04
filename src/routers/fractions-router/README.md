@@ -266,6 +266,12 @@ The router uses optimized data fetching strategies:
         totalProtocolDepositRewards: string; // GLW from protocol deposits (18 decimals)
         totalRewards: string; // Total GLW earned from farm owner/split rewards (18 decimals)
         lastWeekRewards: string; // GLW earned in the last week (18 decimals)
+        weeklyBreakdown: Array<{
+          weekNumber: number;
+          inflationRewards: string; // GLW from inflation this week (18 decimals)
+          protocolDepositRewards: string; // GLW from PD this week (18 decimals)
+          totalRewards: string; // Total GLW earned this week (18 decimals)
+        }>;
       }>;
     };
   }
@@ -312,7 +318,10 @@ The router uses optimized data fetching strategies:
       - `totalEarnedSoFar`: Sum of inflation + protocol deposit rewards
   - `otherFarmsWithRewards` shows farms where wallet has reward splits but didn't purchase fractions:
     - Typically farm owner rewards or other reward split arrangements
-    - Includes breakdown of inflation vs protocol deposit rewards
+    - Includes totals and week-by-week breakdown:
+      - `weeklyBreakdown`: Array showing rewards earned each week
+      - `totalInflationRewards`: GLW earned from protocol inflation
+      - `totalProtocolDepositRewards`: GLW earned from protocol fee deposits (PD)
     - `asset` shows the payment currency the farm used for protocol deposits (GLW, USDC, USDG, etc.)
     - Shows `lastWeekRewards` (most recent week in the range)
     - `weeksLeft` calculation:

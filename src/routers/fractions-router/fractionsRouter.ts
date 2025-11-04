@@ -475,6 +475,12 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
                     totalRewards: bigint;
                     lastWeekRewards: bigint;
                     lastWeekNumber: number | null;
+                    weeklyBreakdown: Array<{
+                      weekNumber: number;
+                      inflationRewards: bigint;
+                      protocolDepositRewards: bigint;
+                      totalRewards: bigint;
+                    }>;
                   }
                 >();
 
@@ -494,6 +500,7 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
                       totalRewards: BigInt(0),
                       lastWeekRewards: BigInt(0),
                       lastWeekNumber: null,
+                      weeklyBreakdown: [],
                     });
                   }
 
@@ -510,6 +517,15 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
                   farm.totalInflationRewards += inflationReward;
                   farm.totalProtocolDepositRewards += depositReward;
                   farm.totalRewards += totalReward;
+
+                  if (totalReward > BigInt(0)) {
+                    farm.weeklyBreakdown.push({
+                      weekNumber: reward.weekNumber,
+                      inflationRewards: inflationReward,
+                      protocolDepositRewards: depositReward,
+                      totalRewards: totalReward,
+                    });
+                  }
 
                   if (
                     farm.lastWeekNumber === null ||
@@ -556,6 +572,13 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
                         f.totalProtocolDepositRewards.toString(),
                       totalRewards: f.totalRewards.toString(),
                       lastWeekRewards: f.lastWeekRewards.toString(),
+                      weeklyBreakdown: f.weeklyBreakdown.map((week) => ({
+                        weekNumber: week.weekNumber,
+                        inflationRewards: week.inflationRewards.toString(),
+                        protocolDepositRewards:
+                          week.protocolDepositRewards.toString(),
+                        totalRewards: week.totalRewards.toString(),
+                      })),
                     };
                   })
                   .sort((a, b) =>
