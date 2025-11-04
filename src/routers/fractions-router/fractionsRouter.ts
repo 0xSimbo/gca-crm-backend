@@ -26,8 +26,13 @@ import { getAvailableFractions } from "../../db/queries/fractions/getAvailableFr
 import { getUniqueStarNameForApplicationId } from "../farms/farmsRouter";
 import { getFarmNamesByApplicationIds } from "../../db/queries/farms/getFarmNamesByApplicationIds";
 import { db } from "../../db/db";
-import { fractions, fractionSplits, RewardSplits } from "../../db/schema";
-import { and, desc, eq, inArray, lte, sql } from "drizzle-orm";
+import {
+  fractions,
+  fractionSplits,
+  RewardSplits,
+  applications,
+} from "../../db/schema";
+import { and, desc, eq, inArray, lte, sql, gt } from "drizzle-orm";
 import { getCachedGlwSpotPriceNumber } from "../../utils/glw-spot";
 import {
   getWeekRange,
@@ -35,6 +40,7 @@ import {
   calculateTotalRewards,
   aggregateRewardsByFarm,
   aggregateRewardsByWallet,
+  getEpochEndDate,
   type WalletFarmInfo,
 } from "./helpers/apy-helpers";
 import {
@@ -395,12 +401,19 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
               farm.totalProtocolDepositRewards.toString(),
             lastWeekRewards: farm.lastWeekRewards.toString(),
             apy: farm.apy.toFixed(4),
+            weeklyBreakdown: farm.weeklyBreakdown.map((week) => ({
+              weekNumber: week.weekNumber,
+              inflationRewards: week.inflationRewards.toString(),
+              protocolDepositRewards: week.protocolDepositRewards.toString(),
+              totalRewards: week.totalRewards.toString(),
+            })),
           }));
 
           let delegatorLastWeek = BigInt(0);
           let delegatorAllWeeks = BigInt(0);
           let minerLastWeek = BigInt(0);
           let minerAllWeeks = BigInt(0);
+          const weeksWithRewardsSet = new Set<number>();
 
           for (const farm of accurateAPY.farmBreakdowns) {
             if (farm.type === "launchpad") {
@@ -409,6 +422,10 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
             } else {
               minerLastWeek += farm.lastWeekRewards;
               minerAllWeeks += farm.totalEarnedSoFar;
+            }
+
+            for (const week of farm.weeklyBreakdown) {
+              weeksWithRewardsSet.add(week.weekNumber);
             }
           }
 
@@ -550,6 +567,64 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
             }
           }
 
+          const recentPurchasesWithoutRewards: Array<{
+            farmId: string;
+            types: ("launchpad" | "mining-center")[];
+          }> = [];
+
+          if (
+            purchasesAfterWeek.totalGlwDelegatedAfter > BigInt(0) ||
+            purchasesAfterWeek.totalUsdcSpentAfter > BigInt(0)
+          ) {
+            const epochEndDate = getEpochEndDate(actualEndWeek);
+
+            const recentSplits = await db
+              .select({
+                fraction: fractions,
+                application: applications,
+              })
+              .from(fractionSplits)
+              .innerJoin(fractions, eq(fractionSplits.fractionId, fractions.id))
+              .innerJoin(
+                applications,
+                eq(fractions.applicationId, applications.id)
+              )
+              .where(
+                and(
+                  eq(fractionSplits.buyer, walletLower),
+                  gt(fractionSplits.createdAt, epochEndDate)
+                )
+              );
+
+            const farmTypesMap = new Map<
+              string,
+              Set<"launchpad" | "mining-center">
+            >();
+
+            for (const split of recentSplits) {
+              const farmId = split.application.farmId;
+              if (!farmId) continue;
+
+              if (!farmTypesMap.has(farmId)) {
+                farmTypesMap.set(farmId, new Set());
+              }
+
+              if (
+                split.fraction.type === "launchpad" ||
+                split.fraction.type === "mining-center"
+              ) {
+                farmTypesMap.get(farmId)!.add(split.fraction.type);
+              }
+            }
+
+            for (const [farmId, typesSet] of farmTypesMap) {
+              recentPurchasesWithoutRewards.push({
+                farmId,
+                types: Array.from(typesSet),
+              });
+            }
+          }
+
           return {
             type: "wallet",
             walletAddress: walletLower,
@@ -567,6 +642,7 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
             weekRange: {
               startWeek: actualStartWeek,
               endWeek: actualEndWeek,
+              weeksWithRewards: weeksWithRewardsSet.size,
             },
             delegatedAfterWeekRange: {
               totalGlwDelegatedAfter:
@@ -574,6 +650,7 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
               totalUsdcSpentAfter:
                 purchasesAfterWeek.totalUsdcSpentAfter.toString(),
             },
+            recentPurchasesWithoutRewards,
             rewards: {
               delegator: {
                 lastWeek: delegatorLastWeek.toString(),

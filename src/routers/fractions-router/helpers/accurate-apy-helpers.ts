@@ -11,6 +11,13 @@ interface FarmPurchase {
   stepsPurchased: number;
 }
 
+interface WeeklyReward {
+  weekNumber: number;
+  inflationRewards: bigint;
+  protocolDepositRewards: bigint;
+  totalRewards: bigint;
+}
+
 interface FarmAPYData {
   farmId: string;
   type: "launchpad" | "mining-center";
@@ -23,6 +30,7 @@ interface FarmAPYData {
   totalProtocolDepositRewards: bigint;
   projectedTotalRewards: bigint;
   apy: number;
+  weeklyBreakdown: WeeklyReward[];
 }
 
 export async function getBatchWalletFarmPurchases(
@@ -316,6 +324,7 @@ export function calculateFarmAPYFromRewards(
   let totalEarnedSoFar = BigInt(0);
   let totalInflationRewards = BigInt(0);
   let totalProtocolDepositRewards = BigInt(0);
+  const weeklyBreakdown: WeeklyReward[] = [];
 
   for (const reward of farmRewards) {
     let inflationReward = BigInt(0);
@@ -341,6 +350,14 @@ export function calculateFarmAPYFromRewards(
       totalEarnedSoFar += totalReward;
       totalInflationRewards += inflationReward;
       totalProtocolDepositRewards += depositReward;
+
+      weeklyBreakdown.push({
+        weekNumber: reward.weekNumber,
+        inflationRewards: inflationReward,
+        protocolDepositRewards: depositReward,
+        totalRewards: totalReward,
+      });
+
       if (reward.weekNumber === endWeek) {
         lastWeekRewards = totalReward;
       }
@@ -388,6 +405,7 @@ export function calculateFarmAPYFromRewards(
     projectedRemainingRewards: projectedTotalRewards - totalEarnedSoFar,
     projectedTotalRewards,
     apy,
+    weeklyBreakdown,
   } as FarmAPYData;
 }
 

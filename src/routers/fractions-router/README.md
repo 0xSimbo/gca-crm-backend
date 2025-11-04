@@ -212,11 +212,16 @@ The router uses optimized data fetching strategies:
     weekRange: {
       startWeek: number;
       endWeek: number;
+      weeksWithRewards: number; // Number of distinct weeks where wallet earned rewards
     };
     delegatedAfterWeekRange: {
       totalGlwDelegatedAfter: string; // GLW delegated after endWeek (18 decimals)
       totalUsdcSpentAfter: string; // USDC spent after endWeek (6 decimals)
     };
+    recentPurchasesWithoutRewards: Array<{
+      farmId: string;
+      types: ("launchpad" | "mining-center")[]; // Purchase types for this farm
+    }>;
     rewards: {
       delegator: {
         lastWeek: string; // GLW earned last week (18 decimals)
@@ -242,6 +247,12 @@ The router uses optimized data fetching strategies:
       totalProtocolDepositRewards: string; // GLW from protocol deposits (18 decimals)
       lastWeekRewards: string; // GLW earned last week (18 decimals)
       apy: string; // Farm-specific APY (e.g., "1036.0200" = 1036.02%)
+      weeklyBreakdown: Array<{
+        weekNumber: number;
+        inflationRewards: string; // GLW from inflation this week (18 decimals)
+        protocolDepositRewards: string; // GLW from PD this week (18 decimals)
+        totalRewards: string; // Total GLW earned this week (18 decimals)
+      }>;
     }>;
     otherFarmsWithRewards: {
       count: number; // Number of farms where wallet has reward splits but no fraction purchases
@@ -290,8 +301,12 @@ The router uses optimized data fetching strategies:
 - **Notes**
   - `totals` only include amounts delegated/spent within the week range (earning rewards).
   - `delegatedAfterWeekRange` shows recent activity after the last completed week (not yet earning rewards).
+  - `weekRange.weeksWithRewards` counts distinct weeks where wallet earned non-zero rewards (useful for understanding actual activity vs total range).
+  - `recentPurchasesWithoutRewards` lists farms where wallet made purchases after the week range (will earn rewards in future weeks).
   - `farmDetails` shows farms where wallet purchased fractions (delegator/miner):
-    - Each farm includes a breakdown of rewards by source:
+    - If wallet has both launchpad and mining-center in same farm, they appear as **separate entries** with their own breakdowns
+    - Each farm includes totals and week-by-week breakdown:
+      - `weeklyBreakdown`: Array showing rewards earned each week
       - `totalInflationRewards`: GLW earned from protocol inflation
       - `totalProtocolDepositRewards`: GLW earned from protocol fee deposits (PD)
       - `totalEarnedSoFar`: Sum of inflation + protocol deposit rewards
