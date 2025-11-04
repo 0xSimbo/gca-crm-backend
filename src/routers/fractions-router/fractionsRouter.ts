@@ -26,8 +26,8 @@ import { getAvailableFractions } from "../../db/queries/fractions/getAvailableFr
 import { getUniqueStarNameForApplicationId } from "../farms/farmsRouter";
 import { getFarmNamesByApplicationIds } from "../../db/queries/farms/getFarmNamesByApplicationIds";
 import { db } from "../../db/db";
-import { fractions, fractionSplits } from "../../db/schema";
-import { and, desc, eq, inArray, lte } from "drizzle-orm";
+import { fractions, fractionSplits, RewardSplits } from "../../db/schema";
+import { and, desc, eq, inArray, lte, sql } from "drizzle-orm";
 import { getCachedGlwSpotPriceNumber } from "../../utils/glw-spot";
 import {
   getWeekRange,
@@ -417,6 +417,139 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
             actualEndWeek
           );
 
+          const rewardSplits = await db
+            .select({
+              farmId: RewardSplits.farmId,
+            })
+            .from(RewardSplits)
+            .where(sql`lower(${RewardSplits.walletAddress}) = ${walletLower}`);
+
+          const farmsWithSplits = new Set(
+            rewardSplits
+              .map((r) => r.farmId)
+              .filter((id): id is string => id !== null)
+          );
+
+          const purchasedFarmIds = new Set(farms);
+          const otherFarmIds = Array.from(farmsWithSplits).filter(
+            (farmId) => !purchasedFarmIds.has(farmId)
+          );
+
+          let otherFarmsRewards: any[] = [];
+          if (otherFarmIds.length > 0) {
+            try {
+              const response = await fetch(
+                `${process.env.CONTROL_API_URL}/farms/by-wallet/${walletLower}/farm-rewards-history?startWeek=${actualStartWeek}&endWeek=${actualEndWeek}`
+              );
+
+              if (response.ok) {
+                const data: any = await response.json();
+                const allFarmRewards = data.farmRewards || [];
+
+                const otherFarmsMap = new Map<
+                  string,
+                  {
+                    farmId: string;
+                    farmName: string | null;
+                    builtEpoch: number | null;
+                    asset: string | null;
+                    totalInflationRewards: bigint;
+                    totalProtocolDepositRewards: bigint;
+                    totalRewards: bigint;
+                    lastWeekRewards: bigint;
+                    lastWeekNumber: number | null;
+                  }
+                >();
+
+                for (const reward of allFarmRewards) {
+                  if (!otherFarmIds.includes(reward.farmId)) {
+                    continue;
+                  }
+
+                  if (!otherFarmsMap.has(reward.farmId)) {
+                    otherFarmsMap.set(reward.farmId, {
+                      farmId: reward.farmId,
+                      farmName: reward.farmName || null,
+                      builtEpoch: reward.builtEpoch || null,
+                      asset: reward.asset || null,
+                      totalInflationRewards: BigInt(0),
+                      totalProtocolDepositRewards: BigInt(0),
+                      totalRewards: BigInt(0),
+                      lastWeekRewards: BigInt(0),
+                      lastWeekNumber: null,
+                    });
+                  }
+
+                  const farm = otherFarmsMap.get(reward.farmId)!;
+
+                  const inflationReward = BigInt(
+                    reward.walletTotalGlowInflationReward || "0"
+                  );
+                  const depositReward = BigInt(
+                    reward.walletTotalProtocolDepositReward || "0"
+                  );
+                  const totalReward = inflationReward + depositReward;
+
+                  farm.totalInflationRewards += inflationReward;
+                  farm.totalProtocolDepositRewards += depositReward;
+                  farm.totalRewards += totalReward;
+
+                  if (
+                    farm.lastWeekNumber === null ||
+                    reward.weekNumber > farm.lastWeekNumber
+                  ) {
+                    farm.lastWeekNumber = reward.weekNumber;
+                    farm.lastWeekRewards = totalReward;
+                  }
+                }
+
+                const currentWeek = actualEndWeek;
+
+                otherFarmsRewards = Array.from(otherFarmsMap.values())
+                  .filter((f) => f.totalRewards > BigInt(0))
+                  .map((f) => {
+                    let weeksLeft: number | null = null;
+
+                    if (f.builtEpoch !== null) {
+                      if (f.builtEpoch < 97) {
+                        const weeksLivedInV1 = 97 - f.builtEpoch;
+                        const v2EquivalentWeeksLived = weeksLivedInV1 / 2.08;
+                        const remainingV2Weeks = 100 - v2EquivalentWeeksLived;
+                        const endEpoch = 97 + remainingV2Weeks;
+                        weeksLeft = Math.max(
+                          0,
+                          Math.floor(endEpoch - currentWeek)
+                        );
+                      } else {
+                        weeksLeft = Math.max(
+                          0,
+                          f.builtEpoch + 100 - currentWeek
+                        );
+                      }
+                    }
+
+                    return {
+                      farmId: f.farmId,
+                      farmName: f.farmName,
+                      builtEpoch: f.builtEpoch,
+                      weeksLeft,
+                      asset: f.asset,
+                      totalInflationRewards: f.totalInflationRewards.toString(),
+                      totalProtocolDepositRewards:
+                        f.totalProtocolDepositRewards.toString(),
+                      totalRewards: f.totalRewards.toString(),
+                      lastWeekRewards: f.lastWeekRewards.toString(),
+                    };
+                  })
+                  .sort((a, b) =>
+                    Number(BigInt(b.totalRewards) - BigInt(a.totalRewards))
+                  );
+              }
+            } catch (error) {
+              console.error("Failed to fetch other farms rewards:", error);
+            }
+          }
+
           return {
             type: "wallet",
             walletAddress: walletLower,
@@ -456,6 +589,10 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
               minerApyPercent: minerApyPercentFormatted,
             },
             farmDetails,
+            otherFarmsWithRewards: {
+              count: otherFarmsRewards.length,
+              farms: otherFarmsRewards,
+            },
           };
         }
 

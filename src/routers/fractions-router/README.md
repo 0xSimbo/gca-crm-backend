@@ -243,6 +243,20 @@ The router uses optimized data fetching strategies:
       lastWeekRewards: string; // GLW earned last week (18 decimals)
       apy: string; // Farm-specific APY (e.g., "1036.0200" = 1036.02%)
     }>;
+    otherFarmsWithRewards: {
+      count: number; // Number of farms where wallet has reward splits but no fraction purchases
+      farms: Array<{
+        farmId: string;
+        farmName: string | null;
+        builtEpoch: number | null; // Epoch when farm was built
+        weeksLeft: number | null; // Weeks remaining in farm's reward period
+        asset: string | null; // Payment currency farm used for PD (e.g., "GLW", "USDC", "USDG")
+        totalInflationRewards: string; // GLW from inflation (18 decimals)
+        totalProtocolDepositRewards: string; // GLW from protocol deposits (18 decimals)
+        totalRewards: string; // Total GLW earned from farm owner/split rewards (18 decimals)
+        lastWeekRewards: string; // GLW earned in the last week (18 decimals)
+      }>;
+    };
   }
   ```
 - **Response (when farmId provided)**
@@ -276,10 +290,26 @@ The router uses optimized data fetching strategies:
 - **Notes**
   - `totals` only include amounts delegated/spent within the week range (earning rewards).
   - `delegatedAfterWeekRange` shows recent activity after the last completed week (not yet earning rewards).
-  - Each farm in `farmDetails` includes a breakdown of rewards by source:
-    - `totalInflationRewards`: GLW earned from protocol inflation
-    - `totalProtocolDepositRewards`: GLW earned from protocol fee deposits (PD)
-    - `totalEarnedSoFar`: Sum of inflation + protocol deposit rewards
+  - `farmDetails` shows farms where wallet purchased fractions (delegator/miner):
+    - Each farm includes a breakdown of rewards by source:
+      - `totalInflationRewards`: GLW earned from protocol inflation
+      - `totalProtocolDepositRewards`: GLW earned from protocol fee deposits (PD)
+      - `totalEarnedSoFar`: Sum of inflation + protocol deposit rewards
+  - `otherFarmsWithRewards` shows farms where wallet has reward splits but didn't purchase fractions:
+    - Typically farm owner rewards or other reward split arrangements
+    - Includes breakdown of inflation vs protocol deposit rewards
+    - `asset` shows the payment currency the farm used for protocol deposits (GLW, USDC, USDG, etc.)
+    - Shows `lastWeekRewards` (most recent week in the range)
+    - `weeksLeft` calculation:
+      - V1 farms (built before epoch 97): `floor((97 + (100 - (97 - builtEpoch) / 2.08)) - currentWeek)`
+        - V1 weeks lived: `97 - builtEpoch`
+        - V2 equivalent weeks lived: `weeksLivedInV1 / 2.08`
+        - Remaining V2 weeks: `100 - v2EquivalentWeeksLived`
+        - End epoch: `97 + remainingV2Weeks`
+      - V2 farms (built epoch 97+): `builtEpoch + 100 - currentWeek`
+    - Sorted by total rewards (descending)
+    - Only fetched if wallet has reward splits in database
+    - Uses case-insensitive wallet address matching for reward splits query
   - For wallets with both launchpad and mining-center in the same farm, shows separate entries with properly split rewards.
   - Uses Control API's wallet-specific split data to accurately allocate rewards.
   - Projects rewards over full duration for APY calculation.
