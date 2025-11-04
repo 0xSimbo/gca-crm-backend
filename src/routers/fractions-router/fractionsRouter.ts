@@ -43,6 +43,8 @@ import {
   getBatchWalletFarmPurchases,
   getPurchasesUpToWeek,
   getPurchasesAfterWeek,
+  getBatchPurchasesUpToWeek,
+  getBatchPurchasesAfterWeek,
   getFarmPurchasesAfterWeek,
 } from "./helpers/accurate-apy-helpers";
 
@@ -118,7 +120,7 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
           walletsToProcess = Array.from(walletFarmMap.keys());
         }
 
-        const batchSize = 100;
+        const batchSize = 500;
         const allBatchRewards = new Map<string, any[]>();
         const allBatchPurchases = await getBatchWalletFarmPurchases(
           walletsToProcess
@@ -129,7 +131,7 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
 
           try {
             const response = await fetch(
-              `${process.env.CONTROL_API_URL}/wallets/farm-rewards-history/batch`,
+              `${process.env.CONTROL_API_URL}/farms/by-wallet/farm-rewards-history/batch`,
               {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -388,6 +390,9 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
             firstWeekWithRewards: farm.firstWeekWithRewards,
             totalWeeksEarned: farm.totalWeeksEarned,
             totalEarnedSoFar: farm.totalEarnedSoFar.toString(),
+            totalInflationRewards: farm.totalInflationRewards.toString(),
+            totalProtocolDepositRewards:
+              farm.totalProtocolDepositRewards.toString(),
             lastWeekRewards: farm.lastWeekRewards.toString(),
             apy: farm.apy.toFixed(4),
           }));
@@ -542,6 +547,450 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
         summary: "Get rewards breakdown by wallet or farm",
         description:
           "Returns detailed rewards breakdown for a specific wallet or farm, showing delegator and miner rewards for the last week and across all weeks. If walletAddress is provided, returns aggregated rewards across all farms for that wallet. If farmId is provided, returns aggregated rewards across all wallets for that farm.",
+        tags: [TAG.APPLICATIONS],
+      },
+    }
+  )
+  .get(
+    "/wallets/activity",
+    async ({ query: { type, sortBy, limit }, set }) => {
+      try {
+        if (!process.env.CONTROL_API_URL) {
+          set.status = 500;
+          return "CONTROL_API_URL not configured";
+        }
+
+        const weekRange = getWeekRange();
+        const { startWeek, endWeek } = weekRange;
+
+        const walletFarmMap = await buildWalletFarmMap();
+        const walletsToProcess = Array.from(walletFarmMap.keys());
+
+        const parsedLimit = limit ? parseInt(limit) : undefined;
+        if (
+          parsedLimit !== undefined &&
+          (isNaN(parsedLimit) || parsedLimit < 1)
+        ) {
+          set.status = 400;
+          return "Limit must be a positive number";
+        }
+
+        const batchSize = 500;
+        const allBatchRewards = new Map<string, any[]>();
+        const allBatchPurchases = await getBatchWalletFarmPurchases(
+          walletsToProcess
+        );
+        const allPurchasesUpToWeek = await getBatchPurchasesUpToWeek(
+          walletsToProcess,
+          endWeek
+        );
+        const allPurchasesAfterWeek = await getBatchPurchasesAfterWeek(
+          walletsToProcess,
+          endWeek
+        );
+
+        for (let i = 0; i < walletsToProcess.length; i += batchSize) {
+          const batch = walletsToProcess.slice(i, i + batchSize);
+
+          try {
+            const response = await fetch(
+              `${process.env.CONTROL_API_URL}/farms/by-wallet/farm-rewards-history/batch`,
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  wallets: batch,
+                  startWeek,
+                  endWeek,
+                }),
+              }
+            );
+
+            if (response.ok) {
+              const data: any = await response.json();
+              for (const wallet of batch) {
+                const walletData = data.results?.[wallet];
+                if (walletData?.farmRewards) {
+                  allBatchRewards.set(wallet, walletData.farmRewards);
+                }
+              }
+            }
+          } catch (error) {
+            console.error("Failed to fetch batch rewards:", error);
+          }
+        }
+
+        const walletActivities: Array<{
+          walletAddress: string;
+          glwDelegated: string;
+          usdcSpentOnMiners: string;
+          glwDelegatedAfterRange: string;
+          usdcSpentAfterRange: string;
+          delegatorRewardsEarned: string;
+          minerRewardsEarned: string;
+          totalRewardsEarned: string;
+        }> = [];
+
+        for (const wallet of walletsToProcess) {
+          const farmPurchases = allBatchPurchases.get(wallet) || [];
+          const farmRewards = allBatchRewards.get(wallet) || [];
+
+          if (farmPurchases.length === 0) {
+            continue;
+          }
+
+          const purchasesUpToWeek = allPurchasesUpToWeek.get(wallet) || {
+            totalGlwDelegated: BigInt(0),
+            totalUsdcSpent: BigInt(0),
+          };
+          const purchasesAfterWeek = allPurchasesAfterWeek.get(wallet) || {
+            totalGlwDelegatedAfter: BigInt(0),
+            totalUsdcSpentAfter: BigInt(0),
+          };
+
+          let delegatorRewards = BigInt(0);
+          let minerRewards = BigInt(0);
+
+          const farmIds = new Set(farmPurchases.map((p) => p.farmId));
+
+          for (const reward of farmRewards) {
+            if (!farmIds.has(reward.farmId)) {
+              continue;
+            }
+
+            const launchpadInflation = BigInt(
+              reward.walletInflationFromLaunchpad || "0"
+            );
+            const launchpadDeposit = BigInt(
+              reward.walletProtocolDepositFromLaunchpad || "0"
+            );
+            const miningCenterInflation = BigInt(
+              reward.walletInflationFromMiningCenter || "0"
+            );
+            const miningCenterDeposit = BigInt(
+              reward.walletProtocolDepositFromMiningCenter || "0"
+            );
+
+            delegatorRewards += launchpadInflation + launchpadDeposit;
+            minerRewards += miningCenterInflation + miningCenterDeposit;
+          }
+
+          const totalRewards = delegatorRewards + minerRewards;
+
+          if (totalRewards === BigInt(0)) {
+            continue;
+          }
+
+          const hasDelegatorActivity = delegatorRewards > BigInt(0);
+          const hasMinerActivity = minerRewards > BigInt(0);
+
+          if (type === "delegator" && !hasDelegatorActivity) continue;
+          if (type === "miner" && !hasMinerActivity) continue;
+
+          walletActivities.push({
+            walletAddress: wallet,
+            glwDelegated: purchasesUpToWeek.totalGlwDelegated.toString(),
+            usdcSpentOnMiners: purchasesUpToWeek.totalUsdcSpent.toString(),
+            glwDelegatedAfterRange:
+              purchasesAfterWeek.totalGlwDelegatedAfter.toString(),
+            usdcSpentAfterRange:
+              purchasesAfterWeek.totalUsdcSpentAfter.toString(),
+            delegatorRewardsEarned: delegatorRewards.toString(),
+            minerRewardsEarned: minerRewards.toString(),
+            totalRewardsEarned: totalRewards.toString(),
+          });
+        }
+
+        const sortField = sortBy || "totalRewardsEarned";
+        walletActivities.sort((a, b) => {
+          const aValue = BigInt(a[sortField as keyof typeof a] || "0");
+          const bValue = BigInt(b[sortField as keyof typeof b] || "0");
+          return Number(bValue - aValue);
+        });
+
+        const limitedResults = parsedLimit
+          ? walletActivities.slice(0, parsedLimit)
+          : walletActivities;
+
+        return {
+          weekRange: {
+            startWeek,
+            endWeek,
+          },
+          summary: {
+            totalWallets: walletActivities.length,
+            returnedWallets: limitedResults.length,
+          },
+          wallets: limitedResults,
+        };
+      } catch (e) {
+        if (e instanceof Error) {
+          set.status = 400;
+          return e.message;
+        }
+        throw new Error("Error Occurred");
+      }
+    },
+    {
+      query: t.Object({
+        type: t.Optional(
+          t.Union([
+            t.Literal("delegator"),
+            t.Literal("miner"),
+            t.Literal("both"),
+          ])
+        ),
+        sortBy: t.Optional(
+          t.Union([
+            t.Literal("glwDelegated"),
+            t.Literal("usdcSpentOnMiners"),
+            t.Literal("delegatorRewardsEarned"),
+            t.Literal("minerRewardsEarned"),
+            t.Literal("totalRewardsEarned"),
+          ])
+        ),
+        limit: t.Optional(
+          t.String({
+            description: "Limit number of results returned",
+          })
+        ),
+      }),
+      detail: {
+        summary: "Get all wallet activity with delegation and rewards",
+        description:
+          "Returns a list of all wallets that have delegated GLW or purchased mining-center fractions, showing their total amounts delegated/spent and total rewards earned. Results are sorted by total rewards earned (descending) by default. Optionally filter by type (delegator/miner/both), change sort field, and limit results. Uses batch API calls for efficiency.",
+        tags: [TAG.APPLICATIONS],
+      },
+    }
+  )
+  .get(
+    "/farms/activity",
+    async ({ query: { type, sortBy, limit }, set }) => {
+      try {
+        if (!process.env.CONTROL_API_URL) {
+          set.status = 500;
+          return "CONTROL_API_URL not configured";
+        }
+
+        const weekRange = getWeekRange();
+        const { startWeek, endWeek } = weekRange;
+
+        const walletFarmMap = await buildWalletFarmMap();
+        const walletsToProcess = Array.from(walletFarmMap.keys());
+
+        const parsedLimit = limit ? parseInt(limit) : undefined;
+        if (
+          parsedLimit !== undefined &&
+          (isNaN(parsedLimit) || parsedLimit < 1)
+        ) {
+          set.status = 400;
+          return "Limit must be a positive number";
+        }
+
+        const batchSize = 500;
+        const allBatchRewards = new Map<string, any[]>();
+        const allBatchPurchases = await getBatchWalletFarmPurchases(
+          walletsToProcess
+        );
+
+        for (let i = 0; i < walletsToProcess.length; i += batchSize) {
+          const batch = walletsToProcess.slice(i, i + batchSize);
+
+          try {
+            const response = await fetch(
+              `${process.env.CONTROL_API_URL}/farms/by-wallet/farm-rewards-history/batch`,
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  wallets: batch,
+                  startWeek,
+                  endWeek,
+                }),
+              }
+            );
+
+            if (response.ok) {
+              const data: any = await response.json();
+              for (const wallet of batch) {
+                const walletData = data.results?.[wallet];
+                if (walletData?.farmRewards) {
+                  allBatchRewards.set(wallet, walletData.farmRewards);
+                }
+              }
+            }
+          } catch (error) {
+            console.error("Failed to fetch batch rewards:", error);
+          }
+        }
+
+        const farmActivities = new Map<
+          string,
+          {
+            farmId: string;
+            farmName: string | null;
+            delegatorRewardsDistributed: bigint;
+            minerRewardsDistributed: bigint;
+            totalRewardsDistributed: bigint;
+            uniqueDelegators: Set<string>;
+            uniqueMiners: Set<string>;
+          }
+        >();
+
+        for (const wallet of walletsToProcess) {
+          const farmPurchases = allBatchPurchases.get(wallet) || [];
+          const farmRewards = allBatchRewards.get(wallet) || [];
+
+          if (farmPurchases.length === 0) {
+            continue;
+          }
+
+          const farmIds = new Set(farmPurchases.map((p) => p.farmId));
+          const launchpadFarmIds = new Set(
+            farmPurchases
+              .filter((p) => p.type === "launchpad")
+              .map((p) => p.farmId)
+          );
+          const miningCenterFarmIds = new Set(
+            farmPurchases
+              .filter((p) => p.type === "mining-center")
+              .map((p) => p.farmId)
+          );
+
+          for (const reward of farmRewards) {
+            if (!farmIds.has(reward.farmId)) {
+              continue;
+            }
+
+            if (!farmActivities.has(reward.farmId)) {
+              farmActivities.set(reward.farmId, {
+                farmId: reward.farmId,
+                farmName: reward.farmName || null,
+                delegatorRewardsDistributed: BigInt(0),
+                minerRewardsDistributed: BigInt(0),
+                totalRewardsDistributed: BigInt(0),
+                uniqueDelegators: new Set(),
+                uniqueMiners: new Set(),
+              });
+            }
+
+            const farm = farmActivities.get(reward.farmId)!;
+
+            const launchpadInflation = BigInt(
+              reward.walletInflationFromLaunchpad || "0"
+            );
+            const launchpadDeposit = BigInt(
+              reward.walletProtocolDepositFromLaunchpad || "0"
+            );
+            const miningCenterInflation = BigInt(
+              reward.walletInflationFromMiningCenter || "0"
+            );
+            const miningCenterDeposit = BigInt(
+              reward.walletProtocolDepositFromMiningCenter || "0"
+            );
+
+            const delegatorReward = launchpadInflation + launchpadDeposit;
+            const minerReward = miningCenterInflation + miningCenterDeposit;
+
+            farm.delegatorRewardsDistributed += delegatorReward;
+            farm.minerRewardsDistributed += minerReward;
+            farm.totalRewardsDistributed += delegatorReward + minerReward;
+
+            if (
+              delegatorReward > BigInt(0) &&
+              launchpadFarmIds.has(reward.farmId)
+            ) {
+              farm.uniqueDelegators.add(wallet);
+            }
+            if (
+              minerReward > BigInt(0) &&
+              miningCenterFarmIds.has(reward.farmId)
+            ) {
+              farm.uniqueMiners.add(wallet);
+            }
+          }
+        }
+
+        const farmList = Array.from(farmActivities.values())
+          .filter((farm) => farm.totalRewardsDistributed > BigInt(0))
+          .filter((farm) => {
+            const hasDelegatorActivity =
+              farm.delegatorRewardsDistributed > BigInt(0);
+            const hasMinerActivity = farm.minerRewardsDistributed > BigInt(0);
+
+            if (type === "delegator" && !hasDelegatorActivity) return false;
+            if (type === "miner" && !hasMinerActivity) return false;
+            return true;
+          })
+          .map((farm) => ({
+            farmId: farm.farmId,
+            farmName: farm.farmName,
+            delegatorRewardsDistributed:
+              farm.delegatorRewardsDistributed.toString(),
+            minerRewardsDistributed: farm.minerRewardsDistributed.toString(),
+            totalRewardsDistributed: farm.totalRewardsDistributed.toString(),
+            uniqueDelegators: farm.uniqueDelegators.size,
+            uniqueMiners: farm.uniqueMiners.size,
+            totalUniqueParticipants:
+              farm.uniqueDelegators.size + farm.uniqueMiners.size,
+          }));
+
+        const sortField = sortBy || "totalRewardsDistributed";
+        farmList.sort((a, b) => {
+          const aValue = BigInt(a[sortField as keyof typeof a] || "0");
+          const bValue = BigInt(b[sortField as keyof typeof b] || "0");
+          return Number(bValue - aValue);
+        });
+
+        const limitedResults = parsedLimit
+          ? farmList.slice(0, parsedLimit)
+          : farmList;
+
+        return {
+          weekRange: {
+            startWeek,
+            endWeek,
+          },
+          summary: {
+            totalFarms: farmList.length,
+            returnedFarms: limitedResults.length,
+          },
+          farms: limitedResults,
+        };
+      } catch (e) {
+        if (e instanceof Error) {
+          set.status = 400;
+          return e.message;
+        }
+        throw new Error("Error Occurred");
+      }
+    },
+    {
+      query: t.Object({
+        type: t.Optional(
+          t.Union([
+            t.Literal("delegator"),
+            t.Literal("miner"),
+            t.Literal("both"),
+          ])
+        ),
+        sortBy: t.Optional(
+          t.Union([
+            t.Literal("delegatorRewardsDistributed"),
+            t.Literal("minerRewardsDistributed"),
+            t.Literal("totalRewardsDistributed"),
+          ])
+        ),
+        limit: t.Optional(
+          t.String({
+            description: "Limit number of results returned",
+          })
+        ),
+      }),
+      detail: {
+        summary: "Get all farm activity with rewards distributed",
+        description:
+          "Returns a list of all farms that have distributed rewards to delegators or miners, showing total rewards distributed and participant counts. Results are sorted by total rewards distributed (descending) by default. Optionally filter by type (delegator/miner/both), change sort field, and limit results. Uses batch API calls for efficiency.",
         tags: [TAG.APPLICATIONS],
       },
     }

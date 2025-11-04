@@ -266,7 +266,7 @@ export async function aggregateWalletRewards(
 
   try {
     const response = await fetch(
-      `${process.env.CONTROL_API_URL}/wallets/address/${walletAddress}/farm-rewards-history?startWeek=${startWeek}&endWeek=${endWeek}`
+      `${process.env.CONTROL_API_URL}/farms/by-wallet/${walletAddress}/farm-rewards-history?startWeek=${startWeek}&endWeek=${endWeek}`
     );
 
     if (!response.ok) {

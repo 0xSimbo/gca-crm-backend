@@ -2,11 +2,33 @@
 
 This document describes the unauthenticated routes exposed by `fractionsRouter.ts`. Each section covers the request details and the response payload returned by the endpoint.
 
+## Recent Improvements
+
+### Week Range Calculation Fix
+
+- Changed from `getProtocolWeek() - 1` to `getProtocolWeek() - 2`
+- Ensures only fully completed weeks with available reward data are included
+- Fixes issue where wallets with rewards in previous weeks showed 0 if current week had no rewards yet
+
+### New Endpoints
+
+- **`/wallets/activity`**: List all wallets with their delegation amounts and rewards earned
+- **`/farms/activity`**: List all farms with total rewards distributed and participant counts
+- Both endpoints support filtering by type (delegator/miner/both), custom sorting, and limiting results
+
+### Enhanced Data
+
+- `/rewards-breakdown` now includes:
+  - `delegatedAfterWeekRange`: Shows delegations made after the week range (not yet earning rewards)
+  - `totals`: Only includes amounts within the week range (actually earning rewards)
+  - Per-farm breakdown of inflation vs protocol deposit rewards
+- All endpoints now use updated Control API paths (`/farms/by-wallet/...` and `/farms/rewards-history/batch`)
+
 ## Performance & Data Sources
 
 The router uses optimized data fetching strategies:
 
-- **Control API Integration**: Uses batch endpoints (`/wallets/farm-rewards-history/batch`) to fetch rewards for multiple wallets efficiently (100 wallets per request).
+- **Control API Integration**: Uses batch endpoints (`/farms/by-wallet/farm-rewards-history/batch`) to fetch rewards for multiple wallets efficiently (500 wallets per request).
 - **Database Batching**: Batch queries for wallet purchases across multiple wallets to minimize DB round-trips.
 - **Caching**: GLW spot price is cached for 30 seconds to avoid redundant blockchain calls.
 - **Accurate Reward Splits**: Uses Control API's pre-calculated splits between launchpad and mining-center positions, accounting for changes over time.
@@ -14,8 +36,9 @@ The router uses optimized data fetching strategies:
 **Typical Performance:**
 
 - Single wallet query: ~0.76s
-- Platform-wide average (125 wallets): ~1.82s
-- 84-94% faster than previous implementation
+- Platform-wide queries (60+ wallets): ~2-3s
+- Uses single batch call for wallet rewards (500 wallets per batch)
+- Week range calculation now uses `getProtocolWeek() - 2` to ensure data completeness
 
 ## `GET /fractions/summary`
 
@@ -183,12 +206,16 @@ The router uses optimized data fetching strategies:
       bothTypesFarms: number; // Farms with both types
     };
     totals: {
-      totalGlwDelegated: string; // Total GLW delegated (18 decimals)
-      totalUsdcSpentByMiners: string; // Total USDC spent (6 decimals)
+      totalGlwDelegated: string; // Total GLW delegated within week range (18 decimals)
+      totalUsdcSpentByMiners: string; // Total USDC spent within week range (6 decimals)
     };
     weekRange: {
       startWeek: number;
       endWeek: number;
+    };
+    delegatedAfterWeekRange: {
+      totalGlwDelegatedAfter: string; // GLW delegated after endWeek (18 decimals)
+      totalUsdcSpentAfter: string; // USDC spent after endWeek (6 decimals)
     };
     rewards: {
       delegator: {
@@ -210,7 +237,9 @@ The router uses optimized data fetching strategies:
       amountInvested: string; // 18 decimals for launchpad, 6 for mining-center
       firstWeekWithRewards: number;
       totalWeeksEarned: number;
-      totalEarnedSoFar: string; // GLW earned (18 decimals)
+      totalEarnedSoFar: string; // Total GLW earned (18 decimals)
+      totalInflationRewards: string; // GLW from inflation (18 decimals)
+      totalProtocolDepositRewards: string; // GLW from protocol deposits (18 decimals)
       lastWeekRewards: string; // GLW earned last week (18 decimals)
       apy: string; // Farm-specific APY (e.g., "1036.0200" = 1036.02%)
     }>;
@@ -228,6 +257,10 @@ The router uses optimized data fetching strategies:
       startWeek: number;
       endWeek: number;
     };
+    delegatedAfterWeekRange: {
+      totalGlwDelegatedAfter: string; // GLW delegated after endWeek (18 decimals)
+      totalUsdcSpentAfter: string; // USDC spent after endWeek (6 decimals)
+    };
     rewards: {
       delegator: {
         lastWeek: string;
@@ -241,6 +274,12 @@ The router uses optimized data fetching strategies:
   }
   ```
 - **Notes**
+  - `totals` only include amounts delegated/spent within the week range (earning rewards).
+  - `delegatedAfterWeekRange` shows recent activity after the last completed week (not yet earning rewards).
+  - Each farm in `farmDetails` includes a breakdown of rewards by source:
+    - `totalInflationRewards`: GLW earned from protocol inflation
+    - `totalProtocolDepositRewards`: GLW earned from protocol fee deposits (PD)
+    - `totalEarnedSoFar`: Sum of inflation + protocol deposit rewards
   - For wallets with both launchpad and mining-center in the same farm, shows separate entries with properly split rewards.
   - Uses Control API's wallet-specific split data to accurately allocate rewards.
   - Projects rewards over full duration for APY calculation.
@@ -256,4 +295,119 @@ The router uses optimized data fetching strategies:
 
   # Custom week range
   curl -s "http://localhost:3005/fractions/rewards-breakdown?walletAddress=0x5abc...&startWeek=98&endWeek=100"
+  ```
+
+## `GET /fractions/wallets/activity`
+
+- Returns a list of all wallets that have delegated GLW or purchased mining-center fractions, showing their amounts and rewards earned.
+- Optional query params:
+  - `type` (`string`): Filter by wallet type - `"delegator"`, `"miner"`, or `"both"` (default: both).
+  - `sortBy` (`string`): Sort field - `"glwDelegated"`, `"usdcSpentOnMiners"`, `"delegatorRewardsEarned"`, `"minerRewardsEarned"`, or `"totalRewardsEarned"` (default: `totalRewardsEarned`).
+  - `limit` (`string`): Limit number of results (must be positive number).
+- **Response**
+  ```typescript
+  {
+    weekRange: {
+      startWeek: number; // Always starts at week 97
+      endWeek: number; // Last completed week (getProtocolWeek() - 2)
+    }
+    summary: {
+      totalWallets: number; // Total wallets matching filter
+      returnedWallets: number; // Number of wallets returned (after limit)
+    }
+    wallets: Array<{
+      walletAddress: string;
+      glwDelegated: string; // GLW delegated within week range (18 decimals)
+      usdcSpentOnMiners: string; // USDC spent within week range (6 decimals)
+      glwDelegatedAfterRange: string; // GLW delegated after week range (18 decimals)
+      usdcSpentAfterRange: string; // USDC spent after week range (6 decimals)
+      delegatorRewardsEarned: string; // Total delegator rewards (18 decimals)
+      minerRewardsEarned: string; // Total miner rewards (18 decimals)
+      totalRewardsEarned: string; // Sum of delegator + miner rewards (18 decimals)
+    }>;
+  }
+  ```
+- **Performance**
+  - Uses batch database queries and Control API batch endpoints for optimal speed.
+  - Typical response time: ~2-3s for all wallets (~60 wallets).
+  - 3 total database queries regardless of wallet count:
+    1. Batch fetch all farm purchases
+    2. Batch fetch purchases up to week range
+    3. Batch fetch purchases after week range
+- **Notes**
+  - Results are sorted by `sortBy` field in descending order.
+  - The `*AfterRange` fields show recent delegations/purchases that haven't earned rewards yet (happened after the last completed week).
+  - Useful for identifying top delegators/miners and understanding their activity.
+  - Filtering by `type=delegator` excludes wallets with only mining-center activity (and vice versa).
+- **Example**
+
+  ```bash
+  # Get all wallets, sorted by total rewards
+  curl -s "http://localhost:3005/fractions/wallets/activity"
+
+  # Get top 10 delegators by amount delegated
+  curl -s "http://localhost:3005/fractions/wallets/activity?type=delegator&sortBy=glwDelegated&limit=10"
+
+  # Get top 5 miners by USDC spent
+  curl -s "http://localhost:3005/fractions/wallets/activity?type=miner&sortBy=usdcSpentOnMiners&limit=5"
+
+  # Get top 20 earners (delegators and miners combined)
+  curl -s "http://localhost:3005/fractions/wallets/activity?sortBy=totalRewardsEarned&limit=20"
+  ```
+
+## `GET /fractions/farms/activity`
+
+- Returns a list of all farms that have distributed rewards to delegators or miners, showing reward distributions and participant counts.
+- Optional query params:
+  - `type` (`string`): Filter by farm type - `"delegator"`, `"miner"`, or `"both"` (default: both).
+  - `sortBy` (`string`): Sort field - `"delegatorRewardsDistributed"`, `"minerRewardsDistributed"`, or `"totalRewardsDistributed"` (default: `totalRewardsDistributed`).
+  - `limit` (`string`): Limit number of results (must be positive number).
+- **Response**
+  ```typescript
+  {
+    weekRange: {
+      startWeek: number; // Always starts at week 97
+      endWeek: number; // Last completed week (getProtocolWeek() - 2)
+    }
+    summary: {
+      totalFarms: number; // Total farms matching filter
+      returnedFarms: number; // Number of farms returned (after limit)
+    }
+    farms: Array<{
+      farmId: string;
+      farmName: string | null; // Farm name (or null if not set)
+      delegatorRewardsDistributed: string; // Total GLW rewards given to delegators (18 decimals)
+      minerRewardsDistributed: string; // Total GLW rewards given to miners (18 decimals)
+      totalRewardsDistributed: string; // Sum of delegator + miner rewards (18 decimals)
+      uniqueDelegators: number; // Number of unique delegator wallets
+      uniqueMiners: number; // Number of unique miner wallets
+      totalUniqueParticipants: number; // Total unique participants
+    }>;
+  }
+  ```
+- **Performance**
+  - Uses same batch queries as `/wallets/activity` for optimal speed.
+  - Typical response time: ~2-3s for all farms (~8 farms).
+  - Data is aggregated from wallet-specific rewards by farm.
+  - Farm names are automatically included from Control API response.
+- **Notes**
+  - Only includes farms that have distributed rewards (totalRewardsDistributed > 0).
+  - Results are sorted by `sortBy` field in descending order.
+  - Shows reward distribution breakdown between delegators and miners.
+  - Useful for identifying top-performing farms and understanding reward distributions.
+  - Filtering by `type=delegator` shows only farms with delegator rewards (and vice versa).
+- **Example**
+
+  ```bash
+  # Get all farms, sorted by total rewards distributed
+  curl -s "http://localhost:3005/fractions/farms/activity"
+
+  # Get top 5 farms by delegator rewards
+  curl -s "http://localhost:3005/fractions/farms/activity?type=delegator&sortBy=delegatorRewardsDistributed&limit=5"
+
+  # Get top 3 farms by miner rewards
+  curl -s "http://localhost:3005/fractions/farms/activity?type=miner&sortBy=minerRewardsDistributed&limit=3"
+
+  # Get all farms with both delegators and miners
+  curl -s "http://localhost:3005/fractions/farms/activity?type=both"
   ```

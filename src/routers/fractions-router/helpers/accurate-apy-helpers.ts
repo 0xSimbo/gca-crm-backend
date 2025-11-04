@@ -19,6 +19,8 @@ interface FarmAPYData {
   lastWeekRewards: bigint;
   totalWeeksEarned: number;
   totalEarnedSoFar: bigint;
+  totalInflationRewards: bigint;
+  totalProtocolDepositRewards: bigint;
   projectedTotalRewards: bigint;
   apy: number;
 }
@@ -94,15 +96,24 @@ export async function getWalletFarmPurchases(
   return batchResult.get(walletAddress.toLowerCase()) || [];
 }
 
-export async function getPurchasesUpToWeek(
-  walletAddress: string,
+export async function getBatchPurchasesUpToWeek(
+  walletAddresses: string[],
   upToWeek: number
-): Promise<{
-  totalGlwDelegated: bigint;
-  totalUsdcSpent: bigint;
-}> {
+): Promise<
+  Map<
+    string,
+    {
+      totalGlwDelegated: bigint;
+      totalUsdcSpent: bigint;
+    }
+  >
+> {
+  if (walletAddresses.length === 0) {
+    return new Map();
+  }
+
   const epochEndDate = getEpochEndDate(upToWeek);
-  const walletLower = walletAddress.toLowerCase();
+  const normalizedWallets = walletAddresses.map((w) => w.toLowerCase());
 
   const purchases = await db
     .select({
@@ -113,27 +124,121 @@ export async function getPurchasesUpToWeek(
     .innerJoin(fractions, eq(fractionSplits.fractionId, fractions.id))
     .where(
       and(
-        eq(fractionSplits.buyer, walletLower),
+        inArray(fractionSplits.buyer, normalizedWallets),
         lte(fractionSplits.createdAt, epochEndDate)
       )
     );
 
-  let totalGlwDelegated = BigInt(0);
-  let totalUsdcSpent = BigInt(0);
+  const result = new Map<
+    string,
+    {
+      totalGlwDelegated: bigint;
+      totalUsdcSpent: bigint;
+    }
+  >();
+
+  for (const wallet of normalizedWallets) {
+    result.set(wallet, {
+      totalGlwDelegated: BigInt(0),
+      totalUsdcSpent: BigInt(0),
+    });
+  }
 
   for (const purchase of purchases) {
+    const wallet = purchase.split.buyer.toLowerCase();
+    const existing = result.get(wallet)!;
     const amount = BigInt(purchase.split.amount);
+
     if (purchase.fraction.type === "launchpad") {
-      totalGlwDelegated += amount;
+      existing.totalGlwDelegated += amount;
     } else if (purchase.fraction.type === "mining-center") {
-      totalUsdcSpent += amount;
+      existing.totalUsdcSpent += amount;
     }
   }
 
-  return {
-    totalGlwDelegated,
-    totalUsdcSpent,
-  };
+  return result;
+}
+
+export async function getPurchasesUpToWeek(
+  walletAddress: string,
+  upToWeek: number
+): Promise<{
+  totalGlwDelegated: bigint;
+  totalUsdcSpent: bigint;
+}> {
+  const batchResult = await getBatchPurchasesUpToWeek(
+    [walletAddress],
+    upToWeek
+  );
+  return (
+    batchResult.get(walletAddress.toLowerCase()) || {
+      totalGlwDelegated: BigInt(0),
+      totalUsdcSpent: BigInt(0),
+    }
+  );
+}
+
+export async function getBatchPurchasesAfterWeek(
+  walletAddresses: string[],
+  afterWeek: number
+): Promise<
+  Map<
+    string,
+    {
+      totalGlwDelegatedAfter: bigint;
+      totalUsdcSpentAfter: bigint;
+    }
+  >
+> {
+  if (walletAddresses.length === 0) {
+    return new Map();
+  }
+
+  const epochEndDate = getEpochEndDate(afterWeek);
+  const normalizedWallets = walletAddresses.map((w) => w.toLowerCase());
+
+  const purchases = await db
+    .select({
+      split: fractionSplits,
+      fraction: fractions,
+    })
+    .from(fractionSplits)
+    .innerJoin(fractions, eq(fractionSplits.fractionId, fractions.id))
+    .where(
+      and(
+        inArray(fractionSplits.buyer, normalizedWallets),
+        gt(fractionSplits.createdAt, epochEndDate)
+      )
+    );
+
+  const result = new Map<
+    string,
+    {
+      totalGlwDelegatedAfter: bigint;
+      totalUsdcSpentAfter: bigint;
+    }
+  >();
+
+  for (const wallet of normalizedWallets) {
+    result.set(wallet, {
+      totalGlwDelegatedAfter: BigInt(0),
+      totalUsdcSpentAfter: BigInt(0),
+    });
+  }
+
+  for (const purchase of purchases) {
+    const wallet = purchase.split.buyer.toLowerCase();
+    const existing = result.get(wallet)!;
+    const amount = BigInt(purchase.split.amount);
+
+    if (purchase.fraction.type === "launchpad") {
+      existing.totalGlwDelegatedAfter += amount;
+    } else if (purchase.fraction.type === "mining-center") {
+      existing.totalUsdcSpentAfter += amount;
+    }
+  }
+
+  return result;
 }
 
 export async function getPurchasesAfterWeek(
@@ -143,39 +248,16 @@ export async function getPurchasesAfterWeek(
   totalGlwDelegatedAfter: bigint;
   totalUsdcSpentAfter: bigint;
 }> {
-  const epochEndDate = getEpochEndDate(afterWeek);
-  const walletLower = walletAddress.toLowerCase();
-
-  const purchases = await db
-    .select({
-      split: fractionSplits,
-      fraction: fractions,
-    })
-    .from(fractionSplits)
-    .innerJoin(fractions, eq(fractionSplits.fractionId, fractions.id))
-    .where(
-      and(
-        eq(fractionSplits.buyer, walletLower),
-        gt(fractionSplits.createdAt, epochEndDate)
-      )
-    );
-
-  let totalGlwDelegatedAfter = BigInt(0);
-  let totalUsdcSpentAfter = BigInt(0);
-
-  for (const purchase of purchases) {
-    const amount = BigInt(purchase.split.amount);
-    if (purchase.fraction.type === "launchpad") {
-      totalGlwDelegatedAfter += amount;
-    } else if (purchase.fraction.type === "mining-center") {
-      totalUsdcSpentAfter += amount;
+  const batchResult = await getBatchPurchasesAfterWeek(
+    [walletAddress],
+    afterWeek
+  );
+  return (
+    batchResult.get(walletAddress.toLowerCase()) || {
+      totalGlwDelegatedAfter: BigInt(0),
+      totalUsdcSpentAfter: BigInt(0),
     }
-  }
-
-  return {
-    totalGlwDelegatedAfter,
-    totalUsdcSpentAfter,
-  };
+  );
 }
 
 export async function getFarmPurchasesAfterWeek(
@@ -232,6 +314,8 @@ export function calculateFarmAPYFromRewards(
   let lastWeekRewards = BigInt(0);
   let totalWeeksEarned = 0;
   let totalEarnedSoFar = BigInt(0);
+  let totalInflationRewards = BigInt(0);
+  let totalProtocolDepositRewards = BigInt(0);
 
   for (const reward of farmRewards) {
     let inflationReward = BigInt(0);
@@ -255,6 +339,8 @@ export function calculateFarmAPYFromRewards(
       }
       totalWeeksEarned++;
       totalEarnedSoFar += totalReward;
+      totalInflationRewards += inflationReward;
+      totalProtocolDepositRewards += depositReward;
       if (reward.weekNumber === endWeek) {
         lastWeekRewards = totalReward;
       }
@@ -297,6 +383,8 @@ export function calculateFarmAPYFromRewards(
     lastWeekRewards,
     totalWeeksEarned,
     totalEarnedSoFar,
+    totalInflationRewards,
+    totalProtocolDepositRewards,
     projectedRemainingRewards: projectedTotalRewards - totalEarnedSoFar,
     projectedTotalRewards,
     apy,
@@ -329,7 +417,7 @@ export async function calculateAccurateWalletAPY(
   } else {
     try {
       const response = await fetch(
-        `${process.env.CONTROL_API_URL}/wallets/address/${walletAddress}/farm-rewards-history?startWeek=${startWeek}&endWeek=${endWeek}`
+        `${process.env.CONTROL_API_URL}/farms/by-wallet/${walletAddress}/farm-rewards-history?startWeek=${startWeek}&endWeek=${endWeek}`
       );
 
       if (response.ok) {
