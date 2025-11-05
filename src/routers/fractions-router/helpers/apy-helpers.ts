@@ -64,6 +64,8 @@ export interface FarmRewardBreakdown {
     allWeeks: bigint;
   };
   wallets: string[];
+  uniqueDelegators: Set<string>;
+  uniqueMiners: Set<string>;
 }
 
 export function getWeekRange(): { startWeek: number; endWeek: number } {
@@ -487,6 +489,8 @@ export function aggregateRewardsByFarm(
           allWeeks: BigInt(0),
         },
         wallets: [],
+        uniqueDelegators: new Set(),
+        uniqueMiners: new Set(),
       });
     }
 
@@ -498,6 +502,13 @@ export function aggregateRewardsByFarm(
 
     if (!farmData.wallets.includes(breakdown.walletAddress)) {
       farmData.wallets.push(breakdown.walletAddress);
+    }
+
+    if (breakdown.delegatorRewards.allWeeks > BigInt(0)) {
+      farmData.uniqueDelegators.add(breakdown.walletAddress);
+    }
+    if (breakdown.minerRewards.allWeeks > BigInt(0)) {
+      farmData.uniqueMiners.add(breakdown.walletAddress);
     }
   }
 

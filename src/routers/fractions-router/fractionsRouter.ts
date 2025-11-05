@@ -53,6 +53,8 @@ import {
   getBatchPurchasesAfterWeek,
   getFarmPurchasesAfterWeek,
 } from "./helpers/accurate-apy-helpers";
+import { getFilledStepStatsByFarm } from "./helpers/per-piece-helpers";
+import { FRACTION_STATUS } from "../../constants/fractions";
 
 export const fractionsRouter = new Elysia({ prefix: "/fractions" })
   .get(
@@ -1228,6 +1230,608 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
         summary: "Get all farm activity with rewards distributed",
         description:
           "Returns a list of all farms that have distributed rewards to delegators or miners, showing total rewards distributed and participant counts. Results are sorted by total rewards distributed (descending) by default. Optionally filter by type (delegator/miner/both), change sort field, and limit results. Uses batch API calls for efficiency.",
+        tags: [TAG.APPLICATIONS],
+      },
+    }
+  )
+  .get(
+    "/farms-per-piece-stats",
+    async ({ query: { farmId, startWeek, endWeek }, set }) => {
+      try {
+        if (!process.env.CONTROL_API_URL) {
+          set.status = 500;
+          return "CONTROL_API_URL not configured";
+        }
+
+        const weekRange = getWeekRange();
+        const actualStartWeek = startWeek
+          ? parseInt(startWeek)
+          : weekRange.startWeek;
+        const actualEndWeek = endWeek ? parseInt(endWeek) : weekRange.endWeek;
+
+        if (isNaN(actualStartWeek) || isNaN(actualEndWeek)) {
+          set.status = 400;
+          return "Invalid week range";
+        }
+
+        const [glwSpotPrice, walletFarmMap, farmStatsMap, walletPurchaseMap] =
+          await Promise.all([
+            getCachedGlwSpotPriceNumber(),
+            buildWalletFarmMap(),
+            getFilledStepStatsByFarm(actualEndWeek),
+            (async () => {
+              const epochEndDate = getEpochEndDate(actualEndWeek);
+              const purchases = await db
+                .select({
+                  buyer: fractionSplits.buyer,
+                  fractionType: fractions.type,
+                  farmId: applications.farmId,
+                  status: fractions.status,
+                })
+                .from(fractionSplits)
+                .innerJoin(
+                  fractions,
+                  eq(fractionSplits.fractionId, fractions.id)
+                )
+                .innerJoin(
+                  applications,
+                  eq(fractions.applicationId, applications.id)
+                )
+                .where(
+                  and(
+                    inArray(fractions.status, [
+                      FRACTION_STATUS.FILLED,
+                      FRACTION_STATUS.EXPIRED,
+                    ]),
+                    lte(fractions.filledAt, epochEndDate)
+                  )
+                );
+
+              const map = new Map<
+                string,
+                Map<string, Set<"launchpad" | "mining-center">>
+              >();
+              for (const p of purchases) {
+                if (!p.farmId) continue;
+
+                if (
+                  p.fractionType === "launchpad" &&
+                  p.status !== FRACTION_STATUS.FILLED
+                ) {
+                  continue;
+                }
+                if (
+                  p.fractionType === "mining-center" &&
+                  p.status !== FRACTION_STATUS.FILLED &&
+                  p.status !== FRACTION_STATUS.EXPIRED
+                ) {
+                  continue;
+                }
+
+                const wallet = p.buyer.toLowerCase();
+                if (!map.has(wallet)) {
+                  map.set(wallet, new Map());
+                }
+                if (!map.get(wallet)!.has(p.farmId)) {
+                  map.get(wallet)!.set(p.farmId, new Set());
+                }
+                if (
+                  p.fractionType === "launchpad" ||
+                  p.fractionType === "mining-center"
+                ) {
+                  map.get(wallet)!.get(p.farmId)!.add(p.fractionType);
+                }
+              }
+              return map;
+            })(),
+          ]);
+
+        const { walletBreakdowns } = await calculateTotalRewards(
+          walletFarmMap,
+          actualStartWeek,
+          actualEndWeek,
+          undefined,
+          farmId
+        );
+
+        const filteredWalletBreakdowns = walletBreakdowns.filter(
+          (breakdown) => {
+            const walletPurchases = walletPurchaseMap.get(
+              breakdown.walletAddress
+            );
+            if (!walletPurchases) return false;
+            const farmPurchases = walletPurchases.get(breakdown.farmId);
+            return farmPurchases && farmPurchases.size > 0;
+          }
+        );
+
+        const farmRewardsMap = aggregateRewardsByFarm(filteredWalletBreakdowns);
+
+        const allFarmIds = new Set<string>();
+        const appIds = new Set<string>();
+
+        for (const farmIdKey of farmStatsMap.keys()) {
+          allFarmIds.add(farmIdKey);
+        }
+        for (const farmIdKey of farmRewardsMap.keys()) {
+          allFarmIds.add(farmIdKey);
+        }
+
+        const farmIdsArray = farmId
+          ? allFarmIds.has(farmId)
+            ? [farmId]
+            : []
+          : Array.from(allFarmIds);
+
+        for (const farmIdKey of farmIdsArray) {
+          const stats = farmStatsMap.get(farmIdKey);
+          if (stats) {
+            for (const [_, stat] of stats) {
+              appIds.add(stat.appId);
+            }
+          }
+          const rewards = farmRewardsMap.get(farmIdKey);
+          if (rewards) {
+            appIds.add(rewards.appId);
+          }
+        }
+
+        const walletsForFarms = new Set<string>();
+        for (const [wallet, farms] of walletFarmMap) {
+          for (const farm of farms) {
+            if (farmIdsArray.includes(farm.farmId)) {
+              walletsForFarms.add(wallet);
+            }
+          }
+        }
+
+        const [farmNamesMap, walletBatchRewards] = await Promise.all([
+          getFarmNamesByApplicationIds(Array.from(appIds)),
+          (async () => {
+            const walletBatchRewards = new Map<string, any[]>();
+            const walletsArray = Array.from(walletsForFarms);
+            const batchSize = 500;
+            for (let i = 0; i < walletsArray.length; i += batchSize) {
+              const batch = walletsArray.slice(i, i + batchSize);
+              try {
+                const response = await fetch(
+                  `${process.env.CONTROL_API_URL}/farms/by-wallet/farm-rewards-history/batch`,
+                  {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      wallets: batch,
+                      startWeek: actualStartWeek,
+                      endWeek: actualEndWeek,
+                    }),
+                  }
+                );
+                if (response.ok) {
+                  const data: any = await response.json();
+                  for (const wallet of batch) {
+                    const walletData = data.results?.[wallet];
+                    if (walletData?.farmRewards) {
+                      walletBatchRewards.set(wallet, walletData.farmRewards);
+                    }
+                  }
+                }
+              } catch (error) {
+                console.error("Failed to fetch wallet rewards batch:", error);
+              }
+            }
+            return walletBatchRewards;
+          })(),
+        ]);
+
+        const farms = farmIdsArray
+          .map((farmIdKey) => {
+            const stepStats = farmStatsMap.get(farmIdKey);
+            const rewardData = farmRewardsMap.get(farmIdKey);
+
+            if (!stepStats && !rewardData) {
+              return null;
+            }
+
+            const launchpadStats = stepStats?.get("launchpad");
+            const miningCenterStats = stepStats?.get("mining-center");
+
+            const fractionTypes: ("launchpad" | "mining-center")[] = [];
+            if (launchpadStats) fractionTypes.push("launchpad");
+            if (miningCenterStats) fractionTypes.push("mining-center");
+
+            const appId =
+              launchpadStats?.appId ||
+              miningCenterStats?.appId ||
+              rewardData?.appId ||
+              "";
+
+            const farmName = farmNamesMap.get(appId) || null;
+
+            const delegatorWeeklyMap = new Map<
+              number,
+              {
+                inflation: bigint;
+                protocolDeposit: bigint;
+                asset: string | null;
+              }
+            >();
+            const minerWeeklyMap = new Map<
+              number,
+              {
+                inflation: bigint;
+                protocolDeposit: bigint;
+                asset: string | null;
+              }
+            >();
+
+            for (const [wallet, farms] of walletFarmMap) {
+              const walletFarmPurchases = walletPurchaseMap
+                .get(wallet)
+                ?.get(farmIdKey);
+              if (!walletFarmPurchases) continue;
+
+              const walletRewards = walletBatchRewards.get(wallet) || [];
+
+              for (const reward of walletRewards) {
+                if (reward.farmId !== farmIdKey) continue;
+
+                const weekNum = reward.weekNumber;
+                const asset = reward.asset || null;
+
+                const launchpadInflation = BigInt(
+                  reward.walletInflationFromLaunchpad || "0"
+                );
+                const launchpadDeposit = BigInt(
+                  reward.walletProtocolDepositFromLaunchpad || "0"
+                );
+                const miningCenterInflation = BigInt(
+                  reward.walletInflationFromMiningCenter || "0"
+                );
+                const miningCenterDeposit = BigInt(
+                  reward.walletProtocolDepositFromMiningCenter || "0"
+                );
+
+                if (
+                  walletFarmPurchases.has("launchpad") &&
+                  (launchpadInflation > BigInt(0) ||
+                    launchpadDeposit > BigInt(0))
+                ) {
+                  const existing = delegatorWeeklyMap.get(weekNum) || {
+                    inflation: BigInt(0),
+                    protocolDeposit: BigInt(0),
+                    asset,
+                  };
+                  existing.inflation += launchpadInflation;
+                  existing.protocolDeposit += launchpadDeposit;
+                  delegatorWeeklyMap.set(weekNum, existing);
+                }
+
+                if (
+                  walletFarmPurchases.has("mining-center") &&
+                  (miningCenterInflation > BigInt(0) ||
+                    miningCenterDeposit > BigInt(0))
+                ) {
+                  const existing = minerWeeklyMap.get(weekNum) || {
+                    inflation: BigInt(0),
+                    protocolDeposit: BigInt(0),
+                    asset,
+                  };
+                  existing.inflation += miningCenterInflation;
+                  existing.protocolDeposit += miningCenterDeposit;
+                  minerWeeklyMap.set(weekNum, existing);
+                }
+              }
+            }
+
+            const delegatorWeeklyBreakdown = Array.from(
+              delegatorWeeklyMap.entries()
+            )
+              .sort((a, b) => b[0] - a[0])
+              .map(([weekNumber, data]) => ({
+                weekNumber,
+                inflationRewards: data.inflation.toString(),
+                protocolDepositRewards: data.protocolDeposit.toString(),
+                protocolDepositAsset: data.asset,
+                totalRewards: (
+                  data.inflation + data.protocolDeposit
+                ).toString(),
+              }));
+
+            const minerWeeklyBreakdown = Array.from(minerWeeklyMap.entries())
+              .sort((a, b) => b[0] - a[0])
+              .map(([weekNumber, data]) => ({
+                weekNumber,
+                inflationRewards: data.inflation.toString(),
+                protocolDepositRewards: data.protocolDeposit.toString(),
+                protocolDepositAsset: data.asset,
+                totalRewards: (
+                  data.inflation + data.protocolDeposit
+                ).toString(),
+              }));
+
+            const delegatorWeeksEarned = delegatorWeeklyBreakdown.length;
+            const minerWeeksEarned = minerWeeklyBreakdown.length;
+
+            let delegatorInflationAllWeeks = BigInt(0);
+            let delegatorProtocolDepositAllWeeks = BigInt(0);
+            let delegatorInflationLastWeek = BigInt(0);
+            let delegatorProtocolDepositLastWeek = BigInt(0);
+
+            for (const week of delegatorWeeklyBreakdown) {
+              const inflation = BigInt(week.inflationRewards);
+              const deposit = BigInt(week.protocolDepositRewards);
+              delegatorInflationAllWeeks += inflation;
+              delegatorProtocolDepositAllWeeks += deposit;
+              if (week.weekNumber === actualEndWeek) {
+                delegatorInflationLastWeek = inflation;
+                delegatorProtocolDepositLastWeek = deposit;
+              }
+            }
+
+            let minerInflationAllWeeks = BigInt(0);
+            let minerProtocolDepositAllWeeks = BigInt(0);
+            let minerInflationLastWeek = BigInt(0);
+            let minerProtocolDepositLastWeek = BigInt(0);
+
+            for (const week of minerWeeklyBreakdown) {
+              const inflation = BigInt(week.inflationRewards);
+              const deposit = BigInt(week.protocolDepositRewards);
+              minerInflationAllWeeks += inflation;
+              minerProtocolDepositAllWeeks += deposit;
+              if (week.weekNumber === actualEndWeek) {
+                minerInflationLastWeek = inflation;
+                minerProtocolDepositLastWeek = deposit;
+              }
+            }
+
+            const delegatorStepsSold = launchpadStats?.totalStepsSold || 0;
+            const delegatorWeightedPieceSizeGlw =
+              launchpadStats?.weightedAverageStepPrice || "0";
+            const delegatorWeeksLeft = Math.max(0, 100 - delegatorWeeksEarned);
+            const minerWeeksLeft = Math.max(0, 99 - minerWeeksEarned);
+
+            const delegatorStepsSoldBigInt = BigInt(delegatorStepsSold);
+            const delegatorInflationPerPieceLastWeek =
+              delegatorStepsSold > 0
+                ? (
+                    delegatorInflationLastWeek / delegatorStepsSoldBigInt
+                  ).toString()
+                : "0";
+            const delegatorInflationPerPieceAllWeeks =
+              delegatorStepsSold > 0
+                ? (
+                    delegatorInflationAllWeeks / delegatorStepsSoldBigInt
+                  ).toString()
+                : "0";
+            const delegatorProtocolDepositPerPieceLastWeek =
+              delegatorStepsSold > 0
+                ? (
+                    delegatorProtocolDepositLastWeek / delegatorStepsSoldBigInt
+                  ).toString()
+                : "0";
+            const delegatorProtocolDepositPerPieceAllWeeks =
+              delegatorStepsSold > 0
+                ? (
+                    delegatorProtocolDepositAllWeeks / delegatorStepsSoldBigInt
+                  ).toString()
+                : "0";
+            const delegatorTotalPerPieceLastWeek =
+              delegatorStepsSold > 0
+                ? (
+                    (delegatorInflationLastWeek +
+                      delegatorProtocolDepositLastWeek) /
+                    delegatorStepsSoldBigInt
+                  ).toString()
+                : "0";
+            const delegatorTotalPerPieceAllWeeks =
+              delegatorStepsSold > 0
+                ? (
+                    (delegatorInflationAllWeeks +
+                      delegatorProtocolDepositAllWeeks) /
+                    delegatorStepsSoldBigInt
+                  ).toString()
+                : "0";
+
+            const delegatorWeightedPieceSize = BigInt(
+              delegatorWeightedPieceSizeGlw
+            );
+            const delegatorTotalInvestment =
+              delegatorWeightedPieceSize * delegatorStepsSoldBigInt;
+            const delegatorRoiLastWeek =
+              delegatorTotalInvestment > BigInt(0)
+                ? (
+                    (Number(
+                      delegatorInflationLastWeek +
+                        delegatorProtocolDepositLastWeek
+                    ) /
+                      Number(delegatorTotalInvestment)) *
+                    100
+                  ).toFixed(4)
+                : "0.0000";
+            const delegatorRoiAllWeeks =
+              delegatorTotalInvestment > BigInt(0)
+                ? (
+                    (Number(
+                      delegatorInflationAllWeeks +
+                        delegatorProtocolDepositAllWeeks
+                    ) /
+                      Number(delegatorTotalInvestment)) *
+                    100
+                  ).toFixed(4)
+                : "0.0000";
+
+            const minerStepsSold = miningCenterStats?.totalStepsSold || 0;
+            const minerWeightedPiecePriceUsdc =
+              miningCenterStats?.weightedAverageStepPrice || "0";
+            const minerInflationPerPieceLastWeek =
+              minerStepsSold > 0
+                ? (minerInflationLastWeek / BigInt(minerStepsSold)).toString()
+                : "0";
+            const minerInflationPerPieceAllWeeks =
+              minerStepsSold > 0
+                ? (minerInflationAllWeeks / BigInt(minerStepsSold)).toString()
+                : "0";
+            const minerProtocolDepositPerPieceLastWeek =
+              minerStepsSold > 0
+                ? (
+                    minerProtocolDepositLastWeek / BigInt(minerStepsSold)
+                  ).toString()
+                : "0";
+            const minerProtocolDepositPerPieceAllWeeks =
+              minerStepsSold > 0
+                ? (
+                    minerProtocolDepositAllWeeks / BigInt(minerStepsSold)
+                  ).toString()
+                : "0";
+
+            const minerTotalPerPieceLastWeek =
+              minerStepsSold > 0
+                ? (
+                    (minerInflationLastWeek + minerProtocolDepositLastWeek) /
+                    BigInt(minerStepsSold)
+                  ).toString()
+                : "0";
+            const minerTotalPerPieceAllWeeks =
+              minerStepsSold > 0
+                ? (
+                    (minerInflationAllWeeks + minerProtocolDepositAllWeeks) /
+                    BigInt(minerStepsSold)
+                  ).toString()
+                : "0";
+
+            const minerWeightedPiecePrice = BigInt(minerWeightedPiecePriceUsdc);
+            const minerTotalInvestment =
+              minerWeightedPiecePrice * BigInt(minerStepsSold);
+            const minerRewardsUsdLastWeek =
+              (Number(minerInflationLastWeek + minerProtocolDepositLastWeek) /
+                1e18) *
+              glwSpotPrice;
+            const minerRewardsUsdAllWeeks =
+              (Number(minerInflationAllWeeks + minerProtocolDepositAllWeeks) /
+                1e18) *
+              glwSpotPrice;
+            const minerInvestmentUsd = Number(minerTotalInvestment) / 1e6;
+
+            const minerRoiLastWeek =
+              minerInvestmentUsd > 0
+                ? (
+                    (minerRewardsUsdLastWeek / minerInvestmentUsd) *
+                    100
+                  ).toFixed(4)
+                : "0.0000";
+            const minerRoiAllWeeks =
+              minerInvestmentUsd > 0
+                ? (
+                    (minerRewardsUsdAllWeeks / minerInvestmentUsd) *
+                    100
+                  ).toFixed(4)
+                : "0.0000";
+
+            const uniqueDelegators = rewardData?.uniqueDelegators?.size || 0;
+            const uniqueMiners = rewardData?.uniqueMiners?.size || 0;
+
+            return {
+              farmId: farmIdKey,
+              appId,
+              farmName,
+              fractionTypes,
+              delegator: {
+                filledListings: launchpadStats?.filledFractionsCount || 0,
+                stepsSold: delegatorStepsSold,
+                weightedPieceSizeGlw: delegatorWeightedPieceSizeGlw,
+                weeksEarned: delegatorWeeksEarned,
+                weeksLeft: delegatorWeeksLeft,
+                rewardsPerPiece: {
+                  total: {
+                    lastWeek: delegatorTotalPerPieceLastWeek,
+                    allWeeks: delegatorTotalPerPieceAllWeeks,
+                  },
+                  inflation: {
+                    lastWeek: delegatorInflationPerPieceLastWeek,
+                    allWeeks: delegatorInflationPerPieceAllWeeks,
+                  },
+                  protocolDeposit: {
+                    lastWeek: delegatorProtocolDepositPerPieceLastWeek,
+                    allWeeks: delegatorProtocolDepositPerPieceAllWeeks,
+                  },
+                },
+                roi: {
+                  lastWeek: delegatorRoiLastWeek,
+                  allWeeks: delegatorRoiAllWeeks,
+                },
+                weeklyBreakdown: delegatorWeeklyBreakdown,
+              },
+              miner: {
+                filledListings: miningCenterStats?.filledFractionsCount || 0,
+                stepsSold: minerStepsSold,
+                weightedPiecePriceUsdc: minerWeightedPiecePriceUsdc,
+                weeksEarned: minerWeeksEarned,
+                weeksLeft: minerWeeksLeft,
+                rewardsPerPiece: {
+                  total: {
+                    lastWeek: minerTotalPerPieceLastWeek,
+                    allWeeks: minerTotalPerPieceAllWeeks,
+                  },
+                  inflation: {
+                    lastWeek: minerInflationPerPieceLastWeek,
+                    allWeeks: minerInflationPerPieceAllWeeks,
+                  },
+                  protocolDeposit: {
+                    lastWeek: minerProtocolDepositPerPieceLastWeek,
+                    allWeeks: minerProtocolDepositPerPieceAllWeeks,
+                  },
+                },
+                roi: {
+                  lastWeek: minerRoiLastWeek,
+                  allWeeks: minerRoiAllWeeks,
+                },
+                weeklyBreakdown: minerWeeklyBreakdown,
+              },
+              participants: {
+                uniqueDelegators,
+                uniqueMiners,
+              },
+            };
+          })
+          .filter((farm) => farm !== null);
+
+        return {
+          weekRange: {
+            startWeek: actualStartWeek,
+            endWeek: actualEndWeek,
+          },
+          farms,
+        };
+      } catch (e) {
+        if (e instanceof Error) {
+          set.status = 400;
+          return e.message;
+        }
+        throw new Error("Error Occurred");
+      }
+    },
+    {
+      query: t.Object({
+        farmId: t.Optional(
+          t.String({
+            description: "Filter to a specific farm",
+          })
+        ),
+        startWeek: t.Optional(
+          t.String({
+            description: "Start week number (defaults to week 97)",
+          })
+        ),
+        endWeek: t.Optional(
+          t.String({
+            description: "End week number (defaults to last completed week)",
+          })
+        ),
+      }),
+      detail: {
+        summary: "Get per-piece stats for all farms (miners and delegators)",
+        description:
+          "Returns all farms with fraction sales and rewards, showing per-piece purchase prices and rewards. For delegators, shows weighted piece size in GLW and rewards per piece. For miners, shows weighted piece price in USDC and rewards per piece. Includes participant counts and covers week 97 through the last completed week by default.",
         tags: [TAG.APPLICATIONS],
       },
     }
