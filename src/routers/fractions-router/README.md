@@ -44,10 +44,11 @@ The router uses optimized data fetching strategies:
 
 - Returns aggregate volume handled by filled fractions.
 - **Response**
-  - `totalGlwDelegated` (`string`): Sum of `stepPrice * splitsSold` for filled `launchpad` fractions (raw GLW decimals).
+  - `totalGlwDelegated` (`string`): Sum of `stepPrice * splitsSold` for filled `launchpad` fractions (raw GLW decimals, 18 decimals).
   - `totalMiningCenterVolume` (`string`): Sum of `stepPrice * splitsSold` for filled `mining-center` fractions (raw token decimals).
   - `launchpadContributors` (`number`): Unique buyers across filled `launchpad` fractions.
   - `miningCenterContributors` (`number`): Unique buyers across filled `mining-center` fractions.
+  - `glwDelegationByEpoch` (`Record<number, string>`): Breakdown of GLW delegation by epoch number. Keys are epoch numbers, values are GLW amounts in raw decimals (18 decimals). Only includes launchpad fractions.
 
 ## `GET /fractions/available`
 

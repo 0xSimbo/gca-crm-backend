@@ -2,12 +2,14 @@ import { FRACTION_STATUS } from "../../../constants/fractions";
 import { db } from "../../db";
 import { fractions, fractionSplits } from "../../schema";
 import { eq, inArray } from "drizzle-orm";
+import { getCurrentEpoch } from "../../../utils/getProtocolWeek";
 
 export interface FractionsSummary {
   totalGlwDelegated: string;
   totalMiningCenterVolume: string;
   launchpadContributors: number;
   miningCenterContributors: number;
+  glwDelegationByEpoch: Record<number, string>;
 }
 
 export async function getFractionsSummary(): Promise<FractionsSummary> {
@@ -55,11 +57,16 @@ export async function getFractionsSummary(): Promise<FractionsSummary> {
     miningCenterFractionIds
   );
 
+  const glwDelegationByEpoch = await getGlwDelegationByEpoch(
+    launchpadFractionIds
+  );
+
   return {
     totalGlwDelegated: launchpadTotal.toString(),
     totalMiningCenterVolume: miningCenterTotal.toString(),
     launchpadContributors,
     miningCenterContributors,
+    glwDelegationByEpoch,
   };
 }
 
@@ -79,4 +86,40 @@ async function countContributors(fractionIds: string[]): Promise<number> {
   }
 
   return buyers.size;
+}
+
+async function getGlwDelegationByEpoch(
+  fractionIds: string[]
+): Promise<Record<number, string>> {
+  if (fractionIds.length === 0) {
+    return {};
+  }
+
+  const splits = await db
+    .select({
+      amount: fractionSplits.amount,
+      timestamp: fractionSplits.timestamp,
+    })
+    .from(fractionSplits)
+    .where(inArray(fractionSplits.fractionId, fractionIds));
+
+  const epochTotals: Record<number, bigint> = {};
+
+  for (const split of splits) {
+    const epoch = getCurrentEpoch(split.timestamp);
+    const amount = BigInt(split.amount);
+
+    if (epochTotals[epoch]) {
+      epochTotals[epoch] += amount;
+    } else {
+      epochTotals[epoch] = amount;
+    }
+  }
+
+  const result: Record<number, string> = {};
+  for (const [epoch, total] of Object.entries(epochTotals)) {
+    result[Number(epoch)] = total.toString();
+  }
+
+  return result;
 }
