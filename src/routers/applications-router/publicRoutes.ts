@@ -286,6 +286,7 @@ export const publicApplicationsRoutes = new Elysia()
                 averageSunlightHoursPerDay: true,
                 adjustedWeeklyCarbonCredits: true,
                 netCarbonCreditEarningWeekly: true,
+                solarPanelsQuantity: true,
               },
             },
             documents: {
