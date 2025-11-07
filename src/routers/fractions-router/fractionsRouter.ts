@@ -338,9 +338,27 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
 
           const farmPurchases = await getWalletFarmPurchases(walletLower);
 
+          let rewardSplitsCheck: any[] = [];
           if (farmPurchases.length === 0) {
-            set.status = 404;
-            return "Wallet not found or has no rewards";
+            rewardSplitsCheck = await db
+              .select({
+                farmId: RewardSplits.farmId,
+              })
+              .from(RewardSplits)
+              .where(
+                sql`lower(${RewardSplits.walletAddress}) = ${walletLower}`
+              );
+
+            const farmsWithSplits = new Set(
+              rewardSplitsCheck
+                .map((r) => r.farmId)
+                .filter((id): id is string => id !== null)
+            );
+
+            if (farmsWithSplits.size === 0) {
+              set.status = 404;
+              return "Wallet not found or has no rewards";
+            }
           }
 
           const farms = Array.from(new Set(farmPurchases.map((p) => p.farmId)));
