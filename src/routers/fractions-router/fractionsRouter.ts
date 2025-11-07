@@ -338,19 +338,16 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
 
           const farmPurchases = await getWalletFarmPurchases(walletLower);
 
-          let rewardSplitsCheck: any[] = [];
-          if (farmPurchases.length === 0) {
-            rewardSplitsCheck = await db
-              .select({
-                farmId: RewardSplits.farmId,
-              })
-              .from(RewardSplits)
-              .where(
-                sql`lower(${RewardSplits.walletAddress}) = ${walletLower}`
-              );
+          const rewardSplits = await db
+            .select({
+              farmId: RewardSplits.farmId,
+            })
+            .from(RewardSplits)
+            .where(sql`lower(${RewardSplits.walletAddress}) = ${walletLower}`);
 
+          if (farmPurchases.length === 0) {
             const farmsWithSplits = new Set(
-              rewardSplitsCheck
+              rewardSplits
                 .map((r) => r.farmId)
                 .filter((id): id is string => id !== null)
             );
@@ -391,20 +388,20 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
             }
           }
 
-          const purchasesUpToWeek = await getPurchasesUpToWeek(
-            walletLower,
-            actualEndWeek
-          );
+          const [purchasesUpToWeek, accurateAPY, purchasesAfterWeek] =
+            await Promise.all([
+              getPurchasesUpToWeek(walletLower, actualEndWeek),
+              calculateAccurateWalletAPY(
+                walletLower,
+                actualStartWeek,
+                actualEndWeek,
+                glwSpotPrice
+              ),
+              getPurchasesAfterWeek(walletLower, actualEndWeek),
+            ]);
 
           const totalGlwDelegated = purchasesUpToWeek.totalGlwDelegated;
           const totalMiningCenterVolume = purchasesUpToWeek.totalUsdcSpent;
-
-          const accurateAPY = await calculateAccurateWalletAPY(
-            walletLower,
-            actualStartWeek,
-            actualEndWeek,
-            glwSpotPrice
-          );
 
           const delegatorApyPercent = accurateAPY.delegatorAPY.toFixed(4);
           const minerApyPercentFormatted = accurateAPY.minerAPY.toFixed(4);
@@ -448,18 +445,6 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
               weeksWithRewardsSet.add(week.weekNumber);
             }
           }
-
-          const purchasesAfterWeek = await getPurchasesAfterWeek(
-            walletLower,
-            actualEndWeek
-          );
-
-          const rewardSplits = await db
-            .select({
-              farmId: RewardSplits.farmId,
-            })
-            .from(RewardSplits)
-            .where(sql`lower(${RewardSplits.walletAddress}) = ${walletLower}`);
 
           const farmsWithSplits = new Set(
             rewardSplits
@@ -718,11 +703,16 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
 
         if (farmId) {
           const walletFarmMap = await buildWalletFarmMap();
-          const { walletBreakdowns } = await calculateTotalRewards(
-            walletFarmMap,
-            actualStartWeek,
-            actualEndWeek
-          );
+
+          const [{ walletBreakdowns }, farmPurchasesAfterWeek] =
+            await Promise.all([
+              calculateTotalRewards(
+                walletFarmMap,
+                actualStartWeek,
+                actualEndWeek
+              ),
+              getFarmPurchasesAfterWeek(farmId, actualEndWeek),
+            ]);
 
           const farmAggregated = aggregateRewardsByFarm(walletBreakdowns);
           const farmData = farmAggregated.get(farmId);
@@ -731,11 +721,6 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
             set.status = 404;
             return "Farm not found or has no rewards";
           }
-
-          const farmPurchasesAfterWeek = await getFarmPurchasesAfterWeek(
-            farmId,
-            actualEndWeek
-          );
 
           return {
             type: "farm",
@@ -1381,6 +1366,16 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
             : []
           : Array.from(allFarmIds);
 
+        if (farmIdsArray.length === 0) {
+          return {
+            weekRange: {
+              startWeek: actualStartWeek,
+              endWeek: actualEndWeek,
+            },
+            farms: [],
+          };
+        }
+
         for (const farmIdKey of farmIdsArray) {
           const stats = farmStatsMap.get(farmIdKey);
           if (stats) {
@@ -1399,8 +1394,19 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
           for (const farm of farms) {
             if (farmIdsArray.includes(farm.farmId)) {
               walletsForFarms.add(wallet);
+              break;
             }
           }
+        }
+
+        if (walletsForFarms.size === 0 && appIds.size === 0) {
+          return {
+            weekRange: {
+              startWeek: actualStartWeek,
+              endWeek: actualEndWeek,
+            },
+            farms: [],
+          };
         }
 
         const [farmNamesMap, walletBatchRewards] = await Promise.all([
@@ -1409,34 +1415,73 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
             const walletBatchRewards = new Map<string, any[]>();
             const walletsArray = Array.from(walletsForFarms);
             const batchSize = 500;
-            for (let i = 0; i < walletsArray.length; i += batchSize) {
-              const batch = walletsArray.slice(i, i + batchSize);
-              try {
-                const response = await fetch(
-                  `${process.env.CONTROL_API_URL}/farms/by-wallet/farm-rewards-history/batch`,
-                  {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                      wallets: batch,
-                      startWeek: actualStartWeek,
-                      endWeek: actualEndWeek,
-                    }),
-                  }
+            const concurrentBatches = 5;
+
+            for (
+              let i = 0;
+              i < walletsArray.length;
+              i += batchSize * concurrentBatches
+            ) {
+              const batchPromises = [];
+
+              for (
+                let j = 0;
+                j < concurrentBatches &&
+                i + j * batchSize < walletsArray.length;
+                j++
+              ) {
+                const batch = walletsArray.slice(
+                  i + j * batchSize,
+                  i + (j + 1) * batchSize
                 );
-                if (response.ok) {
-                  const data: any = await response.json();
-                  for (const wallet of batch) {
+
+                batchPromises.push(
+                  fetch(
+                    `${process.env.CONTROL_API_URL}/farms/by-wallet/farm-rewards-history/batch`,
+                    {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        wallets: batch,
+                        startWeek: actualStartWeek,
+                        endWeek: actualEndWeek,
+                      }),
+                    }
+                  )
+                    .then(async (response) => {
+                      if (response.ok) {
+                        const data: any = await response.json();
+                        return { success: true, data, batch };
+                      }
+                      return { success: false, batch };
+                    })
+                    .catch((error) => {
+                      console.error(
+                        "Failed to fetch wallet rewards batch:",
+                        error
+                      );
+                      return { success: false, batch };
+                    })
+                );
+              }
+
+              const results = await Promise.all(batchPromises);
+
+              for (const result of results) {
+                if (result.success) {
+                  const data = (
+                    result as { success: true; data: any; batch: string[] }
+                  ).data;
+                  for (const wallet of result.batch) {
                     const walletData = data.results?.[wallet];
                     if (walletData?.farmRewards) {
                       walletBatchRewards.set(wallet, walletData.farmRewards);
                     }
                   }
                 }
-              } catch (error) {
-                console.error("Failed to fetch wallet rewards batch:", error);
               }
             }
+
             return walletBatchRewards;
           })(),
         ]);
@@ -2509,7 +2554,6 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
       },
     }
   )
-
   .use(bearerplugin())
   .guard(bearerGuard, (app) =>
     app

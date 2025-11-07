@@ -47,6 +47,7 @@ import {
   TRANSFER_TYPES,
 } from "@glowlabs-org/utils/browser";
 import { getUniqueStarNameForApplicationId } from "../farms/farmsRouter";
+import { getFarmNamesByApplicationIds } from "../../db/queries/farms/getFarmNamesByApplicationIds";
 import {
   findFractionById,
   findActiveFractionByApplicationId,
@@ -350,6 +351,10 @@ export const publicApplicationsRoutes = new Elysia()
           return app.fractions && app.fractions.length > 0;
         });
 
+        // Fetch farm names for all applications
+        const applicationIds = filteredApplications.map((app) => app.id);
+        const farmNamesMap = await getFarmNamesByApplicationIds(applicationIds);
+
         // Apply sorting in JavaScript since SQL orderBy was causing issues with joins
         if (sortBy && filteredApplications.length > 0) {
           const sortMultiplier = sortOrder === "desc" ? -1 : 1;
@@ -439,6 +444,7 @@ export const publicApplicationsRoutes = new Elysia()
             paymentEventType: app.paymentEventType,
             zone: app.zone,
             farmId: app.farmId,
+            farmName: farmNamesMap.get(app.id) || null,
             applicationPriceQuotes: app.applicationPriceQuotes,
             enquiryFields: app.enquiryFieldsCRS,
             auditFields: app.auditFieldsCRS,
