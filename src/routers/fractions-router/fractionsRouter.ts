@@ -77,7 +77,7 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
       detail: {
         summary: "Get high-level fraction sales summary",
         description:
-          "Returns totals for GLW delegated via launchpad fractions and USD volume from mining-center fractions. Only filled fractions contribute to the totals.",
+          "Returns totals for GLW delegated via launchpad fractions plus GLW from PayProtocolFee payments, and USD volume from mining-center fractions. Only filled fractions contribute to the totals.",
         tags: [TAG.APPLICATIONS],
       },
     }

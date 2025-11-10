@@ -1,7 +1,7 @@
 import { FRACTION_STATUS } from "../../../constants/fractions";
 import { db } from "../../db";
-import { fractions, fractionSplits } from "../../schema";
-import { eq, inArray } from "drizzle-orm";
+import { fractions, fractionSplits, applications } from "../../schema";
+import { and, eq, inArray } from "drizzle-orm";
 import { getCurrentEpoch } from "../../../utils/getProtocolWeek";
 
 export interface FractionsSummary {
@@ -61,8 +61,33 @@ export async function getFractionsSummary(): Promise<FractionsSummary> {
     launchpadFractionIds
   );
 
+  const glwPayments = await db
+    .select({
+      paymentAmount: applications.paymentAmount,
+    })
+    .from(applications)
+    .where(
+      and(
+        eq(applications.paymentEventType, "PayProtocolFee"),
+        eq(applications.paymentCurrency, "GLW")
+      )
+    );
+
+  let glwPaymentsTotal = BigInt(0);
+  for (const payment of glwPayments) {
+    if (payment.paymentAmount) {
+      try {
+        glwPaymentsTotal += BigInt(payment.paymentAmount);
+      } catch {
+        // Skip invalid payment amounts
+      }
+    }
+  }
+
+  const totalGlwDelegated = launchpadTotal + glwPaymentsTotal;
+
   return {
-    totalGlwDelegated: launchpadTotal.toString(),
+    totalGlwDelegated: totalGlwDelegated.toString(),
     totalMiningCenterVolume: miningCenterTotal.toString(),
     launchpadContributors,
     miningCenterContributors,
