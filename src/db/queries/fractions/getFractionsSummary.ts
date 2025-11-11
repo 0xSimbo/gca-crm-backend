@@ -64,6 +64,7 @@ export async function getFractionsSummary(): Promise<FractionsSummary> {
   const glwPayments = await db
     .select({
       paymentAmount: applications.paymentAmount,
+      paymentDate: applications.paymentDate,
     })
     .from(applications)
     .where(
@@ -75,9 +76,18 @@ export async function getFractionsSummary(): Promise<FractionsSummary> {
 
   let glwPaymentsTotal = BigInt(0);
   for (const payment of glwPayments) {
-    if (payment.paymentAmount) {
+    if (payment.paymentAmount && payment.paymentDate) {
       try {
-        glwPaymentsTotal += BigInt(payment.paymentAmount);
+        const amount = BigInt(payment.paymentAmount);
+        glwPaymentsTotal += amount;
+
+        const epoch = getCurrentEpoch(payment.paymentDate.getTime() / 1000);
+        if (glwDelegationByEpoch[epoch]) {
+          const currentTotal = BigInt(glwDelegationByEpoch[epoch]);
+          glwDelegationByEpoch[epoch] = (currentTotal + amount).toString();
+        } else {
+          glwDelegationByEpoch[epoch] = amount.toString();
+        }
       } catch {
         // Skip invalid payment amounts
       }
