@@ -76,6 +76,7 @@ import { findFirstApplicationDraftByUserId } from "../../db/queries/applications
 import { publicApplicationsRoutes } from "./publicRoutes";
 import { approveOrAskRoutes } from "./approveOrAskRoutes";
 import { organizationApplicationRoutes } from "./organizationApplicationRoutes";
+import { nonAccountQuoteRoutes } from "./nonAccountQuoteRoutes";
 import { parseUnits } from "viem";
 import {
   createFraction,
@@ -2092,4 +2093,5 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
           },
         }
       )
-  );
+  )
+  .use(nonAccountQuoteRoutes);

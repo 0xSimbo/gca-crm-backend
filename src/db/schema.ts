@@ -13,6 +13,7 @@ import {
   numeric,
   uniqueIndex,
   serial,
+  doublePrecision,
 } from "drizzle-orm/pg-core";
 import { relations, type InferSelectModel, sql, or } from "drizzle-orm";
 import { EncryptedMasterKeySet } from "../types/api-types/Application";
@@ -1910,3 +1911,73 @@ export type FailedFractionOperationType = InferSelectModel<
 >;
 export type FailedFractionOperationInsertType =
   typeof failedFractionOperations.$inferInsert;
+
+/**
+ * @dev Non-account quote requests for protocol deposit estimation.
+ *      Stores uploaded utility bills, extracted electricity prices,
+ *      and computed protocol deposit estimates with carbon metrics.
+ */
+export const NonAccountQuotes = pgTable("non_account_quotes", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+
+  // Identity/Location
+  regionCode: varchar("region_code", { length: 10 }).notNull(),
+  latitude: numeric("latitude", { precision: 10, scale: 5 }).notNull(),
+  longitude: numeric("longitude", { precision: 10, scale: 5 }).notNull(),
+
+  // Inputs from user
+  weeklyConsumptionMWh: numeric("weekly_consumption_mwh", {
+    precision: 15,
+    scale: 5,
+  }).notNull(),
+  systemSizeKw: numeric("system_size_kw", {
+    precision: 12,
+    scale: 3,
+  }).notNull(),
+
+  // Extracted from utility bill
+  electricityPricePerKwh: numeric("electricity_price_per_kwh", {
+    precision: 10,
+    scale: 5,
+  }).notNull(),
+  priceSource: varchar("price_source", { length: 10 }).notNull().default("ai"),
+  priceConfidence: numeric("price_confidence", { precision: 4, scale: 3 }),
+  utilityBillUrl: text("utility_bill_url").notNull(),
+
+  // Rates and assumptions used
+  discountRate: numeric("discount_rate", { precision: 5, scale: 4 }).notNull(),
+  escalatorRate: numeric("escalator_rate", {
+    precision: 5,
+    scale: 4,
+  }).notNull(),
+  years: integer("years").notNull().default(30),
+
+  // Computed outputs (as text for precision)
+  protocolDepositUsd6: text("protocol_deposit_usd6").notNull(),
+  weeklyCredits: text("weekly_credits").notNull(),
+  weeklyDebt: text("weekly_debt").notNull(),
+  netWeeklyCc: text("net_weekly_cc").notNull(),
+  netCcPerMwh: text("net_cc_per_mwh").notNull(),
+  weeklyImpactAssetsWad: text("weekly_impact_assets_wad").notNull(),
+  efficiencyScore: doublePrecision("efficiency_score").notNull(),
+  carbonOffsetsPerMwh: numeric("carbon_offsets_per_mwh", {
+    precision: 10,
+    scale: 6,
+  }).notNull(),
+  uncertaintyApplied: numeric("uncertainty_applied", {
+    precision: 5,
+    scale: 4,
+  }).notNull(),
+
+  // Debug/audit trail
+  debugJson: json("debug_json"),
+
+  // Admin validation field (filled later)
+  cashAmountUsd: text("cash_amount_usd"),
+});
+
+export type NonAccountQuoteType = InferSelectModel<typeof NonAccountQuotes>;
+export type NonAccountQuoteInsertType = typeof NonAccountQuotes.$inferInsert;
