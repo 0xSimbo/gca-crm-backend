@@ -69,11 +69,48 @@ export interface FarmRewardBreakdown {
 }
 
 export function getWeekRange(): { startWeek: number; endWeek: number } {
-  const lastCompletedWeek = getProtocolWeek() - 2;
   const startWeek = 97;
-  const endWeek =
-    lastCompletedWeek >= startWeek ? lastCompletedWeek : startWeek;
-  return { startWeek, endWeek };
+  const endWeek = getLastCompletedWeekForReports();
+  const finalEndWeek = endWeek >= startWeek ? endWeek : startWeek;
+  return { startWeek, endWeek: finalEndWeek };
+}
+
+/**
+ * Calculate the last completed week based on Thursday 00:00 UTC weekly report generation schedule
+ * Reports are generated every Thursday at 00:00:00 UTC (pattern: '0 0 0 * * 4')
+ */
+function getLastCompletedWeekForReports(): number {
+  const now = new Date();
+  const currentUTC = new Date(now.getTime() + now.getTimezoneOffset() * 60000);
+
+  // Get current day of week (0 = Sunday, 4 = Thursday)
+  const currentDayOfWeek = currentUTC.getUTCDay();
+  const currentHour = currentUTC.getUTCHours();
+
+  // Calculate days since last Thursday 00:00 UTC
+  let daysSinceLastThursday: number;
+
+  if (currentDayOfWeek === 4 && currentHour >= 0) {
+    // It's Thursday and past 00:00 UTC - the report for this week has been generated
+    daysSinceLastThursday = 0;
+  } else if (currentDayOfWeek > 4) {
+    // It's Friday, Saturday, or Sunday - count back to Thursday
+    daysSinceLastThursday = currentDayOfWeek - 4;
+  } else {
+    // It's Monday, Tuesday, Wednesday, or Thursday before 00:00 - count back to previous Thursday
+    daysSinceLastThursday = currentDayOfWeek + 3;
+  }
+
+  // Calculate the timestamp of the last Thursday 00:00 UTC when report was generated
+  const lastThursdayTimestamp =
+    Math.floor(currentUTC.getTime() / 1000) - daysSinceLastThursday * 86400;
+
+  // Calculate which protocol week that timestamp corresponds to
+  const secondsSinceGenesis = lastThursdayTimestamp - GENESIS_TIMESTAMP;
+  const weeksSinceGenesis = Math.floor(secondsSinceGenesis / 604800);
+
+  // The report generated on Thursday contains data for the previous week
+  return weeksSinceGenesis - 1;
 }
 
 export function getEpochEndDate(endWeek: number): Date {
