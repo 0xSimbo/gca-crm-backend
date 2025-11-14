@@ -101,7 +101,7 @@ function computeWeeklyCarbonDebt(systemSizeKw: number, years: number): number {
   return weeklyDebt;
 }
 
-export async function computeNonAccountQuote(
+export async function computeProjectQuote(
   params: ComputeQuoteParams
 ): Promise<ComputeQuoteResult> {
   const {

@@ -1913,15 +1913,19 @@ export type FailedFractionOperationInsertType =
   typeof failedFractionOperations.$inferInsert;
 
 /**
- * @dev Non-account quote requests for protocol deposit estimation.
+ * @dev Project quote requests for protocol deposit estimation.
  *      Stores uploaded utility bills, extracted electricity prices,
  *      and computed protocol deposit estimates with carbon metrics.
  */
-export const NonAccountQuotes = pgTable("non_account_quotes", {
+export const ProjectQuotes = pgTable("project_quotes", {
   id: text("id")
     .primaryKey()
     .$defaultFn(() => crypto.randomUUID()),
   createdAt: timestamp("created_at").notNull().defaultNow(),
+
+  // Wallet and user association
+  walletAddress: varchar("wallet_address", { length: 42 }).notNull(),
+  userId: varchar("user_id", { length: 42 }),
 
   // Identity/Location
   regionCode: varchar("region_code", { length: 10 }).notNull(),
@@ -1979,5 +1983,5 @@ export const NonAccountQuotes = pgTable("non_account_quotes", {
   cashAmountUsd: text("cash_amount_usd"),
 });
 
-export type NonAccountQuoteType = InferSelectModel<typeof NonAccountQuotes>;
-export type NonAccountQuoteInsertType = typeof NonAccountQuotes.$inferInsert;
+export type ProjectQuoteType = InferSelectModel<typeof ProjectQuotes>;
+export type ProjectQuoteInsertType = typeof ProjectQuotes.$inferInsert;

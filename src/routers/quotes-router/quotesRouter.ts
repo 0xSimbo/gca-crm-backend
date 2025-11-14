@@ -1,13 +1,20 @@
 import { Elysia, t } from "elysia";
 import { TAG } from "../../constants";
 import { allRegions } from "@glowlabs-org/utils/browser";
-import { extractElectricityPriceFromUtilityBill } from "./helpers/extractElectricityPrice";
-import { computeNonAccountQuote } from "./helpers/computeNonAccountQuote";
-import { createNonAccountQuote } from "../../db/mutations/non-account-quotes/createNonAccountQuote";
-import { findNonAccountQuoteById } from "../../db/queries/non-account-quotes/findNonAccountQuoteById";
-import { getRegionCodeFromCoordinates } from "./helpers/mapStateToRegionCode";
+import { extractElectricityPriceFromUtilityBill } from "../applications-router/helpers/extractElectricityPrice";
+import { computeProjectQuote } from "../applications-router/helpers/computeProjectQuote";
+import { createProjectQuote } from "../../db/mutations/project-quotes/createProjectQuote";
+import { findProjectQuoteById } from "../../db/queries/project-quotes/findProjectQuoteById";
+import { findProjectQuotesByWalletAddress } from "../../db/queries/project-quotes/findProjectQuotesByWalletAddress";
+import { getRegionCodeFromCoordinates } from "../applications-router/helpers/mapStateToRegionCode";
+import {
+  verifyQuoteSignature,
+  validateTimestamp,
+  createMessageToSign,
+} from "../../handlers/walletSignatureHandler";
+import { mapWalletToUserId } from "../../utils/mapWalletToUserId";
 
-export const nonAccountQuoteRoutes = new Elysia({ prefix: "/non-account" })
+export const quotesRouter = new Elysia({ prefix: "/quotes" })
   .get(
     "/regions",
     async () => {
@@ -15,21 +22,72 @@ export const nonAccountQuoteRoutes = new Elysia({ prefix: "/non-account" })
     },
     {
       detail: {
-        summary: "Get available regions for non-account quotes",
+        summary: "Get available regions for project quotes",
         description:
-          "Returns a list of all available regions from the SDK regionMetadata. Note: Region selection is now automatic based on coordinates, but this endpoint remains available for reference.",
+          "Returns a list of all available regions from the SDK regionMetadata. Note: Region selection is now automatic based on coordinates.",
+        tags: [TAG.APPLICATIONS],
+      },
+    }
+  )
+  .get(
+    "/project/:walletAddress",
+    async ({ params, set }) => {
+      try {
+        // Validate wallet address format
+        if (!params.walletAddress.match(/^0x[a-fA-F0-9]{40}$/)) {
+          set.status = 400;
+          return { error: "Invalid wallet address format" };
+        }
+
+        const quotes = await findProjectQuotesByWalletAddress(
+          params.walletAddress.toLowerCase()
+        );
+        return { quotes };
+      } catch (e) {
+        if (e instanceof Error) {
+          console.error("[quotesRouter] /project/:walletAddress error:", e);
+          set.status = 400;
+          return { error: e.message };
+        }
+        console.error(
+          "[quotesRouter] /project/:walletAddress unknown error:",
+          e
+        );
+        set.status = 500;
+        return { error: "Internal server error" };
+      }
+    },
+    {
+      params: t.Object({
+        walletAddress: t.String({
+          description: "Ethereum wallet address (0x...)",
+          pattern: "^0x[a-fA-F0-9]{40}$",
+        }),
+      }),
+      detail: {
+        summary: "Get all project quotes for a wallet address",
+        description:
+          "Returns all quotes created by the specified wallet address, ordered by creation date (newest first).",
         tags: [TAG.APPLICATIONS],
       },
     }
   )
   .post(
-    "/quote",
+    "/project",
     async ({ body, set }) => {
       try {
         const allowMock = process.env.NODE_ENV === "staging";
         const skipDb =
           process.env.NODE_ENV === "test" ||
-          process.env.NON_ACCOUNT_QUOTE_SKIP_DB === "true";
+          process.env.PROJECT_QUOTE_SKIP_DB === "true";
+
+        // Parse and validate timestamp
+        const timestamp = parseInt(body.timestamp);
+        if (isNaN(timestamp)) {
+          set.status = 400;
+          return { error: "timestamp must be a valid number" };
+        }
+        validateTimestamp(timestamp);
 
         // Validate inputs
         const weeklyConsumptionMWh = parseFloat(body.weeklyConsumptionMWh);
@@ -51,6 +109,32 @@ export const nonAccountQuoteRoutes = new Elysia({ prefix: "/non-account" })
           set.status = 400;
           return { error: "latitude and longitude must be valid numbers" };
         }
+
+        // Verify signature and recover wallet address
+        let walletAddress: string;
+        try {
+          walletAddress = verifyQuoteSignature(
+            {
+              weeklyConsumptionMWh: body.weeklyConsumptionMWh,
+              systemSizeKw: body.systemSizeKw,
+              latitude: body.latitude,
+              longitude: body.longitude,
+              timestamp: timestamp,
+            },
+            body.signature
+          );
+          walletAddress = walletAddress.toLowerCase();
+        } catch (error) {
+          set.status = 401;
+          return {
+            error: `Invalid signature: ${
+              error instanceof Error ? error.message : "Unknown error"
+            }`,
+          };
+        }
+
+        // Map wallet to userId if exists
+        const userId = await mapWalletToUserId(walletAddress);
 
         // Derive region code from coordinates
         const regionCode = await getRegionCodeFromCoordinates(
@@ -116,7 +200,7 @@ export const nonAccountQuoteRoutes = new Elysia({ prefix: "/non-account" })
         }
 
         // Compute quote
-        const quoteResult = await computeNonAccountQuote({
+        const quoteResult = await computeProjectQuote({
           weeklyConsumptionMWh,
           systemSizeKw,
           electricityPricePerKwh: priceExtraction.pricePerKwh,
@@ -143,8 +227,12 @@ export const nonAccountQuoteRoutes = new Elysia({ prefix: "/non-account" })
           ? {
               id: "test-quote-id",
               regionCode,
+              walletAddress,
+              userId,
             }
-          : await createNonAccountQuote({
+          : await createProjectQuote({
+              walletAddress,
+              userId,
               regionCode,
               latitude: latitude.toString(),
               longitude: longitude.toString(),
@@ -172,6 +260,8 @@ export const nonAccountQuoteRoutes = new Elysia({ prefix: "/non-account" })
         // Return response
         return {
           quoteId: savedQuote.id,
+          walletAddress: savedQuote.walletAddress,
+          userId: savedQuote.userId,
           regionCode: savedQuote.regionCode,
           protocolDeposit: {
             usd: quoteResult.protocolDepositUsd,
@@ -204,11 +294,11 @@ export const nonAccountQuoteRoutes = new Elysia({ prefix: "/non-account" })
         };
       } catch (e) {
         if (e instanceof Error) {
-          console.error("[nonAccountQuoteRoutes] /quote error:", e);
+          console.error("[quotesRouter] /project error:", e);
           set.status = 400;
           return { error: e.message };
         }
-        console.error("[nonAccountQuoteRoutes] /quote unknown error:", e);
+        console.error("[quotesRouter] /project unknown error:", e);
         set.status = 500;
         return { error: "Internal server error" };
       }
@@ -228,9 +318,19 @@ export const nonAccountQuoteRoutes = new Elysia({ prefix: "/non-account" })
           description: "Longitude of the solar farm location",
         }),
         utilityBill: t.File({
-          description: "Utility bill image or PDF for price extraction",
+          description: "Utility bill PDF for price extraction",
         }),
-        // test-only optional overrides (used only when NODE_ENV=test or NON_ACCOUNT_QUOTE_ALLOW_MOCK=true)
+        timestamp: t.String({
+          description:
+            "Unix timestamp in milliseconds when signature was created",
+        }),
+        signature: t.String({
+          description:
+            "Wallet signature of message: weeklyConsumptionMWh,systemSizeKw,latitude,longitude,timestamp",
+          minLength: 132,
+          maxLength: 132,
+        }),
+        // Test-only optional overrides
         mockElectricityPricePerKwh: t.Optional(t.String()),
         mockDiscountRate: t.Optional(t.String()),
         mockEscalatorRate: t.Optional(t.String()),
@@ -238,28 +338,65 @@ export const nonAccountQuoteRoutes = new Elysia({ prefix: "/non-account" })
         mockCarbonOffsetsPerMwh: t.Optional(t.String()),
       }),
       detail: {
-        summary: "Request a non-account quote for protocol deposit estimation",
+        summary: "Create a project quote with wallet signature authentication",
         description:
-          "Upload a utility bill, provide Aurora weekly consumption, system size, and location coordinates. The region will be automatically determined from the coordinates. Returns estimated protocol deposit in USD (6 decimals), weekly carbon credits and debt, net carbon credits per MWh, efficiency score, and extraction details. The quote is persisted with a unique ID for later retrieval.",
+          "Upload a utility bill, provide Aurora weekly consumption, system size, and location coordinates. Sign the message with your wallet's private key. The region will be automatically determined from coordinates. Returns estimated protocol deposit, carbon metrics, and efficiency scores.",
         tags: [TAG.APPLICATIONS],
       },
     }
   )
   .get(
-    "/quote/:id",
-    async ({ params, set }) => {
+    "/project/quote/:id",
+    async ({ params, query, set }) => {
       try {
-        const quote = await findNonAccountQuoteById(params.id);
+        const quote = await findProjectQuoteById(params.id);
 
         if (!quote) {
           set.status = 404;
           return { error: "Quote not found" };
         }
 
+        // If signature provided, verify wallet ownership
+        if (query.signature && query.timestamp) {
+          try {
+            validateTimestamp(parseInt(query.timestamp));
+
+            const recoveredAddress = verifyQuoteSignature(
+              {
+                weeklyConsumptionMWh: quote.weeklyConsumptionMWh,
+                systemSizeKw: quote.systemSizeKw,
+                latitude: quote.latitude,
+                longitude: quote.longitude,
+                timestamp: parseInt(query.timestamp),
+              },
+              query.signature
+            );
+
+            if (
+              recoveredAddress.toLowerCase() !==
+              quote.walletAddress.toLowerCase()
+            ) {
+              set.status = 403;
+              return {
+                error: "Access denied. Signature does not match quote owner.",
+              };
+            }
+          } catch (error) {
+            set.status = 401;
+            return {
+              error: `Invalid signature: ${
+                error instanceof Error ? error.message : "Unknown error"
+              }`,
+            };
+          }
+        }
+
         // Return formatted quote
         return {
           quoteId: quote.id,
           createdAt: quote.createdAt,
+          walletAddress: quote.walletAddress,
+          userId: quote.userId,
           regionCode: quote.regionCode,
           location: {
             latitude: parseFloat(quote.latitude),
@@ -305,11 +442,11 @@ export const nonAccountQuoteRoutes = new Elysia({ prefix: "/non-account" })
         };
       } catch (e) {
         if (e instanceof Error) {
-          console.error("[nonAccountQuoteRoutes] /quote/:id error:", e);
+          console.error("[quotesRouter] /project/quote/:id error:", e);
           set.status = 400;
           return { error: e.message };
         }
-        console.error("[nonAccountQuoteRoutes] /quote/:id unknown error:", e);
+        console.error("[quotesRouter] /project/quote/:id unknown error:", e);
         set.status = 500;
         return { error: "Internal server error" };
       }
@@ -318,13 +455,25 @@ export const nonAccountQuoteRoutes = new Elysia({ prefix: "/non-account" })
       params: t.Object({
         id: t.String({ description: "Quote ID" }),
       }),
+      query: t.Object({
+        signature: t.Optional(
+          t.String({
+            description: "Optional signature for ownership verification",
+          })
+        ),
+        timestamp: t.Optional(
+          t.String({
+            description: "Timestamp used in signature",
+          })
+        ),
+      }),
       detail: {
-        summary: "Retrieve a previously computed non-account quote by ID",
+        summary: "Retrieve a project quote by ID",
         description:
-          "Returns the full quote details including protocol deposit estimate, carbon metrics, efficiency score, and extraction information.",
+          "Returns the full quote details. Optionally provide signature for ownership verification.",
         tags: [TAG.APPLICATIONS],
       },
     }
   );
 
-export type NonAccountQuoteRoutes = typeof nonAccountQuoteRoutes;
+export type QuotesRouter = typeof quotesRouter;

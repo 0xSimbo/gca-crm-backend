@@ -76,7 +76,7 @@ import { findFirstApplicationDraftByUserId } from "../../db/queries/applications
 import { publicApplicationsRoutes } from "./publicRoutes";
 import { approveOrAskRoutes } from "./approveOrAskRoutes";
 import { organizationApplicationRoutes } from "./organizationApplicationRoutes";
-import { nonAccountQuoteRoutes } from "./nonAccountQuoteRoutes";
+import { findProjectQuotesByUserId } from "../../db/queries/project-quotes/findProjectQuotesByUserId";
 import { parseUnits } from "viem";
 import {
   createFraction,
@@ -2093,5 +2093,33 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
           },
         }
       )
-  )
-  .use(nonAccountQuoteRoutes);
+      .get(
+        "/project-quotes",
+        async ({ userId, set }) => {
+          try {
+            const quotes = await findProjectQuotesByUserId(userId);
+            return { quotes };
+          } catch (e) {
+            if (e instanceof Error) {
+              console.error("[applicationsRouter] /project-quotes error:", e);
+              set.status = 400;
+              return { error: e.message };
+            }
+            console.error(
+              "[applicationsRouter] /project-quotes unknown error:",
+              e
+            );
+            set.status = 500;
+            return { error: "Internal server error" };
+          }
+        },
+        {
+          detail: {
+            summary: "Get all project quotes linked to authenticated user",
+            description:
+              "Returns all quotes that were created by wallet addresses linked to this user account. Accessible through user dashboard.",
+            tags: [TAG.APPLICATIONS],
+          },
+        }
+      )
+  );
