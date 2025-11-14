@@ -77,6 +77,7 @@ import { publicApplicationsRoutes } from "./publicRoutes";
 import { approveOrAskRoutes } from "./approveOrAskRoutes";
 import { organizationApplicationRoutes } from "./organizationApplicationRoutes";
 import { findProjectQuotesByUserId } from "../../db/queries/project-quotes/findProjectQuotesByUserId";
+import { findProjectQuoteById } from "../../db/queries/project-quotes/findProjectQuoteById";
 import { parseUnits } from "viem";
 import {
   createFraction,
@@ -2118,6 +2119,108 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
             summary: "Get all project quotes linked to authenticated user",
             description:
               "Returns all quotes that were created by wallet addresses linked to this user account. Accessible through user dashboard.",
+            tags: [TAG.APPLICATIONS],
+          },
+        }
+      )
+      .get(
+        "/project-quote/:id",
+        async ({ params, set, userId }) => {
+          try {
+            const quote = await findProjectQuoteById(params.id);
+
+            if (!quote) {
+              set.status = 404;
+              return { error: "Quote not found" };
+            }
+
+            // Check if user owns this quote (case-insensitive comparison)
+            if (
+              !quote.userId ||
+              quote.userId.toLowerCase() !== userId.toLowerCase()
+            ) {
+              set.status = 403;
+              return {
+                error: "Access denied. You can only view your own quotes.",
+              };
+            }
+
+            // Return formatted quote
+            return {
+              quoteId: quote.id,
+              createdAt: quote.createdAt,
+              walletAddress: quote.walletAddress,
+              userId: quote.userId,
+              regionCode: quote.regionCode,
+              location: {
+                latitude: parseFloat(quote.latitude),
+                longitude: parseFloat(quote.longitude),
+              },
+              inputs: {
+                weeklyConsumptionMWh: parseFloat(quote.weeklyConsumptionMWh),
+                systemSizeKw: parseFloat(quote.systemSizeKw),
+              },
+              protocolDeposit: {
+                usd6Decimals: quote.protocolDepositUsd6,
+                usd: parseFloat(quote.protocolDepositUsd6) / 1e6,
+              },
+              carbonMetrics: {
+                weeklyCredits: parseFloat(quote.weeklyCredits),
+                weeklyDebt: parseFloat(quote.weeklyDebt),
+                netWeeklyCc: parseFloat(quote.netWeeklyCc),
+                netCcPerMwh: parseFloat(quote.netCcPerMwh),
+                carbonOffsetsPerMwh: parseFloat(quote.carbonOffsetsPerMwh),
+                uncertaintyApplied: parseFloat(quote.uncertaintyApplied),
+              },
+              efficiency: {
+                score: quote.efficiencyScore,
+                weeklyImpactAssetsWad: quote.weeklyImpactAssetsWad,
+              },
+              rates: {
+                discountRate: parseFloat(quote.discountRate),
+                escalatorRate: parseFloat(quote.escalatorRate),
+                commitmentYears: quote.years,
+              },
+              extraction: {
+                electricityPricePerKwh: parseFloat(
+                  quote.electricityPricePerKwh
+                ),
+                confidence: quote.priceConfidence
+                  ? parseFloat(quote.priceConfidence)
+                  : null,
+                source: quote.priceSource,
+                utilityBillUrl: quote.utilityBillUrl,
+              },
+              admin: {
+                cashAmountUsd: quote.cashAmountUsd,
+              },
+              debug: quote.debugJson,
+            };
+          } catch (e) {
+            if (e instanceof Error) {
+              console.error(
+                "[applicationsRouter] /project-quote/:id error:",
+                e
+              );
+              set.status = 400;
+              return { error: e.message };
+            }
+            console.error(
+              "[applicationsRouter] /project-quote/:id unknown error:",
+              e
+            );
+            set.status = 500;
+            return { error: "Internal server error" };
+          }
+        },
+        {
+          params: t.Object({
+            id: t.String({ description: "Quote ID" }),
+          }),
+          detail: {
+            summary: "Retrieve a project quote by ID (bearer auth)",
+            description:
+              "Returns the full quote details for quotes linked to the authenticated user's account. Accessible through user dashboard with bearer token.",
             tags: [TAG.APPLICATIONS],
           },
         }
