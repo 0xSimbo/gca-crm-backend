@@ -8,6 +8,7 @@ Users who are logged in can access their project quotes through the applications
 
 - User must be logged in with a bearer token (JWT)
 - Quote must have been created by a wallet address that matches the user's account ID
+- **Special Access**: FOUNDATION_HUB_MANAGER wallet has access to ALL quotes
 
 ## API Endpoints
 
@@ -17,6 +18,10 @@ Users who are logged in can access their project quotes through the applications
 GET /applications/project-quotes
 Authorization: Bearer <your_jwt_token>
 ```
+
+**Behavior:**
+- **Regular Users**: Returns only quotes where `userId` matches the authenticated user
+- **FOUNDATION_HUB_MANAGER**: Returns ALL quotes from all users (admin access)
 
 **Response:**
 
@@ -59,6 +64,11 @@ Authorization: Bearer <your_jwt_token>
 GET /applications/project-quote/0b3da480-25c6-4f84-8f0d-3afd4a315b52
 Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 ```
+
+**Access Control:**
+- **Regular Users**: Can only access quotes where `userId` matches their account
+- **FOUNDATION_HUB_MANAGER**: Can access ANY quote by ID (admin access)
+- **403 Forbidden**: Returned if regular user tries to access someone else's quote
 
 **Response:**
 

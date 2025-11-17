@@ -16,7 +16,7 @@ export const protocolFeeAssumptions = {
   // program/finance
   commitmentPeriod: 30, // years (B13 / F22) – Sheet uses 30. (Was 10 in your code.)
   numberOfDaysPerYear: 365.25,
-  cashflowDiscount: 0.055, // if you use it elsewhere
+  cashflowDiscount: 0.075, // 7.5% - matches spreadsheet cashflow discount rate
 };
 
 export type CalculationParms = {

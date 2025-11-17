@@ -6,6 +6,7 @@ import { computeProjectQuote } from "../applications-router/helpers/computeProje
 import { createProjectQuote } from "../../db/mutations/project-quotes/createProjectQuote";
 import { findProjectQuoteById } from "../../db/queries/project-quotes/findProjectQuoteById";
 import { findProjectQuotesByWalletAddress } from "../../db/queries/project-quotes/findProjectQuotesByWalletAddress";
+import { countQuotesInLastHour } from "../../db/queries/project-quotes/countQuotesInLastHour";
 import { getRegionCodeFromCoordinates } from "../applications-router/helpers/mapStateToRegionCode";
 import {
   verifyQuoteSignature,
@@ -92,6 +93,16 @@ export const quotesRouter = new Elysia({ prefix: "/quotes" })
 
         // Map wallet to userId if exists
         const userId = await mapWalletToUserId(walletAddress);
+
+        // Check global rate limit: 100 quotes per hour for all users
+        const quoteCount = await countQuotesInLastHour();
+        if (quoteCount >= 100) {
+          set.status = 429;
+          return {
+            error:
+              "Rate limit exceeded. The system can process a maximum of 100 quotes per hour. Please try again later.",
+          };
+        }
 
         // Derive region code from coordinates
         const regionCode = await getRegionCodeFromCoordinates(

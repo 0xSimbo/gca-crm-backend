@@ -1,20 +1,44 @@
 /**
- * Test Script & Partner Integration Example
+ * Partner Integration Example - Project Quote API
  *
  * This script demonstrates how to create a project quote using wallet signature authentication.
- * Partners can use this as a reference implementation for integrating with the quotes API.
+ * Partners can use this as a reference implementation for integrating with the Glow quotes API.
  *
  * Requirements:
  * - Private key in .env as TEST_WALLET_PRIVATE_KEY
  * - Utility bill PDF file
+ * - Hub account created with the same wallet (see below)
+ *
+ * IMPORTANT - Create Hub Account First:
+ * Before creating quotes via the API, you must first create an account on the Glow Hub
+ * using the SAME wallet address that you'll use to sign quote requests.
+ *
+ * 1. Visit: https://hub.glow.org/login
+ * 2. Connect with the wallet you'll use for API quotes
+ * 3. Complete account creation
+ * 4. Then use that same wallet's private key for TEST_WALLET_PRIVATE_KEY
+ *
+ * This allows you to view and manage your quotes through the hub dashboard after creation.
  *
  * Usage:
  * bun run scripts/test-quote-api-with-wallet.ts
+ *
+ * Environments:
+ * - Staging:    https://gca-crm-backend-staging.up.railway.app/quotes/project
+ * - Production: https://gca-crm-backend-production-1f2a.up.railway.app/quotes/project
+ *
+ * Rate Limit: 100 quotes per hour (global)
+ *
+ * Note: Test on staging first before using production
  */
 
 import { Wallet } from "ethers";
 import { readFileSync } from "fs";
 import { createMessageToSign } from "../src/handlers/walletSignatureHandler";
+
+// Switch to staging for testing:
+// const API_URL = "https://gca-crm-backend-staging.up.railway.app";
+const API_URL = "https://gca-crm-backend-production-1f2a.up.railway.app";
 
 interface QuoteRequestData {
   weeklyConsumptionMWh: string;
@@ -24,177 +48,144 @@ interface QuoteRequestData {
   timestamp: number;
 }
 
-async function testQuoteAPIWithWallet() {
-  console.log("=== Project Quote API - Wallet Signature Test ===\n");
+/**
+ * Example API Response:
+ *
+ * {
+ *   "quoteId": "6d2f0813-ac43-4081-b177-3c2aff5a609b",
+ *   "walletAddress": "0x5252fda14a149c01ea5a1d6514a9c1369e4c70b4",
+ *   "userId": "0x5252FdA14A149c01EA5A1D6514a9c1369E4C70b4",
+ *   "regionCode": "US-MO",
+ *   "protocolDeposit": {
+ *     "usd": 38348.28058783432,
+ *     "usd6Decimals": "38348280588"
+ *   },
+ *   "carbonMetrics": {
+ *     "weeklyCredits": 0.1368393603993804,
+ *     "weeklyDebt": 0.03977957978583274,
+ *     "netWeeklyCc": 0.09705978061354767,
+ *     "netCcPerMwh": 0.2555368635463763,
+ *     "carbonOffsetsPerMwh": 0.554258,
+ *     "uncertaintyApplied": 0.35
+ *   },
+ *   "efficiency": {
+ *     "score": 25.31007365266847,
+ *     "weeklyImpactAssetsWad": "97059780613547664"
+ *   },
+ *   "rates": {
+ *     "discountRate": 0.075,
+ *     "escalatorRate": 0.0242,
+ *     "commitmentYears": 30
+ *   },
+ *   "extraction": {
+ *     "electricityPricePerKwh": 0.1012,
+ *     "confidence": 0.95,
+ *     "rationale": "Extracted from utility bill using AI",
+ *     "utilityBillUrl": "https://pub-65d7379333b140c5a7e4d6e74d173542.r2.dev/utility-bills/1763132922475-utility_bill.pdf"
+ *   },
+ *   "debug": {
+ *     "inputs": {
+ *       "weeklyConsumptionMWh": 0.3798269230769231,
+ *       "systemSizeKw": 18.96,
+ *       "electricityPricePerKwh": 0.1012,
+ *       "latitude": 39.0707091494141,
+ *       "longitude": -94.35609788750925
+ *     },
+ *     "rates": {
+ *       "discountRate": 0.075,
+ *       "escalatorRate": 0.0242,
+ *       "years": 30,
+ *       "foundState": "Missouri"
+ *     },
+ *     "protocolDeposit": {
+ *       "annualKwh": 19823.456423076922,
+ *       "firstYearCashFlow": 2005.7201272307693,
+ *       "formula": "Monthly NPV with escalating cash flows",
+ *       "protocolDepositUsd": 38348.28058783432,
+ *       "protocolDepositUsd6": "38348280588"
+ *     },
+ *     "carbonMetrics": {
+ *       "carbonOffsetsPerMwh": 0.5542579531137882,
+ *       "uncertaintyApplied": 0.35,
+ *       "weeklyCredits": 0.1368393603993804,
+ *       "weeklyDebt": 0.03977957978583274,
+ *       "netWeeklyCc": 0.09705978061354767,
+ *       "netCcPerMwh": 0.2555368635463763
+ *     },
+ *     "efficiency": {
+ *       "weeklyImpactAssetsWad": "97059780613547664",
+ *       "efficiencyScore": 25.31007365266847
+ *     }
+ *   }
+ * }
+ */
 
-  // Step 1: Load wallet from environment
+async function testQuoteAPIWithWallet() {
   const privateKey = process.env.TEST_WALLET_PRIVATE_KEY;
   if (!privateKey) {
-    console.error("❌ ERROR: TEST_WALLET_PRIVATE_KEY not found in .env");
-    console.log("\nPlease add your private key to .env:");
-    console.log("TEST_WALLET_PRIVATE_KEY=0x...");
-    process.exit(1);
+    throw new Error(
+      "TEST_WALLET_PRIVATE_KEY not found in .env. Please add your private key."
+    );
   }
 
   const wallet = new Wallet(privateKey);
-  console.log("✅ Wallet loaded");
-  console.log("   Address:", wallet.address);
 
-  // Step 2: Prepare quote data
+  // Prepare quote data
   const quoteData: QuoteRequestData = {
-    weeklyConsumptionMWh: "0.3798269230769231", // 19,751 kWh annually / 52 weeks / 1000
-    systemSizeKw: "0.01896", // From planset
-    latitude: "39.0707091494141", // Independence, MO
+    weeklyConsumptionMWh: "0.3798269230769231",
+    systemSizeKw: "18.96",
+    latitude: "39.0707091494141",
     longitude: "-94.35609788750925",
     timestamp: Date.now(),
   };
 
-  console.log("\n=== Step 2: Quote Data ===");
-  console.log("Location: Independence, MO (auto-detected as US-MO)");
-  console.log("Weekly Consumption:", quoteData.weeklyConsumptionMWh, "MWh");
-  console.log("System Size:", quoteData.systemSizeKw, "kW");
-  console.log("Coordinates:", quoteData.latitude, quoteData.longitude);
-  console.log("Timestamp:", new Date(quoteData.timestamp).toISOString());
-
-  // Step 3: Create message and sign it
-  console.log("\n=== Step 3: Create & Sign Message ===");
+  // Create message and sign it
   const messageToSign = createMessageToSign(quoteData);
-  console.log("Message to sign:", messageToSign);
-
   const signature = await wallet.signMessage(messageToSign);
-  console.log("✅ Message signed");
-  console.log("   Signature:", signature.substring(0, 20) + "...");
-  console.log("   Length:", signature.length, "characters");
 
-  // Step 4: Load utility bill
-  console.log("\n=== Step 4: Load Utility Bill ===");
+  // Load utility bill
   const pdfPath = "./tests/project-quotes/required_first_utility_bill.pdf";
+  const pdfBuffer = readFileSync(pdfPath);
 
-  let pdfBuffer: Buffer;
-  try {
-    pdfBuffer = readFileSync(pdfPath);
-    console.log("✅ PDF loaded");
-    console.log("   Path:", pdfPath);
-    console.log("   Size:", (pdfBuffer.length / 1024).toFixed(2), "KB");
-  } catch (error) {
-    console.error("❌ Failed to load PDF:", (error as Error).message);
-    console.log("\nMake sure the utility bill PDF exists at:");
-    console.log(pdfPath);
-    process.exit(1);
-  }
+  // Prepare form data
+  const formData = new FormData();
+  formData.append("weeklyConsumptionMWh", quoteData.weeklyConsumptionMWh);
+  formData.append("systemSizeKw", quoteData.systemSizeKw);
+  formData.append("latitude", quoteData.latitude);
+  formData.append("longitude", quoteData.longitude);
+  formData.append("timestamp", quoteData.timestamp.toString());
+  formData.append("signature", signature);
 
-  // Step 5: Prepare API request
-  console.log("\n=== Step 5: API Request Structure ===");
+  const pdfBlob = new Blob([new Uint8Array(pdfBuffer)], {
+    type: "application/pdf",
+  });
+  const pdfFile = new File([pdfBlob], "utility_bill.pdf", {
+    type: "application/pdf",
+  });
+  formData.append("utilityBill", pdfFile);
 
-  const apiEndpoint = process.env.API_URL || "http://localhost:3005";
-  const fullUrl = `${apiEndpoint}/quotes/project`;
-
-  console.log("Endpoint:", fullUrl);
-  console.log("\nRequest body structure:");
-  console.log({
-    weeklyConsumptionMWh: quoteData.weeklyConsumptionMWh,
-    systemSizeKw: quoteData.systemSizeKw,
-    latitude: quoteData.latitude,
-    longitude: quoteData.longitude,
-    timestamp: quoteData.timestamp,
-    signature: signature.substring(0, 20) + "...",
-    utilityBill: "[PDF File]",
+  // Make API request
+  const response = await fetch(`${API_URL}/quotes/project`, {
+    method: "POST",
+    body: formData,
   });
 
-  // Step 6: Make the API request
-  console.log("\n=== Step 6: Send Request to API ===");
+  const result = await response.json();
 
-  try {
-    // For multipart/form-data, we need to send as JSON object for the non-file fields
-    const requestBody = {
-      weeklyConsumptionMWh: quoteData.weeklyConsumptionMWh,
-      systemSizeKw: quoteData.systemSizeKw,
-      latitude: quoteData.latitude,
-      longitude: quoteData.longitude,
-      timestamp: quoteData.timestamp,
-      signature: signature,
-    };
-
-    const formData = new FormData();
-    formData.append("weeklyConsumptionMWh", quoteData.weeklyConsumptionMWh);
-    formData.append("systemSizeKw", quoteData.systemSizeKw);
-    formData.append("latitude", quoteData.latitude);
-    formData.append("longitude", quoteData.longitude);
-    formData.append("timestamp", quoteData.timestamp.toString());
-    formData.append("signature", signature);
-
-    // Create a Blob from the PDF buffer
-    const pdfBlob = new Blob([new Uint8Array(pdfBuffer)], {
-      type: "application/pdf",
-    });
-    const pdfFile = new File([pdfBlob], "utility_bill.pdf", {
-      type: "application/pdf",
-    });
-    formData.append("utilityBill", pdfFile);
-
-    console.log("Sending request to:", fullUrl);
-
-    const response = await fetch(fullUrl, {
-      method: "POST",
-      body: formData,
-    });
-
-    console.log("Response status:", response.status, response.statusText);
-
-    const result = await response.json();
-
-    if (response.ok) {
-      console.log("\n✅ SUCCESS! Quote created");
-      console.log("\n=== Quote Response ===");
-      console.log("Quote ID:", result.quoteId);
-      console.log("Wallet Address:", result.walletAddress);
-      console.log("User ID:", result.userId || "(not linked to existing user)");
-      console.log("Region Code:", result.regionCode);
-      console.log("\nProtocol Deposit:");
-      console.log("  USD:", result.protocolDeposit.usd.toFixed(2));
-      console.log("  USD (6 decimals):", result.protocolDeposit.usd6Decimals);
-      console.log("\nCarbon Metrics:");
-      console.log(
-        "  Weekly Credits:",
-        result.carbonMetrics.weeklyCredits.toFixed(4)
-      );
-      console.log("  Weekly Debt:", result.carbonMetrics.weeklyDebt.toFixed(4));
-      console.log(
-        "  Net Weekly CC:",
-        result.carbonMetrics.netWeeklyCc.toFixed(4)
-      );
-      console.log("  Net CC/MWh:", result.carbonMetrics.netCcPerMwh.toFixed(4));
-      console.log("\nEfficiency:");
-      console.log("  Score:", result.efficiency.score.toFixed(4));
-      console.log("\nExtraction:");
-      console.log(
-        "  Price/kWh: $" + result.extraction.electricityPricePerKwh.toFixed(4)
-      );
-      console.log(
-        "  Confidence:",
-        (result.extraction.confidence * 100).toFixed(1) + "%"
-      );
-      console.log("  Rationale:", result.extraction.rationale);
-
-      console.log("\n=== Retrieve Quote Example ===");
-      console.log(`GET ${apiEndpoint}/quotes/project/quote/${result.quoteId}`);
-      console.log(`GET ${apiEndpoint}/quotes/project/${wallet.address}`);
-    } else {
-      console.error("\n❌ API Request Failed");
-      console.error("Status:", response.status);
-      console.error("Error:", result.error || result);
-    }
-  } catch (error) {
-    console.error("\n❌ Request failed:", (error as Error).message);
-    console.error("\nMake sure the API server is running:");
-    console.error("  bun run dev");
+  if (response.ok) {
+    return result;
+  } else {
+    throw new Error(result.error || `API request failed: ${response.status}`);
   }
-
-  console.log("\n=== Test Complete ===");
 }
 
 // Run the test
-testQuoteAPIWithWallet().catch((error) => {
-  console.error("Test failed:", error);
-  process.exit(1);
-});
+testQuoteAPIWithWallet()
+  .then((result) => {
+    console.log(JSON.stringify(result, null, 2));
+    process.exit(0);
+  })
+  .catch((error) => {
+    console.error("Error:", error.message);
+    process.exit(1);
+  });

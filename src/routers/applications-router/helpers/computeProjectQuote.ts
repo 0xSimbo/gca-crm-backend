@@ -45,19 +45,31 @@ export interface ComputeQuoteResult {
 }
 
 /**
- * Present value of a growing annuity
- * PV = CF1 * (1 - ((1+g)/(1+r))^N) / (r - g)
+ * Calculate NPV using monthly cash flows (matches spreadsheet methodology)
+ * This is more accurate than the growing annuity formula for long-term projections
  */
-function presentValueGrowingAnnuity(
-  CF1: number,
-  r: number,
-  g: number,
-  N: number
+function calculateMonthlyNPV(
+  firstYearAnnualCashFlow: number,
+  annualDiscountRate: number,
+  annualEscalatorRate: number,
+  years: number
 ): number {
-  if (Math.abs(r - g) < 1e-9) {
-    return (CF1 * N) / (1 + r);
+  const monthlyDiscountRate = Math.pow(1 + annualDiscountRate, 1 / 12) - 1;
+  const monthlyEscalatorRate = Math.pow(1 + annualEscalatorRate, 1 / 12) - 1;
+
+  const monthlyPayment = firstYearAnnualCashFlow / 12;
+  let npv = 0;
+
+  for (let month = 1; month <= years * 12; month++) {
+    // Cash flow grows each month by the escalator rate
+    const cashFlow =
+      monthlyPayment * Math.pow(1 + monthlyEscalatorRate, month - 1);
+    // Discount back to present value
+    const presentValue = cashFlow / Math.pow(1 + monthlyDiscountRate, month);
+    npv += presentValue;
   }
-  return (CF1 * (1 - Math.pow((1 + g) / (1 + r), N))) / (r - g);
+
+  return npv;
 }
 
 /**
@@ -137,11 +149,13 @@ export async function computeProjectQuote(
     }
   }
 
-  // Compute protocol deposit using growing annuity
-  // Year-1 cash flow: weeklyConsumptionMWh * 1000 kWh * price * 52.18 weeks (actual weeks per year)
-  const CF1 = weeklyConsumptionMWh * 1000 * electricityPricePerKwh * 52.18;
-  const protocolDepositUsd = presentValueGrowingAnnuity(
-    CF1,
+  // Compute protocol deposit using monthly NPV (matches spreadsheet)
+  // First year annual cash flow from electricity savings
+  const annualKwh = weeklyConsumptionMWh * 1000 * 52.18; // Convert weekly MWh to annual kWh (52.18 = 365.25/7)
+  const firstYearCashFlow = annualKwh * electricityPricePerKwh;
+
+  const protocolDepositUsd = calculateMonthlyNPV(
+    firstYearCashFlow,
     discountRate,
     escalatorRate,
     years
@@ -203,8 +217,9 @@ export async function computeProjectQuote(
       foundState,
     },
     protocolDeposit: {
-      CF1,
-      formula: "CF1 * (1 - ((1+g)/(1+r))^N) / (r - g)",
+      annualKwh,
+      firstYearCashFlow,
+      formula: "Monthly NPV with escalating cash flows",
       protocolDepositUsd,
       protocolDepositUsd6,
     },

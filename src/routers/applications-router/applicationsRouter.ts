@@ -78,6 +78,7 @@ import { approveOrAskRoutes } from "./approveOrAskRoutes";
 import { organizationApplicationRoutes } from "./organizationApplicationRoutes";
 import { findProjectQuotesByUserId } from "../../db/queries/project-quotes/findProjectQuotesByUserId";
 import { findProjectQuoteById } from "../../db/queries/project-quotes/findProjectQuoteById";
+import { forwarderAddresses } from "../../constants/addresses";
 import { parseUnits } from "viem";
 import {
   createFraction,
@@ -2098,6 +2099,20 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
         "/project-quotes",
         async ({ userId, set }) => {
           try {
+            // Check if user is FOUNDATION_HUB_MANAGER - grant access to all quotes
+            const isFoundationManager =
+              userId.toLowerCase() ===
+              forwarderAddresses.FOUNDATION_HUB_MANAGER_WALLET.toLowerCase();
+
+            // if (isFoundationManager) {
+            //   // Return all quotes for foundation manager
+            //   const allQuotes = await db.query.ProjectQuotes.findMany({
+            //     orderBy: (quotes, { desc }) => [desc(quotes.createdAt)],
+            //   });
+            //   return { quotes: allQuotes };
+            // }
+
+            // Regular users: only their own quotes
             const quotes = await findProjectQuotesByUserId(userId);
             return { quotes };
           } catch (e) {
@@ -2118,7 +2133,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
           detail: {
             summary: "Get all project quotes linked to authenticated user",
             description:
-              "Returns all quotes that were created by wallet addresses linked to this user account. Accessible through user dashboard.",
+              "Returns all quotes that were created by wallet addresses linked to this user account. FOUNDATION_HUB_MANAGER has access to all quotes. Accessible through user dashboard.",
             tags: [TAG.APPLICATIONS],
           },
         }
@@ -2134,15 +2149,22 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               return { error: "Quote not found" };
             }
 
+            // Check if user is FOUNDATION_HUB_MANAGER - grant access to all quotes
+            const isFoundationManager =
+              userId.toLowerCase() ===
+              forwarderAddresses.FOUNDATION_HUB_MANAGER_WALLET.toLowerCase();
+
             // Check if user owns this quote (case-insensitive comparison)
-            if (
-              !quote.userId ||
-              quote.userId.toLowerCase() !== userId.toLowerCase()
-            ) {
-              set.status = 403;
-              return {
-                error: "Access denied. You can only view your own quotes.",
-              };
+            if (!isFoundationManager) {
+              if (
+                !quote.userId ||
+                quote.userId.toLowerCase() !== userId.toLowerCase()
+              ) {
+                set.status = 403;
+                return {
+                  error: "Access denied. You can only view your own quotes.",
+                };
+              }
             }
 
             // Return formatted quote
@@ -2220,7 +2242,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
           detail: {
             summary: "Retrieve a project quote by ID (bearer auth)",
             description:
-              "Returns the full quote details for quotes linked to the authenticated user's account. Accessible through user dashboard with bearer token.",
+              "Returns the full quote details for quotes linked to the authenticated user's account. FOUNDATION_HUB_MANAGER has access to all quotes. Accessible through user dashboard with bearer token.",
             tags: [TAG.APPLICATIONS],
           },
         }

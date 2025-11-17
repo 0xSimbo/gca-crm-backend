@@ -43,66 +43,119 @@ export async function extractElectricityPriceFromUtilityBill(
   const billUrl = await uploadFile(bucketName, key, fileBuffer, contentType);
 
   // Extract price using Gemini API with PDF
-  const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
+  const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-lite" });
 
   const base64Pdf = fileBuffer.toString("base64");
 
-  const prompt = `FIRST: Look at the bill for RED FLAGS indicating active solar panels.
+  const prompt = `FIRST: Check if this bill shows active solar panels already installed.
 
-REJECT if you find BOTH of these together:
-1. RDA (Renewable Demand Adjustment) showing "-$" or "CR" (credit/negative)
-AND
-2. Very low consumption (under 500 kWh for 30 days for residential properties)
+ONLY REJECT if you find ANY of these DEFINITIVE solar indicators:
+1. Line items explicitly labeled "Solar Generation" or "Solar Export" 
+2. Line items labeled "Energy Charge Generated" or "Generated" with CREDIT amounts (has "CR" or negative sign)
+3. Net metering credits GREATER than $20
+4. Large negative energy charges (credits GREATER than $50)
 
-OR REJECT if you find ANY of these:
-- Energy charges showing as credits or negative amounts
-- Net metering credits listed
-- Solar generation or export line items
+THESE ARE NOT SOLAR INDICATORS - ALWAYS ACCEPT:
+- "Renewable Energy Adjustment" (RDA) or "Renewable Demand Adjustment" - utility rate adjustments
+- "Renewable Energy" credits under $20 - utility program credits, not customer solar
+- Small credits or adjustments under $20
+- Normal positive energy charges
+- No line items with "Generated" or "Solar Export"
 
-If rejecting, output this JSON and STOP:
+CRITICAL EXAMPLES:
+✅ ACCEPT: "Renewable Energy Adjustment: -$0.20" (utility rate adjustment, NOT solar)
+✅ ACCEPT: "Renewable Demand Adjustment: -$5.00" (utility program, NOT solar)
+❌ REJECT: "Energy Charge Generated: $150.00CR" (customer solar generation)
+❌ REJECT: "Solar Export Credit: $45.00" (customer solar generation)
+
+If you find definitive solar evidence (Generated/Export line items), output this JSON and STOP:
 {
   "pricePerKwh": 0,
   "confidence": 0,
-  "rationale": "REJECTED: Active solar detected. [State what you found]. Need pre-solar bill."
+  "rationale": "REJECTED: Active solar detected. Found [specific evidence like 'Energy Charge Generated credit of $X']. Need pre-solar bill."
 }
 
-If NO red flags found → Continue to price extraction below.
+If NO solar evidence found (normal bill) → Continue to price extraction below.
 
 ---
 
 PRICE EXTRACTION METHODOLOGY (only if bill passed rejection check above):
 
-METHODOLOGY - Only Include Charges Affected by Solar:
+CRITICAL: Use the TOTAL BILL METHOD - this is the most accurate way to capture all costs.
 
-STEP 1: Handle Time-of-Use (TOU) Rates
-If the bill has multiple rate tiers (On-Peak, Mid-Peak, Off-Peak):
-- Calculate the AVERAGE of all tier rates (not weighted, simple average)
-- Example: (On-Peak $0.21 + Mid-Peak $0.14 + Off-Peak $0.08) / 3 = $0.143/kWh
+PRIMARY METHOD - Calculate Electric Cost per kWh:
 
-STEP 2: Add Per-kWh Fees
-INCLUDE these usage-based charges:
-- Energy charges (base rate per kWh or TOU average)
-- Fuel adjustment or surcharges (if per kWh)
-- Power factor charges (if per kWh)
-- Environmental fees (if per kWh)
-- Transmission cost adjustments (if per kWh)
-- Energy cost adjustments (if per kWh)
-- Demand side management fees (if per kWh)
-- Purchased capacity cost adjustments (if per kWh)
-- City/Municipal sales taxes (ONLY if % of total bill)
-- State taxes (ONLY if % of total bill)
+GUIDING PRINCIPLE: Only include charges that will be affected by the addition of solar.
+This means ONLY usage-based charges that scale with kWh consumption.
 
-EXCLUDE these fixed/demand charges:
-- Demand charges (based on peak kW, not kWh)
-- Delivery and transmission charges (if fixed/flat fee)
-- Basic charges, meter fees, service charges (flat monthly)
-- Administrative or regulatory charges (not per kWh)
-- Connection fees
+STEP 1: Start with total electric charges
+- For multi-utility bills: Find "Electric Total" or electric section subtotal
+- For electric-only bills: Use "Total New Charges" or "Amount Due"
 
-CALCULATION:
-1. If TOU rates exist: Average them → Base Rate
-2. Find all per-kWh fee amounts ($/kWh for each line item)
-3. Sum: Total Price/kWh = Base Rate + All Per-kWh Fees
+STEP 2: INCLUDE (Keep) - Usage-based charges that scale with kWh:
+✅ Energy Charges (base rate per kWh, tiered rates)
+✅ Time-of-Use (TOU) rates
+✅ Fuel Adjustment or Surcharges (if tied to usage)
+✅ Environmental fees (if per kWh)
+✅ Power factor incentives/penalties (if usage-based)
+✅ City/Municipal Sales Taxes (if % of total bill)
+✅ State Taxes (if % of total bill)
+✅ Renewable Energy Adjustment (usage-based rate adjustment)
+✅ Energy Balancing Account (usage-based adjustment)
+✅ Customer Efficiency Services (if usage-based)
+
+STEP 3: EXCLUDE (Subtract) - Fixed charges NOT affected by solar:
+❌ Basic Charge / Customer Charge / Service Charge (flat monthly fee)
+❌ Meter Fees (fixed)
+❌ Demand Charges (based on peak kW, not affected by solar)
+❌ Delivery and Transmission Charges (grid infrastructure, not usage-based)
+❌ Administrative or Regulatory Charges (fixed)
+❌ Assistance program credits (e.g., "Home Electric Lifeline Program")
+❌ Non-electric utilities (Water, Sewer, Storm water, Garbage, etc.)
+
+STEP 4: Calculate
+  (Electric Total - Fixed Charges - Non-electric utilities) ÷ Total kWh = Price per kWh
+
+Example (Ben's bill):
+  Total New Charges: $161.68
+  - Basic Charge: $10.00 (fixed fee - exclude)
+  - Home Electric Lifeline: $0.16 (assistance - exclude)
+  = $151.52 (usage-based electric costs)
+  ÷ Total kWh: 1,146
+  = $0.1322/kWh
+
+Example (Shawna's multi-utility bill):
+  Electric Total: $147.92 (already separated from water/sewer)
+  - No fixed charges to subtract (if already excluded)
+  ÷ Total kWh: 1,314
+  = $0.1126/kWh
+
+CRITICAL: The goal is to capture the cost of electricity that solar panels will offset.
+Fixed monthly fees remain whether or not you have solar, so they are excluded.
+
+ALTERNATIVE METHOD (only if total bill not clear):
+STEP 1: Calculate energy charges
+- If TOU rates: Use weighted average based on kWh in each tier
+- If flat rate: Use the stated rate
+
+STEP 2: Add all per-kWh surcharges and fees
+
+STEP 3: Add taxes
+- Calculate total tax amount ($ amount, not just %)
+- Divide by total kWh to get tax per kWh
+- Add to the rate
+
+ALWAYS INCLUDE:
+- Energy charges at all tier rates
+- All per-kWh fees and surcharges  
+- ALL taxes (sales, city, state, municipal) - convert to $/kWh
+- Fuel adjustments
+- Environmental fees
+
+ALWAYS EXCLUDE:
+- Demand charges (based on peak kW)
+- Fixed monthly service/meter fees
+- One-time connection fees
 
 Output ONLY valid JSON:
 {
