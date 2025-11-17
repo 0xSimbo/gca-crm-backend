@@ -1926,6 +1926,7 @@ export const ProjectQuotes = pgTable("project_quotes", {
   // Wallet and user association
   walletAddress: varchar("wallet_address", { length: 42 }).notNull(),
   userId: varchar("user_id", { length: 42 }),
+  metadata: text("metadata"), // Optional field for partners to add identifying info (e.g., farm owner name)
 
   // Identity/Location
   regionCode: varchar("region_code", { length: 10 }).notNull(),

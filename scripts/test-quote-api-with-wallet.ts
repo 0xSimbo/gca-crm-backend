@@ -156,6 +156,9 @@ async function testQuoteAPIWithWallet() {
   formData.append("timestamp", quoteData.timestamp.toString());
   formData.append("signature", signature);
 
+  // Optional: Add metadata to help identify the quote
+  formData.append("metadata", "John Smith - Farm #123");
+
   const pdfBlob = new Blob([new Uint8Array(pdfBuffer)], {
     type: "application/pdf",
   });

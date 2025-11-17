@@ -3,6 +3,8 @@
 ## Overview
 The Project Quote API allows partners to programmatically create solar project quotes using wallet signature authentication. No bearer tokens or user login required - just sign requests with your Ethereum wallet.
 
+Partners can add optional metadata to each quote (e.g., farm owner name, project ID) to make quotes easier to identify and manage in the dashboard.
+
 ## Authentication Method
 **Wallet Signature**: Sign a message containing your quote data with your Ethereum private key. The API verifies the signature and associates the quote with your wallet address.
 
@@ -28,6 +30,9 @@ Create a new quote with wallet signature authentication.
 - `timestamp` (number): Current Unix timestamp in milliseconds
 - `signature` (string): Wallet signature of the message
 - `utilityBill` (File): PDF utility bill (max 10MB)
+
+**Optional Fields:**
+- `metadata` (string): Custom identifier for the quote (e.g., "John Smith - Farm #123", "Project ABC")
 
 **Message to Sign:**
 ```
@@ -81,6 +86,9 @@ formData.append("longitude", quoteData.longitude);
 formData.append("timestamp", quoteData.timestamp.toString());
 formData.append("signature", signature);
 
+// Optional: Add metadata to help identify the quote
+formData.append("metadata", "John Smith - Farm #123");
+
 // Load and append PDF
 const pdfBuffer = readFileSync("./utility_bill.pdf");
 const pdfBlob = new Blob([pdfBuffer], { type: "application/pdf" });
@@ -114,6 +122,7 @@ if (response.ok) {
   "quoteId": "uuid-string",
   "walletAddress": "0x...",
   "userId": "0x..." | null,
+  "metadata": "John Smith - Farm #123",
   "regionCode": "US-MO",
   "protocolDeposit": {
     "usd": 12345.67,

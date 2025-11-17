@@ -197,10 +197,12 @@ export const quotesRouter = new Elysia({ prefix: "/quotes" })
               regionCode,
               walletAddress,
               userId,
+              metadata: body.metadata || null,
             }
           : await createProjectQuote({
               walletAddress,
               userId,
+              metadata: body.metadata,
               regionCode,
               latitude: latitude.toString(),
               longitude: longitude.toString(),
@@ -230,6 +232,7 @@ export const quotesRouter = new Elysia({ prefix: "/quotes" })
           quoteId: savedQuote.id,
           walletAddress: savedQuote.walletAddress,
           userId: savedQuote.userId,
+          metadata: savedQuote.metadata,
           regionCode: savedQuote.regionCode,
           protocolDeposit: {
             usd: quoteResult.protocolDepositUsd,
@@ -298,6 +301,12 @@ export const quotesRouter = new Elysia({ prefix: "/quotes" })
           minLength: 132,
           maxLength: 132,
         }),
+        metadata: t.Optional(
+          t.String({
+            description:
+              "Optional metadata for identifying the quote (e.g., farm owner name, project ID)",
+          })
+        ),
         // Test-only optional overrides
         mockElectricityPricePerKwh: t.Optional(t.String()),
         mockDiscountRate: t.Optional(t.String()),
