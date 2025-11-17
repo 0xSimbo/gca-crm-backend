@@ -2104,13 +2104,13 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               userId.toLowerCase() ===
               forwarderAddresses.FOUNDATION_HUB_MANAGER_WALLET.toLowerCase();
 
-            // if (isFoundationManager) {
-            //   // Return all quotes for foundation manager
-            //   const allQuotes = await db.query.ProjectQuotes.findMany({
-            //     orderBy: (quotes, { desc }) => [desc(quotes.createdAt)],
-            //   });
-            //   return { quotes: allQuotes };
-            // }
+            if (isFoundationManager) {
+              // Return all quotes for foundation manager
+              const allQuotes = await db.query.ProjectQuotes.findMany({
+                orderBy: (quotes, { desc }) => [desc(quotes.createdAt)],
+              });
+              return { quotes: allQuotes };
+            }
 
             // Regular users: only their own quotes
             const quotes = await findProjectQuotesByUserId(userId);
