@@ -125,19 +125,38 @@ export async function getFilledFractionsUpToEpoch(epochEndDate: Date) {
       type: fractions.type,
       stepPrice: fractions.stepPrice,
       splitsSold: fractions.splitsSold,
+      status: fractions.status,
     })
     .from(fractions)
     .where(
       and(
-        eq(fractions.status, FRACTION_STATUS.FILLED),
+        inArray(fractions.status, [
+          FRACTION_STATUS.FILLED,
+          FRACTION_STATUS.EXPIRED,
+        ]),
         lte(fractions.filledAt, epochEndDate)
       )
     );
 
-  return result.filter(
-    (f): f is typeof f & { type: "launchpad" | "mining-center" } =>
-      f.type === "launchpad" || f.type === "mining-center"
-  );
+  return result
+    .filter((f) => {
+      if (f.type === "launchpad") {
+        return f.status === FRACTION_STATUS.FILLED;
+      }
+      if (f.type === "mining-center") {
+        return (
+          f.status === FRACTION_STATUS.FILLED ||
+          (f.status === FRACTION_STATUS.EXPIRED && (f.splitsSold ?? 0) > 0)
+        );
+      }
+      return false;
+    })
+    .map((f) => ({
+      applicationId: f.applicationId,
+      type: f.type as "launchpad" | "mining-center",
+      stepPrice: f.stepPrice,
+      splitsSold: f.splitsSold,
+    }));
 }
 
 export function calculateFractionTotals(

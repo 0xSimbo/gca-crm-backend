@@ -48,6 +48,8 @@ interface QuoteRequestData {
   timestamp: number;
 }
 
+//TODO: think about partners.
+
 /**
  * Example API Response:
  *

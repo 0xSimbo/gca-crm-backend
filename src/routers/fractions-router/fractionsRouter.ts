@@ -41,6 +41,8 @@ import {
   aggregateRewardsByFarm,
   aggregateRewardsByWallet,
   getEpochEndDate,
+  getFilledFractionsUpToEpoch,
+  calculateFractionTotals,
   type WalletFarmInfo,
 } from "./helpers/apy-helpers";
 import {
@@ -78,6 +80,374 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
         summary: "Get high-level fraction sales summary",
         description:
           "Returns totals for GLW delegated via launchpad fractions plus GLW from PayProtocolFee payments, and USD volume from mining-center fractions. Only filled fractions contribute to the totals.",
+        tags: [TAG.APPLICATIONS],
+      },
+    }
+  )
+  .get(
+    "/yield-per-100",
+    async ({ query: { debug }, set }) => {
+      try {
+        if (!process.env.CONTROL_API_URL) {
+          set.status = 500;
+          return "CONTROL_API_URL not configured";
+        }
+
+        const { startWeek, endWeek } = getWeekRange();
+        const epochEndDate = getEpochEndDate(endWeek);
+
+        const filled = await getFilledFractionsUpToEpoch(epochEndDate);
+        const { totalGlwDelegated, totalMiningCenterVolume } =
+          calculateFractionTotals(filled);
+
+        const farmsByType = new Map<
+          string,
+          {
+            hasLaunchpad: boolean;
+            hasMiningCenter: boolean;
+            launchpadSponsorSplitPercent: number;
+            miningCenterSponsorSplitPercent: number;
+            miningCenterTotalSteps: number;
+            miningCenterSoldSteps: number;
+          }
+        >();
+
+        const uniqueAppIds = Array.from(
+          new Set(filled.map((f) => f.applicationId))
+        );
+
+        const appIdToFarmId = new Map<string, string>();
+        const apps = await db.query.applications.findMany({
+          columns: { id: true, farmId: true },
+          where: (apps, { inArray }) => inArray(apps.id, uniqueAppIds),
+        });
+
+        for (const app of apps) {
+          if (app.farmId) {
+            appIdToFarmId.set(app.id, app.farmId);
+          }
+        }
+
+        const allFractions = await db.query.fractions.findMany({
+          columns: {
+            applicationId: true,
+            sponsorSplitPercent: true,
+            type: true,
+            totalSteps: true,
+            splitsSold: true,
+          },
+          where: (fracs, { and, inArray, inArray: inArrayAlt }) =>
+            and(
+              inArray(fracs.applicationId, uniqueAppIds),
+              inArrayAlt(fracs.status, [
+                FRACTION_STATUS.FILLED,
+                FRACTION_STATUS.EXPIRED,
+              ])
+            ),
+        });
+
+        const appIdToLaunchpadSplit = new Map<string, number>();
+        const appIdToMiningCenterInfo = new Map<
+          string,
+          { sponsorSplitPercent: number; totalSteps: number; soldSteps: number }
+        >();
+
+        for (const frac of allFractions) {
+          if (frac.type === "launchpad" && frac.sponsorSplitPercent !== null) {
+            appIdToLaunchpadSplit.set(
+              frac.applicationId,
+              frac.sponsorSplitPercent
+            );
+          } else if (
+            frac.type === "mining-center" &&
+            frac.sponsorSplitPercent !== null
+          ) {
+            appIdToMiningCenterInfo.set(frac.applicationId, {
+              sponsorSplitPercent: frac.sponsorSplitPercent,
+              totalSteps: frac.totalSteps || 0,
+              soldSteps: frac.splitsSold || 0,
+            });
+          }
+        }
+
+        for (const fraction of filled) {
+          const farmId = appIdToFarmId.get(fraction.applicationId);
+          if (!farmId) continue;
+
+          const existing = farmsByType.get(farmId) || {
+            hasLaunchpad: false,
+            hasMiningCenter: false,
+            launchpadSponsorSplitPercent: 0,
+            miningCenterSponsorSplitPercent: 0,
+            miningCenterTotalSteps: 0,
+            miningCenterSoldSteps: 0,
+          };
+
+          if (fraction.type === "launchpad") {
+            existing.hasLaunchpad = true;
+            existing.launchpadSponsorSplitPercent =
+              appIdToLaunchpadSplit.get(fraction.applicationId) || 0;
+          } else if (fraction.type === "mining-center") {
+            existing.hasMiningCenter = true;
+            const mcInfo = appIdToMiningCenterInfo.get(fraction.applicationId);
+            if (mcInfo) {
+              existing.miningCenterSponsorSplitPercent =
+                mcInfo.sponsorSplitPercent;
+              existing.miningCenterTotalSteps = mcInfo.totalSteps;
+              existing.miningCenterSoldSteps = mcInfo.soldSteps;
+            }
+          }
+
+          farmsByType.set(farmId, existing);
+        }
+
+        const farmsWithLaunchpad = Array.from(farmsByType.entries())
+          .filter(([_, types]) => types.hasLaunchpad)
+          .map(([farmId, info]) => ({
+            farmId,
+            sponsorSplitPercent: info.launchpadSponsorSplitPercent,
+          }));
+
+        const farmsWithMiningCenter = Array.from(farmsByType.entries())
+          .filter(([_, types]) => types.hasMiningCenter)
+          .map(([farmId, info]) => ({
+            farmId,
+            sponsorSplitPercent: info.miningCenterSponsorSplitPercent,
+            totalSteps: info.miningCenterTotalSteps,
+            soldSteps: info.miningCenterSoldSteps,
+          }));
+
+        let totalGlwEarnedByDelegatorsLastWeek = BigInt(0);
+        let totalGlwEarnedByMinersLastWeek = BigInt(0);
+
+        const delegatorFarmBreakdown: Array<{
+          farmId: string;
+          farmName: string | null;
+          sponsorSplitPercent: number;
+          totalFarmInflation: string;
+          totalFarmProtocolDeposit: string;
+          delegatorInflationShare: string;
+          sponsorInflationShare: string;
+          delegatorProtocolDepositShare: string;
+          totalDelegatorRewards: string;
+        }> = [];
+
+        const minerFarmBreakdown: Array<{
+          farmId: string;
+          farmName: string | null;
+          sponsorSplitPercent: number;
+          totalSteps: number;
+          soldSteps: number;
+          isPartiallyFilled: boolean;
+          totalFarmInflation: string;
+          totalFarmProtocolDeposit: string;
+          minerInflationShare: string;
+          minerProtocolDepositShare: string;
+          totalMinerRewards: string;
+        }> = [];
+
+        const allUniqueFarmIds = new Set<string>();
+        const launchpadFarmMap = new Map<
+          string,
+          (typeof farmsWithLaunchpad)[0]
+        >();
+        const miningCenterFarmMap = new Map<
+          string,
+          (typeof farmsWithMiningCenter)[0]
+        >();
+
+        for (const farm of farmsWithLaunchpad) {
+          allUniqueFarmIds.add(farm.farmId);
+          launchpadFarmMap.set(farm.farmId, farm);
+        }
+        for (const farm of farmsWithMiningCenter) {
+          allUniqueFarmIds.add(farm.farmId);
+          miningCenterFarmMap.set(farm.farmId, farm);
+        }
+
+        const allFarmIds = Array.from(allUniqueFarmIds);
+        const batchSize = 500;
+
+        for (let i = 0; i < allFarmIds.length; i += batchSize) {
+          const batch = allFarmIds.slice(i, i + batchSize);
+
+          try {
+            const response = await fetch(
+              `${process.env.CONTROL_API_URL}/farms/rewards-history/batch`,
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  farmIds: batch,
+                  startWeek: endWeek,
+                  endWeek: endWeek,
+                }),
+              }
+            );
+
+            if (response.ok) {
+              const data: any = await response.json();
+              const results = data.results || {};
+
+              for (const farmId of batch) {
+                const farmData = results[farmId];
+                if (!farmData || farmData.error) continue;
+
+                const weekRewards = farmData.rewards || [];
+                for (const weekData of weekRewards) {
+                  if (weekData.weekNumber !== endWeek) continue;
+
+                  const totalInflation = BigInt(
+                    weekData.glowInflationTotal || "0"
+                  );
+                  const depositReward = BigInt(
+                    weekData.protocolDepositRewardsDistributed || "0"
+                  );
+
+                  const launchpadFarm = launchpadFarmMap.get(farmId);
+                  if (launchpadFarm) {
+                    const delegatorInflationShare =
+                      (totalInflation *
+                        BigInt(launchpadFarm.sponsorSplitPercent)) /
+                      BigInt(100);
+                    const sponsorInflationShare =
+                      totalInflation - delegatorInflationShare;
+
+                    const totalDelegatorRewards =
+                      delegatorInflationShare + depositReward;
+
+                    totalGlwEarnedByDelegatorsLastWeek += totalDelegatorRewards;
+
+                    delegatorFarmBreakdown.push({
+                      farmId: launchpadFarm.farmId,
+                      farmName: weekData.farmName || farmData.farmName || null,
+                      sponsorSplitPercent: launchpadFarm.sponsorSplitPercent,
+                      totalFarmInflation: totalInflation.toString(),
+                      totalFarmProtocolDeposit: depositReward.toString(),
+                      delegatorInflationShare:
+                        delegatorInflationShare.toString(),
+                      sponsorInflationShare: sponsorInflationShare.toString(),
+                      delegatorProtocolDepositShare: depositReward.toString(),
+                      totalDelegatorRewards: totalDelegatorRewards.toString(),
+                    });
+                  }
+
+                  const miningCenterFarm = miningCenterFarmMap.get(farmId);
+                  if (miningCenterFarm) {
+                    let minerInflationShare: bigint;
+                    const isPartiallyFilled =
+                      miningCenterFarm.totalSteps > 0 &&
+                      miningCenterFarm.soldSteps < miningCenterFarm.totalSteps;
+
+                    if (isPartiallyFilled) {
+                      const proportionalSplit =
+                        (BigInt(miningCenterFarm.sponsorSplitPercent) *
+                          BigInt(miningCenterFarm.soldSteps)) /
+                        BigInt(miningCenterFarm.totalSteps);
+                      minerInflationShare =
+                        (totalInflation * proportionalSplit) / BigInt(100);
+                    } else {
+                      minerInflationShare =
+                        (totalInflation *
+                          BigInt(miningCenterFarm.sponsorSplitPercent)) /
+                        BigInt(100);
+                    }
+
+                    const minerProtocolDepositShare = BigInt(0);
+
+                    const totalMinerRewards =
+                      minerInflationShare + minerProtocolDepositShare;
+                    totalGlwEarnedByMinersLastWeek += totalMinerRewards;
+
+                    minerFarmBreakdown.push({
+                      farmId: miningCenterFarm.farmId,
+                      farmName: weekData.farmName || farmData.farmName || null,
+                      sponsorSplitPercent: miningCenterFarm.sponsorSplitPercent,
+                      totalSteps: miningCenterFarm.totalSteps,
+                      soldSteps: miningCenterFarm.soldSteps,
+                      isPartiallyFilled,
+                      totalFarmInflation: totalInflation.toString(),
+                      totalFarmProtocolDeposit: depositReward.toString(),
+                      minerInflationShare: minerInflationShare.toString(),
+                      minerProtocolDepositShare:
+                        minerProtocolDepositShare.toString(),
+                      totalMinerRewards: totalMinerRewards.toString(),
+                    });
+                  }
+                }
+              }
+            }
+          } catch (error) {
+            console.error("Failed to fetch farm rewards:", error);
+          }
+        }
+
+        const glwPerWeekPer100GlwDelegatedWei =
+          totalGlwDelegated === BigInt(0)
+            ? BigInt(0)
+            : (totalGlwEarnedByDelegatorsLastWeek *
+                BigInt(100) *
+                BigInt(1_000_000_000_000_000_000)) /
+              totalGlwDelegated;
+
+        const glwPerWeekPer100UsdMinerWei =
+          totalMiningCenterVolume === BigInt(0)
+            ? BigInt(0)
+            : (totalGlwEarnedByMinersLastWeek *
+                BigInt(100) *
+                BigInt(1_000_000)) /
+              totalMiningCenterVolume;
+
+        const includeDebug = debug === "true" || debug === "1";
+
+        return {
+          weekRange: {
+            startWeek,
+            endWeek,
+          },
+          metrics: {
+            glwPerWeekPer100UsdMiner: glwPerWeekPer100UsdMinerWei.toString(),
+            glwPerWeekPer100GlwDelegated:
+              glwPerWeekPer100GlwDelegatedWei.toString(),
+          },
+          ...(includeDebug
+            ? {
+                totals: {
+                  totalGlwDelegated: totalGlwDelegated.toString(),
+                  totalUsdcSpentByMiners: totalMiningCenterVolume.toString(),
+                  totalGlwEarnedByDelegatorsLastWeek:
+                    totalGlwEarnedByDelegatorsLastWeek.toString(),
+                  totalGlwEarnedByMinersLastWeek:
+                    totalGlwEarnedByMinersLastWeek.toString(),
+                  farmsWithLaunchpad: farmsWithLaunchpad.length,
+                  farmsWithMiningCenter: farmsWithMiningCenter.length,
+                },
+                delegatorFarms: delegatorFarmBreakdown,
+                minerFarms: minerFarmBreakdown,
+              }
+            : {}),
+        };
+      } catch (e) {
+        if (e instanceof Error) {
+          set.status = 400;
+          return e.message;
+        }
+        console.log("[fractionsRouter] /yield-per-100", e);
+        throw new Error("Error Occured");
+      }
+    },
+    {
+      query: t.Object({
+        debug: t.Optional(
+          t.String({
+            description: "Include debug totals (true|1)",
+          })
+        ),
+      }),
+      detail: {
+        summary: "Get GLW yield per week per $100 invested",
+        description:
+          "Returns GLW earned per week per $100 USD spent by miners and per 100 GLW delegated by delegators. Uses last completed week's rewards divided by total filled fractions up to that week. Metrics are returned in wei (18 decimals for GLW). Optional debug flag includes intermediate totals.",
         tags: [TAG.APPLICATIONS],
       },
     }

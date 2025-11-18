@@ -66,6 +66,29 @@ bun run scripts/retrieve-batch-results.ts <batch_id>
 
 ---
 
+### `get-farm-name-by-application-id.ts` - Get Farm Name
+
+Look up the farm name associated with a specific application ID.
+
+**Usage:**
+
+```bash
+bun run scripts/get-farm-name-by-application-id.ts <application_id>
+```
+
+**Output:**
+
+- Farm name for the given application
+- Falls back to deterministic star name if no farm is assigned
+
+**Example:**
+
+```bash
+bun run scripts/get-farm-name-by-application-id.ts abc-123-xyz
+```
+
+---
+
 ### `fetch-applications-missing-solar-panel-pictures.ts` (Legacy)
 
 ⚠️ **Not recommended** - Use batch processing instead to avoid rate limits.
