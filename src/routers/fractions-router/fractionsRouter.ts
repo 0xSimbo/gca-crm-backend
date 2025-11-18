@@ -340,12 +340,14 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
                       miningCenterFarm.soldSteps < miningCenterFarm.totalSteps;
 
                     if (isPartiallyFilled) {
-                      const proportionalSplit =
-                        (BigInt(miningCenterFarm.sponsorSplitPercent) *
+                      const fullSponsorShare =
+                        (totalInflation *
+                          BigInt(miningCenterFarm.sponsorSplitPercent)) /
+                        BigInt(100);
+                      minerInflationShare =
+                        (fullSponsorShare *
                           BigInt(miningCenterFarm.soldSteps)) /
                         BigInt(miningCenterFarm.totalSteps);
-                      minerInflationShare =
-                        (totalInflation * proportionalSplit) / BigInt(100);
                     } else {
                       minerInflationShare =
                         (totalInflation *
@@ -1279,12 +1281,9 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
             const miningCenterInflation = BigInt(
               reward.walletInflationFromMiningCenter || "0"
             );
-            const miningCenterDeposit = BigInt(
-              reward.walletProtocolDepositFromMiningCenter || "0"
-            );
 
             delegatorRewards += launchpadInflation + launchpadDeposit;
-            minerRewards += miningCenterInflation + miningCenterDeposit;
+            minerRewards += miningCenterInflation;
           }
 
           const totalRewards = delegatorRewards + minerRewards;
@@ -1497,12 +1496,9 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
             const miningCenterInflation = BigInt(
               reward.walletInflationFromMiningCenter || "0"
             );
-            const miningCenterDeposit = BigInt(
-              reward.walletProtocolDepositFromMiningCenter || "0"
-            );
 
             const delegatorReward = launchpadInflation + launchpadDeposit;
-            const minerReward = miningCenterInflation + miningCenterDeposit;
+            const minerReward = miningCenterInflation;
 
             farm.delegatorRewardsDistributed += delegatorReward;
             farm.minerRewardsDistributed += minerReward;
@@ -1920,9 +1916,6 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
                 const miningCenterInflation = BigInt(
                   reward.walletInflationFromMiningCenter || "0"
                 );
-                const miningCenterDeposit = BigInt(
-                  reward.walletProtocolDepositFromMiningCenter || "0"
-                );
 
                 if (
                   walletFarmPurchases.has("launchpad") &&
@@ -1941,8 +1934,7 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
 
                 if (
                   walletFarmPurchases.has("mining-center") &&
-                  (miningCenterInflation > BigInt(0) ||
-                    miningCenterDeposit > BigInt(0))
+                  miningCenterInflation > BigInt(0)
                 ) {
                   const existing = minerWeeklyMap.get(weekNum) || {
                     inflation: BigInt(0),
@@ -1950,7 +1942,6 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
                     asset,
                   };
                   existing.inflation += miningCenterInflation;
-                  existing.protocolDeposit += miningCenterDeposit;
                   minerWeeklyMap.set(weekNum, existing);
                 }
               }
