@@ -2350,6 +2350,15 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               };
             }
 
+            // Check if hub manager has set cash amount
+            if (!quote.cashAmountUsd) {
+              set.status = 400;
+              return {
+                error:
+                  "Cannot approve quote. Hub manager must set cash amount first.",
+              };
+            }
+
             // Update status to approved
             await updateQuoteStatus(params.id, "approved");
 
@@ -2382,7 +2391,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
           detail: {
             summary: "Approve a project quote (owner only)",
             description:
-              "Allows the quote owner to approve a pending quote. Only quotes with 'pending' status can be approved.",
+              "Allows the quote owner to approve a pending quote. Hub manager must set cashAmountUsd before owner can approve. Only quotes with 'pending' status can be approved.",
             tags: [TAG.APPLICATIONS],
           },
         }
@@ -2414,6 +2423,15 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               set.status = 400;
               return {
                 error: `Cannot reject quote with status '${quote.status}'. Only pending quotes can be rejected.`,
+              };
+            }
+
+            // Check if hub manager has set cash amount
+            if (!quote.cashAmountUsd) {
+              set.status = 400;
+              return {
+                error:
+                  "Cannot reject quote. Hub manager must set cash amount first.",
               };
             }
 
@@ -2449,7 +2467,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
           detail: {
             summary: "Reject a project quote (owner only)",
             description:
-              "Allows the quote owner to reject a pending quote. Only quotes with 'pending' status can be rejected.",
+              "Allows the quote owner to reject a pending quote. Hub manager must set cashAmountUsd before owner can reject. Only quotes with 'pending' status can be rejected.",
             tags: [TAG.APPLICATIONS],
           },
         }

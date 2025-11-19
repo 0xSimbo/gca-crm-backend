@@ -135,6 +135,8 @@ Content-Type: application/json
 
 Allows `FOUNDATION_HUB_MANAGER` to set the validated cash amount for a project quote.
 
+**Important:** The hub manager must set the cash amount before quote owners can approve or reject the quote.
+
 **Response:**
 
 ```json
@@ -160,6 +162,7 @@ Allows the quote owner to approve a pending quote.
 
 - User must own the quote (userId matches)
 - Quote must have status `"pending"`
+- Hub manager must have set `cashAmountUsd` first
 
 **Response:**
 
@@ -184,6 +187,7 @@ Allows the quote owner to reject a pending quote.
 
 - User must own the quote (userId matches)
 - Quote must have status `"pending"`
+- Hub manager must have set `cashAmountUsd` first
 
 **Response:**
 
@@ -344,6 +348,14 @@ if (response.ok) {
 ```json
 {
   "error": "Cannot approve quote with status 'approved'. Only pending quotes can be approved."
+}
+```
+
+**Missing Cash Amount:**
+
+```json
+{
+  "error": "Cannot approve quote. Hub manager must set cash amount first."
 }
 ```
 
