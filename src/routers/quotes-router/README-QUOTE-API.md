@@ -1,28 +1,35 @@
 # Project Quote API - Partner Integration Guide
 
 ## Overview
+
 The Project Quote API allows partners to programmatically create solar project quotes using wallet signature authentication. No bearer tokens or user login required - just sign requests with your Ethereum wallet.
 
 Partners can add optional metadata to each quote (e.g., farm owner name, project ID) to make quotes easier to identify and manage in the dashboard.
 
 ## Authentication Method
+
 **Wallet Signature**: Sign a message containing your quote data with your Ethereum private key. The API verifies the signature and associates the quote with your wallet address.
 
 ## API Endpoints
 
 ### 1. Get Available Regions
+
 ```
 GET /quotes/regions
 ```
+
 Returns all supported regions. Note: Region selection is automatic based on coordinates.
 
 ### 2. Create Project Quote
+
 ```
 POST /quotes/project
 ```
+
 Create a new quote with wallet signature authentication.
 
 **Required Fields:**
+
 - `weeklyConsumptionMWh` (string): Weekly energy consumption in MWh
 - `systemSizeKw` (string): Solar system size in kW
 - `latitude` (string): Location latitude
@@ -32,9 +39,11 @@ Create a new quote with wallet signature authentication.
 - `utilityBill` (File): PDF utility bill (max 10MB)
 
 **Optional Fields:**
+
 - `metadata` (string): Custom identifier for the quote (e.g., "John Smith - Farm #123", "Project ABC")
 
 **Message to Sign:**
+
 ```
 {weeklyConsumptionMWh},{systemSizeKw},{latitude},{longitude},{timestamp}
 ```
@@ -42,16 +51,173 @@ Create a new quote with wallet signature authentication.
 Example: `0.3798,0.01896,39.0707,-94.3561,1699564800000`
 
 ### 3. Get Quotes by Wallet
+
 ```
 GET /quotes/project/{walletAddress}
 ```
+
 Retrieve all quotes created by a specific wallet address.
 
 ### 4. Get Quote by ID
+
 ```
 GET /quotes/project/quote/{quoteId}?signature={sig}&timestamp={ts}
 ```
+
 Retrieve a specific quote. Optional signature verification for access control.
+
+## Authenticated Quote Management (Bearer Token)
+
+Once logged into the dashboard with a bearer token, users can manage their quotes and view quote status. Hub managers have additional administrative capabilities.
+
+### Quote Status Lifecycle
+
+All quotes start with status `"pending"` and can transition to:
+
+- `"approved"` - Owner accepted the quote
+- `"rejected"` - Owner declined the quote
+- `"cancelled"` - Owner or hub manager cancelled the quote
+
+**Status Transition Rules:**
+
+- Only `pending` quotes can be approved, rejected, or cancelled
+- Once a quote has a final status, it cannot be changed
+
+### 5. Get User's Quotes (Authenticated)
+
+```
+GET /applications/project-quotes
+Authorization: Bearer {jwt-token}
+```
+
+Returns all quotes created by wallet addresses linked to the authenticated user account.
+
+**Special Access:** `FOUNDATION_HUB_MANAGER` has access to ALL quotes from all users.
+
+### 6. Get Quote Details (Authenticated)
+
+```
+GET /applications/project-quote/:id
+Authorization: Bearer {jwt-token}
+```
+
+Returns full quote details including admin fields (status, cashAmountUsd).
+
+**Response includes:**
+
+```json
+{
+  "quoteId": "uuid",
+  "admin": {
+    "cashAmountUsd": "12345.67" | null,
+    "status": "pending" | "approved" | "rejected" | "cancelled"
+  },
+  ...
+}
+```
+
+**Access Control:**
+
+- **Regular Users**: Can only access quotes where userId matches their account
+- **FOUNDATION_HUB_MANAGER**: Can access ANY quote by ID
+
+### 7. Set Cash Amount (Hub Manager Only)
+
+```
+POST /applications/project-quote/:id/cash-amount
+Authorization: Bearer {jwt-token}
+Content-Type: application/json
+
+{
+  "cashAmountUsd": "12345.67"
+}
+```
+
+Allows `FOUNDATION_HUB_MANAGER` to set the validated cash amount for a project quote.
+
+**Response:**
+
+```json
+{
+  "message": "Cash amount updated successfully",
+  "quote": {
+    "id": "uuid",
+    "cashAmountUsd": "12345.67"
+  }
+}
+```
+
+### 8. Approve Quote (Owner Only)
+
+```
+POST /applications/project-quote/:id/approve
+Authorization: Bearer {jwt-token}
+```
+
+Allows the quote owner to approve a pending quote.
+
+**Requirements:**
+
+- User must own the quote (userId matches)
+- Quote must have status `"pending"`
+
+**Response:**
+
+```json
+{
+  "message": "Quote approved successfully",
+  "quoteId": "uuid",
+  "status": "approved"
+}
+```
+
+### 9. Reject Quote (Owner Only)
+
+```
+POST /applications/project-quote/:id/reject
+Authorization: Bearer {jwt-token}
+```
+
+Allows the quote owner to reject a pending quote.
+
+**Requirements:**
+
+- User must own the quote (userId matches)
+- Quote must have status `"pending"`
+
+**Response:**
+
+```json
+{
+  "message": "Quote rejected successfully",
+  "quoteId": "uuid",
+  "status": "rejected"
+}
+```
+
+### 10. Cancel Quote (Owner or Hub Manager)
+
+```
+POST /applications/project-quote/:id/cancel
+Authorization: Bearer {jwt-token}
+```
+
+Allows the quote owner or `FOUNDATION_HUB_MANAGER` to cancel a pending quote.
+
+**Requirements:**
+
+- User must own the quote OR be hub manager
+- Quote must have status `"pending"`
+
+**Response:**
+
+```json
+{
+  "message": "Quote cancelled successfully",
+  "quoteId": "uuid",
+  "status": "cancelled"
+}
+```
 
 ## Integration Example (TypeScript)
 
@@ -164,15 +330,43 @@ if (response.ok) {
 
 ## Error Handling
 
-- **401**: Invalid signature
-- **400**: Invalid input data, expired timestamp, or unsupported region
-- **403**: Access denied (wallet doesn't own the quote)
+- **400**: Invalid input data, expired timestamp, unsupported region, or invalid status transition
+- **401**: Invalid signature or expired/missing bearer token
+- **403**: Access denied (wallet doesn't own the quote or insufficient permissions)
 - **404**: Quote not found
+- **429**: Rate limit exceeded (100 quotes per hour system-wide)
 - **500**: Internal server error
+
+### Common Error Responses
+
+**Invalid Status Transition:**
+
+```json
+{
+  "error": "Cannot approve quote with status 'approved'. Only pending quotes can be approved."
+}
+```
+
+**Insufficient Permissions:**
+
+```json
+{
+  "error": "Access denied. Only hub manager can set cash amount."
+}
+```
+
+**Quote Not Found:**
+
+```json
+{
+  "error": "Quote not found"
+}
+```
 
 ## Testing
 
 Run the test script:
+
 ```bash
 # Add your private key to .env
 echo "TEST_WALLET_PRIVATE_KEY=0x..." >> .env

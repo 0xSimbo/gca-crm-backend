@@ -1982,6 +1982,7 @@ export const ProjectQuotes = pgTable("project_quotes", {
 
   // Admin validation field (filled later)
   cashAmountUsd: text("cash_amount_usd"),
+  status: varchar("status", { length: 20 }).notNull().default("pending"), // pending, approved, rejected, cancelled
 });
 
 export type ProjectQuoteType = InferSelectModel<typeof ProjectQuotes>;

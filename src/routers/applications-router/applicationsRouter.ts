@@ -80,6 +80,8 @@ import { findProjectQuotesByUserId } from "../../db/queries/project-quotes/findP
 import { findProjectQuoteById } from "../../db/queries/project-quotes/findProjectQuoteById";
 import { forwarderAddresses } from "../../constants/addresses";
 import { parseUnits } from "viem";
+import { updateQuoteCashAmount } from "../../db/mutations/project-quotes/updateQuoteCashAmount";
+import { updateQuoteStatus } from "../../db/mutations/project-quotes/updateQuoteStatus";
 import {
   createFraction,
   validateFractionCanBeModified,
@@ -2215,6 +2217,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               },
               admin: {
                 cashAmountUsd: quote.cashAmountUsd,
+                status: quote.status,
               },
               debug: quote.debugJson,
             };
@@ -2243,6 +2246,283 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
             summary: "Retrieve a project quote by ID (bearer auth)",
             description:
               "Returns the full quote details for quotes linked to the authenticated user's account. FOUNDATION_HUB_MANAGER has access to all quotes. Accessible through user dashboard with bearer token.",
+            tags: [TAG.APPLICATIONS],
+          },
+        }
+      )
+      .post(
+        "/project-quote/:id/cash-amount",
+        async ({ params, body, set, userId }) => {
+          try {
+            // Check if user is FOUNDATION_HUB_MANAGER
+            const isFoundationManager =
+              userId.toLowerCase() ===
+              forwarderAddresses.FOUNDATION_HUB_MANAGER_WALLET.toLowerCase();
+
+            if (!isFoundationManager) {
+              set.status = 403;
+              return {
+                error: "Access denied. Only hub manager can set cash amount.",
+              };
+            }
+
+            // Find quote
+            const quote = await findProjectQuoteById(params.id);
+            if (!quote) {
+              set.status = 404;
+              return { error: "Quote not found" };
+            }
+
+            // Update cash amount
+            const updatedQuote = await updateQuoteCashAmount(
+              params.id,
+              body.cashAmountUsd
+            );
+
+            return {
+              message: "Cash amount updated successfully",
+              quote: {
+                id: updatedQuote.id,
+                cashAmountUsd: updatedQuote.cashAmountUsd,
+              },
+            };
+          } catch (e) {
+            if (e instanceof Error) {
+              console.error(
+                "[applicationsRouter] /project-quote/:id/cash-amount error:",
+                e
+              );
+              set.status = 400;
+              return { error: e.message };
+            }
+            console.error(
+              "[applicationsRouter] /project-quote/:id/cash-amount unknown error:",
+              e
+            );
+            set.status = 500;
+            return { error: "Internal server error" };
+          }
+        },
+        {
+          params: t.Object({
+            id: t.String({ description: "Quote ID" }),
+          }),
+          body: t.Object({
+            cashAmountUsd: t.String({
+              description: "Cash amount in USD (as string for precision)",
+            }),
+          }),
+          detail: {
+            summary: "Set cash amount for a quote (hub manager only)",
+            description:
+              "Allows FOUNDATION_HUB_MANAGER to set the validated cash amount for a project quote.",
+            tags: [TAG.APPLICATIONS],
+          },
+        }
+      )
+      .post(
+        "/project-quote/:id/approve",
+        async ({ params, set, userId }) => {
+          try {
+            // Find quote
+            const quote = await findProjectQuoteById(params.id);
+            if (!quote) {
+              set.status = 404;
+              return { error: "Quote not found" };
+            }
+
+            // Check if user owns this quote
+            if (
+              !quote.userId ||
+              quote.userId.toLowerCase() !== userId.toLowerCase()
+            ) {
+              set.status = 403;
+              return {
+                error: "Access denied. You can only approve your own quotes.",
+              };
+            }
+
+            // Check current status - can only approve if pending
+            if (quote.status !== "pending") {
+              set.status = 400;
+              return {
+                error: `Cannot approve quote with status '${quote.status}'. Only pending quotes can be approved.`,
+              };
+            }
+
+            // Update status to approved
+            await updateQuoteStatus(params.id, "approved");
+
+            return {
+              message: "Quote approved successfully",
+              quoteId: params.id,
+              status: "approved",
+            };
+          } catch (e) {
+            if (e instanceof Error) {
+              console.error(
+                "[applicationsRouter] /project-quote/:id/approve error:",
+                e
+              );
+              set.status = 400;
+              return { error: e.message };
+            }
+            console.error(
+              "[applicationsRouter] /project-quote/:id/approve unknown error:",
+              e
+            );
+            set.status = 500;
+            return { error: "Internal server error" };
+          }
+        },
+        {
+          params: t.Object({
+            id: t.String({ description: "Quote ID" }),
+          }),
+          detail: {
+            summary: "Approve a project quote (owner only)",
+            description:
+              "Allows the quote owner to approve a pending quote. Only quotes with 'pending' status can be approved.",
+            tags: [TAG.APPLICATIONS],
+          },
+        }
+      )
+      .post(
+        "/project-quote/:id/reject",
+        async ({ params, set, userId }) => {
+          try {
+            // Find quote
+            const quote = await findProjectQuoteById(params.id);
+            if (!quote) {
+              set.status = 404;
+              return { error: "Quote not found" };
+            }
+
+            // Check if user owns this quote
+            if (
+              !quote.userId ||
+              quote.userId.toLowerCase() !== userId.toLowerCase()
+            ) {
+              set.status = 403;
+              return {
+                error: "Access denied. You can only reject your own quotes.",
+              };
+            }
+
+            // Check current status - can only reject if pending
+            if (quote.status !== "pending") {
+              set.status = 400;
+              return {
+                error: `Cannot reject quote with status '${quote.status}'. Only pending quotes can be rejected.`,
+              };
+            }
+
+            // Update status to rejected
+            await updateQuoteStatus(params.id, "rejected");
+
+            return {
+              message: "Quote rejected successfully",
+              quoteId: params.id,
+              status: "rejected",
+            };
+          } catch (e) {
+            if (e instanceof Error) {
+              console.error(
+                "[applicationsRouter] /project-quote/:id/reject error:",
+                e
+              );
+              set.status = 400;
+              return { error: e.message };
+            }
+            console.error(
+              "[applicationsRouter] /project-quote/:id/reject unknown error:",
+              e
+            );
+            set.status = 500;
+            return { error: "Internal server error" };
+          }
+        },
+        {
+          params: t.Object({
+            id: t.String({ description: "Quote ID" }),
+          }),
+          detail: {
+            summary: "Reject a project quote (owner only)",
+            description:
+              "Allows the quote owner to reject a pending quote. Only quotes with 'pending' status can be rejected.",
+            tags: [TAG.APPLICATIONS],
+          },
+        }
+      )
+      .post(
+        "/project-quote/:id/cancel",
+        async ({ params, set, userId }) => {
+          try {
+            // Find quote
+            const quote = await findProjectQuoteById(params.id);
+            if (!quote) {
+              set.status = 404;
+              return { error: "Quote not found" };
+            }
+
+            // Check if user is hub manager or owns this quote
+            const isFoundationManager =
+              userId.toLowerCase() ===
+              forwarderAddresses.FOUNDATION_HUB_MANAGER_WALLET.toLowerCase();
+
+            const isOwner =
+              quote.userId &&
+              quote.userId.toLowerCase() === userId.toLowerCase();
+
+            if (!isFoundationManager && !isOwner) {
+              set.status = 403;
+              return {
+                error:
+                  "Access denied. You can only cancel your own quotes or be a hub manager.",
+              };
+            }
+
+            // Check current status - can only cancel if pending
+            if (quote.status !== "pending") {
+              set.status = 400;
+              return {
+                error: `Cannot cancel quote with status '${quote.status}'. Only pending quotes can be cancelled.`,
+              };
+            }
+
+            // Update status to cancelled
+            await updateQuoteStatus(params.id, "cancelled");
+
+            return {
+              message: "Quote cancelled successfully",
+              quoteId: params.id,
+              status: "cancelled",
+            };
+          } catch (e) {
+            if (e instanceof Error) {
+              console.error(
+                "[applicationsRouter] /project-quote/:id/cancel error:",
+                e
+              );
+              set.status = 400;
+              return { error: e.message };
+            }
+            console.error(
+              "[applicationsRouter] /project-quote/:id/cancel unknown error:",
+              e
+            );
+            set.status = 500;
+            return { error: "Internal server error" };
+          }
+        },
+        {
+          params: t.Object({
+            id: t.String({ description: "Quote ID" }),
+          }),
+          detail: {
+            summary: "Cancel a project quote (owner or hub manager)",
+            description:
+              "Allows the quote owner or FOUNDATION_HUB_MANAGER to cancel a pending quote. Only quotes with 'pending' status can be cancelled.",
             tags: [TAG.APPLICATIONS],
           },
         }
