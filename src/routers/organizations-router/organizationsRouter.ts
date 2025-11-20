@@ -42,7 +42,12 @@ export const organizationsRouter = new Elysia({ prefix: "/organizations" })
           throw new Error("Organization not found");
         }
 
-        return organization;
+        return {
+          ...organization,
+          owner: {
+            id: organization.owner.id,
+          },
+        };
       } catch (e) {
         console.log("[organizationsRouter] byId", e);
         throw new Error("Error Occured");
@@ -55,35 +60,6 @@ export const organizationsRouter = new Elysia({ prefix: "/organizations" })
       detail: {
         summary: "Get Organization by ID",
         description: `Get Organization by ID`,
-        tags: [TAG.ORGANIZATIONS],
-      },
-    }
-  )
-  .get(
-    "/organization-members",
-    async ({ query, set }) => {
-      if (!query.id) throw new Error("ID is required");
-      try {
-        const organization = await findOrganizationById(query.id);
-        if (!organization) {
-          set.status = 404;
-          throw new Error("Organization not found");
-        }
-        const organizationMembers = await findAllOrganizationMembers(query.id);
-
-        return organizationMembers;
-      } catch (e) {
-        console.log("[organizationsRouter] organization-members", e);
-        throw new Error("Error Occured");
-      }
-    },
-    {
-      query: t.Object({
-        id: t.String(),
-      }),
-      detail: {
-        summary: "Get Organization Members by ID",
-        description: `Get Organization Members by ID`,
         tags: [TAG.ORGANIZATIONS],
       },
     }
@@ -182,6 +158,52 @@ export const organizationsRouter = new Elysia({ prefix: "/organizations" })
           detail: {
             summary: "Get Organizations by User ID",
             description: `Get Organizations by User ID`,
+            tags: [TAG.ORGANIZATIONS],
+          },
+        }
+      )
+      .get(
+        "/organization-members",
+        async ({ query, set, userId }) => {
+          if (!query.id) throw new Error("ID is required");
+          try {
+            const organization = await findOrganizationById(query.id);
+            if (!organization) {
+              set.status = 404;
+              return "Organization not found";
+            }
+
+            // Check if user is a member of this organization
+            const member = await findOrganizationMemberByUserId(
+              query.id,
+              userId
+            );
+            if (!member) {
+              set.status = 403;
+              return "Unauthorized: You are not a member of this organization";
+            }
+
+            const organizationMembers = await findAllOrganizationMembers(
+              query.id
+            );
+
+            return organizationMembers;
+          } catch (e) {
+            if (e instanceof Error) {
+              set.status = 400;
+              return e.message;
+            }
+            console.log("[organizationsRouter] organization-members", e);
+            throw new Error("Error Occured");
+          }
+        },
+        {
+          query: t.Object({
+            id: t.String(),
+          }),
+          detail: {
+            summary: "Get Organization Members by ID",
+            description: `Get Organization Members by ID. Only accessible by organization members.`,
             tags: [TAG.ORGANIZATIONS],
           },
         }

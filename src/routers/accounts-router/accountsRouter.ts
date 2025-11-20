@@ -26,7 +26,12 @@ export const accountsRouter = new Elysia({ prefix: "/accounts" })
           throw new Error("Account not found");
         }
 
-        return account;
+        return {
+          role: account.role,
+          createdAt: account.createdAt,
+          siweNonce: account.siweNonce,
+          salt: account.salt,
+        };
       } catch (e) {
         console.log("[accountsRouter] byId", e);
         throw new Error("Error Occured");
