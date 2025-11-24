@@ -79,6 +79,11 @@ import { organizationApplicationRoutes } from "./organizationApplicationRoutes";
 import { findProjectQuotesByUserId } from "../../db/queries/project-quotes/findProjectQuotesByUserId";
 import { findProjectQuoteById } from "../../db/queries/project-quotes/findProjectQuoteById";
 import { forwarderAddresses } from "../../constants/addresses";
+import { extractElectricityPriceFromUtilityBill } from "./helpers/extractElectricityPrice";
+import { computeProjectQuote } from "./helpers/computeProjectQuote";
+import { createProjectQuote } from "../../db/mutations/project-quotes/createProjectQuote";
+import { countQuotesInLastHour } from "../../db/queries/project-quotes/countQuotesInLastHour";
+import { getRegionCodeFromCoordinates } from "./helpers/mapStateToRegionCode";
 import { parseUnits } from "viem";
 import { updateQuoteCashAmount } from "../../db/mutations/project-quotes/updateQuoteCashAmount";
 import { updateQuoteStatus } from "../../db/mutations/project-quotes/updateQuoteStatus";
@@ -2541,6 +2546,213 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
             summary: "Cancel a project quote (owner or hub manager)",
             description:
               "Allows the quote owner or FOUNDATION_HUB_MANAGER to cancel a pending quote. Only quotes with 'pending' status can be cancelled.",
+            tags: [TAG.APPLICATIONS],
+          },
+        }
+      )
+      .post(
+        "/project-quote",
+        async ({ body, set, userId }) => {
+          try {
+            // Validate inputs
+            const weeklyConsumptionMWh = parseFloat(body.weeklyConsumptionMWh);
+            const systemSizeKw = parseFloat(body.systemSizeKw);
+            const latitude = parseFloat(body.latitude);
+            const longitude = parseFloat(body.longitude);
+
+            if (isNaN(weeklyConsumptionMWh) || weeklyConsumptionMWh <= 0) {
+              set.status = 400;
+              return {
+                error: "weeklyConsumptionMWh must be a positive number",
+              };
+            }
+
+            if (isNaN(systemSizeKw) || systemSizeKw <= 0) {
+              set.status = 400;
+              return { error: "systemSizeKw must be a positive number" };
+            }
+
+            if (isNaN(latitude) || isNaN(longitude)) {
+              set.status = 400;
+              return { error: "latitude and longitude must be valid numbers" };
+            }
+
+            // Derive wallet address from authenticated userId
+            const walletAddress = userId.toLowerCase();
+
+            // Check global rate limit: 100 quotes per hour for all users
+            const quoteCount = await countQuotesInLastHour();
+            if (quoteCount >= 100) {
+              set.status = 429;
+              return {
+                error:
+                  "Rate limit exceeded. The system can process a maximum of 100 quotes per hour. Please try again later.",
+              };
+            }
+
+            // Derive region code from coordinates
+            const regionCode = await getRegionCodeFromCoordinates(
+              latitude,
+              longitude
+            );
+            if (!regionCode) {
+              set.status = 400;
+              return {
+                error:
+                  "Unable to determine region from the provided coordinates. Please ensure the location is within a supported region.",
+              };
+            }
+
+            // Validate utility bill file
+            if (!body.utilityBill) {
+              set.status = 400;
+              return { error: "utilityBill file is required" };
+            }
+
+            const file = body.utilityBill;
+
+            // Only accept PDFs per the extraction methodology
+            if (file.type !== "application/pdf") {
+              set.status = 400;
+              return {
+                error:
+                  "Only PDF utility bills are accepted. Please upload a PDF file.",
+              };
+            }
+
+            // Max 10MB file size
+            const maxSize = 10 * 1024 * 1024;
+            if (file.size > maxSize) {
+              set.status = 400;
+              return { error: "File size must be less than 10MB" };
+            }
+
+            // Extract electricity price from utility bill
+            const fileBuffer = Buffer.from(await file.arrayBuffer());
+            const extracted = await extractElectricityPriceFromUtilityBill(
+              fileBuffer,
+              file.name,
+              file.type
+            );
+            const priceExtraction = extracted.result;
+            const billUrl = extracted.billUrl;
+
+            // Compute quote
+            const quoteResult = await computeProjectQuote({
+              weeklyConsumptionMWh,
+              systemSizeKw,
+              electricityPricePerKwh: priceExtraction.pricePerKwh,
+              latitude,
+              longitude,
+            });
+
+            // Persist to database
+            const savedQuote = await createProjectQuote({
+              walletAddress,
+              userId,
+              metadata: body.metadata,
+              regionCode,
+              latitude: latitude.toString(),
+              longitude: longitude.toString(),
+              weeklyConsumptionMWh: weeklyConsumptionMWh.toString(),
+              systemSizeKw: systemSizeKw.toString(),
+              electricityPricePerKwh: priceExtraction.pricePerKwh.toString(),
+              priceSource: "ai",
+              priceConfidence: priceExtraction.confidence.toString(),
+              utilityBillUrl: billUrl,
+              discountRate: quoteResult.discountRate.toString(),
+              escalatorRate: quoteResult.escalatorRate.toString(),
+              years: quoteResult.years,
+              protocolDepositUsd6: quoteResult.protocolDepositUsd6,
+              weeklyCredits: quoteResult.weeklyCredits.toString(),
+              weeklyDebt: quoteResult.weeklyDebt.toString(),
+              netWeeklyCc: quoteResult.netWeeklyCc.toString(),
+              netCcPerMwh: quoteResult.netCcPerMwh.toString(),
+              weeklyImpactAssetsWad: quoteResult.weeklyImpactAssetsWad,
+              efficiencyScore: quoteResult.efficiencyScore,
+              carbonOffsetsPerMwh: quoteResult.carbonOffsetsPerMwh.toString(),
+              uncertaintyApplied: quoteResult.uncertaintyApplied.toString(),
+              debugJson: quoteResult.debugJson,
+            });
+
+            // Return response
+            return {
+              quoteId: savedQuote.id,
+              walletAddress: savedQuote.walletAddress,
+              userId: savedQuote.userId,
+              metadata: savedQuote.metadata,
+              regionCode: savedQuote.regionCode,
+              protocolDeposit: {
+                usd: quoteResult.protocolDepositUsd,
+                usd6Decimals: quoteResult.protocolDepositUsd6,
+              },
+              carbonMetrics: {
+                weeklyCredits: quoteResult.weeklyCredits,
+                weeklyDebt: quoteResult.weeklyDebt,
+                netWeeklyCc: quoteResult.netWeeklyCc,
+                netCcPerMwh: quoteResult.netCcPerMwh,
+                carbonOffsetsPerMwh: quoteResult.carbonOffsetsPerMwh,
+                uncertaintyApplied: quoteResult.uncertaintyApplied,
+              },
+              efficiency: {
+                score: quoteResult.efficiencyScore,
+                weeklyImpactAssetsWad: quoteResult.weeklyImpactAssetsWad,
+              },
+              rates: {
+                discountRate: quoteResult.discountRate,
+                escalatorRate: quoteResult.escalatorRate,
+                commitmentYears: quoteResult.years,
+              },
+              extraction: {
+                electricityPricePerKwh: priceExtraction.pricePerKwh,
+                confidence: priceExtraction.confidence,
+                rationale: priceExtraction.rationale,
+                utilityBillUrl: billUrl,
+              },
+              debug: quoteResult.debugJson,
+            };
+          } catch (e) {
+            if (e instanceof Error) {
+              console.error("[applicationsRouter] /project-quote error:", e);
+              set.status = 400;
+              return { error: e.message };
+            }
+            console.error(
+              "[applicationsRouter] /project-quote unknown error:",
+              e
+            );
+            set.status = 500;
+            return { error: "Internal server error" };
+          }
+        },
+        {
+          body: t.Object({
+            weeklyConsumptionMWh: t.String({
+              description: "Weekly energy consumption in MWh (from Aurora)",
+            }),
+            systemSizeKw: t.String({
+              description: "System size in kW (nameplate capacity)",
+            }),
+            latitude: t.String({
+              description: "Latitude of the solar farm location",
+            }),
+            longitude: t.String({
+              description: "Longitude of the solar farm location",
+            }),
+            utilityBill: t.File({
+              description: "Utility bill PDF for price extraction",
+            }),
+            metadata: t.Optional(
+              t.String({
+                description:
+                  "Optional metadata for identifying the quote (e.g., farm owner name, project ID)",
+              })
+            ),
+          }),
+          detail: {
+            summary: "Create a project quote (hub frontend, bearer auth)",
+            description:
+              "Upload a utility bill, provide Aurora weekly consumption, system size, and location coordinates. Authenticated via bearer token (JWT). The region will be automatically determined from coordinates. Returns estimated protocol deposit, carbon metrics, and efficiency scores. Wallet address is derived from the authenticated user.",
             tags: [TAG.APPLICATIONS],
           },
         }
