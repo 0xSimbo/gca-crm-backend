@@ -79,7 +79,7 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
       detail: {
         summary: "Get high-level fraction sales summary",
         description:
-          "Returns totals for GLW delegated via launchpad fractions plus GLW from PayProtocolFee payments, and USD volume from mining-center fractions. Only filled fractions contribute to the totals.",
+          "Returns totals for GLW delegated via launchpad fractions plus GLW from PayProtocolFee payments, USD volume from mining-center fractions, and SGCTL volume from launchpad-presale fractions. Only filled and committed fractions contribute to the totals.",
         tags: [TAG.APPLICATIONS],
       },
     }
@@ -2264,9 +2264,14 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
     "/available",
     async ({ query: { type }, set }) => {
       try {
-        if (type && type !== "launchpad" && type !== "mining-center") {
+        if (
+          type &&
+          type !== "launchpad" &&
+          type !== "mining-center" &&
+          type !== "launchpad-presale"
+        ) {
           set.status = 400;
-          return "type must be either 'launchpad' or 'mining-center'";
+          return "type must be either 'launchpad', 'mining-center', or 'launchpad-presale'";
         }
 
         const fractions = await getAvailableFractions({ type });
@@ -2326,10 +2331,14 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
         const miningCenterFractions = fractions.filter(
           (fraction) => fraction.type === "mining-center"
         );
+        const launchpadPresaleFractions = fractions.filter(
+          (fraction) => fraction.type === "launchpad-presale"
+        );
 
         return {
           launchpad: computeSummary(launchpadFractions),
           miningCenter: computeSummary(miningCenterFractions),
+          launchpadPresale: computeSummary(launchpadPresaleFractions),
         };
       } catch (e) {
         if (e instanceof Error) {
@@ -2343,13 +2352,17 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
     {
       query: t.Object({
         type: t.Optional(
-          t.Union([t.Literal("launchpad"), t.Literal("mining-center")])
+          t.Union([
+            t.Literal("launchpad"),
+            t.Literal("mining-center"),
+            t.Literal("launchpad-presale"),
+          ])
         ),
       }),
       detail: {
         summary: "Get currently available fractions",
         description:
-          "Returns committed fractions that have not expired yet. Optionally filter by fraction type to retrieve available launchpad or mining-center listings.",
+          "Returns committed fractions that have not expired yet. Optionally filter by fraction type to retrieve available launchpad, mining-center, or launchpad-presale (SGCTL) listings.",
         tags: [TAG.APPLICATIONS],
       },
     }
@@ -3192,6 +3205,121 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
             summary: "Create a new mining-center fraction",
             description:
               "Creates a new mining-center type fraction for an application. Mining-center fractions use USDC tokens",
+            tags: [TAG.APPLICATIONS],
+          },
+        }
+      )
+      .post(
+        "/create-launchpad-presale",
+        async ({
+          body: { applicationId, sponsorSplitPercent, stepPrice, totalSteps },
+          set,
+          userId,
+        }) => {
+          try {
+            // Validate required fields
+            if (!applicationId) {
+              set.status = 400;
+              return "applicationId is required";
+            }
+
+            if (
+              sponsorSplitPercent === undefined ||
+              sponsorSplitPercent === null
+            ) {
+              set.status = 400;
+              return "sponsorSplitPercent is required";
+            }
+
+            // Check if application exists and user has access
+            const application = await FindFirstApplicationById(applicationId);
+            if (!application) {
+              set.status = 404;
+              return "Application not found";
+            }
+
+            // Only FOUNDATION_HUB_MANAGER can create launchpad-presale fractions
+            // Check this first before owner/role checks
+            if (
+              userId.toLowerCase() !==
+              forwarderAddresses.FOUNDATION_HUB_MANAGER_WALLET.toLowerCase()
+            ) {
+              set.status = 401;
+              return "Unauthorized: Only FOUNDATION_HUB_MANAGER can create launchpad-presale fractions";
+            }
+
+            // CRITICAL: Prevent multiple active launchpad-presale fractions per application
+            // Check if there's already an active presale fraction
+            const existingPresaleFractions = await db
+              .select()
+              .from(fractions)
+              .where(
+                and(
+                  eq(fractions.applicationId, applicationId),
+                  eq(fractions.type, "launchpad-presale"),
+                  inArray(fractions.status, [
+                    FRACTION_STATUS.DRAFT,
+                    FRACTION_STATUS.COMMITTED,
+                  ]),
+                  gt(fractions.expirationAt, new Date())
+                )
+              );
+
+            if (existingPresaleFractions.length > 0) {
+              set.status = 400;
+              return `Cannot create launchpad-presale fraction: application already has an active presale fraction (${existingPresaleFractions[0].id})`;
+            }
+
+            // Create the launchpad-presale fraction
+            const fraction = await createFraction({
+              applicationId,
+              createdBy: userId,
+              sponsorSplitPercent,
+              stepPrice,
+              totalSteps,
+              type: "launchpad-presale",
+            });
+
+            return {
+              success: true,
+              fractionId: fraction.id,
+              token: fraction.token,
+              expirationAt: fraction.expirationAt,
+              message: "Launchpad-presale fraction created successfully",
+            };
+          } catch (e) {
+            if (e instanceof Error) {
+              set.status = 400;
+              return e.message;
+            }
+            console.log("[fractionsRouter] /create-launchpad-presale", e);
+            throw new Error("Error Occurred");
+          }
+        },
+        {
+          body: t.Object({
+            applicationId: t.String({
+              description: "The ID of the application to create a fraction for",
+            }),
+            sponsorSplitPercent: t.Number({
+              minimum: 0,
+              maximum: 100,
+              description: "Sponsor split percentage (0-100)",
+            }),
+            totalSteps: t.Number({
+              minimum: 1,
+              description:
+                "Total number of steps (minStep = 1, allows partial fills)",
+            }),
+            stepPrice: t.String({
+              description:
+                "Price per step in SGCTL token decimals (6 decimals like USDC)",
+            }),
+          }),
+          detail: {
+            summary: "Create a new launchpad-presale fraction (SGCTL)",
+            description:
+              "Creates a new launchpad-presale type fraction for an application. Launchpad-presale fractions use SGCTL tokens (off-chain), allow partial fills (minStep = 1), and expire on Tuesday at 12:00 PM EST. Only FOUNDATION_HUB_MANAGER can create these fractions.",
             tags: [TAG.APPLICATIONS],
           },
         }

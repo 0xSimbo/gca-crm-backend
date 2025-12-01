@@ -7,8 +7,10 @@ import { getCurrentEpoch } from "../../../utils/getProtocolWeek";
 export interface FractionsSummary {
   totalGlwDelegated: string;
   totalMiningCenterVolume: string;
+  totalSgctlVolume: string;
   launchpadContributors: number;
   miningCenterContributors: number;
+  launchpadPresaleContributors: number;
   glwDelegationByEpoch: Record<number, string>;
 }
 
@@ -31,9 +33,11 @@ export async function getFractionsSummary(): Promise<FractionsSummary> {
 
   let launchpadTotal = BigInt(0);
   let miningCenterTotal = BigInt(0);
+  let launchpadPresaleTotal = BigInt(0);
 
   const launchpadFractionIds: string[] = [];
   const miningCenterFractionIds: string[] = [];
+  const launchpadPresaleFractionIds: string[] = [];
 
   for (const fraction of filledFractions) {
     const stepPrice = fraction.stepPrice
@@ -49,12 +53,18 @@ export async function getFractionsSummary(): Promise<FractionsSummary> {
     } else if (fraction.type === "mining-center") {
       miningCenterTotal += total;
       miningCenterFractionIds.push(fraction.id);
+    } else if (fraction.type === "launchpad-presale") {
+      launchpadPresaleTotal += total;
+      launchpadPresaleFractionIds.push(fraction.id);
     }
   }
 
   const launchpadContributors = await countContributors(launchpadFractionIds);
   const miningCenterContributors = await countContributors(
     miningCenterFractionIds
+  );
+  const launchpadPresaleContributors = await countContributors(
+    launchpadPresaleFractionIds
   );
 
   const glwDelegationByEpoch = await getGlwDelegationByEpoch(
@@ -99,8 +109,10 @@ export async function getFractionsSummary(): Promise<FractionsSummary> {
   return {
     totalGlwDelegated: totalGlwDelegated.toString(),
     totalMiningCenterVolume: miningCenterTotal.toString(),
+    totalSgctlVolume: launchpadPresaleTotal.toString(),
     launchpadContributors,
     miningCenterContributors,
+    launchpadPresaleContributors,
     glwDelegationByEpoch,
   };
 }

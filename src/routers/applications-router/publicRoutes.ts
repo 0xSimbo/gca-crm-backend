@@ -43,9 +43,13 @@ import { getPubkeysAndShortIds } from "../devices/get-pubkeys-and-short-ids";
 import { findAllAuditFeesPaidApplicationsByZoneId } from "../../db/queries/applications/findAllAuditFeesPaidApplicationsByZoneId";
 import {
   DECIMALS_BY_TOKEN,
-  PAYMENT_CURRENCIES,
   TRANSFER_TYPES,
+  PAYMENT_CURRENCIES as BASE_PAYMENT_CURRENCIES,
 } from "@glowlabs-org/utils/browser";
+import {
+  PAYMENT_CURRENCIES,
+  PaymentCurrency,
+} from "../../constants/payment-currencies";
 import { getUniqueStarNameForApplicationId } from "../farms/farmsRouter";
 import { getFarmNamesByApplicationIds } from "../../db/queries/farms/getFarmNamesByApplicationIds";
 import {
@@ -73,7 +77,7 @@ export async function completeApplicationAndCreateFarm({
   application: any;
   txHash: string;
   paymentDate: Date;
-  paymentCurrency: (typeof PAYMENT_CURRENCIES)[number];
+  paymentCurrency: PaymentCurrency;
   paymentEventType: string;
   paymentAmount: string;
   protocolFee: bigint;
@@ -129,6 +133,12 @@ export async function completeApplicationAndCreateFarm({
       zoneId: application.zoneId,
     });
 
+    // Map MIXED and SGCTL to valid event currencies
+    const eventPaymentCurrency =
+      paymentCurrency === "MIXED" || paymentCurrency === "SGCTL"
+        ? "USDC"
+        : paymentCurrency;
+
     emitter
       .emit({
         eventType: eventTypes.auditPfeesPaid,
@@ -138,7 +148,7 @@ export async function completeApplicationAndCreateFarm({
           payer: "0x0000000000000000000000000000000000000000",
           amount_6Decimals: paymentAmount,
           txHash,
-          paymentCurrency,
+          paymentCurrency: eventPaymentCurrency,
           paymentEventType,
           isSponsored: false,
         },
@@ -535,12 +545,16 @@ export const publicApplicationsRoutes = new Elysia()
         ),
         sortOrder: t.Optional(t.Union([t.Literal("asc"), t.Literal("desc")])),
         type: t.Optional(
-          t.Union([t.Literal("launchpad"), t.Literal("mining-center")])
+          t.Union([
+            t.Literal("launchpad"),
+            t.Literal("mining-center"),
+            t.Literal("launchpad-presale"),
+          ])
         ),
       }),
       detail: {
         summary: "Get auction applications available for sponsorship",
-        description: `Returns applications with active fractions available for purchase. The application status depends on the fraction type: 'launchpad' (default) returns applications waiting for payment in zones accepting sponsors, while 'mining-center' returns completed applications. Only applications with active fractions (draft or committed status, not expired) are returned. Supports filtering by zoneId, paymentCurrency, and fraction type. Sorting options include publishedOnAuctionTimestamp, sponsorSplitPercent, finalProtocolFee, or paymentCurrency. When sorting by paymentCurrency with a specific currency filter, sorts by lowest price for that currency. Includes application price quotes, related data, and active fraction information showing funding progress, steps sold, amounts raised, and expiration details.`,
+        description: `Returns applications with active fractions available for purchase. The application status depends on the fraction type: 'launchpad' (default) returns applications waiting for payment in zones accepting sponsors, 'mining-center' returns completed applications, and 'launchpad-presale' returns applications with SGCTL presale fractions. Only applications with active fractions (draft or committed status, not expired) are returned. Supports filtering by zoneId, paymentCurrency, and fraction type. Sorting options include publishedOnAuctionTimestamp, sponsorSplitPercent, finalProtocolFee, or paymentCurrency. When sorting by paymentCurrency with a specific currency filter, sorts by lowest price for that currency. Includes application price quotes, related data, and active fraction information showing funding progress, steps sold, amounts raised, and expiration details.`,
         tags: [TAG.APPLICATIONS],
       },
     }
@@ -939,7 +953,7 @@ export const publicApplicationsRoutes = new Elysia()
         txHash: t.String(),
         applicationId: t.String(),
         paymentCurrency: t.Enum(
-          Object.fromEntries(PAYMENT_CURRENCIES.map((c) => [c, c])),
+          Object.fromEntries(BASE_PAYMENT_CURRENCIES.map((c) => [c, c])),
           { type: "string" }
         ),
         eventType: t.String(),

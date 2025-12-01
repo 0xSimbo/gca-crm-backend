@@ -12,15 +12,19 @@ import {
   FRACTION_STATUS,
   VALID_SPONSOR_SPLIT_PERCENTAGES,
   MINING_CENTER_FRACTION_LIFETIME_MS,
+  SGCTL_TOKEN_ADDRESS,
+  getNextTuesdayNoonEST,
 } from "../../../constants/fractions";
 import {
   hasFilledFraction,
   hasActiveFractions,
+  getTotalRaisedForApplication,
 } from "../../queries/fractions/findFractionsByApplicationId";
 import { FindFirstApplicationById } from "../../queries/applications/findFirstApplicationById";
 import { getFractionEventService } from "../../../services/eventListener";
 import { completeApplicationAndCreateFarm } from "../../../routers/applications-router/publicRoutes";
 import { createSlackClient } from "../../../slack/create-slack-client";
+import { forwarderAddresses } from "../../../constants/addresses";
 
 const SLACK_CHANNEL = "#devs";
 
@@ -111,7 +115,7 @@ export interface CreateFractionParams {
   stepPrice: string; // Price per step in token decimals
   totalSteps: number; // Total number of steps
   rewardScore?: number; // Reward score for launchpad fractions (optional, only used for launchpad type, e.g., 50, 100, 200)
-  type?: "launchpad" | "mining-center";
+  type?: "launchpad" | "mining-center" | "launchpad-presale";
 }
 
 /**
@@ -164,13 +168,16 @@ export async function createFraction(params: CreateFractionParams, tx?: any) {
   // Check if the user already has active fractions (draft or committed)
   // For launchpad fractions, we don't allow multiple active fractions
   // For mining-center fractions, we only check for other mining-center fractions
+  // For launchpad-presale fractions, skip this check (foundation wallet may have multiple active fractions)
 
-  const userHasActiveFractions = await hasActiveFractions(params.createdBy);
+  if (fractionType !== "launchpad-presale") {
+    const userHasActiveFractions = await hasActiveFractions(params.createdBy);
 
-  if (userHasActiveFractions) {
-    throw new Error(
-      `Cannot create fraction: user already has an active ${fractionType} fraction (draft or committed)`
-    );
+    if (userHasActiveFractions) {
+      throw new Error(
+        `Cannot create fraction: user already has an active ${fractionType} fraction (draft or committed)`
+      );
+    }
   }
 
   const { fractionId, nonce } = await generateUniqueFractionId(
@@ -179,12 +186,30 @@ export async function createFraction(params: CreateFractionParams, tx?: any) {
 
   const now = new Date();
 
-  // For mining-center fractions, expire on the following Saturday at 2:00 PM ET
-  // For launchpad fractions, use the standard lifetime
-  const expirationAt =
-    fractionType === "mining-center"
-      ? getNextSaturdayAt2PMET()
-      : new Date(now.getTime() + LAUNCHPAD_FRACTION_LIFETIME_MS);
+  // Calculate expiration based on fraction type:
+  // - mining-center: Following Saturday at 2:00 PM ET
+  // - launchpad-presale: Next Tuesday at 12:00 PM EST
+  // - launchpad: Standard lifetime (4 weeks)
+  let expirationAt: Date;
+  let token: string;
+  if (fractionType === "mining-center") {
+    token = forwarderAddresses.USDC;
+    expirationAt = getNextSaturdayAt2PMET();
+  } else if (fractionType === "launchpad-presale") {
+    token = SGCTL_TOKEN_ADDRESS;
+    expirationAt = getNextTuesdayNoonEST();
+  } else {
+    token = forwarderAddresses.GLW;
+    expirationAt = new Date(now.getTime() + LAUNCHPAD_FRACTION_LIFETIME_MS);
+  }
+
+  // For launchpad-presale, we set isCommittedOnChain to true immediately
+  // since it's an off-chain fraction and doesn't need on-chain commitment
+  const isCommittedOnChain = fractionType === "launchpad-presale";
+  const status =
+    fractionType === "launchpad-presale"
+      ? FRACTION_STATUS.COMMITTED
+      : FRACTION_STATUS.DRAFT;
 
   const fractionData: FractionInsertType = {
     id: fractionId,
@@ -199,14 +224,17 @@ export async function createFraction(params: CreateFractionParams, tx?: any) {
       fractionType === "launchpad" ? params.rewardScore ?? null : null, // Only save rewardScore for launchpad fractions
     createdAt: now,
     updatedAt: now,
-    isCommittedOnChain: false,
+    isCommittedOnChain,
     txHash: null,
-    committedAt: null,
+    committedAt: isCommittedOnChain ? now : null,
     isFilled: false,
     filledAt: null,
     expirationAt,
-    status: FRACTION_STATUS.DRAFT,
+    status,
     type: fractionType,
+    // For launchpad-presale, set the SGCTL token address
+    token,
+    owner: params.createdBy,
   };
 
   const result = await (tx || db)
@@ -471,6 +499,24 @@ export async function recordFractionSplit(
         return transactionResult;
       }
 
+      // CRITICAL: Check if total raised across ALL fractions >= protocol fee
+      // This prevents premature farm creation when only partial payment is made (e.g., 30% SGCTL presale)
+      const { totalRaisedUSD, hasMultipleFractionTypes, fractionTypes } =
+        await getTotalRaisedForApplication(application.id);
+
+      const requiredProtocolFee = BigInt(application.finalProtocolFeeBigInt);
+
+      console.log(
+        `[recordFractionSplit] Total raised: ${totalRaisedUSD.toString()}, Required: ${requiredProtocolFee.toString()}`
+      );
+
+      if (totalRaisedUSD < requiredProtocolFee) {
+        console.log(
+          `[recordFractionSplit] Insufficient funds raised. Total: ${totalRaisedUSD.toString()}, Required: ${requiredProtocolFee.toString()}. Farm creation deferred.`
+        );
+        return transactionResult;
+      }
+
       // Calculate payment amount (step * totalSteps)
       const stepBigInt = BigInt(transactionResult.fraction.step!);
       const totalStepsBigInt = BigInt(transactionResult.fraction.totalSteps!);
@@ -482,20 +528,26 @@ export async function recordFractionSplit(
           application.auditFields?.devices &&
           application.auditFields?.devices.length > 0
         ) {
-          // Determine payment currency based on fraction type
-          const paymentCurrency =
-            transactionResult.fraction.type === "mining-center"
-              ? "USDC"
-              : "GLW";
+          // Determine payment currency based on whether multiple fraction types were used
+          let paymentCurrency: string;
+          if (hasMultipleFractionTypes) {
+            paymentCurrency = "MIXED";
+          } else if (transactionResult.fraction.type === "mining-center") {
+            paymentCurrency = "USDC";
+          } else if (transactionResult.fraction.type === "launchpad-presale") {
+            paymentCurrency = "SGCTL";
+          } else {
+            paymentCurrency = "GLW";
+          }
 
           // Use the completeApplicationAndCreateFarm helper which includes solar farm sync
           await completeApplicationAndCreateFarm({
             application,
             txHash: params.transactionHash,
             paymentDate: new Date(params.timestamp * 1000),
-            paymentCurrency,
+            paymentCurrency: paymentCurrency as any,
             paymentEventType: "OnchainFractionRoundFilled",
-            paymentAmount: paymentAmount,
+            paymentAmount: totalRaisedUSD.toString(),
             protocolFee: BigInt(application.finalProtocolFeeBigInt),
             protocolFeeAdditionalPaymentTxHash: null,
           });

@@ -1,7 +1,11 @@
 import { eq, desc, and, gt, inArray, ne } from "drizzle-orm";
 import { db } from "../../db";
-import { fractions } from "../../schema";
-import { FRACTION_STATUS } from "../../../constants/fractions";
+import { fractions, ApplicationPriceQuotes } from "../../schema";
+import {
+  FRACTION_STATUS,
+  SGCTL_TOKEN_ADDRESS,
+} from "../../../constants/fractions";
+import { forwarderAddresses } from "../../../constants/addresses";
 
 /**
  * Finds all fractions for a given application ID
@@ -211,4 +215,137 @@ export async function hasActiveFractions(userId: string): Promise<boolean> {
     .limit(1);
 
   return result.length > 0;
+}
+
+/**
+ * Get all fractions for an application regardless of status
+ * Excludes mining-center fractions as they're not part of protocol deposit
+ *
+ * @param applicationId - The application ID
+ * @returns Array of all fractions for the application
+ */
+export async function getAllFractionsForApplication(applicationId: string) {
+  return await db
+    .select()
+    .from(fractions)
+    .where(
+      and(
+        eq(fractions.applicationId, applicationId),
+        ne(fractions.type, "mining-center")
+      )
+    )
+    .orderBy(fractions.createdAt);
+}
+
+/**
+ * Calculate total amount raised for an application across all fractions
+ * Converts token amounts to USD using ApplicationPriceQuotes
+ * Returns amount in USD (6 decimals)
+ *
+ * @param applicationId - The application ID
+ * @returns Object with total raised in USD (6 decimals) and whether multiple fraction types were used
+ */
+export async function getTotalRaisedForApplication(
+  applicationId: string
+): Promise<{
+  totalRaisedUSD: bigint;
+  hasMultipleFractionTypes: boolean;
+  fractionTypes: Set<string>;
+}> {
+  const allFractions = await db
+    .select()
+    .from(fractions)
+    .where(
+      and(
+        eq(fractions.applicationId, applicationId),
+        ne(fractions.type, "mining-center"),
+        inArray(fractions.status, [
+          FRACTION_STATUS.FILLED,
+          FRACTION_STATUS.COMMITTED,
+          FRACTION_STATUS.EXPIRED,
+        ])
+      )
+    );
+
+  // Get price quotes for USD conversion
+  const priceQuotes = await db
+    .select()
+    .from(ApplicationPriceQuotes)
+    .where(eq(ApplicationPriceQuotes.applicationId, applicationId))
+    .orderBy(desc(ApplicationPriceQuotes.createdAt))
+    .limit(1);
+
+  const prices = priceQuotes[0]?.prices || {};
+
+  let totalRaisedUSD = BigInt(0);
+  const fractionTypes = new Set<string>();
+
+  // Helper to get token ticker from address
+  const getTokenTicker = (tokenAddress: string | null): string | null => {
+    if (!tokenAddress) return null;
+    const lowerToken = tokenAddress.toLowerCase();
+    if (lowerToken === forwarderAddresses.GLW.toLowerCase()) return "GLW";
+    if (lowerToken === forwarderAddresses.USDC.toLowerCase()) return "USDC";
+    if (lowerToken === SGCTL_TOKEN_ADDRESS.toLowerCase()) return "GCTL";
+    return null;
+  };
+
+  // Helper to get token decimals
+  const getTokenDecimals = (tokenAddress: string | null): number => {
+    if (!tokenAddress) return 6; // Default to 6
+    const lowerToken = tokenAddress.toLowerCase();
+    if (lowerToken === forwarderAddresses.GLW.toLowerCase()) return 18;
+    // USDC, USDG, GCTL, SGCTL all use 6 decimals
+    return 6;
+  };
+
+  for (const fraction of allFractions) {
+    if (fraction.type) {
+      fractionTypes.add(fraction.type);
+    }
+
+    const stepPrice = fraction.stepPrice
+      ? BigInt(fraction.stepPrice)
+      : BigInt(0);
+    const soldSteps = BigInt(fraction.splitsSold ?? 0);
+
+    if (soldSteps > BigInt(0)) {
+      const tokenTicker = getTokenTicker(fraction.token);
+      const tokenDecimals = getTokenDecimals(fraction.token);
+
+      // Total amount in token's native decimals
+      const totalInTokenDecimals = stepPrice * soldSteps;
+
+      // Get price per token in USD (6 decimals)
+      // Default prices if not in quotes
+      let pricePerToken = BigInt(0);
+      if (tokenTicker && prices[tokenTicker]) {
+        pricePerToken = BigInt(prices[tokenTicker]);
+      } else {
+        // Default prices for known tokens
+        if (tokenTicker === "USDC" || tokenTicker === "USDG") {
+          pricePerToken = BigInt(1000000); // $1.00 in 6 decimals
+        }
+        // For GLW and GCTL, if no price quote, we can't estimate - skip or use 0
+      }
+
+      if (pricePerToken > BigInt(0)) {
+        // Calculate USD value
+        // Formula: (totalInTokenDecimals * pricePerToken) / (10^tokenDecimals)
+        // Result is in 6 decimals USD
+        const divisor = BigInt(10) ** BigInt(tokenDecimals);
+        const usdValue = (totalInTokenDecimals * pricePerToken) / divisor;
+        totalRaisedUSD += usdValue;
+      } else
+        console.error(
+          `[getTotalRaisedForApplication] No price quote found for token: ${tokenTicker}`
+        );
+    }
+  }
+
+  return {
+    totalRaisedUSD,
+    hasMultipleFractionTypes: fractionTypes.size > 1,
+    fractionTypes,
+  };
 }

@@ -46,6 +46,7 @@ import {
   applicationsDraft,
   zones,
   fractions,
+  ApplicationPriceQuotes,
 } from "../../db/schema";
 import { findFirstUserById } from "../../db/queries/users/findFirstUserById";
 import { findOrganizationMemberByUserId } from "../../db/queries/organizations/findOrganizationMemberByUserId";
@@ -60,7 +61,7 @@ import { findFirstApplicationMasterKeyByApplicationIdAndUserId } from "../../db/
 import { findAllApplicationsWithoutMasterKey } from "../../db/queries/applications/findAllApplicationsWithoutMasterKey";
 import { createApplicationEncryptedMasterKeysForUsers } from "../../db/mutations/applications/createApplicationEncryptedMasterKeysForUsers";
 import { findAllApplications } from "../../db/queries/applications/findAllApplications";
-import { eq, and, not } from "drizzle-orm";
+import { eq, and, not, desc } from "drizzle-orm";
 import { findOrganizationsMemberByUserIdAndOrganizationIds } from "../../db/queries/organizations/findOrganizationsMemberByUserIdAndOrganizationIds";
 import { patchDeclarationOfIntention } from "../../db/mutations/applications/patchDeclarationOfIntention";
 import { createGlowEventEmitter, eventTypes } from "@glowlabs-org/events-sdk";
@@ -96,6 +97,8 @@ import {
 import {
   findActiveFractionByApplicationId,
   findLatestFractionByApplicationId,
+  getAllFractionsForApplication,
+  getTotalRaisedForApplication,
 } from "../../db/queries/fractions/findFractionsByApplicationId";
 import {
   MIN_SPONSOR_SPLIT_PERCENT,
@@ -1979,6 +1982,92 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               );
               await markFractionAsExpired(latestFraction.id);
             }
+
+            // CRITICAL: Auto-expire any active launchpad-presale fractions when creating GLW fraction
+            // This prevents race conditions and ensures presale fractions are properly closed
+            const presaleFractions = await getAllFractionsForApplication(
+              application.id
+            );
+            for (const presaleFraction of presaleFractions) {
+              if (
+                presaleFraction.type === "launchpad-presale" &&
+                presaleFraction.status === FRACTION_STATUS.COMMITTED &&
+                presaleFraction.expirationAt >= new Date()
+              ) {
+                console.log(
+                  `[publish-application-to-auction] Auto-expiring active presale fraction: ${presaleFraction.id}`
+                );
+                await markFractionAsExpired(presaleFraction.id);
+              }
+            }
+
+            // CRITICAL: Validate that new GLW fraction amount covers exactly the remaining deficit
+            // This prevents over-funding or under-funding the protocol deposit
+            const { totalRaisedUSD } = await getTotalRaisedForApplication(
+              application.id
+            );
+            const requiredProtocolFee = BigInt(
+              application.finalProtocolFeeBigInt
+            );
+            const remainingDeficit = requiredProtocolFee - totalRaisedUSD;
+
+            // Calculate USD value of the new GLW fraction using price quotes
+            const stepPriceBigInt = BigInt(stepPrice);
+            const totalStepsBigInt = BigInt(totalSteps);
+            const newFractionTotalGLW = stepPriceBigInt * totalStepsBigInt;
+
+            // Get price quotes to convert GLW to USD
+            const priceQuotes = await db
+              .select()
+              .from(ApplicationPriceQuotes)
+              .where(eq(ApplicationPriceQuotes.applicationId, application.id))
+              .orderBy(desc(ApplicationPriceQuotes.createdAt))
+              .limit(1);
+
+            const prices = priceQuotes[0]?.prices || {};
+            const glwPriceUSD6 = prices["GLW"] ? BigInt(prices["GLW"]) : null;
+
+            if (!glwPriceUSD6) {
+              set.status = 400;
+              return "Cannot create GLW fraction: no GLW price quote found. Please ensure price quotes are set for this application.";
+            }
+
+            // Convert GLW amount to USD (6 decimals)
+            // Formula: (GLW_amount * GLW_price_usd6) / 1e18
+            const newFractionUSD =
+              (newFractionTotalGLW * glwPriceUSD6) / BigInt(10) ** BigInt(18);
+
+            // Strict validation: new fraction must equal remaining deficit
+            const tolerance = BigInt(1000); // Allow 0.001 USD difference due to rounding
+            const difference =
+              newFractionUSD > remainingDeficit
+                ? newFractionUSD - remainingDeficit
+                : remainingDeficit - newFractionUSD;
+
+            if (difference > tolerance) {
+              set.status = 400;
+              return `GLW fraction amount mismatch. Required: $${(
+                Number(remainingDeficit) / 1e6
+              ).toFixed(6)}, but this fraction will raise: $${(
+                Number(newFractionUSD) / 1e6
+              ).toFixed(
+                6
+              )}. Please adjust totalSteps or stepPrice to match the remaining deficit exactly.`;
+            }
+
+            console.log(
+              `[publish-application-to-auction] Creating GLW fraction. Already raised: ${totalRaisedUSD.toString()} (${(
+                Number(totalRaisedUSD) / 1e6
+              ).toFixed(
+                2
+              )} USD), Required: ${requiredProtocolFee.toString()} (${(
+                Number(requiredProtocolFee) / 1e6
+              ).toFixed(
+                2
+              )} USD), This fraction: ${newFractionUSD.toString()} (${(
+                Number(newFractionUSD) / 1e6
+              ).toFixed(2)} USD)`
+            );
 
             const activeFraction = await findActiveFractionByApplicationId(
               application.id

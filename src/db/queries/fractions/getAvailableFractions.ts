@@ -7,7 +7,7 @@ import { fractions } from "../../schema";
 const AVAILABLE_STATUSES = [FRACTION_STATUS.COMMITTED];
 
 export interface GetAvailableFractionsOptions {
-  type?: "launchpad" | "mining-center";
+  type?: "launchpad" | "mining-center" | "launchpad-presale";
 }
 
 export async function getAvailableFractions(

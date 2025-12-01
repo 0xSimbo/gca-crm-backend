@@ -19,7 +19,7 @@ import { db } from "../db/db";
 import { fractionSplits } from "../db/schema";
 import { eq } from "drizzle-orm";
 import { forwarderAddresses } from "../constants/addresses";
-import { FRACTION_STATUS } from "../constants/fractions";
+import { FRACTION_STATUS, SGCTL_TOKEN_ADDRESS } from "../constants/fractions";
 import { recordFailedFractionOperation } from "../db/mutations/fractions/failedFractionOperations";
 import { verifyFractionSoldTransaction } from "../utils/verifyFractionTransaction";
 import {
@@ -93,34 +93,55 @@ export class FractionEventService {
           return;
         }
 
-        // CRITICAL: Verify the event payload against on-chain transaction data
-        const verification = await verifyFractionSoldTransaction(event.payload);
-        if (!verification.isValid) {
+        // Check if this is an SGCTL (off-chain) fraction
+        const fraction = await findFractionById(event.payload.fractionId);
+        if (!fraction) {
           console.error(
-            "[FractionEventService] Transaction verification failed:",
-            verification.error,
-            "Event payload:",
-            event.payload
+            "[FractionEventService] Fraction not found:",
+            event.payload.fractionId
           );
-
-          // Record this as a failed operation for investigation
-          await recordFailedFractionOperation({
-            fractionId: event.payload.fractionId,
-            operationType: "split",
-            eventType: "fraction.sold",
-            eventPayload: event.payload,
-            error: new Error(
-              `Transaction verification failed: ${verification.error}`
-            ),
-          });
           return;
         }
+        const isSGCTLFraction = fraction.token === SGCTL_TOKEN_ADDRESS;
 
-        console.log(
-          "[FractionEventService] Transaction verification passed for:",
-          event.payload.transactionHash,
-          event.payload.logIndex
-        );
+        // For SGCTL fractions, skip on-chain verification since they're off-chain
+        if (!isSGCTLFraction) {
+          // CRITICAL: Verify the event payload against on-chain transaction data
+          const verification = await verifyFractionSoldTransaction(
+            event.payload
+          );
+          if (!verification.isValid) {
+            console.error(
+              "[FractionEventService] Transaction verification failed:",
+              verification.error,
+              "Event payload:",
+              event.payload
+            );
+
+            // Record this as a failed operation for investigation
+            await recordFailedFractionOperation({
+              fractionId: event.payload.fractionId,
+              operationType: "split",
+              eventType: "fraction.sold",
+              eventPayload: event.payload,
+              error: new Error(
+                `Transaction verification failed: ${verification.error}`
+              ),
+            });
+            return;
+          }
+
+          console.log(
+            "[FractionEventService] Transaction verification passed for:",
+            event.payload.transactionHash,
+            event.payload.logIndex
+          );
+        } else {
+          console.log(
+            "[FractionEventService] SGCTL off-chain fraction, skipping on-chain verification:",
+            event.payload.fractionId
+          );
+        }
 
         // Calculate steps purchased from step price and amount
         const stepsPurchased = calculateStepsPurchased(
