@@ -24,7 +24,9 @@ export async function getUniqueStarNameForApplicationId(
   maxAttempts = 10
 ): Promise<string | undefined> {
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    const seed = `${applicationId}-${attempt}`;
+    // First attempt uses just applicationId (matches getDeterministicStarNameForApplicationId)
+    // Subsequent attempts add suffix to find alternatives on collision
+    const seed = attempt === 0 ? applicationId : `${applicationId}-${attempt}`;
     const name = getDeterministicStarName(seed);
     if (!name) continue;
     const exists = await db.query.farms.findFirst({
