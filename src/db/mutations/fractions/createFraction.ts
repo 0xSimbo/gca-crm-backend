@@ -501,7 +501,7 @@ export async function recordFractionSplit(
 
       // CRITICAL: Check if total raised across ALL fractions >= protocol fee
       // This prevents premature farm creation when only partial payment is made (e.g., 30% SGCTL presale)
-      const { totalRaisedUSD, hasMultipleFractionTypes, fractionTypes } =
+      const { totalRaisedUSD, hasMultipleFractionTypes } =
         await getTotalRaisedForApplication(application.id);
 
       const requiredProtocolFee = BigInt(application.finalProtocolFeeBigInt);
@@ -516,11 +516,6 @@ export async function recordFractionSplit(
         );
         return transactionResult;
       }
-
-      // Calculate payment amount (step * totalSteps)
-      const stepBigInt = BigInt(transactionResult.fraction.step!);
-      const totalStepsBigInt = BigInt(transactionResult.fraction.totalSteps!);
-      const paymentAmount = (stepBigInt * totalStepsBigInt).toString();
 
       // Complete the application if it has all required data
       if (application.gca?.id && application.user?.id) {

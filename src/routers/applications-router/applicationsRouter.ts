@@ -1988,6 +1988,25 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
             const presaleFractions = await getAllFractionsForApplication(
               application.id
             );
+
+            // CRITICAL: Validate sponsorSplitPercent matches any existing presale fractions
+            // This ensures consistent sponsor terms across all fractions for the same application
+            const presaleWithSales = presaleFractions.find(
+              (f) =>
+                f.type === "launchpad-presale" &&
+                f.splitsSold !== null &&
+                f.splitsSold > 0
+            );
+
+            if (presaleWithSales) {
+              if (
+                presaleWithSales.sponsorSplitPercent !== sponsorSplitPercent
+              ) {
+                set.status = 400;
+                return `Sponsor split percentage must match the presale fraction (${presaleWithSales.sponsorSplitPercent}%). You provided ${sponsorSplitPercent}%.`;
+              }
+            }
+
             for (const presaleFraction of presaleFractions) {
               if (
                 presaleFraction.type === "launchpad-presale" &&

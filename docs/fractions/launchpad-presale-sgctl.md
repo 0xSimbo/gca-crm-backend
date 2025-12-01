@@ -238,13 +238,17 @@ export async function getTotalRaisedForApplication(
 
 **New Behavior**:
 
-1. Auto-expires any active launchpad-presale fractions for the application
-2. Calculates remaining protocol fee deficit (`requiredProtocolFee - totalRaisedUSD`)
-3. Converts new GLW fraction value to USD using price quotes
-4. **Strictly validates** that GLW fraction covers exactly the remaining deficit (±$0.001 tolerance)
-5. Returns 400 error if amounts don't match
+1. **Validates sponsorSplitPercent matches presale** - If a presale fraction has any sales, the GLW fraction must use the same sponsor split percentage
+2. Auto-expires any active launchpad-presale fractions for the application
+3. Calculates remaining protocol fee deficit (`requiredProtocolFee - totalRaisedUSD`)
+4. Converts new GLW fraction value to USD using price quotes
+5. **Strictly validates** that GLW fraction covers exactly the remaining deficit (±$0.001 tolerance)
+6. Returns 400 error if amounts or sponsor split don't match
 
-**Why**: Prevents over-funding or under-funding the protocol deposit
+**Why**:
+
+- Prevents over-funding or under-funding the protocol deposit
+- Ensures consistent sponsor terms across all fractions for the same application
 
 ## Workflow: Mixed Payment Example
 
@@ -403,8 +407,13 @@ COMMITTED → EXPIRED (if Tuesday 12PM EST passes)
    - ✅ Dates stored as UTC in database
 
 4. **Authorization**
+
    - ✅ Only FOUNDATION_HUB_MANAGER can create presale fractions
    - ✅ Same authorization checks as other fraction types
+
+5. **Sponsor Split Consistency**
+   - ✅ GLW fraction must use same sponsorSplitPercent as presale (if presale had sales)
+   - ✅ Validation error returned if mismatch detected
 
 ### ✅ Previously Critical Gaps - NOW RESOLVED
 
@@ -583,6 +592,7 @@ COMMITTED → EXPIRED (if Tuesday 12PM EST passes)
 - [ ] Create SGCTL → Partial fill → Expires → Create GLW → GLW fills → Farm created
 - [ ] Invalid SGCTL event (wrong token) → Should be rejected
 - [ ] Create GLW fraction → Verify strict USD validation against remaining deficit
+- [ ] Create GLW fraction with different sponsorSplitPercent → Should be rejected
 - [ ] Concurrent presale creation → Second attempt should be rejected
 
 ### Manual Testing Scenarios
@@ -726,6 +736,7 @@ This feature enables flexible protocol deposit payments through off-chain SGCTL 
 - ✅ Auto-expire presale when creating GLW fraction
 - ✅ Prevent concurrent presale fractions per application
 - ✅ Foundation wallet can bypass owner checks for presale creation
+- ✅ Sponsor split consistency validation between presale and GLW fractions
 
 **Remaining**:
 
