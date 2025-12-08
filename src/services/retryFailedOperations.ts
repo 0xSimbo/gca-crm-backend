@@ -12,6 +12,10 @@ import {
   markFractionAsCancelled,
 } from "../db/mutations/fractions/createFraction";
 import { calculateStepsPurchased } from "../db/queries/fractions/findFractionSplits";
+import { db } from "../db/db";
+import { fractions } from "../db/schema";
+import { eq } from "drizzle-orm";
+import { FRACTION_STATUS } from "../constants/fractions";
 
 /**
  * Retries a single failed operation
@@ -67,6 +71,98 @@ async function retrySingleOperation(operation: any) {
       case "cancel":
         if (operation.fractionId) {
           await markFractionAsCancelled(operation.fractionId);
+        }
+        break;
+
+      case "refund":
+        if (operation.eventPayload && operation.fractionId) {
+          const payload = operation.eventPayload as any;
+          // Call Control API to refund SGCTL delegation
+          const res = await fetch(
+            `${process.env.CONTROL_API_URL}/delegate-sgctl/refund`,
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "x-api-key": process.env.GUARDED_API_KEY || "",
+              },
+              body: JSON.stringify({
+                fractionId: operation.fractionId,
+              }),
+            }
+          );
+
+          if (!res.ok) {
+            const text = await res.text().catch(() => "");
+            throw new Error(
+              `HTTP ${res.status}: ${text || "Refund API call failed"}`
+            );
+          }
+
+          console.log(
+            `[retrySingleOperation] Successfully refunded SGCTL for fraction ${operation.fractionId}`
+          );
+        }
+        break;
+
+      case "finalize":
+        if (operation.eventPayload && operation.fractionId) {
+          const payload = operation.eventPayload as any;
+          const { farmId } = payload;
+
+          if (!farmId) {
+            throw new Error("farmId is required for finalize operation");
+          }
+
+          // Call Control API to finalize SGCTL delegation
+          const res = await fetch(
+            `${process.env.CONTROL_API_URL}/delegate-sgctl/finalize`,
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "x-api-key": process.env.GUARDED_API_KEY || "",
+              },
+              body: JSON.stringify({
+                fractionId: operation.fractionId,
+                farmId,
+              }),
+            }
+          );
+
+          if (!res.ok) {
+            const text = await res.text().catch(() => "");
+            throw new Error(
+              `HTTP ${res.status}: ${text || "Finalize API call failed"}`
+            );
+          }
+
+          // Mark presale fraction as FILLED after successful finalization
+          const [fraction] = await db
+            .select()
+            .from(fractions)
+            .where(eq(fractions.id, operation.fractionId))
+            .limit(1);
+
+          if (fraction && fraction.status !== FRACTION_STATUS.FILLED) {
+            await db
+              .update(fractions)
+              .set({
+                isFilled: true,
+                filledAt: new Date(),
+                status: FRACTION_STATUS.FILLED,
+                updatedAt: new Date(),
+              })
+              .where(eq(fractions.id, operation.fractionId));
+
+            console.log(
+              `[retrySingleOperation] Marked presale fraction ${operation.fractionId} as FILLED after finalization`
+            );
+          }
+
+          console.log(
+            `[retrySingleOperation] Successfully finalized SGCTL for fraction ${operation.fractionId} and farm ${farmId}`
+          );
         }
         break;
 

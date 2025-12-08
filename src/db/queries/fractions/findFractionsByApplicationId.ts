@@ -6,6 +6,7 @@ import {
   SGCTL_TOKEN_ADDRESS,
 } from "../../../constants/fractions";
 import { forwarderAddresses } from "../../../constants/addresses";
+import { DECIMALS_BY_TOKEN } from "@glowlabs-org/utils/browser";
 
 /**
  * Finds all fractions for a given application ID
@@ -258,7 +259,7 @@ export async function getTotalRaisedForApplication(
     .where(
       and(
         eq(fractions.applicationId, applicationId),
-        ne(fractions.type, "mining-center"),
+        ne(fractions.type, "mining-center"), //exclude mining-center fractions cause it's not part of the protocol deposit
         inArray(fractions.status, [
           FRACTION_STATUS.FILLED,
           FRACTION_STATUS.COMMITTED,
@@ -292,24 +293,33 @@ export async function getTotalRaisedForApplication(
 
   // Helper to get token decimals
   const getTokenDecimals = (tokenAddress: string | null): number => {
-    if (!tokenAddress) return 6; // Default to 6
-    const lowerToken = tokenAddress.toLowerCase();
-    if (lowerToken === forwarderAddresses.GLW.toLowerCase()) return 18;
-    // USDC, USDG, GCTL, SGCTL all use 6 decimals
-    return 6;
+    if (!tokenAddress) return 6;
+    const tokenTicker = getTokenTicker(tokenAddress);
+    return (
+      DECIMALS_BY_TOKEN[tokenTicker as keyof typeof DECIMALS_BY_TOKEN] || 6
+    );
   };
 
   for (const fraction of allFractions) {
-    if (fraction.type) {
-      fractionTypes.add(fraction.type);
-    }
-
     const stepPrice = fraction.stepPrice
       ? BigInt(fraction.stepPrice)
       : BigInt(0);
     const soldSteps = BigInt(fraction.splitsSold ?? 0);
 
-    if (soldSteps > BigInt(0)) {
+    // Determine if this fraction should be counted based on type and status
+    let shouldCount = false;
+    if (fraction.type === "launchpad") {
+      // Launchpad (GLW): Only count if FILLED (all-or-nothing)
+      shouldCount = fraction.status === FRACTION_STATUS.FILLED;
+    } else if (fraction.type === "launchpad-presale") {
+      // Launchpad-presale (SGCTL): Count any partial fills (soldSteps > 0)
+      shouldCount = soldSteps > BigInt(0);
+    }
+
+    if (shouldCount) {
+      if (fraction.type) {
+        fractionTypes.add(fraction.type);
+      }
       const tokenTicker = getTokenTicker(fraction.token);
       const tokenDecimals = getTokenDecimals(fraction.token);
 
@@ -326,7 +336,9 @@ export async function getTotalRaisedForApplication(
         if (tokenTicker === "USDC" || tokenTicker === "USDG") {
           pricePerToken = BigInt(1000000); // $1.00 in 6 decimals
         }
-        // For GLW and GCTL, if no price quote, we can't estimate - skip or use 0
+        console.error(
+          `[getTotalRaisedForApplication] No price quote found for token: ${tokenTicker}`
+        );
       }
 
       if (pricePerToken > BigInt(0)) {

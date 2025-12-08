@@ -5,7 +5,7 @@ import {
   fractionSplits,
   FractionSplitInsertType,
 } from "../../schema";
-import { eq, sql, and, not } from "drizzle-orm";
+import { eq, sql, and, not, gt, ne, inArray } from "drizzle-orm";
 import { generateUniqueFractionId } from "../../../utils/fractions/generateFractionId";
 import {
   LAUNCHPAD_FRACTION_LIFETIME_MS,
@@ -25,6 +25,7 @@ import { getFractionEventService } from "../../../services/eventListener";
 import { completeApplicationAndCreateFarm } from "../../../routers/applications-router/publicRoutes";
 import { createSlackClient } from "../../../slack/create-slack-client";
 import { forwarderAddresses } from "../../../constants/addresses";
+import { recordFailedFractionOperation } from "./failedFractionOperations";
 
 const SLACK_CHANNEL = "#devs";
 
@@ -603,13 +604,182 @@ export async function getFractionSplitsSold(fractionId: string) {
 }
 
 /**
+ * Helper to trigger SGCTL delegation refunds for ALL presale fractions of an application
+ * Called when a GLW (launchpad) fraction expires/is cancelled without filling
+ * This indicates the application funding failed, so presale delegations must be refunded
+ * Uses failedFractionOperations system for automatic retry on failure
+ *
+ * CRITICAL: Only refunds if there are NO other active GLW fractions
+ * This prevents premature refunds when retrying with a new GLW fraction
+ */
+async function triggerSgctlRefundForApplication(
+  applicationId: string,
+  triggeredByFractionId: string
+) {
+  if (!process.env.CONTROL_API_URL) {
+    return;
+  }
+
+  try {
+    // CRITICAL: Check if there are any OTHER active GLW (launchpad) fractions for this application
+    // If yes, don't refund yet - the funding attempt is still ongoing with another GLW fraction
+    const otherActiveGlwFractions = await db
+      .select()
+      .from(fractions)
+      .where(
+        and(
+          eq(fractions.applicationId, applicationId),
+          eq(fractions.type, "launchpad"),
+          ne(fractions.id, triggeredByFractionId), // Exclude the one that just expired
+          inArray(fractions.status, [
+            FRACTION_STATUS.DRAFT,
+            FRACTION_STATUS.COMMITTED,
+          ]),
+          gt(fractions.expirationAt, new Date()) // Not expired
+        )
+      );
+
+    if (otherActiveGlwFractions.length > 0) {
+      console.log(
+        `[triggerSgctlRefundForApplication] NOT refunding presale yet: ${otherActiveGlwFractions.length} other active GLW fractions exist for application ${applicationId}. Presale SGCTL will remain locked.`
+      );
+      return;
+    }
+
+    // Find all presale fractions for this application that have sales (regardless of status)
+    // This covers both FILLED presales and EXPIRED presales with partial fills
+    const presaleFractions = await db
+      .select()
+      .from(fractions)
+      .where(
+        and(
+          eq(fractions.applicationId, applicationId),
+          eq(fractions.type, "launchpad-presale"),
+          gt(fractions.splitsSold, 0) // Any presale with SGCTL delegations
+        )
+      );
+
+    if (presaleFractions.length === 0) {
+      console.log(
+        `[triggerSgctlRefundForApplication] No presale fractions with delegations to refund for application ${applicationId}`
+      );
+      return;
+    }
+
+    console.log(
+      `[triggerSgctlRefundForApplication] No active GLW fractions remaining. Refunding ${presaleFractions.length} presale fractions for application ${applicationId} (triggered by fraction ${triggeredByFractionId})`
+    );
+
+    // Trigger refund for each presale fraction
+    for (const presaleFraction of presaleFractions) {
+      await triggerSgctlRefundForFraction(presaleFraction);
+    }
+  } catch (error) {
+    console.error(
+      `[triggerSgctlRefundForApplication] Error querying presale fractions for application ${applicationId}:`,
+      error
+    );
+  }
+}
+
+/**
+ * Helper to trigger SGCTL delegation refund for a single fraction
+ * Calls Control API to return delegated SGCTL back to users' staked pools
+ * Uses failedFractionOperations system for automatic retry on failure
+ */
+async function triggerSgctlRefundForFraction(fraction: any) {
+  if (!process.env.CONTROL_API_URL) {
+    return;
+  }
+
+  if (fraction.type === "launchpad-presale") {
+    try {
+      const res = await fetch(
+        `${process.env.CONTROL_API_URL}/delegate-sgctl/refund`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": process.env.GUARDED_API_KEY || "",
+          },
+          body: JSON.stringify({
+            fractionId: fraction.id,
+          }),
+        }
+      );
+
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        const error = new Error(
+          `HTTP ${res.status}: ${text || "SGCTL refund API call failed"}`
+        );
+
+        // Record in failedFractionOperations for automatic retry
+        await recordFailedFractionOperation({
+          fractionId: fraction.id,
+          operationType: "refund",
+          eventType: "sgctl.delegation.refund",
+          eventPayload: {
+            fractionId: fraction.id,
+            applicationId: fraction.applicationId,
+            statusCode: res.status,
+            errorText: text,
+          },
+          error,
+          maxRetries: 3, // Allow 3 retries for Control API calls
+        });
+
+        throw error;
+      }
+
+      console.log(
+        `[triggerSgctlRefundForFraction] Successfully triggered SGCTL refund for fraction ${fraction.id}`
+      );
+    } catch (err) {
+      const error =
+        err instanceof Error
+          ? err
+          : new Error(`SGCTL refund failed: ${String(err)}`);
+
+      console.error(
+        `[triggerSgctlRefundForFraction] Error refunding SGCTL delegation for fraction ${fraction.id}:`,
+        error
+      );
+
+      // If not already recorded, record the failure
+      const shouldRecord = !(
+        err instanceof Error && err.message.includes("HTTP")
+      );
+      if (shouldRecord) {
+        await recordFailedFractionOperation({
+          fractionId: fraction.id,
+          operationType: "refund",
+          eventType: "sgctl.delegation.refund",
+          eventPayload: {
+            fractionId: fraction.id,
+            applicationId: fraction.applicationId,
+          },
+          error,
+          maxRetries: 3,
+        }).catch((recordErr) => {
+          console.error(
+            "[triggerSgctlRefundForFraction] Failed to record operation failure:",
+            recordErr
+          );
+        });
+      }
+    }
+  }
+}
+
+/**
  * Marks a fraction as cancelled
  *
  * @param fractionId - The fraction ID
  * @returns The updated fraction
  */
 export async function markFractionAsCancelled(fractionId: string) {
-  return await db
+  const result = await db
     .update(fractions)
     .set({
       status: FRACTION_STATUS.CANCELLED,
@@ -617,6 +787,16 @@ export async function markFractionAsCancelled(fractionId: string) {
     })
     .where(eq(fractions.id, fractionId))
     .returning();
+
+  // If a GLW (launchpad) fraction is cancelled, refund all presale fractions for the application
+  if (result[0] && result[0].type === "launchpad" && !result[0].isFilled) {
+    triggerSgctlRefundForApplication(
+      result[0].applicationId,
+      result[0].id
+    ).catch(() => {});
+  }
+
+  return result;
 }
 
 /**
@@ -626,7 +806,7 @@ export async function markFractionAsCancelled(fractionId: string) {
  * @returns The updated fraction
  */
 export async function markFractionAsExpired(fractionId: string) {
-  return await db
+  const result = await db
     .update(fractions)
     .set({
       status: FRACTION_STATUS.EXPIRED,
@@ -634,4 +814,14 @@ export async function markFractionAsExpired(fractionId: string) {
     })
     .where(eq(fractions.id, fractionId))
     .returning();
+
+  // If a GLW (launchpad) fraction expires without filling, refund all presale fractions for the application
+  if (result[0] && result[0].type === "launchpad" && !result[0].isFilled) {
+    triggerSgctlRefundForApplication(
+      result[0].applicationId,
+      result[0].id
+    ).catch(() => {});
+  }
+
+  return result;
 }

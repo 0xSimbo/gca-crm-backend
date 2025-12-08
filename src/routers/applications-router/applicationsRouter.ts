@@ -2030,6 +2030,18 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
             );
             const remainingDeficit = requiredProtocolFee - totalRaisedUSD;
 
+            // Check if application is already fully funded by presale
+            if (remainingDeficit <= BigInt(0)) {
+              set.status = 400;
+              return `Cannot create GLW fraction: application is already fully funded. Total raised: $${(
+                Number(totalRaisedUSD) / 1e6
+              ).toFixed(2)}, Required: $${(
+                Number(requiredProtocolFee) / 1e6
+              ).toFixed(
+                2
+              )}. The presale fraction has already covered the full protocol deposit.`;
+            }
+
             // Calculate USD value of the new GLW fraction using price quotes
             const stepPriceBigInt = BigInt(stepPrice);
             const totalStepsBigInt = BigInt(totalSteps);
@@ -2056,22 +2068,37 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
             const newFractionUSD =
               (newFractionTotalGLW * glwPriceUSD6) / BigInt(10) ** BigInt(18);
 
-            // Strict validation: new fraction must equal remaining deficit
-            const tolerance = BigInt(1000); // Allow 0.001 USD difference due to rounding
-            const difference =
-              newFractionUSD > remainingDeficit
-                ? newFractionUSD - remainingDeficit
-                : remainingDeficit - newFractionUSD;
+            const roundingTolerance = BigInt(1000); // $0.001 wiggle room
+            const onePercentOverage = remainingDeficit / BigInt(100);
+            const maxAllowedUsd = remainingDeficit + onePercentOverage;
+            const minAllowedUsd =
+              remainingDeficit > roundingTolerance
+                ? remainingDeficit - roundingTolerance
+                : BigInt(0);
+            const maxAllowedWithRounding = maxAllowedUsd + roundingTolerance;
 
-            if (difference > tolerance) {
+            if (newFractionUSD < minAllowedUsd) {
               set.status = 400;
-              return `GLW fraction amount mismatch. Required: $${(
+              return `GLW fraction amount is too low. Remaining deficit is $${(
                 Number(remainingDeficit) / 1e6
-              ).toFixed(6)}, but this fraction will raise: $${(
+              ).toFixed(6)}, but this fraction will raise only $${(
                 Number(newFractionUSD) / 1e6
               ).toFixed(
                 6
-              )}. Please adjust totalSteps or stepPrice to match the remaining deficit exactly.`;
+              )}. Please increase totalSteps or stepPrice so the fraction covers the remaining deficit (±$0.001 tolerance).`;
+            }
+
+            if (newFractionUSD > maxAllowedWithRounding) {
+              set.status = 400;
+              return `GLW fraction amount mismatch. Required: $${(
+                Number(remainingDeficit) / 1e6
+              ).toFixed(6)}, maximum allowed (1% overage) is $${(
+                Number(maxAllowedUsd) / 1e6
+              ).toFixed(6)}, but this fraction will raise $${(
+                Number(newFractionUSD) / 1e6
+              ).toFixed(
+                6
+              )}. Please adjust totalSteps or stepPrice so the fraction stays within the 1% overage limit.`;
             }
 
             console.log(

@@ -17,7 +17,8 @@ export interface RecordFailedOperationParams {
     | "split"
     | "expire"
     | "cancel"
-    | "refund";
+    | "refund"
+    | "finalize";
   eventType?: string;
   eventPayload?: any;
   error: Error;

@@ -2,6 +2,8 @@
  * Constants for fraction management
  */
 
+import { SGCTL_OFFCHAIN_TOKEN_ADDRESS } from "@glowlabs-org/utils/browser";
+
 // Sponsor split percentage limits
 export const MIN_SPONSOR_SPLIT_PERCENT = 5;
 export const MAX_SPONSOR_SPLIT_PERCENT = 95;
@@ -49,7 +51,7 @@ export type FractionStatus =
   (typeof FRACTION_STATUS)[keyof typeof FRACTION_STATUS];
 
 // SGCTL token identifier (recognizable fake address for off-chain fractions)
-export const SGCTL_TOKEN_ADDRESS = "0xSGCTL0000000000000000000000000000000000";
+export const SGCTL_TOKEN_ADDRESS = SGCTL_OFFCHAIN_TOKEN_ADDRESS;
 
 /**
  * Calculate the next Tuesday at 12:00 PM EST

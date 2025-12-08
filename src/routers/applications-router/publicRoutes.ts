@@ -56,9 +56,16 @@ import {
   findFractionById,
   findActiveFractionByApplicationId,
 } from "../../db/queries/fractions/findFractionsByApplicationId";
-import { markFractionAsFilled } from "../../db/mutations/fractions/createFraction";
+import {
+  markFractionAsFilled,
+  recordFractionSplit,
+} from "../../db/mutations/fractions/createFraction";
 import { getFractionEventService } from "../../services/eventListener";
-import { FRACTION_STATUS } from "../../constants/fractions";
+import {
+  FRACTION_STATUS,
+  SGCTL_TOKEN_ADDRESS,
+} from "../../constants/fractions";
+import { recordFailedFractionOperation } from "../../db/mutations/fractions/failedFractionOperations";
 
 /**
  * Helper function to complete an application and create a farm with devices
@@ -113,6 +120,134 @@ export async function completeApplicationAndCreateFarm({
       zoneId: application.zoneId,
     }
   );
+
+  // Finalize all launchpad-presale (SGCTL) fractions for this application
+  // This notifies Control API to move delegated SGCTL to protocol deposit vault
+  try {
+    const presaleFractions = await db
+      .select()
+      .from(fractions)
+      .where(
+        and(
+          eq(fractions.applicationId, application.id),
+          eq(fractions.type, "launchpad-presale"),
+          gt(fractions.splitsSold, 0) // Any fraction with sales (FILLED or EXPIRED with partial fills)
+        )
+      );
+
+    if (presaleFractions.length > 0 && process.env.CONTROL_API_URL) {
+      const finalizePromises = presaleFractions.map((fraction) =>
+        fetch(`${process.env.CONTROL_API_URL}/delegate-sgctl/finalize`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": process.env.GUARDED_API_KEY || "",
+          },
+          body: JSON.stringify({
+            fractionId: fraction.id,
+            farmId,
+          }),
+        })
+          .then(async (res) => {
+            if (!res.ok) {
+              const text = await res.text().catch(() => "");
+              const error = new Error(
+                `HTTP ${res.status}: ${
+                  text || "SGCTL finalize API call failed"
+                }`
+              );
+
+              // Record in failedFractionOperations for automatic retry
+              await recordFailedFractionOperation({
+                fractionId: fraction.id,
+                operationType: "finalize",
+                eventType: "sgctl.delegation.finalize",
+                eventPayload: {
+                  fractionId: fraction.id,
+                  applicationId: application.id,
+                  farmId,
+                  statusCode: res.status,
+                  errorText: text,
+                },
+                error,
+                maxRetries: 3, // Allow 3 retries for Control API calls
+              });
+
+              throw error;
+            }
+
+            // Mark presale fraction as filled now that it's finalized
+            // (Only update if not already filled - some presales may have sold all steps before expiring)
+            if (fraction.status !== FRACTION_STATUS.FILLED) {
+              try {
+                await db
+                  .update(fractions)
+                  .set({
+                    isFilled: true,
+                    filledAt: new Date(),
+                    status: FRACTION_STATUS.FILLED,
+                    updatedAt: new Date(),
+                  })
+                  .where(eq(fractions.id, fraction.id));
+
+                console.log(
+                  `[completeApplicationAndCreateFarm] Successfully finalized SGCTL delegation and marked fraction ${fraction.id} as FILLED (was ${fraction.status})`
+                );
+              } catch (updateErr) {
+                console.error(
+                  `[completeApplicationAndCreateFarm] Failed to mark presale fraction ${fraction.id} as filled:`,
+                  updateErr
+                );
+              }
+            } else {
+              console.log(
+                `[completeApplicationAndCreateFarm] Successfully finalized SGCTL delegation for fraction ${fraction.id} (already FILLED)`
+              );
+            }
+          })
+          .catch(async (err) => {
+            const error =
+              err instanceof Error
+                ? err
+                : new Error(`SGCTL finalize failed: ${String(err)}`);
+
+            console.error(
+              `[completeApplicationAndCreateFarm] Error finalizing SGCTL delegation for fraction ${fraction.id}:`,
+              error
+            );
+
+            // If not already recorded, record the failure
+            if (!err?.message?.includes("HTTP")) {
+              await recordFailedFractionOperation({
+                fractionId: fraction.id,
+                operationType: "finalize",
+                eventType: "sgctl.delegation.finalize",
+                eventPayload: {
+                  fractionId: fraction.id,
+                  applicationId: application.id,
+                  farmId,
+                },
+                error,
+                maxRetries: 3,
+              }).catch((recordErr) => {
+                console.error(
+                  "[completeApplicationAndCreateFarm] Failed to record operation failure:",
+                  recordErr
+                );
+              });
+            }
+          })
+      );
+
+      // Run in background - don't block farm creation
+      Promise.allSettled(finalizePromises);
+    }
+  } catch (error) {
+    console.error(
+      "[completeApplicationAndCreateFarm] Error querying presale fractions for finalization:",
+      error
+    );
+  }
 
   // Trigger hub solar farms sync after 20 seconds delay
   setTimeout(async () => {
@@ -334,6 +469,7 @@ export const publicApplicationsRoutes = new Elysia()
                 stepPrice: true,
                 step: true,
                 token: true,
+                type: true,
                 owner: true,
                 txHash: true,
               },
@@ -356,9 +492,19 @@ export const publicApplicationsRoutes = new Elysia()
           });
         }
 
-        // Filter out applications without active fractions (double-check SQL filtering)
+        // Filter out applications without active fractions or with expired fractions
+        const now = new Date();
         filteredApplications = filteredApplications.filter((app) => {
-          return app.fractions && app.fractions.length > 0;
+          if (!app.fractions || app.fractions.length === 0) return false;
+          const activeFraction = app.fractions[0];
+          // Double-check expiration at JavaScript level for safety
+          if (
+            activeFraction.expirationAt &&
+            new Date(activeFraction.expirationAt) <= now
+          ) {
+            return false;
+          }
+          return true;
         });
 
         // Fetch farm names for all applications
@@ -480,6 +626,7 @@ export const publicApplicationsRoutes = new Elysia()
                   owner: activeFraction.owner,
                   txHash: activeFraction.txHash,
                   rewardScore: activeFraction.rewardScore,
+                  type: activeFraction.type,
                   // Calculate progress percentage
                   progressPercent:
                     activeFraction.totalSteps && activeFraction.splitsSold
@@ -1355,6 +1502,182 @@ export const publicApplicationsRoutes = new Elysia()
       detail: {
         summary: "Get Application Price Quotes by applicationId",
         description: `Returns all price quotes for the specified applicationId`,
+        tags: [TAG.APPLICATIONS],
+      },
+    }
+  )
+  .post(
+    "/delegate-sgctl",
+    async ({ body, set, headers }) => {
+      try {
+        const apiKey = headers["x-api-key"];
+        if (!apiKey) {
+          set.status = 400;
+          return "API Key is required";
+        }
+        if (apiKey !== process.env.GUARDED_API_KEY) {
+          set.status = 401;
+          return "Unauthorized";
+        }
+
+        const {
+          applicationId,
+          fractionId,
+          amount,
+          from,
+          regionId,
+          paymentDate,
+        } = body;
+
+        // Validate amount
+        const amountBigInt = BigInt(amount);
+        if (amountBigInt <= BigInt(0)) {
+          set.status = 400;
+          return "Amount must be greater than 0";
+        }
+
+        // Load the fraction
+        const fraction = await findFractionById(fractionId);
+        if (!fraction) {
+          set.status = 404;
+          return `Fraction not found: ${fractionId}`;
+        }
+
+        // Validate fraction belongs to the application
+        if (fraction.applicationId !== applicationId) {
+          set.status = 400;
+          return `Fraction ${fractionId} does not belong to application ${applicationId}`;
+        }
+
+        // Validate fraction type
+        if (fraction.type !== "launchpad-presale") {
+          set.status = 400;
+          return `Fraction type must be 'launchpad-presale', got: ${fraction.type}`;
+        }
+
+        // CRITICAL: Validate fraction is not expired (check time FIRST before status)
+        // This handles race condition where cron hasn't run yet but time has passed
+        if (new Date() > fraction.expirationAt) {
+          set.status = 400;
+          return `Fraction has expired at ${fraction.expirationAt.toISOString()}`;
+        }
+
+        // Validate fraction status (secondary check)
+        // Even if time hasn't passed, respect the status
+        if (fraction.status !== FRACTION_STATUS.COMMITTED) {
+          set.status = 400;
+          return `Fraction must be in 'committed' status, got: ${fraction.status}`;
+        }
+
+        // Validate token is SGCTL
+        if (
+          fraction.token?.toLowerCase() !== SGCTL_TOKEN_ADDRESS.toLowerCase()
+        ) {
+          set.status = 400;
+          return `Fraction token must be SGCTL, got: ${fraction.token}`;
+        }
+
+        // Validate step price exists
+        if (!fraction.step || BigInt(fraction.step) <= BigInt(0)) {
+          set.status = 400;
+          return "Fraction step price is not set or invalid";
+        }
+
+        const stepPrice = BigInt(fraction.step);
+
+        // Calculate steps purchased (floor division)
+        const stepsPurchased = Number(amountBigInt / stepPrice);
+
+        // Validate at least one step can be purchased
+        if (stepsPurchased < 1) {
+          set.status = 400;
+          return `Amount ${amount} is less than the minimum step price ${fraction.step}`;
+        }
+
+        // Calculate the exact required amount for the number of steps
+        const exactRequiredAmount = stepPrice * BigInt(stepsPurchased);
+
+        // Allow up to 1% overpayment for rounding tolerance
+        const onePercentTolerance = exactRequiredAmount / BigInt(100);
+        const maxAllowedAmount = exactRequiredAmount + onePercentTolerance;
+
+        if (amountBigInt > maxAllowedAmount) {
+          set.status = 400;
+          return `Amount ${amount} exceeds maximum allowed (${maxAllowedAmount.toString()}). You can purchase ${stepsPurchased} steps for exactly ${exactRequiredAmount.toString()}, with up to 1% overpayment allowed.`;
+        }
+
+        // Validate steps purchased don't exceed remaining steps
+        const remainingSteps =
+          (fraction.totalSteps || 0) - (fraction.splitsSold || 0);
+        if (stepsPurchased > remainingSteps) {
+          set.status = 400;
+          return `Cannot delegate ${stepsPurchased} steps. Only ${remainingSteps} steps remaining in fraction.`;
+        }
+
+        // IMPORTANT: Record the exact amount (stepsPurchased * stepPrice), not the user's overpayment
+        const amountToRecord = exactRequiredAmount.toString();
+
+        // Generate a synthetic transaction hash for off-chain SGCTL delegation
+        const syntheticTxHash = `sgctl-delegate-${crypto.randomUUID()}`;
+        const paymentTimestamp = Math.floor(
+          new Date(paymentDate).getTime() / 1000
+        );
+
+        // Record the fraction split
+        const result = await recordFractionSplit({
+          fractionId,
+          transactionHash: syntheticTxHash,
+          blockNumber: "0",
+          logIndex: 0,
+          creator: fraction.owner || fraction.createdBy,
+          buyer: from.toLowerCase(),
+          step: fraction.step,
+          amount: amountToRecord,
+          stepsPurchased,
+          timestamp: paymentTimestamp,
+        });
+
+        console.log(
+          `[delegate-sgctl] Recorded SGCTL delegation for fraction ${fractionId}: ${stepsPurchased} steps, exact amount: ${amountToRecord} (user sent: ${amount}), buyer: ${from}`
+        );
+
+        return { success: true };
+      } catch (e) {
+        if (e instanceof Error) {
+          console.error("[delegate-sgctl] Error:", e);
+          set.status = 400;
+          return e.message;
+        }
+        console.error("[delegate-sgctl] Unknown error:", e);
+        set.status = 500;
+        return "Internal Server Error";
+      }
+    },
+    {
+      body: t.Object({
+        applicationId: t.String({
+          description: "Hub application UUID",
+        }),
+        fractionId: t.String({
+          description: "Fraction ID for the active listing",
+        }),
+        amount: t.String({
+          description: "SGCTL amount in atomic units (6 decimals)",
+        }),
+        from: t.String({
+          pattern: "^0x[a-fA-F0-9]{40}$",
+          description: "Delegator wallet address",
+        }),
+        regionId: t.Number({
+          description: "Region ID where SGCTL is staked",
+        }),
+        paymentDate: t.String({
+          description: "ISO 8601 timestamp of delegation",
+        }),
+      }),
+      detail: {
+        summary: "Record SGCTL delegation for launchpad-presale fraction",
+        description: `Called by Control API when a user delegates SGCTL to an application. Records the delegation as a fraction split. The fraction must be of type 'launchpad-presale', in 'committed' status, and not expired. Amount must be divisible by the step price.`,
         tags: [TAG.APPLICATIONS],
       },
     }
