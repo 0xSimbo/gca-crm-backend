@@ -83,7 +83,8 @@ async function rerunAllQuotes() {
       const extractionResult = await extractElectricityPriceFromUtilityBill(
         pdfBuffer,
         "utility-bill.pdf",
-        "application/pdf"
+        "application/pdf",
+        quote.regionCode
       );
 
       const newPrice = extractionResult.result.pricePerKwh;

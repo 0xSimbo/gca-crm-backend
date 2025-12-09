@@ -2,17 +2,17 @@ import { readFileSync } from "fs";
 import { extractElectricityPriceFromUtilityBill } from "./src/routers/applications-router/helpers/extractElectricityPrice";
 import { computeProjectQuote } from "./src/routers/applications-router/helpers/computeProjectQuote";
 
-async function testGoodPowerRealQuote() {
-  console.log("=== Real Life Test - Good Power Project ===\n");
+async function testSoniRealQuote() {
+  console.log("=== Real Life Test - Soni's Project ===\n");
 
+  // Real project data
   const projectData = {
     coordinates: {
-      latitude: 34.0215,
-      longitude: -85.205,
+      latitude: 28.02552,
+      longitude: 73.05934,
     },
-    systemSizeKw: 10.12,
-    weeklyConsumptionMWh: 0.276,
-    expectedElectricityPrice: 0.1817, // $79.42 / 437 kWh (excludes income-based discounts)
+    weeklyConsumptionMWh: 0.7, // MWh (provided)
+    systemSizeKw: 700, // 0.7 MW
   };
 
   console.log("Project Details:");
@@ -22,18 +22,13 @@ async function testGoodPowerRealQuote() {
     ",",
     projectData.coordinates.longitude
   );
-  console.log("  System Size:", projectData.systemSizeKw, "kW");
   console.log("  Weekly Consumption:", projectData.weeklyConsumptionMWh, "MWh");
-  console.log(
-    "  Expected Electricity Price: $" +
-      projectData.expectedElectricityPrice.toFixed(4) +
-      "/kWh\n"
-  );
+  console.log("  System Size:", projectData.systemSizeKw, "kW\n");
 
   // Step 1: Test PDF extraction
   console.log("=== Step 1: Extract Electricity Price from PDF ===");
   const pdfPath =
-    "./tests/project-quotes/required_first_utility_bill__good_power.pdf";
+    "./tests/project-quotes/required_second_utility_bill_soni.pdf";
 
   try {
     const pdfBuffer = readFileSync(pdfPath);
@@ -41,9 +36,9 @@ async function testGoodPowerRealQuote() {
 
     const extracted = await extractElectricityPriceFromUtilityBill(
       pdfBuffer,
-      "required_first_utility_bill__good_power.pdf",
+      "required_second_utility_bill_soni.pdf",
       "application/pdf",
-      "US-GA"
+      "IN-RJ"
     );
 
     console.log("\n✅ AI Extraction Results:");
@@ -53,17 +48,6 @@ async function testGoodPowerRealQuote() {
       (extracted.result.confidence * 100).toFixed(1) + "%"
     );
     console.log("  Rationale:", extracted.result.rationale);
-
-    const priceDiff = Math.abs(
-      extracted.result.pricePerKwh - projectData.expectedElectricityPrice
-    );
-    const priceMatch = priceDiff < 0.01; // Within 1 cent
-
-    console.log(
-      "\n  Expected: $" + projectData.expectedElectricityPrice.toFixed(4)
-    );
-    console.log("  Difference:", (priceDiff * 100).toFixed(2) + " cents");
-    console.log("  Match:", priceMatch ? "✅ CLOSE ENOUGH" : "⚠️ DIFFERENT");
 
     // Step 2: Compute quote with extracted price
     console.log("\n=== Step 2: Compute Protocol Deposit ===");
@@ -117,33 +101,10 @@ async function testGoodPowerRealQuote() {
     console.log("\n=== Efficiency ===");
     console.log("  Score:", quoteResult.efficiencyScore.toFixed(4));
     console.log("  Weekly Impact Assets:", quoteResult.weeklyImpactAssetsWad);
-
-    console.log("\n=== Summary ===");
-    if (priceMatch) {
-      console.log("✅ ALL CHECKS PASSED - Within tolerance!");
-    } else {
-      console.log("⚠️ Price extraction variance detected:");
-      console.log(
-        "  - Extracted: $" +
-          extracted.result.pricePerKwh.toFixed(4) +
-          "/kWh vs Expected: $" +
-          projectData.expectedElectricityPrice.toFixed(4) +
-          "/kWh"
-      );
-      console.log("  - Difference: " + (priceDiff * 100).toFixed(2) + " cents");
-    }
-    console.log(
-      "  Electricity Price: $" +
-        extracted.result.pricePerKwh.toFixed(4) +
-        "/kWh"
-    );
-    console.log(
-      "  Protocol Deposit: $" + quoteResult.protocolDepositUsd.toFixed(2)
-    );
   } catch (error) {
     console.error("❌ Test failed:", (error as Error).message);
     console.error(error);
   }
 }
 
-testGoodPowerRealQuote().catch(console.error);
+testSoniRealQuote().catch(console.error);

@@ -22,6 +22,10 @@ Submit a quote request with utility bill and farm specifications.
 - `latitude`, `longitude`: Farm location coordinates
 - `utilityBill`: Utility bill image or PDF (max 10MB)
 
+**Optional Fields:**
+
+- `isProjectCompleted`: Boolean flag indicating if the solar project is already live/completed (default: false)
+
 **Returns:**
 
 - Protocol deposit estimate in USD (6 decimals)
@@ -80,6 +84,7 @@ Electricity prices are extracted from utility bills using GPT-4 Vision/GPT-5 wit
 **CRITICAL: Bills Must Be Pre-Solar**
 
 The system **rejects bills from active solar installations** by detecting:
+
 - Net metering credits or negative energy charges
 - Very low consumption patterns
 - Solar generation or export charges
@@ -90,12 +95,14 @@ The system **rejects bills from active solar installations** by detecting:
 **Extraction Methodology:**
 
 **Step 1: Time-of-Use (TOU) Rate Averaging**
+
 - If multiple rate tiers exist (On-Peak, Mid-Peak, Off-Peak): calculate simple average
 - Example: (On-Peak $0.21 + Mid-Peak $0.14 + Off-Peak $0.08) ÷ 3 = $0.143/kWh
 
 **Step 2: Include Only Solar-Affected Charges**
 
 INCLUDE (usage-based, scale with kWh):
+
 - Energy charges (base rate or TOU average)
 - Fuel adjustments (if per kWh)
 - Transmission cost adjustments (if per kWh)
@@ -106,6 +113,7 @@ INCLUDE (usage-based, scale with kWh):
 - City/State taxes (ONLY if % of total bill)
 
 EXCLUDE (fixed/demand, NOT affected by solar):
+
 - Demand charges (peak kW-based)
 - Delivery/transmission charges (fixed grid fees)
 - Service & facility charges (flat monthly)
@@ -113,6 +121,7 @@ EXCLUDE (fixed/demand, NOT affected by solar):
 - Administrative charges (not per kWh)
 
 **Validation:**
+
 - Confidence threshold: ≥ 0.5 (50%)
 - Reasonable range: $0.01 - $1.00 per kWh
 - Bills uploaded to R2 public bucket for audit trail
@@ -201,6 +210,7 @@ All quotes are persisted to the `non_account_quotes` table:
 - Region, location, consumption, system size
 - Extracted electricity price with confidence score
 - Utility bill URL (R2 public bucket)
+- Project completion status (boolean flag)
 
 **Computed Fields:**
 

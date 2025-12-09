@@ -1927,6 +1927,7 @@ export const ProjectQuotes = pgTable("project_quotes", {
   walletAddress: varchar("wallet_address", { length: 42 }).notNull(),
   userId: varchar("user_id", { length: 42 }),
   metadata: text("metadata"), // Optional field for partners to add identifying info (e.g., farm owner name)
+  isProjectCompleted: boolean("is_project_completed").notNull().default(false), // Indicates if the solar project is already live/completed
 
   // Identity/Location
   regionCode: varchar("region_code", { length: 10 }).notNull(),

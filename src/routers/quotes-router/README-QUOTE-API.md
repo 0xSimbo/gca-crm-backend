@@ -41,6 +41,7 @@ Create a new quote with wallet signature authentication.
 **Optional Fields:**
 
 - `metadata` (string): Custom identifier for the quote (e.g., "John Smith - Farm #123", "Project ABC")
+- `isProjectCompleted` (boolean): Flag indicating if the solar project is already live/completed (default: false)
 
 **Message to Sign:**
 
@@ -259,6 +260,9 @@ formData.append("signature", signature);
 // Optional: Add metadata to help identify the quote
 formData.append("metadata", "John Smith - Farm #123");
 
+// Optional: Indicate if the project is already live/completed
+formData.append("isProjectCompleted", "true");
+
 // Load and append PDF
 const pdfBuffer = readFileSync("./utility_bill.pdf");
 const pdfBlob = new Blob([pdfBuffer], { type: "application/pdf" });
@@ -293,6 +297,7 @@ if (response.ok) {
   "walletAddress": "0x...",
   "userId": "0x..." | null,
   "metadata": "John Smith - Farm #123",
+  "isProjectCompleted": false,
   "regionCode": "US-MO",
   "protocolDeposit": {
     "usd": 12345.67,

@@ -44,7 +44,8 @@ async function testAndrewRealQuote() {
     const extracted = await extractElectricityPriceFromUtilityBill(
       pdfBuffer,
       "required_second_utility_bill_andrew.pdf",
-      "application/pdf"
+      "application/pdf",
+      "US-CO"
     );
     
     console.log("\n✅ AI Extraction Results:");

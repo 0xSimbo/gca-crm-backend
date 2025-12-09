@@ -52,7 +52,8 @@ async function testBenRealQuote() {
     const extracted = await extractElectricityPriceFromUtilityBill(
       pdfBuffer,
       "required_first_utility_bill_ben.pdf",
-      "application/pdf"
+      "application/pdf",
+      "US-UT"
     );
 
     console.log("\n✅ AI Extraction Results:");

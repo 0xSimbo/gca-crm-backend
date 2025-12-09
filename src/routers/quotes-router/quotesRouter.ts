@@ -161,7 +161,8 @@ export const quotesRouter = new Elysia({ prefix: "/quotes" })
           const extracted = await extractElectricityPriceFromUtilityBill(
             fileBuffer,
             file.name,
-            file.type
+            file.type,
+            regionCode
           );
           priceExtraction = extracted.result;
           billUrl = extracted.billUrl;
@@ -198,11 +199,13 @@ export const quotesRouter = new Elysia({ prefix: "/quotes" })
               walletAddress,
               userId,
               metadata: body.metadata || null,
+              isProjectCompleted: body.isProjectCompleted ?? false,
             }
           : await createProjectQuote({
               walletAddress,
               userId,
               metadata: body.metadata,
+              isProjectCompleted: body.isProjectCompleted ?? false,
               regionCode,
               latitude: latitude.toString(),
               longitude: longitude.toString(),
@@ -233,6 +236,7 @@ export const quotesRouter = new Elysia({ prefix: "/quotes" })
           walletAddress: savedQuote.walletAddress,
           userId: savedQuote.userId,
           metadata: savedQuote.metadata,
+          isProjectCompleted: savedQuote.isProjectCompleted,
           regionCode: savedQuote.regionCode,
           protocolDeposit: {
             usd: quoteResult.protocolDepositUsd,
@@ -305,6 +309,12 @@ export const quotesRouter = new Elysia({ prefix: "/quotes" })
           t.String({
             description:
               "Optional metadata for identifying the quote (e.g., farm owner name, project ID)",
+          })
+        ),
+        isProjectCompleted: t.Optional(
+          t.Boolean({
+            description:
+              "Optional flag indicating if the solar project is already live/completed",
           })
         ),
         // Test-only optional overrides
