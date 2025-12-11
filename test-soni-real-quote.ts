@@ -1,6 +1,20 @@
 import { readFileSync } from "fs";
 import { extractElectricityPriceFromUtilityBill } from "./src/routers/applications-router/helpers/extractElectricityPrice";
 import { computeProjectQuote } from "./src/routers/applications-router/helpers/computeProjectQuote";
+import { getSunlightHoursAndCertificates } from "./src/routers/protocol-fee-router/utils/get-sunlight-hours-and-certificates";
+
+const DAYS_PER_YEAR = 365.25;
+const WEEKS_PER_YEAR = DAYS_PER_YEAR / 7;
+const KW_PER_MW = 1_000;
+
+function estimateWeeklyConsumptionMWh(
+  dcCapacityMw: number,
+  sunlightHoursPerDay: number
+): number {
+  const annualGenerationKwh =
+    sunlightHoursPerDay * DAYS_PER_YEAR * dcCapacityMw * KW_PER_MW;
+  return annualGenerationKwh / WEEKS_PER_YEAR / KW_PER_MW;
+}
 
 async function testSoniRealQuote() {
   console.log("=== Real Life Test - Soni's Project ===\n");
@@ -8,11 +22,10 @@ async function testSoniRealQuote() {
   // Real project data
   const projectData = {
     coordinates: {
-      latitude: 28.02552,
-      longitude: 73.05934,
+      latitude: 27.48323,
+      longitude: 73.259704,
     },
-    weeklyConsumptionMWh: 0.7, // MWh (provided)
-    systemSizeKw: 700, // 0.7 MW
+    dcCapacityMw: 0.46,
   };
 
   console.log("Project Details:");
@@ -22,8 +35,26 @@ async function testSoniRealQuote() {
     ",",
     projectData.coordinates.longitude
   );
-  console.log("  Weekly Consumption:", projectData.weeklyConsumptionMWh, "MWh");
-  console.log("  System Size:", projectData.systemSizeKw, "kW\n");
+  console.log("  DC Capacity:", projectData.dcCapacityMw, "MW\n");
+
+  const {
+    average_sunlight: averageSunlightHoursPerDay,
+    average_carbon_certificates: carbonOffsetsPerMwh,
+  } = await getSunlightHoursAndCertificates(projectData.coordinates);
+  const weeklyConsumptionMWh = estimateWeeklyConsumptionMWh(
+    projectData.dcCapacityMw,
+    averageSunlightHoursPerDay
+  );
+  const systemSizeKw = projectData.dcCapacityMw * KW_PER_MW;
+
+  console.log("Derived Inputs:");
+  console.log(
+    "  Average Sunlight Hours:",
+    averageSunlightHoursPerDay.toFixed(2),
+    "hrs/day"
+  );
+  console.log("  Weekly Consumption:", weeklyConsumptionMWh.toFixed(4), "MWh");
+  console.log("  System Size:", systemSizeKw.toFixed(0), "kW\n");
 
   // Step 1: Test PDF extraction
   console.log("=== Step 1: Extract Electricity Price from PDF ===");
@@ -42,22 +73,36 @@ async function testSoniRealQuote() {
     );
 
     console.log("\n✅ AI Extraction Results:");
+    const targetPricePerKwh = 0.0835;
+    const priceDelta = Math.abs(
+      extracted.result.pricePerKwh - targetPricePerKwh
+    );
     console.log("  Price per kWh: $" + extracted.result.pricePerKwh.toFixed(4));
     console.log(
       "  Confidence:",
       (extracted.result.confidence * 100).toFixed(1) + "%"
     );
     console.log("  Rationale:", extracted.result.rationale);
+    console.log("  Target Price: $" + targetPricePerKwh.toFixed(4));
+    console.log("  Delta vs Target: $" + priceDelta.toFixed(4));
+    if (priceDelta > 0.01) {
+      console.warn(
+        "⚠️ Extracted price deviates by more than $0.01 from the expected $0.0835."
+      );
+    }
 
     // Step 2: Compute quote with extracted price
     console.log("\n=== Step 2: Compute Protocol Deposit ===");
 
     const quoteResult = await computeProjectQuote({
-      weeklyConsumptionMWh: projectData.weeklyConsumptionMWh,
-      systemSizeKw: projectData.systemSizeKw,
+      weeklyConsumptionMWh,
+      systemSizeKw,
       electricityPricePerKwh: extracted.result.pricePerKwh,
       latitude: projectData.coordinates.latitude,
       longitude: projectData.coordinates.longitude,
+      override: {
+        carbonOffsetsPerMwh,
+      },
     });
 
     console.log("\n✅ Quote Computation Results:");

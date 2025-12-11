@@ -394,4 +394,4 @@ bun run scripts/test-quote-api-with-wallet.ts
 
 ## Support
 
-For questions or issues, contact: api-support@glowlabs.org
+For questions or issues, contact: julien@glow.org
