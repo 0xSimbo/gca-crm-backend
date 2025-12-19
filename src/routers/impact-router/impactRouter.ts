@@ -22,15 +22,17 @@ export const impactRouter = new Elysia({ prefix: "/impact" })
           parseOptionalInt(startWeek) ?? weekRange.startWeek;
         const actualEndWeek = parseOptionalInt(endWeek) ?? weekRange.endWeek;
         const parsedLimit = parseOptionalInt(limit) ?? 200;
+        const limitWasProvided = limit != null;
 
         if (actualEndWeek < actualStartWeek) {
           set.status = 400;
           return "endWeek must be >= startWeek";
         }
 
+        const allWallets = walletAddress ? null : await getAllImpactWallets();
         const wallets = walletAddress
           ? [walletAddress.toLowerCase()]
-          : (await getAllImpactWallets()).slice(0, parsedLimit);
+          : allWallets!.slice(0, parsedLimit);
 
         const results = await computeGlowImpactScores({
           walletAddresses: wallets,
@@ -51,6 +53,9 @@ export const impactRouter = new Elysia({ prefix: "/impact" })
         return {
           weekRange: { startWeek: actualStartWeek, endWeek: actualEndWeek },
           limit: parsedLimit,
+          ...(!limitWasProvided
+            ? { totalWalletCount: allWallets!.length }
+            : {}),
           wallets: results.map((r) => r.glowWorth),
         };
       } catch (e) {
@@ -89,6 +94,7 @@ export const impactRouter = new Elysia({ prefix: "/impact" })
           parseOptionalInt(startWeek) ?? weekRange.startWeek;
         const actualEndWeek = parseOptionalInt(endWeek) ?? weekRange.endWeek;
         const parsedLimit = parseOptionalInt(limit) ?? 200;
+        const limitWasProvided = limit != null;
         const shouldIncludeWeekly =
           includeWeekly === "true" || includeWeekly === "1" || !!walletAddress;
 
@@ -97,9 +103,10 @@ export const impactRouter = new Elysia({ prefix: "/impact" })
           return "endWeek must be >= startWeek";
         }
 
+        const allWallets = walletAddress ? null : await getAllImpactWallets();
         const wallets = walletAddress
           ? [walletAddress.toLowerCase()]
-          : (await getAllImpactWallets()).slice(0, parsedLimit);
+          : allWallets!.slice(0, parsedLimit);
 
         const results = await computeGlowImpactScores({
           walletAddresses: wallets,
@@ -120,6 +127,9 @@ export const impactRouter = new Elysia({ prefix: "/impact" })
         return {
           weekRange: { startWeek: actualStartWeek, endWeek: actualEndWeek },
           limit: parsedLimit,
+          ...(!limitWasProvided
+            ? { totalWalletCount: allWallets!.length }
+            : {}),
           wallets: results
             .map((r) => ({
               walletAddress: r.walletAddress,
