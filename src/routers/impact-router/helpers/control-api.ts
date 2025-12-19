@@ -40,6 +40,11 @@ export interface SteeringByWeekResult {
   error?: string;
 }
 
+export interface SteeringSnapshot {
+  steeredGlwWeiPerWeek: bigint;
+  hasSteeringStake: boolean;
+}
+
 function getControlApiUrl(): string {
   if (!process.env.CONTROL_API_URL) {
     throw new Error("CONTROL_API_URL not configured");
@@ -266,6 +271,16 @@ export async function getGctlSteeringByWeekWei(params: {
 }): Promise<SteeringByWeekResult> {
   const { walletAddress, startWeek, endWeek } = params;
 
+  const snapshot = await getSteeringSnapshot(walletAddress);
+  const byWeek = new Map<number, bigint>();
+  for (let w = startWeek; w <= endWeek; w++)
+    byWeek.set(w, snapshot.steeredGlwWeiPerWeek);
+  return { byWeek, dataSource: "control-api" };
+}
+
+export async function getSteeringSnapshot(
+  walletAddress: string
+): Promise<SteeringSnapshot> {
   const wallet = walletAddress.toLowerCase();
   const response = await fetch(
     `${getControlApiUrl()}/wallets/address/${wallet}`
@@ -280,6 +295,13 @@ export async function getGctlSteeringByWeekWei(params: {
   const data: any = await response.json();
   const walletRegions: Array<{ regionId: number; totalStaked: string }> =
     data?.regions || [];
+  const hasSteeringStake = walletRegions.some((r) => {
+    try {
+      return BigInt(r.totalStaked || "0") > BigInt(0);
+    } catch {
+      return false;
+    }
+  });
 
   const regionRewards = await getCachedRegionRewards();
   const regionRewardById = new Map<
@@ -308,8 +330,5 @@ export async function getGctlSteeringByWeekWei(params: {
       (region.glwRewardWei * walletStake) / region.gctlStaked;
   }
 
-  const byWeek = new Map<number, bigint>();
-  for (let w = startWeek; w <= endWeek; w++)
-    byWeek.set(w, steeredGlwWeiPerWeek);
-  return { byWeek, dataSource: "control-api" };
+  return { steeredGlwWeiPerWeek, hasSteeringStake };
 }

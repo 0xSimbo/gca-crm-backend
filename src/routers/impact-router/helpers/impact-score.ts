@@ -14,6 +14,7 @@ import { getLiquidGlwBalanceWei } from "./glw-balance";
 import {
   fetchWalletRewardsHistoryBatch,
   getGctlSteeringByWeekWei,
+  getSteeringSnapshot,
   getUnclaimedGlwRewardsWei,
   type ControlApiFarmReward,
   type SteeringByWeekResult,
@@ -113,6 +114,26 @@ export interface WeeklyImpactRow {
   hasCashMinerBonus: boolean;
 }
 
+export interface ImpactScoreComposition {
+  steeringPoints: string;
+  inflationPoints: string;
+  worthPoints: string;
+  vaultPoints: string;
+}
+
+export interface CurrentWeekProjection {
+  weekNumber: number;
+  hasMinerMultiplier: boolean;
+  hasSteeringStake: boolean;
+  projectedPoints: {
+    steeringGlwWei: string;
+    inflationGlwWei: string;
+    delegatedGlwWei: string;
+    glowWorthWei: string;
+    totalProjectedScore: string;
+  };
+}
+
 export interface GlowImpactScoreResult {
   walletAddress: string;
   weekRange: { startWeek: number; endWeek: number };
@@ -130,6 +151,9 @@ export interface GlowImpactScoreResult {
     totalInflationGlwWei: string;
     totalSteeringGlwWei: string;
   };
+  composition: ImpactScoreComposition;
+  lastWeekPoints: string;
+  activeMultiplier: boolean;
   weekly: WeeklyImpactRow[];
 }
 
@@ -379,6 +403,15 @@ export async function computeGlowImpactScores(params: {
     let totalInflationGlwWei = BigInt(0);
     let totalSteeringGlwWei = BigInt(0);
 
+    let lastWeekPointsScaled6 = BigInt(0);
+    const lastWeek = endWeek - 1;
+
+    // Composition buckets (scaled6). These are multiplied the same way the score is.
+    let compositionInflationScaled6 = BigInt(0);
+    let compositionSteeringScaled6 = BigInt(0);
+    let compositionVaultScaled6 = BigInt(0);
+    let compositionWorthScaled6 = BigInt(0);
+
     const weekly: WeeklyImpactRow[] = [];
 
     for (let week = startWeek; week <= endWeek; week++) {
@@ -425,12 +458,24 @@ export async function computeGlowImpactScores(params: {
 
       const totalWeekPts = rollover + continuousPts;
 
+      // Composition (make sure it sums to total points, including multiplier effects)
+      compositionInflationScaled6 += inflationPts * BigInt(multiplier);
+      compositionSteeringScaled6 += steeringPts * BigInt(multiplier);
+      compositionVaultScaled6 += vaultPts * BigInt(multiplier);
+      compositionWorthScaled6 += continuousPts;
+
       totalPointsScaled6 += totalWeekPts;
       rolloverPointsScaled6 += rollover;
       continuousPointsScaled6 += continuousPts;
       inflationPointsScaled6 += inflationPts;
       steeringPointsScaled6 += steeringPts;
       vaultBonusPointsScaled6 += vaultPts;
+
+      if (week === lastWeek && lastWeek >= startWeek) {
+        // `lastWeekPoints` is intended to represent the isolated points earned
+        // in the last completed week (velocity), not the cumulative total.
+        lastWeekPointsScaled6 = totalWeekPts;
+      }
 
       if (includeWeeklyBreakdown) {
         weekly.push({
@@ -461,6 +506,10 @@ export async function computeGlowImpactScores(params: {
     const glowWorthNowWei =
       liquidGlwWei + delegatedActiveNow + unclaimed.amountWei;
 
+    const effectiveLastWeekPoints =
+      lastWeek >= startWeek ? lastWeekPointsScaled6 : BigInt(0);
+    const activeMultiplier = cashMinerWeeks.has(endWeek);
+
     results.push({
       walletAddress: wallet,
       weekRange: { startWeek, endWeek },
@@ -489,9 +538,113 @@ export async function computeGlowImpactScores(params: {
         totalInflationGlwWei: totalInflationGlwWei.toString(),
         totalSteeringGlwWei: totalSteeringGlwWei.toString(),
       },
+      composition: {
+        steeringPoints: formatPointsScaled6(compositionSteeringScaled6),
+        inflationPoints: formatPointsScaled6(compositionInflationScaled6),
+        worthPoints: formatPointsScaled6(compositionWorthScaled6),
+        vaultPoints: formatPointsScaled6(compositionVaultScaled6),
+      },
+      lastWeekPoints: formatPointsScaled6(effectiveLastWeekPoints),
+      activeMultiplier,
       weekly,
     });
   }
 
   return results;
+}
+
+async function getHasMiningCenterMultiplierThisWeek(params: {
+  walletAddress: string;
+  weekNumber: number;
+}): Promise<boolean> {
+  const { walletAddress, weekNumber } = params;
+  const wallet = walletAddress.toLowerCase();
+  const startTimestamp = GENESIS_TIMESTAMP + weekNumber * 604800;
+  const now = Math.floor(Date.now() / 1000);
+
+  const rows = await db
+    .select({ id: fractionSplits.id })
+    .from(fractionSplits)
+    .innerJoin(fractions, eq(fractionSplits.fractionId, fractions.id))
+    .where(
+      and(
+        eq(fractionSplits.buyer, wallet),
+        eq(fractions.type, "mining-center"),
+        gte(fractionSplits.timestamp, startTimestamp),
+        lte(fractionSplits.timestamp, now)
+      )
+    )
+    .limit(1);
+
+  return rows.length > 0;
+}
+
+export async function getCurrentWeekProjection(
+  walletAddress: string,
+  glowWorth?: GlowWorthResult
+): Promise<CurrentWeekProjection> {
+  const weekNumber = getCurrentEpoch(Math.floor(Date.now() / 1000));
+  const wallet = walletAddress.toLowerCase();
+
+  const [{ steeredGlwWeiPerWeek, hasSteeringStake }, hasMinerMultiplier] =
+    await Promise.all([
+      getSteeringSnapshot(wallet),
+      getHasMiningCenterMultiplierThisWeek({
+        walletAddress: wallet,
+        weekNumber,
+      }),
+    ]);
+
+  const delegatedGlwWei = BigInt(glowWorth?.delegatedActiveGlwWei || "0");
+  const glowWorthWei = BigInt(glowWorth?.glowWorthWei || "0");
+
+  // Best-effort: if Control API exposes partial week accounting, use it; otherwise 0.
+  let inflationGlwWei = BigInt(0);
+  try {
+    const rewardsMap = await fetchWalletRewardsHistoryBatch({
+      wallets: [wallet],
+      startWeek: weekNumber,
+      endWeek: weekNumber,
+    });
+    const rewards = rewardsMap.get(wallet) || [];
+    for (const r of rewards) {
+      inflationGlwWei += BigInt(r.walletTotalGlowInflationReward || "0");
+    }
+  } catch {
+    inflationGlwWei = BigInt(0);
+  }
+
+  const multiplier = hasMinerMultiplier ? 3 : 1;
+  const inflationPts = glwWeiToPointsScaled6(
+    inflationGlwWei,
+    INFLATION_POINTS_PER_GLW_SCALED6
+  );
+  const steeringPts = glwWeiToPointsScaled6(
+    steeredGlwWeiPerWeek,
+    STEERING_POINTS_PER_GLW_SCALED6
+  );
+  const vaultPts = glwWeiToPointsScaled6(
+    delegatedGlwWei,
+    VAULT_BONUS_POINTS_PER_GLW_SCALED6
+  );
+  const rolloverPre = addScaled6Points([inflationPts, steeringPts, vaultPts]);
+  const rollover = rolloverPre * BigInt(multiplier);
+  const continuousPts = glwWeiToPointsScaled6(
+    glowWorthWei,
+    GLOW_WORTH_POINTS_PER_GLW_SCALED6
+  );
+  const totalProjectedScore = rollover + continuousPts;
+
+  return {
+    weekNumber,
+    hasMinerMultiplier,
+    hasSteeringStake,
+    projectedPoints: {
+      steeringGlwWei: steeredGlwWeiPerWeek.toString(),
+      inflationGlwWei: inflationGlwWei.toString(),
+      delegatedGlwWei: delegatedGlwWei.toString(),
+      glowWorthWei: glowWorthWei.toString(),
+      totalProjectedScore: formatPointsScaled6(totalProjectedScore),
+    },
+  };
 }

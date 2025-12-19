@@ -3,6 +3,7 @@ import { TAG } from "../../constants";
 import { getWeekRange } from "../fractions-router/helpers/apy-helpers";
 import {
   computeGlowImpactScores,
+  getCurrentWeekProjection,
   getAllImpactWallets,
 } from "./helpers/impact-score";
 
@@ -10,6 +11,52 @@ function parseOptionalInt(value: string | undefined): number | undefined {
   if (!value) return undefined;
   const parsed = parseInt(value, 10);
   return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+const GLOW_SCORE_LIST_CACHE_TTL_MS = 10 * 60_000;
+const glowScoreListCache = new Map<
+  string,
+  { expiresAtMs: number; data: unknown }
+>();
+
+/**
+ * Wallets we control (team/treasury/test wallets) that must not appear in user leaderboards.
+ * Keep these lowercased.
+ */
+const EXCLUDED_LEADERBOARD_WALLETS = [
+  "0x77f41144e787cb8cd29a37413a71f53f92ee050c",
+].map((w) => w.toLowerCase());
+
+const excludedLeaderboardWalletsSet = new Set(EXCLUDED_LEADERBOARD_WALLETS);
+
+function filterLeaderboardWallets(wallets: string[]): string[] {
+  return wallets.filter((w) => !excludedLeaderboardWalletsSet.has(w));
+}
+
+function getGlowScoreListCacheKey(params: {
+  startWeek: number;
+  endWeek: number;
+  limit: number;
+  includeWeekly: boolean;
+  limitWasProvided: boolean;
+}): string {
+  return [
+    params.startWeek,
+    params.endWeek,
+    params.limit,
+    params.includeWeekly ? 1 : 0,
+    params.limitWasProvided ? 1 : 0,
+  ].join(":");
+}
+
+function readCachedGlowScoreList(key: string): unknown | null {
+  const cached = glowScoreListCache.get(key);
+  if (!cached) return null;
+  if (Date.now() >= cached.expiresAtMs) {
+    glowScoreListCache.delete(key);
+    return null;
+  }
+  return cached.data;
 }
 
 export const impactRouter = new Elysia({ prefix: "/impact" })
@@ -29,7 +76,9 @@ export const impactRouter = new Elysia({ prefix: "/impact" })
           return "endWeek must be >= startWeek";
         }
 
-        const allWallets = walletAddress ? null : await getAllImpactWallets();
+        const allWallets = walletAddress
+          ? null
+          : filterLeaderboardWallets(await getAllImpactWallets());
         const wallets = walletAddress
           ? [walletAddress.toLowerCase()]
           : allWallets!.slice(0, parsedLimit);
@@ -97,13 +146,28 @@ export const impactRouter = new Elysia({ prefix: "/impact" })
         const limitWasProvided = limit != null;
         const shouldIncludeWeekly =
           includeWeekly === "true" || includeWeekly === "1" || !!walletAddress;
+        const isListMode = !walletAddress;
 
         if (actualEndWeek < actualStartWeek) {
           set.status = 400;
           return "endWeek must be >= startWeek";
         }
 
-        const allWallets = walletAddress ? null : await getAllImpactWallets();
+        if (isListMode) {
+          const cacheKey = getGlowScoreListCacheKey({
+            startWeek: actualStartWeek,
+            endWeek: actualEndWeek,
+            limit: parsedLimit,
+            includeWeekly: shouldIncludeWeekly,
+            limitWasProvided,
+          });
+          const cached = readCachedGlowScoreList(cacheKey);
+          if (cached) return cached;
+        }
+
+        const allWallets = walletAddress
+          ? null
+          : filterLeaderboardWallets(await getAllImpactWallets());
         const wallets = walletAddress
           ? [walletAddress.toLowerCase()]
           : allWallets!.slice(0, parsedLimit);
@@ -121,10 +185,14 @@ export const impactRouter = new Elysia({ prefix: "/impact" })
             set.status = 404;
             return "Wallet not found";
           }
-          return match;
+          const currentWeekProjection = await getCurrentWeekProjection(
+            walletAddress.toLowerCase(),
+            match.glowWorth
+          );
+          return { ...match, currentWeekProjection };
         }
 
-        return {
+        const payload = {
           weekRange: { startWeek: actualStartWeek, endWeek: actualEndWeek },
           limit: parsedLimit,
           ...(!limitWasProvided
@@ -135,9 +203,24 @@ export const impactRouter = new Elysia({ prefix: "/impact" })
               walletAddress: r.walletAddress,
               totalPoints: r.totals.totalPoints,
               glowWorthWei: r.glowWorth.glowWorthWei,
+              composition: r.composition,
+              lastWeekPoints: r.lastWeekPoints,
+              activeMultiplier: r.activeMultiplier,
             }))
             .sort((a, b) => Number(b.totalPoints) - Number(a.totalPoints)),
         };
+        const cacheKey = getGlowScoreListCacheKey({
+          startWeek: actualStartWeek,
+          endWeek: actualEndWeek,
+          limit: parsedLimit,
+          includeWeekly: shouldIncludeWeekly,
+          limitWasProvided,
+        });
+        glowScoreListCache.set(cacheKey, {
+          expiresAtMs: Date.now() + GLOW_SCORE_LIST_CACHE_TTL_MS,
+          data: payload,
+        });
+        return payload;
       } catch (e) {
         if (e instanceof Error) {
           set.status = 400;

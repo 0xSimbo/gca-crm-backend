@@ -2,6 +2,8 @@
 
 Public endpoints for **Glow Worth** and **Glow Impact Score**.
 
+This is a **status-only leaderboard** (no monetary rewards are paid out by this API). The router exposes data to explain _why_ a wallet ranks where it does, and its “live” potential if it acts now.
+
 ## Concepts
 
 ### Glow Worth
@@ -30,6 +32,34 @@ For each week in the requested week range, we compute:
 
 All points are computed internally with **6-decimal fixed-point precision** and returned as strings.
 
+## Leaderboard timing: “do I move up instantly?”
+
+### What updates instantly (next fetch)
+
+If you **buy/receive GLW now**, the **leaderboard score can change immediately** (i.e. as soon as the on-chain transfer is mined and the client refetches), because:
+
+- `LiquidGLW` is fetched from the chain via `balanceOf(wallet)` (current state)
+- The score includes **continuous points** based on `GlowWorth` for each week in the requested range, and this implementation uses the **current** `GlowWorth` inputs when computing those weeks.
+
+### What does _not_ update instantly
+
+The **weekly rollover components** (inflation / steering / vault bonus / cash-miner multiplier) are derived from **weekNumber-indexed** data sources and behave like weekly accounting:
+
+- Inflation + protocol-deposit recovery come from Control API reward history (by `weekNumber`)
+- Steering is derived from Control API region rewards and the wallet stake snapshot (currently applied uniformly across the queried week range)
+- Cash-miner bonus depends on whether a mining-center fraction purchase happened in a given `weekNumber`
+
+So buying GLW does **not** retroactively change those weekly rollover rows.
+
+### Default week cutoff nuance
+
+By default, `startWeek/endWeek` use `getWeekRange()`:
+
+- `startWeek`: fixed start (currently `97`)
+- `endWeek`: the **last completed week for reports** (based on a Thursday 00:00 UTC report schedule), not “the in-progress current protocol week”.
+
+If you pass explicit `startWeek/endWeek` query params, the backend will compute over that range (it only validates `endWeek >= startWeek`).
+
 ## Frontend usage (how to call these endpoints)
 
 These are **public HTTP endpoints** exposed by `impactRouter` (Elysia) under the `/impact` prefix. From a frontend, you just `fetch()` them.
@@ -49,6 +79,7 @@ These are **public HTTP endpoints** exposed by `impactRouter` (Elysia) under the
 
 - **Single wallet**: pass `walletAddress` → returns a single `glowWorth` object
 - **List**: omit `walletAddress` → returns `{ weekRange, limit, wallets: glowWorth[] }`
+- **List (no `limit`)**: when `limit` query param is omitted, response also includes `totalWalletCount` so UIs can show “displaying 200 of N”.
 
 Example (Next.js / React server-side fetch):
 
@@ -98,8 +129,9 @@ export async function getGlowWorth(params: {
 
 There are two shapes, based on `walletAddress`:
 
-- **Single wallet** (`walletAddress=0x...`): returns the full object including `glowWorth`, `totals`, and `weekly[]` rows
-- **Leaderboard/list** (omit `walletAddress`): returns `{ weekRange, limit, wallets: { walletAddress, totalPoints, glowWorthWei }[] }`
+- **Single wallet** (`walletAddress=0x...`): returns the full object including `glowWorth`, `totals`, `weekly[]`, and `currentWeekProjection` (live preview).
+- **Leaderboard/list** (omit `walletAddress`): returns lightweight rows with totals + a `composition` breakdown + `lastWeekPoints` + `activeMultiplier`.
+- **Leaderboard/list (no `limit`)**: when `limit` query param is omitted, response also includes `totalWalletCount`.
 
 #### Full breakdown for a single wallet
 
@@ -142,7 +174,27 @@ interface ImpactScoreResponse {
   weekRange: { startWeek: number; endWeek: number };
   glowWorth: GlowWorthResponse;
   totals: ImpactScoreTotals;
+  composition: {
+    steeringPoints: string;
+    inflationPoints: string;
+    worthPoints: string;
+    vaultPoints: string;
+  };
+  lastWeekPoints: string;
+  activeMultiplier: boolean;
   weekly: ImpactScoreWeeklyRow[];
+  currentWeekProjection: {
+    weekNumber: number;
+    hasMinerMultiplier: boolean;
+    hasSteeringStake: boolean;
+    projectedPoints: {
+      steeringGlwWei: string;
+      inflationGlwWei: string;
+      delegatedGlwWei: string;
+      glowWorthWei: string;
+      totalProjectedScore: string;
+    };
+  };
 }
 
 export async function getImpactScore(params: {
@@ -176,11 +228,22 @@ interface ImpactScoreLeaderboardRow {
   walletAddress: string;
   totalPoints: string;
   glowWorthWei: string;
+  composition: {
+    steeringPoints: string;
+    inflationPoints: string;
+    worthPoints: string;
+    vaultPoints: string;
+  };
+  // Points earned in the previous week relative to `endWeek` (i.e. weekNumber = endWeek - 1)
+  lastWeekPoints: string;
+  activeMultiplier: boolean;
+  // rankDelta?: number; // intentionally omitted today (expensive to compute)
 }
 
 interface ImpactScoreLeaderboardResponse {
   weekRange: { startWeek: number; endWeek: number };
   limit: number;
+  totalWalletCount?: number;
   wallets: ImpactScoreLeaderboardRow[];
 }
 
@@ -209,6 +272,7 @@ export async function getImpactLeaderboard(params: {
 - `includeWeekly=true|1` on `/impact/glow-score` can be **very large** when you query many wallets; avoid using it for leaderboard screens.
 - For dashboards, fetch a single wallet with `walletAddress` and a bounded `startWeek/endWeek`.
 - Some Control API calls are cached in-process to reduce repeated work (e.g. region rewards are cached for ~30s).
+- The `/impact/glow-score` **list** response is cached in-process for ~10 minutes (single-wallet responses are not cached, since `currentWeekProjection` is meant to feel “live”).
 
 ## `GET /impact/glow-worth`
 
