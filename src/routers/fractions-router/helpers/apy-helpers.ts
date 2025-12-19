@@ -1,6 +1,6 @@
 import { db } from "../../../db/db";
 import { fractions } from "../../../db/schema";
-import { and, eq, inArray, lte } from "drizzle-orm";
+import { and, eq, inArray, lte, or, isNull } from "drizzle-orm";
 import { FRACTION_STATUS } from "../../../constants/fractions";
 import { GENESIS_TIMESTAMP } from "../../../constants/genesis-timestamp";
 import { getCachedGlwSpotPriceNumber } from "../../../utils/glw-spot";
@@ -134,7 +134,10 @@ export async function getFilledFractionsUpToEpoch(epochEndDate: Date) {
           FRACTION_STATUS.FILLED,
           FRACTION_STATUS.EXPIRED,
         ]),
-        lte(fractions.filledAt, epochEndDate)
+        or(
+          lte(fractions.filledAt, epochEndDate),
+          and(isNull(fractions.filledAt), lte(fractions.expirationAt, epochEndDate))
+        )
       )
     );
 

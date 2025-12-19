@@ -29,6 +29,15 @@ export interface UnclaimedGlwRewardsResult {
 export interface SteeringByWeekResult {
   byWeek: Map<number, bigint>;
   dataSource: "control-api";
+  /**
+   * True when we had to fall back to zero-values due to a downstream failure.
+   * (We still report `dataSource: "control-api"` because this data is supposed to come from Control API.)
+   */
+  isFallback?: boolean;
+  /**
+   * Populated when `isFallback` is true.
+   */
+  error?: string;
 }
 
 function getControlApiUrl(): string {
@@ -110,6 +119,70 @@ export async function fetchWalletRewardsHistoryBatch(params: {
     const walletData = results[wallet];
     if (!walletData?.farmRewards) continue;
     result.set(wallet.toLowerCase(), walletData.farmRewards);
+  }
+
+  return result;
+}
+
+export async function fetchWalletRewardsHistoryMany(params: {
+  wallets: string[];
+  startWeek: number;
+  endWeek: number;
+  batchSize?: number;
+  concurrentBatches?: number;
+}): Promise<Map<string, ControlApiFarmReward[]>> {
+  const {
+    wallets,
+    startWeek,
+    endWeek,
+    batchSize = 500,
+    concurrentBatches = 5,
+  } = params;
+
+  const result = new Map<string, ControlApiFarmReward[]>();
+  if (wallets.length === 0) return result;
+
+  const normalizedWallets = Array.from(
+    new Set(wallets.map((w) => w.toLowerCase()))
+  );
+
+  for (
+    let i = 0;
+    i < normalizedWallets.length;
+    i += batchSize * concurrentBatches
+  ) {
+    const batchPromises: Array<Promise<Map<string, ControlApiFarmReward[]>>> =
+      [];
+
+    for (
+      let j = 0;
+      j < concurrentBatches && i + j * batchSize < normalizedWallets.length;
+      j++
+    ) {
+      const batch = normalizedWallets.slice(
+        i + j * batchSize,
+        i + (j + 1) * batchSize
+      );
+
+      batchPromises.push(
+        fetchWalletRewardsHistoryBatch({ wallets: batch, startWeek, endWeek })
+          .then((m) => m)
+          .catch((error) => {
+            console.error(
+              `[control-api] batch wallet rewards failed (wallets=${batch.length}, startWeek=${startWeek}, endWeek=${endWeek})`,
+              error
+            );
+            return new Map<string, ControlApiFarmReward[]>();
+          })
+      );
+    }
+
+    const batchResults = await Promise.all(batchPromises);
+    for (const batchMap of batchResults) {
+      for (const [wallet, rewards] of batchMap) {
+        result.set(wallet, rewards);
+      }
+    }
   }
 
   return result;

@@ -16,6 +16,7 @@ import {
   getGctlSteeringByWeekWei,
   getUnclaimedGlwRewardsWei,
   type ControlApiFarmReward,
+  type SteeringByWeekResult,
 } from "./control-api";
 import {
   addScaled6Points,
@@ -116,6 +117,9 @@ export interface GlowImpactScoreResult {
   walletAddress: string;
   weekRange: { startWeek: number; endWeek: number };
   glowWorth: GlowWorthResult;
+  warnings?: {
+    steering?: string;
+  };
   totals: {
     totalPoints: string;
     rolloverPoints: string;
@@ -127,6 +131,28 @@ export interface GlowImpactScoreResult {
     totalSteeringGlwWei: string;
   };
   weekly: WeeklyImpactRow[];
+}
+
+function getSteeringFallback(params: {
+  startWeek: number;
+  endWeek: number;
+  error: unknown;
+}): SteeringByWeekResult {
+  const { startWeek, endWeek, error } = params;
+  const byWeek = new Map<number, bigint>();
+  for (let w = startWeek; w <= endWeek; w++) byWeek.set(w, BigInt(0));
+  const message =
+    error instanceof Error
+      ? error.message
+      : typeof error === "string"
+      ? error
+      : JSON.stringify(error);
+  return {
+    byWeek,
+    dataSource: "control-api",
+    isFallback: true,
+    error: message,
+  };
 }
 
 export async function getAllImpactWallets(): Promise<string[]> {
@@ -257,10 +283,7 @@ export async function computeGlowImpactScores(params: {
     string,
     { amountWei: bigint; dataSource: "claims-api+control-api" }
   >();
-  const steeringByWallet = new Map<
-    string,
-    { byWeek: Map<number, bigint>; dataSource: "control-api" }
-  >();
+  const steeringByWallet = new Map<string, SteeringByWeekResult>();
 
   const concurrency = 8;
   for (let i = 0; i < wallets.length; i += concurrency) {
@@ -275,6 +298,12 @@ export async function computeGlowImpactScores(params: {
           walletAddress: wallet,
           startWeek,
           endWeek,
+        }).catch((error) => {
+          console.error(
+            `[impact-score] steering fetch failed for wallet=${wallet}`,
+            error
+          );
+          return getSteeringFallback({ startWeek, endWeek, error });
         });
         return { wallet, liquid, unclaimed, steering };
       })
@@ -301,10 +330,13 @@ export async function computeGlowImpactScores(params: {
       amountWei: BigInt(0),
       dataSource: "claims-api+control-api" as const,
     };
-    const steering = steeringByWallet.get(wallet) || {
-      byWeek: new Map<number, bigint>(),
-      dataSource: "mock" as const,
-    };
+    const steering =
+      steeringByWallet.get(wallet) ||
+      getSteeringFallback({
+        startWeek,
+        endWeek,
+        error: "Steering data missing (no fetch result stored for wallet)",
+      });
 
     const rewards = walletRewardsMap.get(wallet) || [];
     const protocolRecoveredByWeek = new Map<number, bigint>();
@@ -444,6 +476,9 @@ export async function computeGlowImpactScores(params: {
           unclaimedGlwRewards: unclaimed.dataSource,
         },
       },
+      ...(steering.isFallback
+        ? { warnings: { steering: steering.error || "Steering fallback used" } }
+        : {}),
       totals: {
         totalPoints: formatPointsScaled6(totalPointsScaled6),
         rolloverPoints: formatPointsScaled6(rolloverPointsScaled6),

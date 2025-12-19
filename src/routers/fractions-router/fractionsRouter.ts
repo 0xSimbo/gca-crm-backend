@@ -37,8 +37,6 @@ import { getCachedGlwSpotPriceNumber } from "../../utils/glw-spot";
 import {
   getWeekRange,
   buildWalletFarmMap,
-  calculateTotalRewards,
-  aggregateRewardsByFarm,
   aggregateRewardsByWallet,
   getEpochEndDate,
   getFilledFractionsUpToEpoch,
@@ -55,8 +53,15 @@ import {
   getBatchPurchasesAfterWeek,
   getFarmPurchasesAfterWeek,
 } from "./helpers/accurate-apy-helpers";
-import { getFilledStepStatsByFarm } from "./helpers/per-piece-helpers";
+import {
+  getFilledStepStatsByFarm,
+  getWalletPurchaseTypesByFarmUpToWeek,
+} from "./helpers/per-piece-helpers";
 import { FRACTION_STATUS } from "../../constants/fractions";
+import {
+  fetchWalletRewardsHistoryBatch,
+  fetchWalletRewardsHistoryMany,
+} from "../impact-router/helpers/control-api";
 
 export const fractionsRouter = new Elysia({ prefix: "/fractions" })
   .get(
@@ -1074,32 +1079,78 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
         }
 
         if (farmId) {
-          const walletFarmMap = await buildWalletFarmMap();
+          const [purchaseInfo, farmPurchasesAfterWeek] = await Promise.all([
+            getWalletPurchaseTypesByFarmUpToWeek({
+              endWeek: actualEndWeek,
+              farmId,
+            }),
+            getFarmPurchasesAfterWeek(farmId, actualEndWeek),
+          ]);
 
-          const [{ walletBreakdowns }, farmPurchasesAfterWeek] =
-            await Promise.all([
-              calculateTotalRewards(
-                walletFarmMap,
-                actualStartWeek,
-                actualEndWeek
-              ),
-              getFarmPurchasesAfterWeek(farmId, actualEndWeek),
-            ]);
-
-          const farmAggregated = aggregateRewardsByFarm(walletBreakdowns);
-          const farmData = farmAggregated.get(farmId);
-
-          if (!farmData) {
+          const wallets = Array.from(purchaseInfo.walletToFarmTypes.keys());
+          if (wallets.length === 0) {
             set.status = 404;
             return "Farm not found or has no rewards";
+          }
+
+          const rewardsByWallet = await fetchWalletRewardsHistoryMany({
+            wallets,
+            startWeek: actualStartWeek,
+            endWeek: actualEndWeek,
+          });
+
+          let delegatorLastWeek = BigInt(0);
+          let delegatorAllWeeks = BigInt(0);
+          let minerLastWeek = BigInt(0);
+          let minerAllWeeks = BigInt(0);
+
+          const fractionTypesSet = new Set<"launchpad" | "mining-center">();
+          for (const wallet of wallets) {
+            const types = purchaseInfo.walletToFarmTypes
+              .get(wallet)
+              ?.get(farmId);
+            if (types) {
+              for (const t of types) {
+                fractionTypesSet.add(t);
+              }
+            }
+
+            const farmRewards = rewardsByWallet.get(wallet) || [];
+            for (const reward of farmRewards) {
+              if (reward.farmId !== farmId) continue;
+
+              const launchpadInflation = BigInt(
+                reward.walletInflationFromLaunchpad || "0"
+              );
+              const launchpadDeposit = BigInt(
+                reward.walletProtocolDepositFromLaunchpad || "0"
+              );
+              const miningCenterInflation = BigInt(
+                reward.walletInflationFromMiningCenter || "0"
+              );
+              const miningCenterDeposit = BigInt(
+                reward.walletProtocolDepositFromMiningCenter || "0"
+              );
+
+              const delegatorReward = launchpadInflation + launchpadDeposit;
+              const minerReward = miningCenterInflation + miningCenterDeposit;
+
+              delegatorAllWeeks += delegatorReward;
+              minerAllWeeks += minerReward;
+
+              if (reward.weekNumber === actualEndWeek) {
+                delegatorLastWeek += delegatorReward;
+                minerLastWeek += minerReward;
+              }
+            }
           }
 
           return {
             type: "farm",
             farmId,
-            appId: farmData.appId,
-            fractionTypes: farmData.fractionTypes,
-            wallets: farmData.wallets,
+            appId: purchaseInfo.appIdByFarmId.get(farmId) || "",
+            fractionTypes: Array.from(fractionTypesSet),
+            wallets,
             weekRange: {
               startWeek: actualStartWeek,
               endWeek: actualEndWeek,
@@ -1112,12 +1163,12 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
             },
             rewards: {
               delegator: {
-                lastWeek: farmData.delegatorRewards.lastWeek.toString(),
-                allWeeks: farmData.delegatorRewards.allWeeks.toString(),
+                lastWeek: delegatorLastWeek.toString(),
+                allWeeks: delegatorAllWeeks.toString(),
               },
               miner: {
-                lastWeek: farmData.minerRewards.lastWeek.toString(),
-                allWeeks: farmData.minerRewards.allWeeks.toString(),
+                lastWeek: minerLastWeek.toString(),
+                allWeeks: minerAllWeeks.toString(),
               },
             },
           };
@@ -1177,8 +1228,12 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
         const weekRange = getWeekRange();
         const { startWeek, endWeek } = weekRange;
 
-        const walletFarmMap = await buildWalletFarmMap();
-        const walletsToProcess = Array.from(walletFarmMap.keys());
+        const purchaseInfo = await getWalletPurchaseTypesByFarmUpToWeek({
+          endWeek,
+        });
+        const walletsToProcess = Array.from(
+          purchaseInfo.walletToFarmTypes.keys()
+        );
 
         const parsedLimit = limit ? parseInt(limit) : undefined;
         if (
@@ -1189,11 +1244,7 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
           return "Limit must be a positive number";
         }
 
-        const batchSize = 500;
         const allBatchRewards = new Map<string, any[]>();
-        const allBatchPurchases = await getBatchWalletFarmPurchases(
-          walletsToProcess
-        );
         const allPurchasesUpToWeek = await getBatchPurchasesUpToWeek(
           walletsToProcess,
           endWeek
@@ -1202,36 +1253,13 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
           walletsToProcess,
           endWeek
         );
-
-        for (let i = 0; i < walletsToProcess.length; i += batchSize) {
-          const batch = walletsToProcess.slice(i, i + batchSize);
-
-          try {
-            const response = await fetch(
-              `${process.env.CONTROL_API_URL}/farms/by-wallet/farm-rewards-history/batch`,
-              {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  wallets: batch,
-                  startWeek,
-                  endWeek,
-                }),
-              }
-            );
-
-            if (response.ok) {
-              const data: any = await response.json();
-              for (const wallet of batch) {
-                const walletData = data.results?.[wallet];
-                if (walletData?.farmRewards) {
-                  allBatchRewards.set(wallet, walletData.farmRewards);
-                }
-              }
-            }
-          } catch (error) {
-            console.error("Failed to fetch batch rewards:", error);
-          }
+        const rewardsByWallet = await fetchWalletRewardsHistoryMany({
+          wallets: walletsToProcess,
+          startWeek,
+          endWeek,
+        });
+        for (const [wallet, rewards] of rewardsByWallet) {
+          allBatchRewards.set(wallet, rewards);
         }
 
         const walletActivities: Array<{
@@ -1246,10 +1274,10 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
         }> = [];
 
         for (const wallet of walletsToProcess) {
-          const farmPurchases = allBatchPurchases.get(wallet) || [];
+          const walletFarms = purchaseInfo.walletToFarmTypes.get(wallet);
           const farmRewards = allBatchRewards.get(wallet) || [];
 
-          if (farmPurchases.length === 0) {
+          if (!walletFarms || walletFarms.size === 0) {
             continue;
           }
 
@@ -1265,7 +1293,7 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
           let delegatorRewards = BigInt(0);
           let minerRewards = BigInt(0);
 
-          const farmIds = new Set(farmPurchases.map((p) => p.farmId));
+          const farmIds = new Set(walletFarms.keys());
 
           for (const reward of farmRewards) {
             if (!farmIds.has(reward.farmId)) {
@@ -1386,8 +1414,12 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
         const weekRange = getWeekRange();
         const { startWeek, endWeek } = weekRange;
 
-        const walletFarmMap = await buildWalletFarmMap();
-        const walletsToProcess = Array.from(walletFarmMap.keys());
+        const purchaseInfo = await getWalletPurchaseTypesByFarmUpToWeek({
+          endWeek,
+        });
+        const walletsToProcess = Array.from(
+          purchaseInfo.walletToFarmTypes.keys()
+        );
 
         const parsedLimit = limit ? parseInt(limit) : undefined;
         if (
@@ -1398,41 +1430,14 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
           return "Limit must be a positive number";
         }
 
-        const batchSize = 500;
         const allBatchRewards = new Map<string, any[]>();
-        const allBatchPurchases = await getBatchWalletFarmPurchases(
-          walletsToProcess
-        );
-
-        for (let i = 0; i < walletsToProcess.length; i += batchSize) {
-          const batch = walletsToProcess.slice(i, i + batchSize);
-
-          try {
-            const response = await fetch(
-              `${process.env.CONTROL_API_URL}/farms/by-wallet/farm-rewards-history/batch`,
-              {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  wallets: batch,
-                  startWeek,
-                  endWeek,
-                }),
-              }
-            );
-
-            if (response.ok) {
-              const data: any = await response.json();
-              for (const wallet of batch) {
-                const walletData = data.results?.[wallet];
-                if (walletData?.farmRewards) {
-                  allBatchRewards.set(wallet, walletData.farmRewards);
-                }
-              }
-            }
-          } catch (error) {
-            console.error("Failed to fetch batch rewards:", error);
-          }
+        const rewardsByWallet = await fetchWalletRewardsHistoryMany({
+          wallets: walletsToProcess,
+          startWeek,
+          endWeek,
+        });
+        for (const [wallet, rewards] of rewardsByWallet) {
+          allBatchRewards.set(wallet, rewards);
         }
 
         const farmActivities = new Map<
@@ -1449,27 +1454,16 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
         >();
 
         for (const wallet of walletsToProcess) {
-          const farmPurchases = allBatchPurchases.get(wallet) || [];
+          const walletFarms = purchaseInfo.walletToFarmTypes.get(wallet);
           const farmRewards = allBatchRewards.get(wallet) || [];
 
-          if (farmPurchases.length === 0) {
+          if (!walletFarms || walletFarms.size === 0) {
             continue;
           }
 
-          const farmIds = new Set(farmPurchases.map((p) => p.farmId));
-          const launchpadFarmIds = new Set(
-            farmPurchases
-              .filter((p) => p.type === "launchpad")
-              .map((p) => p.farmId)
-          );
-          const miningCenterFarmIds = new Set(
-            farmPurchases
-              .filter((p) => p.type === "mining-center")
-              .map((p) => p.farmId)
-          );
-
           for (const reward of farmRewards) {
-            if (!farmIds.has(reward.farmId)) {
+            const farmTypes = walletFarms.get(reward.farmId);
+            if (!farmTypes) {
               continue;
             }
 
@@ -1504,16 +1498,10 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
             farm.minerRewardsDistributed += minerReward;
             farm.totalRewardsDistributed += delegatorReward + minerReward;
 
-            if (
-              delegatorReward > BigInt(0) &&
-              launchpadFarmIds.has(reward.farmId)
-            ) {
+            if (delegatorReward > BigInt(0) && farmTypes.has("launchpad")) {
               farm.uniqueDelegators.add(wallet);
             }
-            if (
-              minerReward > BigInt(0) &&
-              miningCenterFarmIds.has(reward.farmId)
-            ) {
+            if (minerReward > BigInt(0) && farmTypes.has("mining-center")) {
               farm.uniqueMiners.add(wallet);
             }
           }
@@ -1623,106 +1611,27 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
           return "Invalid week range";
         }
 
-        const [glwSpotPrice, walletFarmMap, farmStatsMap, walletPurchaseMap] =
-          await Promise.all([
-            getCachedGlwSpotPriceNumber(),
-            buildWalletFarmMap(),
-            getFilledStepStatsByFarm(actualEndWeek),
-            (async () => {
-              const epochEndDate = getEpochEndDate(actualEndWeek);
-              const purchases = await db
-                .select({
-                  buyer: fractionSplits.buyer,
-                  fractionType: fractions.type,
-                  farmId: applications.farmId,
-                  status: fractions.status,
-                })
-                .from(fractionSplits)
-                .innerJoin(
-                  fractions,
-                  eq(fractionSplits.fractionId, fractions.id)
-                )
-                .innerJoin(
-                  applications,
-                  eq(fractions.applicationId, applications.id)
-                )
-                .where(
-                  and(
-                    inArray(fractions.status, [
-                      FRACTION_STATUS.FILLED,
-                      FRACTION_STATUS.EXPIRED,
-                    ]),
-                    lte(fractions.filledAt, epochEndDate)
-                  )
-                );
+        const glwSpotPricePromise = getCachedGlwSpotPriceNumber();
+        const farmStatsPromise = getFilledStepStatsByFarm(actualEndWeek);
+        const purchaseInfoPromise = getWalletPurchaseTypesByFarmUpToWeek({
+          endWeek: actualEndWeek,
+          farmId,
+        });
 
-              const map = new Map<
-                string,
-                Map<string, Set<"launchpad" | "mining-center">>
-              >();
-              for (const p of purchases) {
-                if (!p.farmId) continue;
+        const [glwSpotPrice, farmStatsMap, purchaseInfo] = await Promise.all([
+          glwSpotPricePromise,
+          farmStatsPromise,
+          purchaseInfoPromise,
+        ]);
 
-                if (
-                  p.fractionType === "launchpad" &&
-                  p.status !== FRACTION_STATUS.FILLED
-                ) {
-                  continue;
-                }
-                if (
-                  p.fractionType === "mining-center" &&
-                  p.status !== FRACTION_STATUS.FILLED &&
-                  p.status !== FRACTION_STATUS.EXPIRED
-                ) {
-                  continue;
-                }
-
-                const wallet = p.buyer.toLowerCase();
-                if (!map.has(wallet)) {
-                  map.set(wallet, new Map());
-                }
-                if (!map.get(wallet)!.has(p.farmId)) {
-                  map.get(wallet)!.set(p.farmId, new Set());
-                }
-                if (
-                  p.fractionType === "launchpad" ||
-                  p.fractionType === "mining-center"
-                ) {
-                  map.get(wallet)!.get(p.farmId)!.add(p.fractionType);
-                }
-              }
-              return map;
-            })(),
-          ]);
-
-        const { walletBreakdowns } = await calculateTotalRewards(
-          walletFarmMap,
-          actualStartWeek,
-          actualEndWeek,
-          undefined,
-          farmId
-        );
-
-        const filteredWalletBreakdowns = walletBreakdowns.filter(
-          (breakdown) => {
-            const walletPurchases = walletPurchaseMap.get(
-              breakdown.walletAddress
-            );
-            if (!walletPurchases) return false;
-            const farmPurchases = walletPurchases.get(breakdown.farmId);
-            return farmPurchases && farmPurchases.size > 0;
-          }
-        );
-
-        const farmRewardsMap = aggregateRewardsByFarm(filteredWalletBreakdowns);
-
+        const walletsArray = Array.from(purchaseInfo.walletToFarmTypes.keys());
         const allFarmIds = new Set<string>();
         const appIds = new Set<string>();
 
         for (const farmIdKey of farmStatsMap.keys()) {
           allFarmIds.add(farmIdKey);
         }
-        for (const farmIdKey of farmRewardsMap.keys()) {
+        for (const farmIdKey of purchaseInfo.farmParticipants.keys()) {
           allFarmIds.add(farmIdKey);
         }
 
@@ -1749,19 +1658,21 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
               appIds.add(stat.appId);
             }
           }
-          const rewards = farmRewardsMap.get(farmIdKey);
-          if (rewards) {
-            appIds.add(rewards.appId);
-          }
+          const appId = purchaseInfo.appIdByFarmId.get(farmIdKey);
+          if (appId) appIds.add(appId);
         }
 
         const walletsForFarms = new Set<string>();
-        for (const [wallet, farms] of walletFarmMap) {
-          for (const farm of farms) {
-            if (farmIdsArray.includes(farm.farmId)) {
+        if (farmId) {
+          for (const wallet of walletsArray) {
+            const farms = purchaseInfo.walletToFarmTypes.get(wallet);
+            if (farms?.has(farmId)) {
               walletsForFarms.add(wallet);
-              break;
             }
+          }
+        } else {
+          for (const wallet of walletsArray) {
+            walletsForFarms.add(wallet);
           }
         }
 
@@ -1775,89 +1686,157 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
           };
         }
 
-        const [farmNamesMap, walletBatchRewards] = await Promise.all([
-          getFarmNamesByApplicationIds(Array.from(appIds)),
-          (async () => {
-            const walletBatchRewards = new Map<string, any[]>();
-            const walletsArray = Array.from(walletsForFarms);
-            const batchSize = 500;
-            const concurrentBatches = 5;
+        const farmNamesPromise = getFarmNamesByApplicationIds(
+          Array.from(appIds)
+        );
+        const walletRewardsPromise = (async () => {
+          const walletBatchRewards = new Map<string, any[]>();
+          const wallets = Array.from(walletsForFarms);
+          const batchSize = 500;
+          const concurrentBatches = 5;
+
+          for (
+            let i = 0;
+            i < wallets.length;
+            i += batchSize * concurrentBatches
+          ) {
+            const batchPromises: Array<Promise<Map<string, any[]>>> = [];
 
             for (
-              let i = 0;
-              i < walletsArray.length;
-              i += batchSize * concurrentBatches
+              let j = 0;
+              j < concurrentBatches && i + j * batchSize < wallets.length;
+              j++
             ) {
-              const batchPromises = [];
+              const batch = wallets.slice(
+                i + j * batchSize,
+                i + (j + 1) * batchSize
+              );
 
-              for (
-                let j = 0;
-                j < concurrentBatches &&
-                i + j * batchSize < walletsArray.length;
-                j++
-              ) {
-                const batch = walletsArray.slice(
-                  i + j * batchSize,
-                  i + (j + 1) * batchSize
-                );
+              batchPromises.push(
+                fetchWalletRewardsHistoryBatch({
+                  wallets: batch,
+                  startWeek: actualStartWeek,
+                  endWeek: actualEndWeek,
+                })
+                  .then((m) => m as unknown as Map<string, any[]>)
+                  .catch((error) => {
+                    console.error(
+                      "Failed to fetch wallet rewards batch:",
+                      error
+                    );
+                    return new Map<string, any[]>();
+                  })
+              );
+            }
 
-                batchPromises.push(
-                  fetch(
-                    `${process.env.CONTROL_API_URL}/farms/by-wallet/farm-rewards-history/batch`,
-                    {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({
-                        wallets: batch,
-                        startWeek: actualStartWeek,
-                        endWeek: actualEndWeek,
-                      }),
-                    }
-                  )
-                    .then(async (response) => {
-                      if (response.ok) {
-                        const data: any = await response.json();
-                        return { success: true, data, batch };
-                      }
-                      return { success: false, batch };
-                    })
-                    .catch((error) => {
-                      console.error(
-                        "Failed to fetch wallet rewards batch:",
-                        error
-                      );
-                      return { success: false, batch };
-                    })
-                );
+            const results = await Promise.all(batchPromises);
+            for (const m of results) {
+              for (const [wallet, rewards] of m) {
+                walletBatchRewards.set(wallet.toLowerCase(), rewards);
               }
+            }
+          }
 
-              const results = await Promise.all(batchPromises);
+          return walletBatchRewards;
+        })();
 
-              for (const result of results) {
-                if (result.success) {
-                  const data = (
-                    result as { success: true; data: any; batch: string[] }
-                  ).data;
-                  for (const wallet of result.batch) {
-                    const walletData = data.results?.[wallet];
-                    if (walletData?.farmRewards) {
-                      walletBatchRewards.set(wallet, walletData.farmRewards);
-                    }
-                  }
-                }
+        const [farmNamesMap, walletBatchRewards] = await Promise.all([
+          farmNamesPromise,
+          walletRewardsPromise,
+        ]);
+
+        type WeeklyAgg = {
+          inflation: bigint;
+          protocolDeposit: bigint;
+          asset: string | null;
+        };
+        const ensureWeeklyAgg = (
+          map: Map<number, WeeklyAgg>,
+          week: number,
+          asset: string | null
+        ) => {
+          const existing = map.get(week);
+          if (existing) {
+            if (existing.asset === null && asset !== null) {
+              existing.asset = asset;
+            }
+            return existing;
+          }
+          const created: WeeklyAgg = {
+            inflation: BigInt(0),
+            protocolDeposit: BigInt(0),
+            asset,
+          };
+          map.set(week, created);
+          return created;
+        };
+
+        const farmWeeklyAgg = new Map<
+          string,
+          { delegator: Map<number, WeeklyAgg>; miner: Map<number, WeeklyAgg> }
+        >();
+
+        for (const [wallet, farms] of purchaseInfo.walletToFarmTypes) {
+          if (!walletsForFarms.has(wallet)) continue;
+
+          const walletRewards = walletBatchRewards.get(wallet) || [];
+          if (walletRewards.length === 0) continue;
+
+          for (const reward of walletRewards) {
+            const rewardFarmId = reward.farmId;
+            const weekNum = Number(reward.weekNumber);
+            if (!rewardFarmId) continue;
+            if (weekNum < actualStartWeek || weekNum > actualEndWeek) continue;
+
+            const farmTypes = farms.get(rewardFarmId);
+            if (!farmTypes) continue;
+            const asset = reward.asset || null;
+
+            if (!farmWeeklyAgg.has(rewardFarmId)) {
+              farmWeeklyAgg.set(rewardFarmId, {
+                delegator: new Map(),
+                miner: new Map(),
+              });
+            }
+            const agg = farmWeeklyAgg.get(rewardFarmId)!;
+
+            if (farmTypes.has("launchpad")) {
+              const inflation = BigInt(
+                reward.walletInflationFromLaunchpad || "0"
+              );
+              const protocolDeposit = BigInt(
+                reward.walletProtocolDepositFromLaunchpad || "0"
+              );
+              if (inflation > BigInt(0) || protocolDeposit > BigInt(0)) {
+                const bucket = ensureWeeklyAgg(agg.delegator, weekNum, asset);
+                bucket.inflation += inflation;
+                bucket.protocolDeposit += protocolDeposit;
               }
             }
 
-            return walletBatchRewards;
-          })(),
-        ]);
+            if (farmTypes.has("mining-center")) {
+              const inflation = BigInt(
+                reward.walletInflationFromMiningCenter || "0"
+              );
+              const protocolDeposit = BigInt(
+                reward.walletProtocolDepositFromMiningCenter || "0"
+              );
+              if (inflation > BigInt(0) || protocolDeposit > BigInt(0)) {
+                const bucket = ensureWeeklyAgg(agg.miner, weekNum, asset);
+                bucket.inflation += inflation;
+                bucket.protocolDeposit += protocolDeposit;
+              }
+            }
+          }
+        }
 
         const farms = farmIdsArray
           .map((farmIdKey) => {
             const stepStats = farmStatsMap.get(farmIdKey);
-            const rewardData = farmRewardsMap.get(farmIdKey);
+            const participants = purchaseInfo.farmParticipants.get(farmIdKey);
+            const weeklyAgg = farmWeeklyAgg.get(farmIdKey);
 
-            if (!stepStats && !rewardData) {
+            if (!stepStats && !participants && !weeklyAgg) {
               return null;
             }
 
@@ -1867,85 +1846,25 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
             const fractionTypes: ("launchpad" | "mining-center")[] = [];
             if (launchpadStats) fractionTypes.push("launchpad");
             if (miningCenterStats) fractionTypes.push("mining-center");
+            if (participants?.uniqueDelegators) {
+              if (!fractionTypes.includes("launchpad"))
+                fractionTypes.push("launchpad");
+            }
+            if (participants?.uniqueMiners) {
+              if (!fractionTypes.includes("mining-center"))
+                fractionTypes.push("mining-center");
+            }
 
             const appId =
               launchpadStats?.appId ||
               miningCenterStats?.appId ||
-              rewardData?.appId ||
+              purchaseInfo.appIdByFarmId.get(farmIdKey) ||
               "";
 
             const farmName = farmNamesMap.get(appId) || null;
 
-            const delegatorWeeklyMap = new Map<
-              number,
-              {
-                inflation: bigint;
-                protocolDeposit: bigint;
-                asset: string | null;
-              }
-            >();
-            const minerWeeklyMap = new Map<
-              number,
-              {
-                inflation: bigint;
-                protocolDeposit: bigint;
-                asset: string | null;
-              }
-            >();
-
-            for (const [wallet, farms] of walletFarmMap) {
-              const walletFarmPurchases = walletPurchaseMap
-                .get(wallet)
-                ?.get(farmIdKey);
-              if (!walletFarmPurchases) continue;
-
-              const walletRewards = walletBatchRewards.get(wallet) || [];
-
-              for (const reward of walletRewards) {
-                if (reward.farmId !== farmIdKey) continue;
-
-                const weekNum = reward.weekNumber;
-                const asset = reward.asset || null;
-
-                const launchpadInflation = BigInt(
-                  reward.walletInflationFromLaunchpad || "0"
-                );
-                const launchpadDeposit = BigInt(
-                  reward.walletProtocolDepositFromLaunchpad || "0"
-                );
-                const miningCenterInflation = BigInt(
-                  reward.walletInflationFromMiningCenter || "0"
-                );
-
-                if (
-                  walletFarmPurchases.has("launchpad") &&
-                  (launchpadInflation > BigInt(0) ||
-                    launchpadDeposit > BigInt(0))
-                ) {
-                  const existing = delegatorWeeklyMap.get(weekNum) || {
-                    inflation: BigInt(0),
-                    protocolDeposit: BigInt(0),
-                    asset,
-                  };
-                  existing.inflation += launchpadInflation;
-                  existing.protocolDeposit += launchpadDeposit;
-                  delegatorWeeklyMap.set(weekNum, existing);
-                }
-
-                if (
-                  walletFarmPurchases.has("mining-center") &&
-                  miningCenterInflation > BigInt(0)
-                ) {
-                  const existing = minerWeeklyMap.get(weekNum) || {
-                    inflation: BigInt(0),
-                    protocolDeposit: BigInt(0),
-                    asset,
-                  };
-                  existing.inflation += miningCenterInflation;
-                  minerWeeklyMap.set(weekNum, existing);
-                }
-              }
-            }
+            const delegatorWeeklyMap = weeklyAgg?.delegator || new Map();
+            const minerWeeklyMap = weeklyAgg?.miner || new Map();
 
             const delegatorWeeklyBreakdown = Array.from(
               delegatorWeeklyMap.entries()
@@ -2151,8 +2070,8 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
                   ).toFixed(4)
                 : "0.0000";
 
-            const uniqueDelegators = rewardData?.uniqueDelegators?.size || 0;
-            const uniqueMiners = rewardData?.uniqueMiners?.size || 0;
+            const uniqueDelegators = participants?.uniqueDelegators || 0;
+            const uniqueMiners = participants?.uniqueMiners || 0;
 
             return {
               farmId: farmIdKey,

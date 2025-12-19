@@ -208,6 +208,7 @@ export async function getImpactLeaderboard(params: {
 
 - `includeWeekly=true|1` on `/impact/glow-score` can be **very large** when you query many wallets; avoid using it for leaderboard screens.
 - For dashboards, fetch a single wallet with `walletAddress` and a bounded `startWeek/endWeek`.
+- Some Control API calls are cached in-process to reduce repeated work (e.g. region rewards are cached for ~30s).
 
 ## `GET /impact/glow-worth`
 
