@@ -51,7 +51,53 @@ Create a new quote with wallet signature authentication.
 
 Example: `0.3798,0.01896,39.0707,-94.3561,1699564800000`
 
-### 3. Get Quotes by Wallet
+### 3. Create Project Quotes (Batch, Async)
+
+```
+POST /quotes/project/batch
+```
+
+Create multiple quotes in a single request. This endpoint is **asynchronous** (it returns a `batchId` immediately).
+
+**Rate limit (batch endpoint):**
+
+- **100 applications per hour total**, counted **per item** in the batch (not per HTTP request).
+
+**Request format:** `multipart/form-data`
+
+- `requests` (string): JSON array of quote request objects (same shape as the single-quote endpoint, **without** `utilityBill`).
+- `utilityBills` (File[]): One PDF per request, **same order** as `requests`.
+
+**Response format (202 Accepted):**
+
+- Returns:
+  - `batchId`
+  - `etaSeconds` (rough estimate)
+  - `statusEndpoint` (poll URL)
+
+### 4. Get Batch Status / Results
+
+```
+GET /quotes/project/batch/{batchId}?timestamp={ts}&signature={sig}
+```
+
+Poll a previously submitted batch.
+
+**Message to sign:**
+
+```
+{batchId},{timestamp}
+```
+
+**Response:**
+
+- `status`: `queued | running | completed | failed`
+- Progress counters: `itemCount`, `processedCount`, `successCount`, `errorCount`
+- When `completed` (or `failed`), includes `results` as an array of:
+  - `{ index, success: true, quoteId }`
+  - `{ index, success: false, error }`
+
+### 5. Get Quotes by Wallet
 
 ```
 GET /quotes/project/{walletAddress}
@@ -59,7 +105,7 @@ GET /quotes/project/{walletAddress}
 
 Retrieve all quotes created by a specific wallet address.
 
-### 4. Get Quote by ID
+### 6. Get Quote by ID
 
 ```
 GET /quotes/project/quote/{quoteId}?signature={sig}&timestamp={ts}
@@ -84,7 +130,7 @@ All quotes start with status `"pending"` and can transition to:
 - Only `pending` quotes can be approved, rejected, or cancelled
 - Once a quote has a final status, it cannot be changed
 
-### 5. Get User's Quotes (Authenticated)
+### 6. Get User's Quotes (Authenticated)
 
 ```
 GET /applications/project-quotes
@@ -95,7 +141,7 @@ Returns all quotes created by wallet addresses linked to the authenticated user 
 
 **Special Access:** `FOUNDATION_HUB_MANAGER` has access to ALL quotes from all users.
 
-### 6. Get Quote Details (Authenticated)
+### 7. Get Quote Details (Authenticated)
 
 ```
 GET /applications/project-quote/:id
@@ -122,7 +168,7 @@ Returns full quote details including admin fields (status, cashAmountUsd).
 - **Regular Users**: Can only access quotes where userId matches their account
 - **FOUNDATION_HUB_MANAGER**: Can access ANY quote by ID
 
-### 7. Set Cash Amount (Hub Manager Only)
+### 8. Set Cash Amount (Hub Manager Only)
 
 ```
 POST /applications/project-quote/:id/cash-amount
@@ -150,7 +196,7 @@ Allows `FOUNDATION_HUB_MANAGER` to set the validated cash amount for a project q
 }
 ```
 
-### 8. Approve Quote (Owner Only)
+### 9. Approve Quote (Owner Only)
 
 ```
 POST /applications/project-quote/:id/approve
@@ -175,7 +221,7 @@ Allows the quote owner to approve a pending quote.
 }
 ```
 
-### 9. Reject Quote (Owner Only)
+### 10. Reject Quote (Owner Only)
 
 ```
 POST /applications/project-quote/:id/reject
@@ -200,7 +246,7 @@ Allows the quote owner to reject a pending quote.
 }
 ```
 
-### 10. Cancel Quote (Owner or Hub Manager)
+### 11. Cancel Quote (Owner or Hub Manager)
 
 ```
 POST /applications/project-quote/:id/cancel
@@ -288,6 +334,92 @@ if (response.ok) {
   console.error("Error:", result.error);
 }
 ```
+
+## Batch Integration Example (TypeScript)
+
+```typescript
+import { Wallet } from "ethers";
+import { readFileSync } from "fs";
+
+const wallet = new Wallet(process.env.PRIVATE_KEY);
+
+const items = [
+  {
+    weeklyConsumptionMWh: "0.3798",
+    systemSizeKw: "0.01896",
+    latitude: "39.0707",
+    longitude: "-94.3561",
+  },
+  {
+    weeklyConsumptionMWh: "0.5000",
+    systemSizeKw: "0.02500",
+    latitude: "37.7749",
+    longitude: "-122.4194",
+  },
+];
+
+const requests = await Promise.all(
+  items.map(async (item) => {
+    const timestamp = Date.now().toString();
+    const message = `${item.weeklyConsumptionMWh},${item.systemSizeKw},${item.latitude},${item.longitude},${timestamp}`;
+    const signature = await wallet.signMessage(message);
+
+    return {
+      ...item,
+      timestamp,
+      signature,
+      metadata: "Batch import",
+      isProjectCompleted: false,
+    };
+  })
+);
+
+const formData = new FormData();
+formData.append("requests", JSON.stringify(requests));
+
+// IMPORTANT: Append one PDF per request, in the SAME ORDER as `requests`
+const pdfBuffers = [
+  readFileSync("./utility_bill_1.pdf"),
+  readFileSync("./utility_bill_2.pdf"),
+];
+
+for (let i = 0; i < pdfBuffers.length; i++) {
+  const pdfBlob = new Blob([pdfBuffers[i]], { type: "application/pdf" });
+  const pdfFile = new File([pdfBlob], `utility_bill_${i + 1}.pdf`, {
+    type: "application/pdf",
+  });
+
+  // Repeated field name => server receives an array
+  formData.append("utilityBills", pdfFile);
+}
+
+const response = await fetch("https://api.glowlabs.org/quotes/project/batch", {
+  method: "POST",
+  body: formData,
+});
+
+const result = await response.json();
+console.log(result);
+
+// Poll status (async)
+const batchId = result.batchId as string;
+const pollTimestamp = Date.now().toString();
+const pollMessage = `${batchId},${pollTimestamp}`;
+const pollSignature = await wallet.signMessage(pollMessage);
+
+const statusResp = await fetch(
+  `https://api.glowlabs.org/quotes/project/batch/${batchId}?timestamp=${pollTimestamp}&signature=${pollSignature}`
+);
+const status = await statusResp.json();
+console.log(status);
+```
+
+## Note on Gemini / Vertex “Batch Mode”
+
+Google also offers an **asynchronous** “Batch Mode” API for Gemini where you upload a JSONL file and create a long-running batch job (up to hours). This is great for offline workloads, but it’s **not used** by `/quotes/project/batch` because this quote API is designed to return results immediately. See:
+
+- [Gemini API Batch Mode docs](https://ai.google.dev/gemini-api/docs/batch-mode)
+- [Batch Mode announcement](https://developers.googleblog.com/en/scale-your-ai-workloads-batch-mode-gemini-api/)
 
 ## Response Format
 

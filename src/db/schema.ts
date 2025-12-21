@@ -1988,3 +1988,42 @@ export const ProjectQuotes = pgTable("project_quotes", {
 
 export type ProjectQuoteType = InferSelectModel<typeof ProjectQuotes>;
 export type ProjectQuoteInsertType = typeof ProjectQuotes.$inferInsert;
+
+/**
+ * @dev Tracks async batch submissions for project quote creation.
+ *      Stores progress and (optionally) per-item results.
+ */
+export const ProjectQuoteBatches = pgTable("project_quote_batches", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  startedAt: timestamp("started_at"),
+  completedAt: timestamp("completed_at"),
+
+  // Batch ownership (all items must be signed by the same wallet)
+  walletAddress: varchar("wallet_address", { length: 42 }).notNull(),
+
+  status: varchar("status", { length: 20 }).notNull().default("queued"), // queued, running, completed, failed
+  itemCount: integer("item_count").notNull(),
+  processedCount: integer("processed_count").notNull().default(0),
+  successCount: integer("success_count").notNull().default(0),
+  errorCount: integer("error_count").notNull().default(0),
+
+  etaSeconds: integer("eta_seconds"),
+  results: json("results")
+    .$type<
+      Array<
+        | { index: number; success: true; quoteId: string }
+        | { index: number; success: false; error: string }
+      >
+    >()
+    .default([]),
+  error: text("error"),
+});
+
+export type ProjectQuoteBatchType = InferSelectModel<
+  typeof ProjectQuoteBatches
+>;
+export type ProjectQuoteBatchInsertType =
+  typeof ProjectQuoteBatches.$inferInsert;

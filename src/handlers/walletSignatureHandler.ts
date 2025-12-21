@@ -38,3 +38,16 @@ export function validateTimestamp(timestamp: number): void {
     );
   }
 }
+
+export function createBatchMessageToSign(batchId: string, timestamp: number): string {
+  return `${batchId},${timestamp}`;
+}
+
+export function verifyBatchSignature(
+  batchId: string,
+  timestamp: number,
+  signature: string
+): string {
+  const messageToVerify = createBatchMessageToSign(batchId, timestamp);
+  return verifyMessage(messageToVerify, signature);
+}

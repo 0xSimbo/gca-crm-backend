@@ -1,7 +1,33 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenAI } from "@google/genai";
 import { uploadFile } from "../../../utils/r2/upload-to-r2";
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
+function createGenAiClient() {
+  const useVertexAi =
+    (process.env.GOOGLE_GENAI_USE_VERTEXAI ?? "").toLowerCase() === "true" ||
+    !!process.env.GOOGLE_CLOUD_PROJECT;
+
+  if (useVertexAi) {
+    const project = process.env.GOOGLE_CLOUD_PROJECT;
+    if (!project) {
+      throw new Error("GOOGLE_CLOUD_PROJECT not configured");
+    }
+
+    return new GoogleGenAI({
+      vertexai: true,
+      project,
+      location: process.env.GOOGLE_CLOUD_LOCATION ?? "global",
+    });
+  }
+
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    throw new Error(
+      "GEMINI_API_KEY not configured (or set GOOGLE_GENAI_USE_VERTEXAI=true + GOOGLE_CLOUD_PROJECT to use Vertex AI)"
+    );
+  }
+
+  return new GoogleGenAI({ apiKey });
+}
 
 export interface ElectricityPriceExtractionResult {
   pricePerKwh: number;
@@ -161,10 +187,6 @@ export async function extractElectricityPriceFromUtilityBill(
     throw new Error("R2_NOT_ENCRYPTED_FILES_BUCKET_NAME not configured");
   }
 
-  if (!process.env.GEMINI_API_KEY) {
-    throw new Error("GEMINI_API_KEY not configured");
-  }
-
   if (contentType !== "application/pdf") {
     throw new Error(
       "Only PDF utility bills are accepted. Please upload a PDF file."
@@ -177,10 +199,9 @@ export async function extractElectricityPriceFromUtilityBill(
   const key = `utility-bills/${timestamp}-${sanitizedFileName}`;
   const billUrl = await uploadFile(bucketName, key, fileBuffer, contentType);
 
-  // Use Gemini-2.5-flash
-  const model = genAI.getGenerativeModel({
-    model: "gemini-2.5-flash",
-  });
+  const client = createGenAiClient();
+  const preferredModelId = "gemini-3-flash-preview";
+  const fallbackModelId = "gemini-2.5-flash";
 
   const base64Pdf = fileBuffer.toString("base64");
 
@@ -203,36 +224,70 @@ Output ONLY valid JSON:
 }
 `;
 
-  // Retry logic
-  let result;
-  let lastError: Error | null = null;
-  for (let attempt = 1; attempt <= 3; attempt++) {
-    try {
-      result = await model.generateContent([
-        prompt,
-        {
-          inlineData: {
-            mimeType: "application/pdf",
-            data: base64Pdf,
-          },
-        },
-      ]);
-      break;
-    } catch (error) {
-      lastError = error as Error;
-      if (attempt < 3) {
-        await new Promise((resolve) => setTimeout(resolve, 2000));
+  async function generateWithRetries(modelId: string) {
+    let result: Awaited<
+      ReturnType<typeof client.models.generateContent>
+    > | null = null;
+    let lastError: Error | null = null;
+
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        result = await client.models.generateContent({
+          model: modelId,
+          contents: [
+            {
+              role: "user",
+              parts: [
+                { text: prompt },
+                {
+                  inlineData: {
+                    mimeType: "application/pdf",
+                    data: base64Pdf,
+                  },
+                },
+              ],
+            },
+          ],
+        });
+        return result;
+      } catch (error) {
+        lastError = error as Error;
+        if (attempt < 3) {
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+        }
       }
     }
-  }
 
-  if (!result) {
     throw new Error(
-      `Gemini API failed after 3 attempts: ${lastError?.message}`
+      `Gemini API failed for model ${modelId} after 3 attempts: ${lastError?.message}`
     );
   }
 
-  const responseText = result.response.text();
+  let result: Awaited<ReturnType<typeof client.models.generateContent>>;
+  try {
+    result = await generateWithRetries(preferredModelId);
+  } catch (preferredError) {
+    try {
+      result = await generateWithRetries(fallbackModelId);
+    } catch (fallbackError) {
+      const preferredMessage =
+        preferredError instanceof Error
+          ? preferredError.message
+          : String(preferredError);
+      const fallbackMessage =
+        fallbackError instanceof Error
+          ? fallbackError.message
+          : String(fallbackError);
+      throw new Error(
+        `Gemini API failed for preferred model ${preferredModelId} then fallback ${fallbackModelId}. Preferred error: ${preferredMessage}. Fallback error: ${fallbackMessage}`
+      );
+    }
+  }
+
+  const responseText = result.text;
+  if (!responseText) {
+    throw new Error("Gemini API returned an empty response");
+  }
 
   let extractedData: ElectricityPriceExtractionResult;
   try {
