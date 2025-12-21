@@ -20,7 +20,11 @@ Submit a quote request with utility bill and farm specifications.
 - `weeklyConsumptionMWh`: Weekly energy consumption in MWh (from Aurora Solar)
 - `systemSizeKw`: System nameplate capacity in kW
 - `latitude`, `longitude`: Farm location coordinates
-- `utilityBill`: Utility bill image or PDF (max 10MB)
+- `utilityBill`: Utility bill PDF (max 10MB)
+
+**Optional Fields:**
+
+- `isProjectCompleted`: Boolean flag indicating if the solar project is already live/completed (default: false)
 
 **Returns:**
 
@@ -75,47 +79,45 @@ Reference: [Solar Reviews - Average Electricity Cost Increase Per Year](https://
 
 ### 2. Electricity Price Extraction
 
-Electricity prices are extracted from utility bills using GPT-4 Vision/GPT-5 with the following methodology:
+Electricity prices are extracted from utility bills using the **Google Gen AI SDK** (`@google/genai`) via Vertex AI / Gemini (see the Node.js quickstart: [Google Cloud docs](https://docs.cloud.google.com/vertex-ai/generative-ai/docs/sdks/overview#googlegenaisdk_quickstart-nodejs_genai_sdk)).
 
-**CRITICAL: Bills Must Be Pre-Solar**
+**Important behavior**
 
-The system **rejects bills from active solar installations** by detecting:
-- Net metering credits or negative energy charges
-- Very low consumption patterns
-- Solar generation or export charges
-- Renewable energy credits
+- **Bills with solar / net metering are allowed**: the extractor is instructed to **ignore credits / generation** and compute the **base consumption rate**.
+- **Input format**: the extractor currently supports **PDF utility bills only** (the PDF is sent to Gemini as `inlineData`).
 
-**Why?** Bills from operating solar farms show distorted consumption and fees that don't reflect the true pre-solar electricity cost.
+**Extraction methodology (total-bill method)**
 
-**Extraction Methodology:**
+- **Step 1: Start with total electric charges**
+  - For multi-utility bills: use the electric subtotal (e.g. “Electric Total”)
+  - For electric-only bills: use “Total New Charges” / “Amount Due”
+- **Step 2: Include usage-based charges (scale with kWh)**
+  - Energy charges (tiered rates)
+  - Transmission & distribution service
+  - Fuel adjustments / surcharges / FPPAS
+  - Taxes and municipal fees when they’re a % of total
+- **Step 3: Exclude fixed charges and non-kWh items**
+  - Customer/service/basic charges, meter fees, arrears
+  - Demand charges (kW/kVA based)
+  - Solar generation credits
+- **Step 4: Calculate**
+  - \((ElectricTotal - FixedCharges) / TotalKwh = PricePerKwhLocal\)
 
-**Step 1: Time-of-Use (TOU) Rate Averaging**
-- If multiple rate tiers exist (On-Peak, Mid-Peak, Off-Peak): calculate simple average
-- Example: (On-Peak $0.21 + Mid-Peak $0.14 + Off-Peak $0.08) ÷ 3 = $0.143/kWh
+**International bills**
 
-**Step 2: Include Only Solar-Affected Charges**
+- The extractor returns `currencyCode` + `pricePerKwhLocal`.
+- The backend converts to USD using the Frankfurter FX API and returns `pricePerKwh` as USD/kWh.
 
-INCLUDE (usage-based, scale with kWh):
-- Energy charges (base rate or TOU average)
-- Fuel adjustments (if per kWh)
-- Transmission cost adjustments (if per kWh)
-- Energy cost adjustments (if per kWh)
-- Demand side management fees (if per kWh)
-- Purchased capacity cost adjustments (if per kWh)
-- Environmental fees (if per kWh)
-- City/State taxes (ONLY if % of total bill)
+**Model + reliability**
 
-EXCLUDE (fixed/demand, NOT affected by solar):
-- Demand charges (peak kW-based)
-- Delivery/transmission charges (fixed grid fees)
-- Service & facility charges (flat monthly)
-- Meter fees, connection fees
-- Administrative charges (not per kWh)
+- Preferred model: `gemini-3-flash-preview`
+- Fallback model (when the preferred model errors/overloads): `gemini-2.5-flash`
+- Retries: up to 3 attempts per model
 
-**Validation:**
-- Confidence threshold: ≥ 0.5 (50%)
-- Reasonable range: $0.01 - $1.00 per kWh
-- Bills uploaded to R2 public bucket for audit trail
+**Validation**
+
+- The backend rejects prices outside **0.005–2.0 USD/kWh**.
+- Bills are uploaded to R2 (sanitized filenames) for audit/debug.
 
 ### 3. Carbon Metrics
 
@@ -201,6 +203,7 @@ All quotes are persisted to the `non_account_quotes` table:
 - Region, location, consumption, system size
 - Extracted electricity price with confidence score
 - Utility bill URL (R2 public bucket)
+- Project completion status (boolean flag)
 
 **Computed Fields:**
 
@@ -228,7 +231,7 @@ All quotes are persisted to the `non_account_quotes` table:
 
 **File Validation:**
 
-- Allowed types: JPEG, PNG, WebP, PDF
+- Allowed types: PDF
 - Max size: 10MB
 - Uploaded to R2 with sanitized filenames
 

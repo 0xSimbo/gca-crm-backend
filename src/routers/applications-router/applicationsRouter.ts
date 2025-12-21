@@ -2315,6 +2315,8 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               createdAt: quote.createdAt,
               walletAddress: quote.walletAddress,
               userId: quote.userId,
+              metadata: quote.metadata,
+              isProjectCompleted: quote.isProjectCompleted,
               regionCode: quote.regionCode,
               location: {
                 latitude: parseFloat(quote.latitude),
@@ -2767,7 +2769,8 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
             const extracted = await extractElectricityPriceFromUtilityBill(
               fileBuffer,
               file.name,
-              file.type
+              file.type,
+              regionCode
             );
             const priceExtraction = extracted.result;
             const billUrl = extracted.billUrl;
@@ -2786,6 +2789,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               walletAddress,
               userId,
               metadata: body.metadata,
+              isProjectCompleted: body.isProjectCompleted ?? false,
               regionCode,
               latitude: latitude.toString(),
               longitude: longitude.toString(),
@@ -2816,6 +2820,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               walletAddress: savedQuote.walletAddress,
               userId: savedQuote.userId,
               metadata: savedQuote.metadata,
+              isProjectCompleted: savedQuote.isProjectCompleted,
               regionCode: savedQuote.regionCode,
               protocolDeposit: {
                 usd: quoteResult.protocolDepositUsd,
@@ -2881,6 +2886,12 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               t.String({
                 description:
                   "Optional metadata for identifying the quote (e.g., farm owner name, project ID)",
+              })
+            ),
+            isProjectCompleted: t.Optional(
+              t.Boolean({
+                description:
+                  "Optional flag indicating if the solar project is already live/completed",
               })
             ),
           }),

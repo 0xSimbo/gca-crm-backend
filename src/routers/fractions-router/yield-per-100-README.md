@@ -156,6 +156,7 @@ Uses `getWeekRange()` helper to determine:
 Queries all filled fractions up to the end of the epoch:
 - **Launchpad fractions**: Status must be `FILLED`
 - **Mining-center fractions**: Status must be `FILLED` OR `EXPIRED` with `splitsSold > 0`
+  - For time cutoffs, an expired fraction is treated as “completed” at `expirationAt` (since `filledAt` can be null).
 
 Calculates totals:
 - `totalGlwDelegated`: Sum of (stepPrice × splitsSold) for all launchpad fractions
@@ -173,7 +174,7 @@ POST /farms/rewards-history/batch
 }
 ```
 
-Batch size: 500 farms per request (API limit: 100 farms, so stays within limits)
+Farm IDs are chunked into batches (currently **500 farmIds per request**) to keep payload sizes bounded.
 
 ### 4. Calculate Rewards Split
 
@@ -287,7 +288,7 @@ console.log(`Expected weekly rewards: ${weeklyRewards.toFixed(2)} GLW`);
 
 ### Optimization Details
 - Single batch API call for all farms (not separate calls per type)
-- Batch size: 500 farms (within Control API's 100-farm limit per request)
+- Farm IDs are chunked into batches (currently **500 farmIds per request**) to keep payload sizes bounded.
 - Handles farms with both fraction types efficiently
 - Typical response time: <2 seconds for 15 farms
 

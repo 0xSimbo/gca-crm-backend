@@ -4,6 +4,20 @@
 
 The `/fractions/farms-per-piece-stats` endpoint provides comprehensive per-piece statistics for all farms in the system, showing both delegator (launchpad) and miner (mining-center) data.
 
+## Performance Notes (Implementation Summary)
+
+This endpoint was refactored to avoid timeouts by:
+
+- **Removing Control API fanout**:
+  - No `GET /farms/{farmId}/reward-splits` per farm
+  - No `GET /farms/by-wallet/{wallet}/farm-rewards-history` per wallet
+- **Using a DB-derived buyer set**:
+  - Distinct buyers are queried from `fraction_splits` joined to `fractions` + `applications`
+  - Participants are computed from buyers (not reward splits / not reward earners)
+- **Using Control API batch-only rewards**:
+  - `POST /farms/by-wallet/farm-rewards-history/batch` (500 wallets per request)
+  - Wallet rewards are aggregated to farm-level weekly totals in a single pass
+
 ## Endpoint
 
 ```
@@ -14,7 +28,7 @@ GET /fractions/farms-per-piece-stats
 
 This endpoint aggregates farm-level data to show:
 
-1. **All farms** with fraction sales activity (miners and delegators)
+1. **Farms with sales or buyer activity** in the requested range (miners and delegators)
 2. **Filled listings count** (how many fraction listings were sold per farm)
 3. **Steps sold** (total number of pieces/splits sold across all listings)
 4. **Weighted average piece prices** (purchase prices in their respective tokens)
@@ -366,8 +380,8 @@ curl "http://localhost:3005/fractions/farms-per-piece-stats?startWeek=98&endWeek
 
 ### Participants
 
-- **uniqueDelegators**: Number of unique wallet addresses that earned delegator rewards for this farm
-- **uniqueMiners**: Number of unique wallet addresses that earned miner rewards for this farm
+- **uniqueDelegators**: Number of unique buyer wallet addresses that purchased **launchpad** fraction splits for this farm (up to `endWeek`)
+- **uniqueMiners**: Number of unique buyer wallet addresses that purchased **mining-center** fraction splits for this farm (up to `endWeek`)
 
 ## Special Cases
 
@@ -429,7 +443,7 @@ curl "http://localhost:3005/fractions/farms-per-piece-stats?startWeek=98&endWeek
     "rewardsPerPiece": { "lastWeek": "0", "allWeeks": "0" }
   },
   "participants": {
-    "uniqueDelegators": 1, // May still have participants from reward splits
+    "uniqueDelegators": 0,
     "uniqueMiners": 0
   }
 }
@@ -445,18 +459,17 @@ curl "http://localhost:3005/fractions/farms-per-piece-stats?startWeek=98&endWeek
    - Groups by farm and fraction type
    - Calculates weighted average step prices
 
-2. **Rewards Data** (`calculateTotalRewards` + `aggregateRewardsByFarm`)
+2. **Buyer Wallets + Participants** (`getWalletPurchaseTypesByFarmUpToWeek`)
 
-   - Fetches wallet rewards from Control API
-   - Aggregates by farm and type (delegator vs miner)
-   - Tracks unique participants
+   - Queries distinct buyers from `fraction_splits` joined to fractions/applications
+   - Builds wallet → farm → purchased types mapping
+   - Computes `uniqueDelegators` / `uniqueMiners` from buyers (not reward-splits)
 
-3. **Farm Weekly Rewards** (Control API `/farms/rewards-history/batch`)
+3. **Weekly Rewards** (Control API `/farms/by-wallet/farm-rewards-history/batch`)
 
-   - Batch fetches farm-level reward history (up to 100 farms per request)
-   - Provides weekly breakdown with inflation and protocol deposit separation
-   - Includes payment currency information for each week
-   - Used to calculate weeks earned and populate weekly breakdown arrays
+   - Batch fetches wallet reward histories for **buyer wallets** (500 wallets per request)
+   - Aggregates per-farm weekly totals in one pass (delegator vs miner buckets)
+   - Includes payment currency information (`asset`) for protocol deposit interpretation
 
 4. **Farm Names** (`getFarmNamesByApplicationIds`)
    - Batch fetches farm names from application IDs
@@ -465,8 +478,8 @@ curl "http://localhost:3005/fractions/farms-per-piece-stats?startWeek=98&endWeek
 
 - Uses batch API calls to Control API for reward data
 - Single optimized DB query for fraction sales aggregation
-- Efficient map-based data merging
-- Typical response time: 2-5 seconds for all farms
+- Efficient map-based data merging and single-pass aggregation
+- Typical response time: ~1-2 seconds locally (can vary with DB size and number of buyer wallets)
 
 ### Error Handling
 
@@ -511,11 +524,11 @@ Track farm performance over time:
 
 - All BigInt values are returned as strings to prevent precision loss in JSON
 - Week 97 is the first week of delegation rewards (hardcoded start)
-- The endpoint returns ALL farms, even those without fraction sales (may have reward splits only)
+- The endpoint returns farms that have either sales stats or buyer participation within the requested week range
 - Inflation rewards are always in GLW (18 decimals)
 - Protocol deposit rewards are in the payment currency's native decimals:
   - USDC, USDG, SGCTL, GCTL: 6 decimals
   - GLW: 18 decimals
-- Weekly breakdown shows farm-level totals (not split by wallet)
+- Weekly breakdown is aggregated from buyer wallet reward histories (wallet-level data summed to farm totals)
 - Weeks earned/left are calculated from actual reward history, not farm build date
 - No APY calculations are included (use `/average-apy` for that)
