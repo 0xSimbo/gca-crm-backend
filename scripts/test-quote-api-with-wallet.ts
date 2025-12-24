@@ -36,9 +36,11 @@ import { Wallet } from "ethers";
 import { readFileSync } from "fs";
 import { createMessageToSign } from "../src/handlers/walletSignatureHandler";
 
-// Switch to staging for testing:
-// const API_URL = "https://gca-crm-backend-staging.up.railway.app";
-const API_URL = "https://gca-crm-backend-production-1f2a.up.railway.app";
+// Set API_URL to test locally or on staging:
+// API_URL=http://localhost:3005 bun run scripts/test-quote-api-with-wallet.ts
+// API_URL=https://gca-crm-backend-staging.up.railway.app bun run scripts/test-quote-api-with-wallet.ts
+const API_URL =
+  process.env.API_URL ?? "https://gca-crm-backend-production-1f2a.up.railway.app";
 
 interface QuoteRequestData {
   weeklyConsumptionMWh: string;

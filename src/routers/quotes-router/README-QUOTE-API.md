@@ -2,13 +2,23 @@
 
 ## Overview
 
-The Project Quote API allows partners to programmatically create solar project quotes using wallet signature authentication. No bearer tokens or user login required - just sign requests with your Ethereum wallet.
+The Project Quote API allows partners to programmatically create solar project quotes using either wallet signature authentication (sign quote parameters with an Ethereum wallet) or API key authentication (send an `x-api-key` header).
 
 Partners can add optional metadata to each quote (e.g., farm owner name, project ID) to make quotes easier to identify and manage in the dashboard.
 
 ## Authentication Method
 
-**Wallet Signature**: Sign a message containing your quote data with your Ethereum private key. The API verifies the signature and associates the quote with your wallet address.
+### Wallet Signature
+
+Sign a message containing your quote data with your Ethereum private key. The API verifies the signature and associates the quote with your wallet address.
+
+### API Key (Optional)
+
+If you don't want to manage wallet signatures, you can use an API key:
+
+- Create a key: `POST /quotes/api-keys` with `{ orgName, email }`
+- Use the key by sending it in the request header: `x-api-key: gq_...`
+- The raw key is returned **only once** at creation time. Store it securely (like a password).
 
 ## API Endpoints
 
@@ -20,13 +30,34 @@ GET /quotes/regions
 
 Returns all supported regions. Note: Region selection is automatic based on coordinates.
 
+### 2a. Create API Key (Optional)
+
+```
+POST /quotes/api-keys
+```
+
+Create an org-scoped API key for Quote API access.
+
+- The raw `apiKey` is returned **only once**. Store it securely.
+- The server stores only a **sha256 hash** of the key (not the raw key).
+
+**Request (JSON):**
+
+- `orgName` (string): Organization name (unique)
+- `email` (string): Contact email
+
+**Response (201 Created):**
+
+- `orgName`
+- `apiKey`
+
 ### 2. Create Project Quote
 
 ```
 POST /quotes/project
 ```
 
-Create a new quote with wallet signature authentication.
+Create a new quote using **either** wallet signature auth **or** API key auth (`x-api-key` header).
 
 **Required Fields:**
 
@@ -34,9 +65,15 @@ Create a new quote with wallet signature authentication.
 - `systemSizeKw` (string): Solar system size in kW
 - `latitude` (string): Location latitude
 - `longitude` (string): Location longitude
-- `timestamp` (number): Current Unix timestamp in milliseconds
-- `signature` (string): Wallet signature of the message
 - `utilityBill` (File): PDF utility bill (max 10MB)
+
+**Auth (pick one):**
+
+- Wallet signature auth:
+  - `timestamp` (number): Current Unix timestamp in milliseconds
+  - `signature` (string): Wallet signature of the message
+- API key auth:
+  - Header `x-api-key: gq_...`
 
 **Optional Fields:**
 
@@ -66,6 +103,8 @@ Create multiple quotes in a single request. This endpoint is **asynchronous** (i
 **Request format:** `multipart/form-data`
 
 - `requests` (string): JSON array of quote request objects (same shape as the single-quote endpoint, **without** `utilityBill`).
+  - Wallet signature auth: each item includes `timestamp` + `signature`
+  - API key auth: omit `timestamp` + `signature` and send header `x-api-key: gq_...`
 - `utilityBills` (File[]): One PDF per request, **same order** as `requests`.
 
 **Response format (202 Accepted):**
@@ -82,6 +121,12 @@ GET /quotes/project/batch/{batchId}?timestamp={ts}&signature={sig}
 ```
 
 Poll a previously submitted batch.
+
+If the batch was created using API key auth, you can poll without a signature by sending header `x-api-key: gq_...` and calling:
+
+```
+GET /quotes/project/batch/{batchId}
+```
 
 **Message to sign:**
 
@@ -333,6 +378,35 @@ if (response.ok) {
 } else {
   console.error("Error:", result.error);
 }
+```
+
+## API Key Integration Example (TypeScript)
+
+Create an API key once (store it securely; it is returned only once):
+
+```typescript
+const createKeyResp = await fetch("https://api.glowlabs.org/quotes/api-keys", {
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify({
+    orgName: "Acme Solar",
+    email: "dev@acme.example",
+  }),
+});
+
+const { apiKey } = await createKeyResp.json();
+```
+
+Then call the same endpoints using the `x-api-key` header (omit `timestamp` + `signature`):
+
+```typescript
+const apiKey = process.env.GLOW_QUOTES_API_KEY;
+
+const response = await fetch("https://api.glowlabs.org/quotes/project", {
+  method: "POST",
+  headers: { "x-api-key": apiKey },
+  body: formData, // includes utilityBill, but NOT timestamp/signature
+});
 ```
 
 ## Batch Integration Example (TypeScript)

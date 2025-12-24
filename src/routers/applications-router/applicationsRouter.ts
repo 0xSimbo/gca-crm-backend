@@ -47,6 +47,7 @@ import {
   zones,
   fractions,
   ApplicationPriceQuotes,
+  users,
 } from "../../db/schema";
 import { findFirstUserById } from "../../db/queries/users/findFirstUserById";
 import { findOrganizationMemberByUserId } from "../../db/queries/organizations/findOrganizationMemberByUserId";
@@ -61,7 +62,7 @@ import { findFirstApplicationMasterKeyByApplicationIdAndUserId } from "../../db/
 import { findAllApplicationsWithoutMasterKey } from "../../db/queries/applications/findAllApplicationsWithoutMasterKey";
 import { createApplicationEncryptedMasterKeysForUsers } from "../../db/mutations/applications/createApplicationEncryptedMasterKeysForUsers";
 import { findAllApplications } from "../../db/queries/applications/findAllApplications";
-import { eq, and, not, desc } from "drizzle-orm";
+import { eq, and, not, desc, inArray, sql } from "drizzle-orm";
 import { findOrganizationsMemberByUserIdAndOrganizationIds } from "../../db/queries/organizations/findOrganizationsMemberByUserIdAndOrganizationIds";
 import { patchDeclarationOfIntention } from "../../db/mutations/applications/patchDeclarationOfIntention";
 import { createGlowEventEmitter, eventTypes } from "@glowlabs-org/events-sdk";
@@ -79,6 +80,7 @@ import { approveOrAskRoutes } from "./approveOrAskRoutes";
 import { organizationApplicationRoutes } from "./organizationApplicationRoutes";
 import { findProjectQuotesByUserId } from "../../db/queries/project-quotes/findProjectQuotesByUserId";
 import { findProjectQuoteById } from "../../db/queries/project-quotes/findProjectQuoteById";
+import { findActiveQuoteApiKeys } from "../../db/queries/quote-api-keys/findActiveQuoteApiKeys";
 import { forwarderAddresses } from "../../constants/addresses";
 import { extractElectricityPriceFromUtilityBill } from "./helpers/extractElectricityPrice";
 import { computeProjectQuote } from "./helpers/computeProjectQuote";
@@ -2247,11 +2249,62 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               forwarderAddresses.FOUNDATION_HUB_MANAGER_WALLET.toLowerCase();
 
             if (isFoundationManager) {
+              function pseudoWalletAddressFromApiKeyHash(apiKeyHash: string) {
+                if (!/^[a-f0-9]{64}$/i.test(apiKeyHash)) return null;
+                return `0x${apiKeyHash.slice(0, 40).toLowerCase()}`;
+              }
+
               // Return all quotes for foundation manager
               const allQuotes = await db.query.ProjectQuotes.findMany({
                 orderBy: (quotes, { desc }) => [desc(quotes.createdAt)],
               });
-              return { quotes: allQuotes };
+
+              const activeKeys = await findActiveQuoteApiKeys();
+              const walletToOrgName = new Map<string, string>();
+              for (const key of activeKeys) {
+                const configured = key.walletAddress?.trim();
+                if (configured && /^0x[a-fA-F0-9]{40}$/.test(configured)) {
+                  walletToOrgName.set(configured.toLowerCase(), key.orgName);
+                }
+                const pseudo = pseudoWalletAddressFromApiKeyHash(
+                  key.apiKeyHash
+                );
+                if (pseudo)
+                  walletToOrgName.set(pseudo.toLowerCase(), key.orgName);
+              }
+
+              const uniqueWalletsLower = Array.from(
+                new Set(allQuotes.map((q) => q.walletAddress.toLowerCase()))
+              );
+              const usersForQuotes = uniqueWalletsLower.length
+                ? await db.query.users.findMany({
+                    columns: {
+                      id: true,
+                      companyName: true,
+                    },
+                    where: inArray(sql`LOWER(${users.id})`, uniqueWalletsLower),
+                  })
+                : [];
+              const walletToCompanyName = new Map<string, string | null>();
+              for (const user of usersForQuotes) {
+                walletToCompanyName.set(
+                  user.id.toLowerCase(),
+                  user.companyName ?? null
+                );
+              }
+
+              const quotes = allQuotes.map((quote) => ({
+                ...quote,
+                companyAddress: quote.walletAddress,
+                orgName:
+                  walletToOrgName.get(quote.walletAddress.toLowerCase()) ??
+                  null,
+                companyName:
+                  walletToCompanyName.get(quote.walletAddress.toLowerCase()) ??
+                  null,
+              }));
+
+              return { quotes };
             }
 
             // Regular users: only their own quotes
