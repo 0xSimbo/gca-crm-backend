@@ -487,6 +487,51 @@ export const quotesRouter = new Elysia({ prefix: "/quotes" })
       },
     }
   )
+  .get(
+    "/project-quotes",
+    async ({ headers, set }) => {
+      try {
+        let auth: Awaited<ReturnType<typeof authenticateApiKey>> | null = null;
+        try {
+          auth = await authenticateApiKey(headers);
+        } catch {
+          set.status = 401;
+          return { error: "Invalid API key" };
+        }
+
+        if (!auth) {
+          set.status = 401;
+          return { error: "x-api-key header is required" };
+        }
+
+        const quotes = await findProjectQuotesByWalletAddress(
+          auth.walletAddress
+        );
+        return {
+          walletAddress: auth.walletAddress,
+          orgName: auth.orgName,
+          quotes,
+        };
+      } catch (e) {
+        if (e instanceof Error) {
+          console.error("[quotesRouter] /project-quotes error:", e);
+          set.status = 400;
+          return { error: e.message };
+        }
+        console.error("[quotesRouter] /project-quotes unknown error:", e);
+        set.status = 500;
+        return { error: "Internal server error" };
+      }
+    },
+    {
+      detail: {
+        summary: "Get all project quotes for the current API key",
+        description:
+          "Returns all project quotes associated with the API key (using the admin-configured walletAddress if set, otherwise the pseudo wallet derived from the apiKey hash). Requires x-api-key header.",
+        tags: [TAG.APPLICATIONS],
+      },
+    }
+  )
   .post(
     "/api-keys",
     async ({ body, set }) => {

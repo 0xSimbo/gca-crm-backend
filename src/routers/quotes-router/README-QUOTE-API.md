@@ -150,6 +150,15 @@ GET /quotes/project/{walletAddress}
 
 Retrieve all quotes created by a specific wallet address.
 
+### 5b. Get Quotes for Current API Key
+
+```
+GET /quotes/project-quotes
+x-api-key: gq_...
+```
+
+Retrieve all quotes associated with the provided API key (uses admin-configured `quote_api_keys.wallet_address` when set; otherwise uses the pseudo-wallet derived from the apiKey hash).
+
 ### 6. Get Quote by ID
 
 ```
