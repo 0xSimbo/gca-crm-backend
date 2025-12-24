@@ -2027,3 +2027,41 @@ export type ProjectQuoteBatchType = InferSelectModel<
 >;
 export type ProjectQuoteBatchInsertType =
   typeof ProjectQuoteBatches.$inferInsert;
+
+/**
+ * @dev API keys for partner integrations calling the Quote API without wallet signatures.
+ *      Keys are stored hashed (sha256) and returned only once at creation time.
+ */
+export const QuoteApiKeys = pgTable(
+  "quote_api_keys",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+
+    orgName: varchar("org_name", { length: 255 }).notNull(),
+    email: varchar("email", { length: 255 }).notNull(),
+
+    // Optional: admin-configured wallet address to associate quotes with this key.
+    // If set, API key-authenticated quote creation should use this wallet address instead of a pseudo wallet.
+    walletAddress: varchar("wallet_address", { length: 42 }),
+
+    // sha256(apiKey) hex string (64 chars). Do NOT store raw apiKey.
+    apiKeyHash: varchar("api_key_hash", { length: 64 }).notNull(),
+    last4: varchar("last4", { length: 4 }).notNull(),
+
+    revokedAt: timestamp("revoked_at"),
+  },
+  (t) => ({
+    orgNameUniqueIx: uniqueIndex("quote_api_keys_org_name_unique_ix").on(
+      t.orgName
+    ),
+    apiKeyHashUniqueIx: uniqueIndex("quote_api_keys_api_key_hash_unique_ix").on(
+      t.apiKeyHash
+    ),
+  })
+);
+
+export type QuoteApiKeyType = InferSelectModel<typeof QuoteApiKeys>;
+export type QuoteApiKeyInsertType = typeof QuoteApiKeys.$inferInsert;
