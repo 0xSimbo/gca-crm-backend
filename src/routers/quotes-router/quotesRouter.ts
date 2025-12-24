@@ -14,6 +14,7 @@ import {
   verifyBatchSignature,
 } from "../../handlers/walletSignatureHandler";
 import { mapWalletToUserId } from "../../utils/mapWalletToUserId";
+import { parseOptionalBoolean } from "../../utils/parseOptionalBoolean";
 import pLimit from "p-limit";
 import { createProjectQuoteBatch } from "../../db/mutations/project-quote-batches/createProjectQuoteBatch";
 import { updateProjectQuoteBatch } from "../../db/mutations/project-quote-batches/updateProjectQuoteBatch";
@@ -33,7 +34,7 @@ interface QuoteProjectRequest {
   timestamp?: string;
   signature?: string;
   metadata?: string;
-  isProjectCompleted?: boolean;
+  isProjectCompleted?: boolean | string;
   mockElectricityPricePerKwh?: string;
   mockDiscountRate?: string;
   mockEscalatorRate?: string;
@@ -75,10 +76,16 @@ const quoteProjectRequestSchema = t.Object({
     })
   ),
   isProjectCompleted: t.Optional(
-    t.Boolean({
-      description:
-        "Optional flag indicating if the solar project is already live/completed",
-    })
+    t.Union([
+      t.Boolean({
+        description:
+          "Optional flag indicating if the solar project is already live/completed",
+      }),
+      t.String({
+        description:
+          "Optional flag indicating if the solar project is already live/completed (multipart may send 'true'/'false')",
+      }),
+    ])
   ),
   // Test-only optional overrides (staging only)
   mockElectricityPricePerKwh: t.Optional(t.String()),
@@ -274,6 +281,10 @@ async function createProjectQuoteFromRequest(args: {
     rationale: string;
   };
   let billUrl = "";
+  const isProjectCompleted = parseOptionalBoolean(request.isProjectCompleted, {
+    defaultValue: false,
+    fieldName: "isProjectCompleted",
+  });
 
   if (allowMock && request.mockElectricityPricePerKwh) {
     priceExtraction = {
@@ -331,13 +342,13 @@ async function createProjectQuoteFromRequest(args: {
         walletAddress,
         userId,
         metadata: request.metadata || null,
-        isProjectCompleted: request.isProjectCompleted ?? false,
+        isProjectCompleted,
       }
     : await createProjectQuote({
         walletAddress,
         userId,
         metadata: request.metadata,
-        isProjectCompleted: request.isProjectCompleted ?? false,
+        isProjectCompleted,
         regionCode,
         latitude: latitude.toString(),
         longitude: longitude.toString(),
@@ -1016,10 +1027,16 @@ export const quotesRouter = new Elysia({ prefix: "/quotes" })
           })
         ),
         isProjectCompleted: t.Optional(
-          t.Boolean({
-            description:
-              "Optional flag indicating if the solar project is already live/completed",
-          })
+          t.Union([
+            t.Boolean({
+              description:
+                "Optional flag indicating if the solar project is already live/completed",
+            }),
+            t.String({
+              description:
+                "Optional flag indicating if the solar project is already live/completed (multipart may send 'true'/'false')",
+            }),
+          ])
         ),
         // Test-only optional overrides
         mockElectricityPricePerKwh: t.Optional(t.String()),
