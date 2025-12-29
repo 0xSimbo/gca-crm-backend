@@ -24,7 +24,7 @@ const glowScoreListCache = new Map<
  * Keep these lowercased.
  */
 const EXCLUDED_LEADERBOARD_WALLETS = [
-  "0x77f41144e787cb8cd29a37413a71f53f92ee050c",
+  "0x6972B05A0c80064fBE8a10CBc2a2FBCF6fb47D6a",
 ].map((w) => w.toLowerCase());
 
 const excludedLeaderboardWalletsSet = new Set(EXCLUDED_LEADERBOARD_WALLETS);
