@@ -6,6 +6,8 @@ The Project Quote API allows partners to programmatically create solar project q
 
 Partners can add optional metadata to each quote (e.g., farm owner name, project ID) to make quotes easier to identify and manage in the dashboard.
 
+For **Lebanon projects**, use the dedicated fixed-rate endpoint `POST /quotes/project/lebanon` (no utility bill upload required).
+
 ## Authentication Method
 
 ### Wallet Signature
@@ -87,6 +89,48 @@ Create a new quote using **either** wallet signature auth **or** API key auth (`
 ```
 
 Example: `0.3798,0.01896,39.0707,-94.3561,1699564800000`
+
+### 2b. Create Lebanon Project Quote (Fixed Rate, No Utility Bill)
+
+```
+POST /quotes/project/lebanon
+```
+
+Create a new **Lebanon** quote using a fixed blended electricity rate of **0.3474 USD/kWh**. This endpoint does **not** require a utility bill upload and does **not** use AI extraction.
+
+**Request (JSON):** `application/json`
+
+**Required Fields:**
+
+- `weeklyConsumptionMWh` (string): Weekly energy consumption in MWh
+- `systemSizeKw` (string): Solar system size in kW
+- `latitude` (string): Location latitude
+- `longitude` (string): Location longitude
+
+**Auth (pick one):**
+
+- Wallet signature auth:
+  - `timestamp` (string): Current Unix timestamp in milliseconds
+  - `signature` (string): Wallet signature of the message
+- API key auth:
+  - Header `x-api-key: gq_...` (omit `timestamp` + `signature`)
+
+**Optional Fields:**
+
+- `metadata` (string): Custom identifier for the quote
+- `isProjectCompleted` (boolean): Flag indicating if the solar project is already live/completed (default: false)
+
+**Message to Sign (wallet auth):**
+
+```
+{weeklyConsumptionMWh},{systemSizeKw},{latitude},{longitude},{timestamp}
+```
+
+**Response notes:**
+
+- Response shape matches `POST /quotes/project`.
+- `extraction.utilityBillUrl` will be the sentinel string `"lebanon-fixed-rate"`.
+- `extraction.electricityPricePerKwh` will be `0.3474` with confidence `1`.
 
 ### 3. Create Project Quotes (Batch, Async)
 
@@ -416,6 +460,40 @@ const response = await fetch("https://api.glowlabs.org/quotes/project", {
   headers: { "x-api-key": apiKey },
   body: formData, // includes utilityBill, but NOT timestamp/signature
 });
+```
+
+## Lebanon Fixed-Rate Integration Example (TypeScript)
+
+Call the Lebanon fixed-rate endpoint with **JSON** (no utility bill required):
+
+```typescript
+import { Wallet } from "ethers";
+
+const wallet = new Wallet(process.env.PRIVATE_KEY);
+
+const timestamp = Date.now();
+const body = {
+  weeklyConsumptionMWh: "0.3798",
+  systemSizeKw: "0.01896",
+  latitude: "33.8938",
+  longitude: "35.5018",
+  timestamp: timestamp.toString(),
+};
+
+const message = `${body.weeklyConsumptionMWh},${body.systemSizeKw},${body.latitude},${body.longitude},${timestamp}`;
+const signature = await wallet.signMessage(message);
+
+const response = await fetch(
+  "https://api.glowlabs.org/quotes/project/lebanon",
+  {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ ...body, signature }),
+  }
+);
+
+const result = await response.json();
+console.log(result);
 ```
 
 ## Batch Integration Example (TypeScript)
