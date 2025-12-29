@@ -206,6 +206,7 @@ export const impactRouter = new Elysia({ prefix: "/impact" })
               composition: r.composition,
               lastWeekPoints: r.lastWeekPoints,
               activeMultiplier: r.activeMultiplier,
+              endWeekMultiplier: r.endWeekMultiplier,
             }))
             .sort((a, b) => Number(b.totalPoints) - Number(a.totalPoints)),
         };
@@ -241,7 +242,7 @@ export const impactRouter = new Elysia({ prefix: "/impact" })
       detail: {
         summary: "Get Glow Impact Score",
         description:
-          "Computes weekly rollover points (inflation + steering + vault bonus) with cash-miner multiplier, plus continuous GlowWorth accrual. GCTL steering is derived from Control API stakedControl. Unclaimed rewards are mocked until Control API endpoint is available.",
+          "Computes weekly rollover points (emissions + steering + vault bonus) with a total multiplier (base cash-miner multiplier + impact streak bonus), plus continuous GlowWorth accrual. GCTL steering is derived from Control API stakedControl. Unclaimed rewards are mocked until Control API endpoint is available.",
         tags: [TAG.REWARDS],
       },
     }

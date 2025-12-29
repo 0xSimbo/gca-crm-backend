@@ -21,14 +21,21 @@ This is a **status-only leaderboard** (no monetary rewards are paid out by this 
 
 For each week in the requested week range, we compute:
 
-- **Weekly rollover points**:
-  - Inflation earned: **+1.0** point per **GLW** earned in inflation rewards
-  - Steering (GCTL): **+3.0** points per **GLW** “steered” via staked GCTL
-  - Vault bonus: **+0.005** points per week per **GLW** in `DelegatedActiveGLW`
-- **Weekly multiplier**:
-  - Cash miner bonus: if the wallet bought a mining-center fraction that week, we apply a **3×** multiplier to all rollover points for that week
-- **Continuous points**:
-  - **+0.001** points per week per **GLW** of `GlowWorth` for that week
+- **Weekly rollover points** (calculated on week rollover):
+  - Emissions earned: **+1.0** point per **GLW** earned in emission rewards
+  - Steering (sGCTL): **+3.0** points per **GLW** steered by staking GCTL
+  - Vault bonus (delegated GLW): **+0.005** points per week per **GLW** in `DelegatedActiveGLW`
+- **Weekly multiplier** (calculated on week rollover):
+  - Total multiplier = **Base multiplier + Streak bonus**
+  - Base multiplier:
+    - Standard: **1×**
+    - Cash miner bonus: **3×** if the wallet bought a mining-center fraction that week
+  - Streak bonus (Impact Streak):
+    - Earn **+0.25×** for every consecutive week you **increase your delegated GLW** (net delegation delta > 0 for that week) **or** **buy a miner**
+    - Caps at **+1.0×** (after 4 consecutive weeks)
+    - Resets to **0×** if you do neither in a week
+- **Continuous points** (calculated continuously):
+  - GLW Worth: **+0.001** points per week per **GLW** of `GlowWorth` for that week
 
 All points are computed internally with **6-decimal fixed-point precision** and returned as strings.
 
