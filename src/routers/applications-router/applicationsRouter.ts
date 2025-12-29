@@ -74,6 +74,7 @@ import {
   GcaAcceptApplicationQueryBody,
   ApproveOrAskForChangesQueryBody,
 } from "./query-schemas";
+import { parseOptionalBoolean } from "../../utils/parseOptionalBoolean";
 import { findFirstApplicationDraftByUserId } from "../../db/queries/applications/findFirstApplicationDraftByUserId";
 import { publicApplicationsRoutes } from "./publicRoutes";
 import { approveOrAskRoutes } from "./approveOrAskRoutes";
@@ -2842,7 +2843,13 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               walletAddress,
               userId,
               metadata: body.metadata,
-              isProjectCompleted: body.isProjectCompleted ?? false,
+              isProjectCompleted: parseOptionalBoolean(
+                body.isProjectCompleted,
+                {
+                  defaultValue: false,
+                  fieldName: "isProjectCompleted",
+                }
+              ),
               regionCode,
               latitude: latitude.toString(),
               longitude: longitude.toString(),
@@ -2942,10 +2949,16 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               })
             ),
             isProjectCompleted: t.Optional(
-              t.Boolean({
-                description:
-                  "Optional flag indicating if the solar project is already live/completed",
-              })
+              t.Union([
+                t.Boolean({
+                  description:
+                    "Optional flag indicating if the solar project is already live/completed",
+                }),
+                t.String({
+                  description:
+                    "Optional flag indicating if the solar project is already live/completed (multipart may send 'true'/'false')",
+                }),
+              ])
             ),
           }),
           detail: {

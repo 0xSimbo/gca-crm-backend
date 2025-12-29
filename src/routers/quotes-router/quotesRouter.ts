@@ -7,6 +7,7 @@ import { createProjectQuote } from "../../db/mutations/project-quotes/createProj
 import { findProjectQuoteById } from "../../db/queries/project-quotes/findProjectQuoteById";
 import { findProjectQuotesByWalletAddress } from "../../db/queries/project-quotes/findProjectQuotesByWalletAddress";
 import { countQuotesInLastHour } from "../../db/queries/project-quotes/countQuotesInLastHour";
+import { countLebanonQuotesInLastHour } from "../../db/queries/project-quotes/countLebanonQuotesInLastHour";
 import { getRegionCodeFromCoordinates } from "../applications-router/helpers/mapStateToRegionCode";
 import {
   verifyQuoteSignature,
@@ -14,6 +15,7 @@ import {
   verifyBatchSignature,
 } from "../../handlers/walletSignatureHandler";
 import { mapWalletToUserId } from "../../utils/mapWalletToUserId";
+import { parseOptionalBoolean } from "../../utils/parseOptionalBoolean";
 import pLimit from "p-limit";
 import { createProjectQuoteBatch } from "../../db/mutations/project-quote-batches/createProjectQuoteBatch";
 import { updateProjectQuoteBatch } from "../../db/mutations/project-quote-batches/updateProjectQuoteBatch";
@@ -33,13 +35,30 @@ interface QuoteProjectRequest {
   timestamp?: string;
   signature?: string;
   metadata?: string;
-  isProjectCompleted?: boolean;
+  isProjectCompleted?: boolean | string;
   mockElectricityPricePerKwh?: string;
   mockDiscountRate?: string;
   mockEscalatorRate?: string;
   mockYears?: string;
   mockCarbonOffsetsPerMwh?: string;
 }
+
+interface LebanonQuoteProjectRequest {
+  weeklyConsumptionMWh: string;
+  systemSizeKw: string;
+  latitude: string;
+  longitude: string;
+  timestamp?: string;
+  signature?: string;
+  metadata?: string;
+  isProjectCompleted?: boolean | string;
+}
+
+const LEBANON_ELECTRICITY_PRICE_PER_KWH = 0.3474;
+const LEBANON_REGION_CODE = "LB";
+const LEBANON_UTILITY_BILL_URL_SENTINEL = "lebanon-fixed-rate";
+const LEBANON_ESCALATOR_RATE = 0.0331;
+const LEBANON_RATE_LIMIT_PER_HOUR = 500;
 
 const quoteProjectRequestSchema = t.Object({
   weeklyConsumptionMWh: t.String({
@@ -75,10 +94,16 @@ const quoteProjectRequestSchema = t.Object({
     })
   ),
   isProjectCompleted: t.Optional(
-    t.Boolean({
-      description:
-        "Optional flag indicating if the solar project is already live/completed",
-    })
+    t.Union([
+      t.Boolean({
+        description:
+          "Optional flag indicating if the solar project is already live/completed",
+      }),
+      t.String({
+        description:
+          "Optional flag indicating if the solar project is already live/completed (multipart may send 'true'/'false')",
+      }),
+    ])
   ),
   // Test-only optional overrides (staging only)
   mockElectricityPricePerKwh: t.Optional(t.String()),
@@ -86,6 +111,53 @@ const quoteProjectRequestSchema = t.Object({
   mockEscalatorRate: t.Optional(t.String()),
   mockYears: t.Optional(t.String()),
   mockCarbonOffsetsPerMwh: t.Optional(t.String()),
+});
+
+const lebanonQuoteProjectRequestSchema = t.Object({
+  weeklyConsumptionMWh: t.String({
+    description: "Weekly energy consumption in MWh (from Aurora)",
+  }),
+  systemSizeKw: t.String({
+    description: "System size in kW (nameplate capacity)",
+  }),
+  latitude: t.String({
+    description: "Latitude of the solar farm location",
+  }),
+  longitude: t.String({
+    description: "Longitude of the solar farm location",
+  }),
+  timestamp: t.Optional(
+    t.String({
+      description:
+        "Unix timestamp in milliseconds when signature was created (required for wallet-signed auth)",
+    })
+  ),
+  signature: t.Optional(
+    t.String({
+      description:
+        "Wallet signature of message: weeklyConsumptionMWh,systemSizeKw,latitude,longitude,timestamp (required for wallet-signed auth)",
+      minLength: 132,
+      maxLength: 132,
+    })
+  ),
+  metadata: t.Optional(
+    t.String({
+      description:
+        "Optional metadata for identifying the quote (e.g., farm owner name, project ID)",
+    })
+  ),
+  isProjectCompleted: t.Optional(
+    t.Union([
+      t.Boolean({
+        description:
+          "Optional flag indicating if the solar project is already live/completed",
+      }),
+      t.String({
+        description:
+          "Optional flag indicating if the solar project is already live/completed",
+      }),
+    ])
+  ),
 });
 
 // Cast to `any` to avoid TypeScript "type instantiation is excessively deep" errors
@@ -274,6 +346,10 @@ async function createProjectQuoteFromRequest(args: {
     rationale: string;
   };
   let billUrl = "";
+  const isProjectCompleted = parseOptionalBoolean(request.isProjectCompleted, {
+    defaultValue: false,
+    fieldName: "isProjectCompleted",
+  });
 
   if (allowMock && request.mockElectricityPricePerKwh) {
     priceExtraction = {
@@ -331,13 +407,13 @@ async function createProjectQuoteFromRequest(args: {
         walletAddress,
         userId,
         metadata: request.metadata || null,
-        isProjectCompleted: request.isProjectCompleted ?? false,
+        isProjectCompleted,
       }
     : await createProjectQuote({
         walletAddress,
         userId,
         metadata: request.metadata,
-        isProjectCompleted: request.isProjectCompleted ?? false,
+        isProjectCompleted,
         regionCode,
         latitude: latitude.toString(),
         longitude: longitude.toString(),
@@ -395,6 +471,170 @@ async function createProjectQuoteFromRequest(args: {
       confidence: priceExtraction.confidence,
       rationale: priceExtraction.rationale,
       utilityBillUrl: billUrl,
+    },
+    debug: quoteResult.debugJson,
+  };
+}
+
+async function createLebanonProjectQuoteFromRequest(args: {
+  request: LebanonQuoteProjectRequest;
+  skipDb: boolean;
+  validateSignatureTimestamp?: boolean;
+  authOverride?: { walletAddress: string; userId: string | null };
+}) {
+  const {
+    request,
+    skipDb,
+    validateSignatureTimestamp = true,
+    authOverride,
+  } = args;
+
+  let walletAddress: string;
+  let userId: string | null;
+
+  if (authOverride) {
+    walletAddress = authOverride.walletAddress.toLowerCase();
+    userId = authOverride.userId;
+  } else {
+    if (!request.timestamp) {
+      throw new Error("timestamp is required for wallet signature auth");
+    }
+    if (!request.signature) {
+      throw new Error("signature is required for wallet signature auth");
+    }
+
+    const timestamp = parseStrictInt(request.timestamp, "timestamp");
+    if (validateSignatureTimestamp) {
+      validateTimestamp(timestamp);
+    }
+
+    try {
+      walletAddress = verifyQuoteSignature(
+        {
+          weeklyConsumptionMWh: request.weeklyConsumptionMWh,
+          systemSizeKw: request.systemSizeKw,
+          latitude: request.latitude,
+          longitude: request.longitude,
+          timestamp,
+        },
+        request.signature
+      ).toLowerCase();
+    } catch (error) {
+      throw new Error(
+        `Invalid signature: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`
+      );
+    }
+
+    userId = await mapWalletToUserId(walletAddress);
+  }
+
+  const weeklyConsumptionMWh = parseStrictFloat(
+    request.weeklyConsumptionMWh,
+    "weeklyConsumptionMWh"
+  );
+  if (weeklyConsumptionMWh <= 0) {
+    throw new Error("weeklyConsumptionMWh must be a positive number");
+  }
+
+  const systemSizeKw = parseStrictFloat(request.systemSizeKw, "systemSizeKw");
+  if (systemSizeKw <= 0) {
+    throw new Error("systemSizeKw must be a positive number");
+  }
+
+  const latitude = parseStrictFloat(request.latitude, "latitude");
+  const longitude = parseStrictFloat(request.longitude, "longitude");
+
+  const isProjectCompleted = parseOptionalBoolean(request.isProjectCompleted, {
+    defaultValue: false,
+    fieldName: "isProjectCompleted",
+  });
+
+  const quoteResult = await computeProjectQuote({
+    weeklyConsumptionMWh,
+    systemSizeKw,
+    electricityPricePerKwh: LEBANON_ELECTRICITY_PRICE_PER_KWH,
+    latitude,
+    longitude,
+    override: {
+      // Avoid US-only reverse-geocode call for escalator logic.
+      escalatorRate: LEBANON_ESCALATOR_RATE,
+    },
+  });
+
+  const savedQuote = skipDb
+    ? {
+        id: "test-quote-id",
+        regionCode: LEBANON_REGION_CODE,
+        walletAddress,
+        userId,
+        metadata: request.metadata || null,
+        isProjectCompleted,
+      }
+    : await createProjectQuote({
+        walletAddress,
+        userId,
+        metadata: request.metadata,
+        isProjectCompleted,
+        regionCode: LEBANON_REGION_CODE,
+        latitude: latitude.toString(),
+        longitude: longitude.toString(),
+        weeklyConsumptionMWh: weeklyConsumptionMWh.toString(),
+        systemSizeKw: systemSizeKw.toString(),
+        electricityPricePerKwh: LEBANON_ELECTRICITY_PRICE_PER_KWH.toString(),
+        priceSource: "blended",
+        priceConfidence: "1",
+        utilityBillUrl: LEBANON_UTILITY_BILL_URL_SENTINEL,
+        discountRate: quoteResult.discountRate.toString(),
+        escalatorRate: quoteResult.escalatorRate.toString(),
+        years: quoteResult.years,
+        protocolDepositUsd6: quoteResult.protocolDepositUsd6,
+        weeklyCredits: quoteResult.weeklyCredits.toString(),
+        weeklyDebt: quoteResult.weeklyDebt.toString(),
+        netWeeklyCc: quoteResult.netWeeklyCc.toString(),
+        netCcPerMwh: quoteResult.netCcPerMwh.toString(),
+        weeklyImpactAssetsWad: quoteResult.weeklyImpactAssetsWad,
+        efficiencyScore: quoteResult.efficiencyScore,
+        carbonOffsetsPerMwh: quoteResult.carbonOffsetsPerMwh.toString(),
+        uncertaintyApplied: quoteResult.uncertaintyApplied.toString(),
+        debugJson: quoteResult.debugJson,
+      });
+
+  return {
+    quoteId: savedQuote.id,
+    walletAddress: savedQuote.walletAddress,
+    userId: savedQuote.userId,
+    metadata: savedQuote.metadata,
+    isProjectCompleted: savedQuote.isProjectCompleted,
+    regionCode: savedQuote.regionCode,
+    protocolDeposit: {
+      usd: quoteResult.protocolDepositUsd,
+      usd6Decimals: quoteResult.protocolDepositUsd6,
+    },
+    carbonMetrics: {
+      weeklyCredits: quoteResult.weeklyCredits,
+      weeklyDebt: quoteResult.weeklyDebt,
+      netWeeklyCc: quoteResult.netWeeklyCc,
+      netCcPerMwh: quoteResult.netCcPerMwh,
+      carbonOffsetsPerMwh: quoteResult.carbonOffsetsPerMwh,
+      uncertaintyApplied: quoteResult.uncertaintyApplied,
+    },
+    efficiency: {
+      score: quoteResult.efficiencyScore,
+      weeklyImpactAssetsWad: quoteResult.weeklyImpactAssetsWad,
+    },
+    rates: {
+      discountRate: quoteResult.discountRate,
+      escalatorRate: quoteResult.escalatorRate,
+      commitmentYears: quoteResult.years,
+    },
+    extraction: {
+      electricityPricePerKwh: LEBANON_ELECTRICITY_PRICE_PER_KWH,
+      confidence: 1,
+      rationale:
+        "Fixed blended Lebanon electricity rate: $0.3474/kWh (no utility bill required).",
+      utilityBillUrl: LEBANON_UTILITY_BILL_URL_SENTINEL,
     },
     debug: quoteResult.debugJson,
   };
@@ -483,6 +723,51 @@ export const quotesRouter = new Elysia({ prefix: "/quotes" })
         summary: "Get available regions for project quotes",
         description:
           "Returns a list of all available regions from the SDK regionMetadata. Note: Region selection is now automatic based on coordinates.",
+        tags: [TAG.APPLICATIONS],
+      },
+    }
+  )
+  .get(
+    "/project-quotes",
+    async ({ headers, set }) => {
+      try {
+        let auth: Awaited<ReturnType<typeof authenticateApiKey>> | null = null;
+        try {
+          auth = await authenticateApiKey(headers);
+        } catch {
+          set.status = 401;
+          return { error: "Invalid API key" };
+        }
+
+        if (!auth) {
+          set.status = 401;
+          return { error: "x-api-key header is required" };
+        }
+
+        const quotes = await findProjectQuotesByWalletAddress(
+          auth.walletAddress
+        );
+        return {
+          walletAddress: auth.walletAddress,
+          orgName: auth.orgName,
+          quotes,
+        };
+      } catch (e) {
+        if (e instanceof Error) {
+          console.error("[quotesRouter] /project-quotes error:", e);
+          set.status = 400;
+          return { error: e.message };
+        }
+        console.error("[quotesRouter] /project-quotes unknown error:", e);
+        set.status = 500;
+        return { error: "Internal server error" };
+      }
+    },
+    {
+      detail: {
+        summary: "Get all project quotes for the current API key",
+        description:
+          "Returns all project quotes associated with the API key (using the admin-configured walletAddress if set, otherwise the pseudo wallet derived from the apiKey hash). Requires x-api-key header.",
         tags: [TAG.APPLICATIONS],
       },
     }
@@ -843,6 +1128,288 @@ export const quotesRouter = new Elysia({ prefix: "/quotes" })
     }
   )
   .post(
+    "/project/lebanon",
+    async ({ body, set, headers }) => {
+      try {
+        const skipDb =
+          process.env.NODE_ENV === "test" ||
+          process.env.PROJECT_QUOTE_SKIP_DB === "true";
+
+        // Lebanon rate limit: 500 quotes per hour (no AI extraction)
+        const quoteCount = await countLebanonQuotesInLastHour();
+        if (quoteCount >= LEBANON_RATE_LIMIT_PER_HOUR) {
+          set.status = 429;
+          return {
+            error:
+              "Rate limit exceeded. The system can process a maximum of 500 Lebanon quotes per hour. Please try again later.",
+          };
+        }
+
+        let apiKeyAuth: {
+          walletAddress: string;
+          userId: string | null;
+        } | null = null;
+        try {
+          const auth = await authenticateApiKey(headers);
+          apiKeyAuth = auth
+            ? {
+                walletAddress: auth.walletAddress,
+                userId: await mapWalletToUserId(auth.walletAddress),
+              }
+            : null;
+        } catch {
+          set.status = 401;
+          return { error: "Invalid API key" };
+        }
+
+        const hasWalletSignature =
+          typeof body.timestamp === "string" &&
+          typeof body.signature === "string";
+
+        if (apiKeyAuth && hasWalletSignature) {
+          set.status = 400;
+          return {
+            error:
+              "Provide either x-api-key header OR (timestamp + signature), not both",
+          };
+        }
+
+        if (!apiKeyAuth && !hasWalletSignature) {
+          set.status = 400;
+          return {
+            error:
+              "timestamp and signature are required for wallet signature auth (or provide x-api-key header)",
+          };
+        }
+
+        try {
+          return await createLebanonProjectQuoteFromRequest({
+            request: body,
+            skipDb,
+            authOverride: apiKeyAuth ?? undefined,
+          });
+        } catch (error) {
+          if (
+            error instanceof Error &&
+            error.message.startsWith("Invalid signature:")
+          ) {
+            set.status = 401;
+            return { error: error.message };
+          }
+          throw error;
+        }
+      } catch (e) {
+        if (e instanceof Error) {
+          console.error("[quotesRouter] /project/lebanon error:", e);
+          set.status = 400;
+          return { error: e.message };
+        }
+        console.error("[quotesRouter] /project/lebanon unknown error:", e);
+        set.status = 500;
+        return { error: "Internal server error" };
+      }
+    },
+    {
+      body: lebanonQuoteProjectRequestSchema,
+      detail: {
+        summary:
+          "Create a Lebanon project quote (fixed blended rate, wallet signature auth or API key auth)",
+        description:
+          "Create a new Lebanon quote without uploading a utility bill. Uses a fixed blended electricity rate of $0.3474/kWh. Authenticate via wallet signature (timestamp+signature) or via API key (x-api-key header). Returns estimated protocol deposit, carbon metrics, and efficiency scores.",
+        tags: [TAG.APPLICATIONS],
+      },
+    }
+  )
+  .post(
+    "/project/lebanon/batch",
+    async ({ body, set, headers }: { body: any; set: any; headers: any }) => {
+      try {
+        const skipDb =
+          process.env.NODE_ENV === "test" ||
+          process.env.PROJECT_QUOTE_SKIP_DB === "true";
+
+        const requests = body.requests as LebanonQuoteProjectRequest[];
+        if (!Array.isArray(requests) || !requests.length) {
+          set.status = 400;
+          return { error: "requests must contain at least 1 item" };
+        }
+
+        if (requests.length > 100) {
+          set.status = 400;
+          return { error: "requests must contain at most 100 items" };
+        }
+
+        let apiKeyAuth: {
+          walletAddress: string;
+          userId: string | null;
+        } | null = null;
+        try {
+          const auth = await authenticateApiKey(headers);
+          apiKeyAuth = auth
+            ? {
+                walletAddress: auth.walletAddress,
+                userId: await mapWalletToUserId(auth.walletAddress),
+              }
+            : null;
+        } catch {
+          set.status = 401;
+          return { error: "Invalid API key" };
+        }
+
+        const hasAnyWalletSignature = requests.some(
+          (r) =>
+            typeof r.timestamp === "string" || typeof r.signature === "string"
+        );
+
+        if (apiKeyAuth && hasAnyWalletSignature) {
+          set.status = 400;
+          return {
+            error:
+              "Provide either x-api-key header OR per-item (timestamp + signature), not both",
+          };
+        }
+
+        if (!apiKeyAuth && !hasAnyWalletSignature) {
+          set.status = 400;
+          return {
+            error:
+              "timestamp and signature are required for wallet signature auth (or provide x-api-key header)",
+          };
+        }
+
+        // Lebanon rate limit is per-item, not per-request.
+        const quoteCount = await countLebanonQuotesInLastHour();
+        if (quoteCount + requests.length > LEBANON_RATE_LIMIT_PER_HOUR) {
+          set.status = 429;
+          return {
+            error: `Rate limit exceeded. The system can process a maximum of 500 Lebanon quotes per hour. Already processed: ${quoteCount}. Requested: ${requests.length}.`,
+          };
+        }
+
+        const concurrency = Math.max(
+          1,
+          parseStrictInt(
+            process.env.PROJECT_QUOTE_BATCH_CONCURRENCY ?? "3",
+            "PROJECT_QUOTE_BATCH_CONCURRENCY"
+          )
+        );
+
+        // Determine batch ownership wallet (single wallet per batch)
+        let batchAuthOverride: { walletAddress: string; userId: string | null };
+        if (apiKeyAuth) {
+          batchAuthOverride = apiKeyAuth;
+        } else {
+          let batchWalletAddress: string | null = null;
+          for (const request of requests) {
+            if (!request.timestamp || !request.signature) {
+              set.status = 400;
+              return {
+                error:
+                  "timestamp and signature are required for wallet signature auth",
+              };
+            }
+
+            const timestamp = parseStrictInt(request.timestamp, "timestamp");
+            validateTimestamp(timestamp);
+
+            let recovered: string;
+            try {
+              recovered = verifyQuoteSignature(
+                {
+                  weeklyConsumptionMWh: request.weeklyConsumptionMWh,
+                  systemSizeKw: request.systemSizeKw,
+                  latitude: request.latitude,
+                  longitude: request.longitude,
+                  timestamp,
+                },
+                request.signature
+              ).toLowerCase();
+            } catch (error) {
+              set.status = 401;
+              return {
+                error: `Invalid signature: ${
+                  error instanceof Error ? error.message : "Unknown error"
+                }`,
+              };
+            }
+
+            if (!batchWalletAddress) {
+              batchWalletAddress = recovered;
+            } else if (batchWalletAddress !== recovered) {
+              set.status = 400;
+              return {
+                error:
+                  "All batch items must be signed by the same wallet address.",
+              };
+            }
+          }
+
+          batchAuthOverride = {
+            walletAddress: batchWalletAddress!,
+            userId: await mapWalletToUserId(batchWalletAddress!),
+          };
+        }
+
+        const limit = pLimit(concurrency);
+        const results = await Promise.all(
+          requests.map((request, index) =>
+            limit(async () => {
+              try {
+                const data = await createLebanonProjectQuoteFromRequest({
+                  request,
+                  skipDb,
+                  authOverride: batchAuthOverride,
+                });
+                return { index, success: true as const, quoteId: data.quoteId };
+              } catch (error) {
+                const message =
+                  error instanceof Error ? error.message : String(error);
+                return { index, success: false as const, error: message };
+              }
+            })
+          )
+        );
+
+        const successCount = results.filter((r) => r.success).length;
+        const errorCount = results.length - successCount;
+
+        return {
+          itemCount: results.length,
+          successCount,
+          errorCount,
+          results,
+        };
+      } catch (e) {
+        if (e instanceof Error) {
+          console.error("[quotesRouter] /project/lebanon/batch error:", e);
+          set.status = 400;
+          return { error: e.message };
+        }
+        console.error(
+          "[quotesRouter] /project/lebanon/batch unknown error:",
+          e
+        );
+        set.status = 500;
+        return { error: "Internal server error" };
+      }
+    },
+    {
+      body: t.Object({
+        requests: t.Array(lebanonQuoteProjectRequestSchema, {
+          minItems: 1,
+          maxItems: 100,
+        }),
+      }),
+      detail: {
+        summary:
+          "Create Lebanon project quotes in batch (fixed blended rate, wallet signature auth or API key auth)",
+        description:
+          "Submit multiple Lebanon quote requests in one call (JSON, no utility bills). Processes items in-request and returns per-item results. Authenticate via wallet signatures (per-item timestamp+signature) or via API key (x-api-key header). Rate limit is 500 Lebanon quotes per hour globally (counted per item).",
+        tags: [TAG.APPLICATIONS],
+      },
+    }
+  )
+  .post(
     "/project",
     async ({ body, set, headers }) => {
       try {
@@ -971,10 +1538,16 @@ export const quotesRouter = new Elysia({ prefix: "/quotes" })
           })
         ),
         isProjectCompleted: t.Optional(
-          t.Boolean({
-            description:
-              "Optional flag indicating if the solar project is already live/completed",
-          })
+          t.Union([
+            t.Boolean({
+              description:
+                "Optional flag indicating if the solar project is already live/completed",
+            }),
+            t.String({
+              description:
+                "Optional flag indicating if the solar project is already live/completed (multipart may send 'true'/'false')",
+            }),
+          ])
         ),
         // Test-only optional overrides
         mockElectricityPricePerKwh: t.Optional(t.String()),
