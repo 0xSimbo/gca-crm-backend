@@ -108,6 +108,8 @@ import {
 } from "../../constants/fractions";
 import { findActiveDefaultMaxSplits } from "../../db/queries/defaultMaxSplits/findActiveDefaultMaxSplits";
 
+const WEEKS_PER_YEAR = 52.18; // must match computeProjectQuote conversion (365.25/7 rounded)
+
 export const applicationsRouter = new Elysia({ prefix: "/applications" })
   .use(publicApplicationsRoutes)
   .use(bearerplugin())
@@ -2242,7 +2244,8 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
                 longitude: parseFloat(quote.longitude),
               },
               inputs: {
-                weeklyConsumptionMWh: parseFloat(quote.weeklyConsumptionMWh),
+                annualConsumptionMWh:
+                  parseFloat(quote.weeklyConsumptionMWh) * WEEKS_PER_YEAR,
                 systemSizeKw: parseFloat(quote.systemSizeKw),
               },
               protocolDeposit: {
@@ -2611,17 +2614,19 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
         async ({ body, set, userId }) => {
           try {
             // Validate inputs
-            const weeklyConsumptionMWh = parseFloat(body.weeklyConsumptionMWh);
+            const annualConsumptionMWh = parseFloat(body.annualConsumptionMWh);
             const systemSizeKw = parseFloat(body.systemSizeKw);
             const latitude = parseFloat(body.latitude);
             const longitude = parseFloat(body.longitude);
 
-            if (isNaN(weeklyConsumptionMWh) || weeklyConsumptionMWh <= 0) {
+            if (isNaN(annualConsumptionMWh) || annualConsumptionMWh <= 0) {
               set.status = 400;
               return {
-                error: "weeklyConsumptionMWh must be a positive number",
+                error: "annualConsumptionMWh must be a positive number",
               };
             }
+
+            const weeklyConsumptionMWh = annualConsumptionMWh / WEEKS_PER_YEAR;
 
             if (isNaN(systemSizeKw) || systemSizeKw <= 0) {
               set.status = 400;
@@ -2792,8 +2797,8 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
         },
         {
           body: t.Object({
-            weeklyConsumptionMWh: t.String({
-              description: "Weekly energy consumption in MWh (from Aurora)",
+            annualConsumptionMWh: t.String({
+              description: "Annual energy consumption in MWh (from Aurora)",
             }),
             systemSizeKw: t.String({
               description: "System size in kW (nameplate capacity)",
@@ -2829,7 +2834,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
           detail: {
             summary: "Create a project quote (hub frontend, bearer auth)",
             description:
-              "Upload a utility bill, provide Aurora weekly consumption, system size, and location coordinates. Authenticated via bearer token (JWT). The region will be automatically determined from coordinates. Returns estimated protocol deposit, carbon metrics, and efficiency scores. Wallet address is derived from the authenticated user.",
+              "Upload a utility bill, provide Aurora annual consumption, system size, and location coordinates. Authenticated via bearer token (JWT). The region will be automatically determined from coordinates. Returns estimated protocol deposit, carbon metrics, and efficiency scores. Wallet address is derived from the authenticated user.",
             tags: [TAG.APPLICATIONS],
           },
         }

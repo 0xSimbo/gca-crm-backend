@@ -16,12 +16,15 @@ async function testShawnaRealQuote() {
     },
     systemSizeKw: 18.96, // 18.96 kW-DC | 13.92 kW-AC
     annualConsumption: 19751, // kWh
-    weeklyConsumptionMWh: (19751 / 52 / 1000).toString(), // 0.3798
+    annualConsumptionMWh: (19751 / 1000).toString(), // 19.751
     numberOfPanels: 48,
     startDate: "02/23/2025",
     expectedElectricityPrice: 0.1126, // $0.1126/kWh from spreadsheet row 27
     expectedProtocolDeposit: 34871.46, // From spreadsheet row 14
   };
+
+  const weeklyConsumptionMWh =
+    parseFloat(projectData.annualConsumptionMWh) / (365.25 / 7);
 
   console.log("Project Details:");
   console.log("  Address:", projectData.address);
@@ -29,7 +32,12 @@ async function testShawnaRealQuote() {
   console.log("  System Size:", projectData.systemSizeKw, "kW");
   console.log("  Panels:", projectData.numberOfPanels);
   console.log("  Annual Consumption:", projectData.annualConsumption, "kWh");
-  console.log("  Weekly Consumption:", projectData.weeklyConsumptionMWh, "MWh");
+  console.log(
+    "  Annual Consumption:",
+    projectData.annualConsumptionMWh,
+    "MWh"
+  );
+  console.log("  Weekly Consumption (derived):", weeklyConsumptionMWh, "MWh");
   console.log(
     "  Expected Electricity Price: $" +
       projectData.expectedElectricityPrice.toFixed(4) +
@@ -80,7 +88,7 @@ async function testShawnaRealQuote() {
     console.log("\n=== Step 2: Compute Protocol Deposit ===");
 
     const quoteResult = await computeProjectQuote({
-      weeklyConsumptionMWh: parseFloat(projectData.weeklyConsumptionMWh),
+      weeklyConsumptionMWh,
       systemSizeKw: projectData.systemSizeKw,
       electricityPricePerKwh: extracted.result.pricePerKwh,
       latitude: projectData.coordinates.latitude,

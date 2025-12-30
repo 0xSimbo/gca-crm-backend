@@ -13,8 +13,8 @@
 
 import { readFileSync } from "fs";
 
-const API_URL = "http://localhost:3005";
-const BATCH_SIZE = Number.parseInt("5", 10);
+const API_URL = process.env.API_URL ?? "http://localhost:3005";
+const BATCH_SIZE = Number.parseInt(process.env.BATCH_SIZE ?? "5", 10);
 
 async function sleep(ms: number) {
   await new Promise((resolve) => setTimeout(resolve, ms));
@@ -53,7 +53,7 @@ async function main() {
   }
 
   const base = {
-    weeklyConsumptionMWh: "0.3798269230769231",
+    annualConsumptionMWh: "19.823456423076922",
     systemSizeKw: "18.96",
     latitude: "39.0707091494141",
     longitude: "-94.35609788750925",
@@ -65,7 +65,7 @@ async function main() {
   // ---- Single
   {
     const formData = new FormData();
-    formData.append("weeklyConsumptionMWh", base.weeklyConsumptionMWh);
+    formData.append("annualConsumptionMWh", base.annualConsumptionMWh);
     formData.append("systemSizeKw", base.systemSizeKw);
     formData.append("latitude", base.latitude);
     formData.append("longitude", base.longitude);

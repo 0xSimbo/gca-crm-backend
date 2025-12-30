@@ -89,7 +89,7 @@ All numeric inputs are sent as **strings**.
 
 ```json
 {
-  "weeklyConsumptionMWh": "0.3798",
+  "annualConsumptionMWh": "19.8235",
   "systemSizeKw": "0.01896",
   "latitude": "33.8938",
   "longitude": "35.5018",
@@ -105,7 +105,7 @@ curl -sS -X POST "https://api.glowlabs.org/quotes/project/lebanon" \
   -H "content-type: application/json" \
   -H "x-api-key: gq_..." \
   -d '{
-    "weeklyConsumptionMWh": "0.3798",
+    "annualConsumptionMWh": "19.8235",
     "systemSizeKw": "0.01896",
     "latitude": "33.8938",
     "longitude": "35.5018",
@@ -150,7 +150,7 @@ Send `requests` as an array (1–100 items). All numeric inputs are strings.
 {
   "requests": [
     {
-      "weeklyConsumptionMWh": "0.3798",
+      "annualConsumptionMWh": "19.8235",
       "systemSizeKw": "0.01896",
       "latitude": "33.8938",
       "longitude": "35.5018",
@@ -158,7 +158,7 @@ Send `requests` as an array (1–100 items). All numeric inputs are strings.
       "isProjectCompleted": false
     },
     {
-      "weeklyConsumptionMWh": "0.5000",
+      "annualConsumptionMWh": "26.0900",
       "systemSizeKw": "0.02500",
       "latitude": "34.4367",
       "longitude": "35.8497",
@@ -178,7 +178,7 @@ curl -sS -X POST "https://api.glowlabs.org/quotes/project/lebanon/batch" \
   -d '{
     "requests": [
       {
-        "weeklyConsumptionMWh": "0.3798",
+        "annualConsumptionMWh": "19.8235",
         "systemSizeKw": "0.01896",
         "latitude": "33.8938",
         "longitude": "35.5018",
@@ -186,7 +186,7 @@ curl -sS -X POST "https://api.glowlabs.org/quotes/project/lebanon/batch" \
         "isProjectCompleted": false
       },
       {
-        "weeklyConsumptionMWh": "0.5000",
+        "annualConsumptionMWh": "26.0900",
         "systemSizeKw": "0.02500",
         "latitude": "34.4367",
         "longitude": "35.8497",

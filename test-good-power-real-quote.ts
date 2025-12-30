@@ -11,9 +11,12 @@ async function testGoodPowerRealQuote() {
       longitude: -85.205,
     },
     systemSizeKw: 10.12,
-    weeklyConsumptionMWh: 0.276,
+    annualConsumptionMWh: (0.276 * (365.25 / 7)).toString(),
     expectedElectricityPrice: 0.1817, // $79.42 / 437 kWh (excludes income-based discounts)
   };
+
+  const weeklyConsumptionMWh =
+    parseFloat(projectData.annualConsumptionMWh) / (365.25 / 7);
 
   console.log("Project Details:");
   console.log(
@@ -23,7 +26,12 @@ async function testGoodPowerRealQuote() {
     projectData.coordinates.longitude
   );
   console.log("  System Size:", projectData.systemSizeKw, "kW");
-  console.log("  Weekly Consumption:", projectData.weeklyConsumptionMWh, "MWh");
+  console.log(
+    "  Annual Consumption:",
+    projectData.annualConsumptionMWh,
+    "MWh"
+  );
+  console.log("  Weekly Consumption (derived):", weeklyConsumptionMWh, "MWh");
   console.log(
     "  Expected Electricity Price: $" +
       projectData.expectedElectricityPrice.toFixed(4) +
@@ -69,7 +77,7 @@ async function testGoodPowerRealQuote() {
     console.log("\n=== Step 2: Compute Protocol Deposit ===");
 
     const quoteResult = await computeProjectQuote({
-      weeklyConsumptionMWh: projectData.weeklyConsumptionMWh,
+      weeklyConsumptionMWh,
       systemSizeKw: projectData.systemSizeKw,
       electricityPricePerKwh: extracted.result.pricePerKwh,
       latitude: projectData.coordinates.latitude,
