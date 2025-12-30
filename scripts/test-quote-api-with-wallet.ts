@@ -43,7 +43,7 @@ const API_URL =
   process.env.API_URL ?? "https://gca-crm-backend-production-1f2a.up.railway.app";
 
 interface QuoteRequestData {
-  weeklyConsumptionMWh: string;
+  annualConsumptionMWh: string;
   systemSizeKw: string;
   latitude: string;
   longitude: string;
@@ -136,7 +136,7 @@ async function testQuoteAPIWithWallet() {
 
   // Prepare quote data
   const quoteData: QuoteRequestData = {
-    weeklyConsumptionMWh: "0.3798269230769231",
+    annualConsumptionMWh: "19.823456423076922",
     systemSizeKw: "18.96",
     latitude: "39.0707091494141",
     longitude: "-94.35609788750925",
@@ -144,7 +144,15 @@ async function testQuoteAPIWithWallet() {
   };
 
   // Create message and sign it
-  const messageToSign = createMessageToSign(quoteData);
+  const messageToSign = createMessageToSign({
+    // createMessageToSign expects the first segment as `weeklyConsumptionMWh`,
+    // but our API now signs annualConsumptionMWh in that position.
+    weeklyConsumptionMWh: quoteData.annualConsumptionMWh,
+    systemSizeKw: quoteData.systemSizeKw,
+    latitude: quoteData.latitude,
+    longitude: quoteData.longitude,
+    timestamp: quoteData.timestamp,
+  });
   const signature = await wallet.signMessage(messageToSign);
 
   // Load utility bill
@@ -153,7 +161,7 @@ async function testQuoteAPIWithWallet() {
 
   // Prepare form data
   const formData = new FormData();
-  formData.append("weeklyConsumptionMWh", quoteData.weeklyConsumptionMWh);
+  formData.append("annualConsumptionMWh", quoteData.annualConsumptionMWh);
   formData.append("systemSizeKw", quoteData.systemSizeKw);
   formData.append("latitude", quoteData.latitude);
   formData.append("longitude", quoteData.longitude);

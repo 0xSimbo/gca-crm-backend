@@ -11,9 +11,12 @@ async function testBoutiqueRealQuote() {
       latitude: 28.02552,
       longitude: 73.05934,
     },
-    weeklyConsumptionMWh: 0.7, // MWh (provided)
+    annualConsumptionMWh: (0.7 * (365.25 / 7)).toString(),
     systemSizeKw: 700, // 0.7 MW
   };
+
+  const weeklyConsumptionMWh =
+    parseFloat(projectData.annualConsumptionMWh) / (365.25 / 7);
 
   console.log("Project Details:");
   console.log(
@@ -22,7 +25,12 @@ async function testBoutiqueRealQuote() {
     ",",
     projectData.coordinates.longitude
   );
-  console.log("  Weekly Consumption:", projectData.weeklyConsumptionMWh, "MWh");
+  console.log(
+    "  Annual Consumption:",
+    projectData.annualConsumptionMWh,
+    "MWh"
+  );
+  console.log("  Weekly Consumption (derived):", weeklyConsumptionMWh, "MWh");
   console.log("  System Size:", projectData.systemSizeKw, "kW\n");
 
   // Step 1: Test PDF extraction
@@ -53,7 +61,7 @@ async function testBoutiqueRealQuote() {
     console.log("\n=== Step 2: Compute Protocol Deposit ===");
 
     const quoteResult = await computeProjectQuote({
-      weeklyConsumptionMWh: projectData.weeklyConsumptionMWh,
+      weeklyConsumptionMWh,
       systemSizeKw: projectData.systemSizeKw,
       electricityPricePerKwh: extracted.result.pricePerKwh,
       latitude: projectData.coordinates.latitude,

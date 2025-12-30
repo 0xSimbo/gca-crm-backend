@@ -38,7 +38,7 @@ async function main() {
   const wallet = new Wallet(privateKey);
 
   const base = {
-    weeklyConsumptionMWh: "0.3798269230769231",
+    annualConsumptionMWh: "19.823456423076922",
     systemSizeKw: "18.96",
     latitude: "39.0707091494141",
     longitude: "-94.35609788750925",
@@ -50,7 +50,13 @@ async function main() {
   const requests = await Promise.all(
     Array.from({ length: BATCH_SIZE }).map(async (_, index) => {
       const timestamp = Date.now() + index;
-      const messageToSign = createMessageToSign({ ...base, timestamp });
+      const messageToSign = createMessageToSign({
+        weeklyConsumptionMWh: base.annualConsumptionMWh,
+        systemSizeKw: base.systemSizeKw,
+        latitude: base.latitude,
+        longitude: base.longitude,
+        timestamp,
+      });
       const signature = await wallet.signMessage(messageToSign);
 
       return {

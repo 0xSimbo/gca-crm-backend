@@ -28,7 +28,7 @@ import { findQuoteApiKeyByHash } from "../../db/queries/quote-api-keys/findQuote
 import { createHash, randomBytes } from "crypto";
 
 interface QuoteProjectRequest {
-  weeklyConsumptionMWh: string;
+  annualConsumptionMWh: string;
   systemSizeKw: string;
   latitude: string;
   longitude: string;
@@ -44,7 +44,7 @@ interface QuoteProjectRequest {
 }
 
 interface LebanonQuoteProjectRequest {
-  weeklyConsumptionMWh: string;
+  annualConsumptionMWh: string;
   systemSizeKw: string;
   latitude: string;
   longitude: string;
@@ -54,6 +54,8 @@ interface LebanonQuoteProjectRequest {
   isProjectCompleted?: boolean | string;
 }
 
+const WEEKS_PER_YEAR = 52.18; // 365.25 / 7 (must match computeProjectQuote conversion)
+
 const LEBANON_ELECTRICITY_PRICE_PER_KWH = 0.3474;
 const LEBANON_REGION_CODE = "LB";
 const LEBANON_UTILITY_BILL_URL_SENTINEL = "lebanon-fixed-rate";
@@ -61,8 +63,8 @@ const LEBANON_ESCALATOR_RATE = 0.0331;
 const LEBANON_RATE_LIMIT_PER_HOUR = 500;
 
 const quoteProjectRequestSchema = t.Object({
-  weeklyConsumptionMWh: t.String({
-    description: "Weekly energy consumption in MWh (from Aurora)",
+  annualConsumptionMWh: t.String({
+    description: "Annual energy consumption in MWh (from Aurora)",
   }),
   systemSizeKw: t.String({
     description: "System size in kW (nameplate capacity)",
@@ -82,7 +84,7 @@ const quoteProjectRequestSchema = t.Object({
   signature: t.Optional(
     t.String({
       description:
-        "Wallet signature of message: weeklyConsumptionMWh,systemSizeKw,latitude,longitude,timestamp (required for wallet-signed auth)",
+        "Wallet signature of message: annualConsumptionMWh,systemSizeKw,latitude,longitude,timestamp (required for wallet-signed auth)",
       minLength: 132,
       maxLength: 132,
     })
@@ -114,8 +116,8 @@ const quoteProjectRequestSchema = t.Object({
 });
 
 const lebanonQuoteProjectRequestSchema = t.Object({
-  weeklyConsumptionMWh: t.String({
-    description: "Weekly energy consumption in MWh (from Aurora)",
+  annualConsumptionMWh: t.String({
+    description: "Annual energy consumption in MWh (from Aurora)",
   }),
   systemSizeKw: t.String({
     description: "System size in kW (nameplate capacity)",
@@ -135,7 +137,7 @@ const lebanonQuoteProjectRequestSchema = t.Object({
   signature: t.Optional(
     t.String({
       description:
-        "Wallet signature of message: weeklyConsumptionMWh,systemSizeKw,latitude,longitude,timestamp (required for wallet-signed auth)",
+        "Wallet signature of message: annualConsumptionMWh,systemSizeKw,latitude,longitude,timestamp (required for wallet-signed auth)",
       minLength: 132,
       maxLength: 132,
     })
@@ -287,7 +289,8 @@ async function createProjectQuoteFromRequest(args: {
     try {
       walletAddress = verifyQuoteSignature(
         {
-          weeklyConsumptionMWh: request.weeklyConsumptionMWh,
+          // Signature message now uses annualConsumptionMWh as the first segment.
+          weeklyConsumptionMWh: request.annualConsumptionMWh,
           systemSizeKw: request.systemSizeKw,
           latitude: request.latitude,
           longitude: request.longitude,
@@ -306,13 +309,15 @@ async function createProjectQuoteFromRequest(args: {
     userId = await mapWalletToUserId(walletAddress);
   }
 
-  const weeklyConsumptionMWh = parseStrictFloat(
-    request.weeklyConsumptionMWh,
-    "weeklyConsumptionMWh"
+  const annualConsumptionMWh = parseStrictFloat(
+    request.annualConsumptionMWh,
+    "annualConsumptionMWh"
   );
-  if (weeklyConsumptionMWh <= 0) {
-    throw new Error("weeklyConsumptionMWh must be a positive number");
+  if (annualConsumptionMWh <= 0) {
+    throw new Error("annualConsumptionMWh must be a positive number");
   }
+
+  const weeklyConsumptionMWh = annualConsumptionMWh / WEEKS_PER_YEAR;
 
   const systemSizeKw = parseStrictFloat(request.systemSizeKw, "systemSizeKw");
   if (systemSizeKw <= 0) {
@@ -417,7 +422,7 @@ async function createProjectQuoteFromRequest(args: {
         regionCode,
         latitude: latitude.toString(),
         longitude: longitude.toString(),
-        weeklyConsumptionMWh: weeklyConsumptionMWh.toString(),
+        weeklyConsumptionMWh: weeklyConsumptionMWh.toString(), // DB stores weekly; request is annual
         systemSizeKw: systemSizeKw.toString(),
         electricityPricePerKwh: priceExtraction.pricePerKwh.toString(),
         priceSource: "ai",
@@ -511,7 +516,8 @@ async function createLebanonProjectQuoteFromRequest(args: {
     try {
       walletAddress = verifyQuoteSignature(
         {
-          weeklyConsumptionMWh: request.weeklyConsumptionMWh,
+          // Signature message now uses annualConsumptionMWh as the first segment.
+          weeklyConsumptionMWh: request.annualConsumptionMWh,
           systemSizeKw: request.systemSizeKw,
           latitude: request.latitude,
           longitude: request.longitude,
@@ -530,13 +536,15 @@ async function createLebanonProjectQuoteFromRequest(args: {
     userId = await mapWalletToUserId(walletAddress);
   }
 
-  const weeklyConsumptionMWh = parseStrictFloat(
-    request.weeklyConsumptionMWh,
-    "weeklyConsumptionMWh"
+  const annualConsumptionMWh = parseStrictFloat(
+    request.annualConsumptionMWh,
+    "annualConsumptionMWh"
   );
-  if (weeklyConsumptionMWh <= 0) {
-    throw new Error("weeklyConsumptionMWh must be a positive number");
+  if (annualConsumptionMWh <= 0) {
+    throw new Error("annualConsumptionMWh must be a positive number");
   }
+
+  const weeklyConsumptionMWh = annualConsumptionMWh / WEEKS_PER_YEAR;
 
   const systemSizeKw = parseStrictFloat(request.systemSizeKw, "systemSizeKw");
   if (systemSizeKw <= 0) {
@@ -580,7 +588,7 @@ async function createLebanonProjectQuoteFromRequest(args: {
         regionCode: LEBANON_REGION_CODE,
         latitude: latitude.toString(),
         longitude: longitude.toString(),
-        weeklyConsumptionMWh: weeklyConsumptionMWh.toString(),
+        weeklyConsumptionMWh: weeklyConsumptionMWh.toString(), // DB stores weekly; request is annual
         systemSizeKw: systemSizeKw.toString(),
         electricityPricePerKwh: LEBANON_ELECTRICITY_PRICE_PER_KWH.toString(),
         priceSource: "blended",
@@ -916,7 +924,8 @@ export const quotesRouter = new Elysia({ prefix: "/quotes" })
             try {
               recovered = verifyQuoteSignature(
                 {
-                  weeklyConsumptionMWh: request.weeklyConsumptionMWh,
+                  // Signature message now uses annualConsumptionMWh as the first segment.
+                  weeklyConsumptionMWh: request.annualConsumptionMWh,
                   systemSizeKw: request.systemSizeKw,
                   latitude: request.latitude,
                   longitude: request.longitude,
@@ -1316,7 +1325,8 @@ export const quotesRouter = new Elysia({ prefix: "/quotes" })
             try {
               recovered = verifyQuoteSignature(
                 {
-                  weeklyConsumptionMWh: request.weeklyConsumptionMWh,
+                  // Signature message now uses annualConsumptionMWh as the first segment.
+                  weeklyConsumptionMWh: request.annualConsumptionMWh,
                   systemSizeKw: request.systemSizeKw,
                   latitude: request.latitude,
                   longitude: request.longitude,
@@ -1502,8 +1512,8 @@ export const quotesRouter = new Elysia({ prefix: "/quotes" })
     },
     {
       body: t.Object({
-        weeklyConsumptionMWh: t.String({
-          description: "Weekly energy consumption in MWh (from Aurora)",
+        annualConsumptionMWh: t.String({
+          description: "Annual energy consumption in MWh (from Aurora)",
         }),
         systemSizeKw: t.String({
           description: "System size in kW (nameplate capacity)",
@@ -1526,7 +1536,7 @@ export const quotesRouter = new Elysia({ prefix: "/quotes" })
         signature: t.Optional(
           t.String({
             description:
-              "Wallet signature of message: weeklyConsumptionMWh,systemSizeKw,latitude,longitude,timestamp (required for wallet-signed auth)",
+              "Wallet signature of message: annualConsumptionMWh,systemSizeKw,latitude,longitude,timestamp (required for wallet-signed auth)",
             minLength: 132,
             maxLength: 132,
           })
@@ -1560,7 +1570,7 @@ export const quotesRouter = new Elysia({ prefix: "/quotes" })
         summary:
           "Create a project quote (wallet signature auth or API key auth)",
         description:
-          "Upload a utility bill, provide Aurora weekly consumption, system size, and location coordinates. Authenticate via wallet signature (timestamp+signature) or via API key (x-api-key header). Returns estimated protocol deposit, carbon metrics, and efficiency scores.",
+          "Upload a utility bill, provide Aurora annual consumption, system size, and location coordinates. Authenticate via wallet signature (timestamp+signature) or via API key (x-api-key header). Returns estimated protocol deposit, carbon metrics, and efficiency scores.",
         tags: [TAG.APPLICATIONS],
       },
     }

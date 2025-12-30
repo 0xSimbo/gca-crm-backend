@@ -48,7 +48,7 @@ async function main() {
   console.log("[lebanon-api-key] created apiKey for org:", orgName);
 
   const base = {
-    weeklyConsumptionMWh: "0.3798269230769231",
+    annualConsumptionMWh: "19.823456423076922",
     systemSizeKw: "18.96",
     latitude: "33.8938",
     longitude: "35.5018",

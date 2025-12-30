@@ -23,18 +23,18 @@ Content-Type: multipart/form-data
 
 ### Body Parameters
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `weeklyConsumptionMWh` | string | Yes | Weekly energy consumption in MWh (from Aurora) |
-| `systemSizeKw` | string | Yes | System size in kW (nameplate capacity) |
-| `latitude` | string | Yes | Latitude of the solar farm location |
-| `longitude` | string | Yes | Longitude of the solar farm location |
-| `utilityBill` | File | Yes | Utility bill PDF for price extraction (max 10MB) |
-| `metadata` | string | No | Optional metadata for identifying the quote (e.g., farm owner name, project ID) |
+| Field                  | Type   | Required | Description                                                                     |
+| ---------------------- | ------ | -------- | ------------------------------------------------------------------------------- |
+| `annualConsumptionMWh` | string | Yes      | Annual energy consumption in MWh (from Aurora)                                  |
+| `systemSizeKw`         | string | Yes      | System size in kW (nameplate capacity)                                          |
+| `latitude`             | string | Yes      | Latitude of the solar farm location                                             |
+| `longitude`            | string | Yes      | Longitude of the solar farm location                                            |
+| `utilityBill`          | File   | Yes      | Utility bill PDF for price extraction (max 10MB)                                |
+| `metadata`             | string | No       | Optional metadata for identifying the quote (e.g., farm owner name, project ID) |
 
 ### Constraints
 
-- `weeklyConsumptionMWh`: Must be a positive number
+- `annualConsumptionMWh`: Must be a positive number
 - `systemSizeKw`: Must be a positive number
 - `latitude`: Valid latitude (-90 to 90)
 - `longitude`: Valid longitude (-180 to 180)
@@ -88,14 +88,16 @@ Content-Type: multipart/form-data
 ### Error Responses
 
 #### 400 Bad Request
+
 ```json
 {
-  "error": "weeklyConsumptionMWh must be a positive number"
+  "error": "annualConsumptionMWh must be a positive number"
 }
 ```
 
 Common validation errors:
-- Invalid or negative `weeklyConsumptionMWh`
+
+- Invalid or negative `annualConsumptionMWh`
 - Invalid or negative `systemSizeKw`
 - Invalid coordinates
 - Unsupported region (coordinates outside supported areas)
@@ -104,6 +106,7 @@ Common validation errors:
 - File size exceeds 10MB
 
 #### 401 Unauthorized
+
 ```json
 {
   "error": "Invalid or missing bearer token"
@@ -111,6 +114,7 @@ Common validation errors:
 ```
 
 #### 429 Too Many Requests
+
 ```json
 {
   "error": "Rate limit exceeded. The system can process a maximum of 100 quotes per hour. Please try again later."
@@ -118,6 +122,7 @@ Common validation errors:
 ```
 
 #### 500 Internal Server Error
+
 ```json
 {
   "error": "Internal server error"
@@ -131,27 +136,30 @@ Common validation errors:
 ```javascript
 async function createProjectQuote(authToken, quoteData) {
   const formData = new FormData();
-  formData.append('weeklyConsumptionMWh', quoteData.weeklyConsumptionMWh);
-  formData.append('systemSizeKw', quoteData.systemSizeKw);
-  formData.append('latitude', quoteData.latitude);
-  formData.append('longitude', quoteData.longitude);
-  formData.append('utilityBill', quoteData.utilityBillFile);
-  
+  formData.append("annualConsumptionMWh", quoteData.annualConsumptionMWh);
+  formData.append("systemSizeKw", quoteData.systemSizeKw);
+  formData.append("latitude", quoteData.latitude);
+  formData.append("longitude", quoteData.longitude);
+  formData.append("utilityBill", quoteData.utilityBillFile);
+
   if (quoteData.metadata) {
-    formData.append('metadata', quoteData.metadata);
+    formData.append("metadata", quoteData.metadata);
   }
 
-  const response = await fetch('https://your-api.com/applications/project-quote', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${authToken}`
-    },
-    body: formData
-  });
+  const response = await fetch(
+    "https://your-api.com/applications/project-quote",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${authToken}`,
+      },
+      body: formData,
+    }
+  );
 
   if (!response.ok) {
     const error = await response.json();
-    throw new Error(error.error || 'Failed to create quote');
+    throw new Error(error.error || "Failed to create quote");
   }
 
   return await response.json();
@@ -159,19 +167,19 @@ async function createProjectQuote(authToken, quoteData) {
 
 // Usage
 try {
-  const quote = await createProjectQuote('your-jwt-token', {
-    weeklyConsumptionMWh: '5.2',
-    systemSizeKw: '100',
-    latitude: '37.7749',
-    longitude: '-122.4194',
+  const quote = await createProjectQuote("your-jwt-token", {
+    annualConsumptionMWh: "271.336",
+    systemSizeKw: "100",
+    latitude: "37.7749",
+    longitude: "-122.4194",
     utilityBillFile: pdfFile, // File object from input
-    metadata: 'John Doe Farm Project'
+    metadata: "John Doe Farm Project",
   });
-  
-  console.log('Quote created:', quote.quoteId);
-  console.log('Protocol deposit:', quote.protocolDeposit.usd, 'USD');
+
+  console.log("Quote created:", quote.quoteId);
+  console.log("Protocol deposit:", quote.protocolDeposit.usd, "USD");
 } catch (error) {
-  console.error('Error:', error.message);
+  console.error("Error:", error.message);
 }
 ```
 
@@ -182,42 +190,42 @@ import requests
 
 def create_project_quote(auth_token, quote_data):
     url = 'https://your-api.com/applications/project-quote'
-    
+
     headers = {
         'Authorization': f'Bearer {auth_token}'
     }
-    
+
     files = {
         'utilityBill': ('bill.pdf', quote_data['utility_bill_file'], 'application/pdf')
     }
-    
+
     data = {
-        'weeklyConsumptionMWh': quote_data['weekly_consumption_mwh'],
+        'annualConsumptionMWh': quote_data['annual_consumption_mwh'],
         'systemSizeKw': quote_data['system_size_kw'],
         'latitude': quote_data['latitude'],
         'longitude': quote_data['longitude']
     }
-    
+
     if 'metadata' in quote_data:
         data['metadata'] = quote_data['metadata']
-    
+
     response = requests.post(url, headers=headers, files=files, data=data)
     response.raise_for_status()
-    
+
     return response.json()
 
 # Usage
 try:
     with open('utility_bill.pdf', 'rb') as bill_file:
         quote = create_project_quote('your-jwt-token', {
-            'weekly_consumption_mwh': '5.2',
+            'annual_consumption_mwh': '271.336',
             'system_size_kw': '100',
             'latitude': '37.7749',
             'longitude': '-122.4194',
             'utility_bill_file': bill_file,
             'metadata': 'John Doe Farm Project'
         })
-    
+
     print(f"Quote created: {quote['quoteId']}")
     print(f"Protocol deposit: ${quote['protocolDeposit']['usd']}")
 except requests.exceptions.HTTPError as e:
@@ -229,7 +237,7 @@ except requests.exceptions.HTTPError as e:
 ```bash
 curl -X POST https://your-api.com/applications/project-quote \
   -H "Authorization: Bearer YOUR_JWT_TOKEN" \
-  -F "weeklyConsumptionMWh=5.2" \
+  -F "annualConsumptionMWh=271.336" \
   -F "systemSizeKw=100" \
   -F "latitude=37.7749" \
   -F "longitude=-122.4194" \
@@ -239,14 +247,14 @@ curl -X POST https://your-api.com/applications/project-quote \
 
 ## Key Differences from `/quotes/project`
 
-| Feature | `/quotes/project` (Public) | `/applications/project-quote` (Bearer) |
-|---------|---------------------------|---------------------------------------|
-| Authentication | Wallet signature | Bearer token (JWT) |
-| Wallet Address | Recovered from signature | Derived from authenticated userId |
-| Timestamp Required | Yes | No |
-| Signature Required | Yes | No |
-| Mock Overrides | Available in staging | Not available |
-| Intended Use | External API consumers | Hub frontend only |
+| Feature            | `/quotes/project` (Public) | `/applications/project-quote` (Bearer) |
+| ------------------ | -------------------------- | -------------------------------------- |
+| Authentication     | Wallet signature           | Bearer token (JWT)                     |
+| Wallet Address     | Recovered from signature   | Derived from authenticated userId      |
+| Timestamp Required | Yes                        | No                                     |
+| Signature Required | Yes                        | No                                     |
+| Mock Overrides     | Available in staging       | Not available                          |
+| Intended Use       | External API consumers     | Hub frontend only                      |
 
 ## Notes
 
@@ -264,4 +272,3 @@ curl -X POST https://your-api.com/applications/project-quote \
 4. **Check file size** before upload to avoid unnecessary requests
 5. **Verify PDF format** client-side before submission
 6. **Implement loading states** as the endpoint may take several seconds due to PDF processing
-

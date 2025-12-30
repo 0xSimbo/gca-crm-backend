@@ -17,7 +17,7 @@ Submit a quote request with utility bill and farm specifications.
 **Required Fields:**
 
 - `regionCode`: Region code from regionMetadata
-- `weeklyConsumptionMWh`: Weekly energy consumption in MWh (from Aurora Solar)
+- `annualConsumptionMWh`: Annual energy consumption in MWh (from Aurora Solar)
 - `systemSizeKw`: System nameplate capacity in kW
 - `latitude`, `longitude`: Farm location coordinates
 - `utilityBill`: Utility bill PDF (max 10MB)
@@ -52,7 +52,7 @@ PV = CF1 × (1 - ((1+g)/(1+r))^N) / (r - g)
 
 Where:
 
-- `CF1` = First year cash flow = `weeklyConsumptionMWh × 1000 × pricePerKwh × 52.18`
+- `CF1` = First year cash flow = `annualConsumptionMWh × 1000 × pricePerKwh`
   - Note: Uses 52.18 weeks per year (365.25 days ÷ 7) for accuracy
 - `r` = Discount rate (from `protocolFeeAssumptions.cashflowDiscount` = 0.055 or 5.5%)
 - `g` = Escalator rate (state-specific, default 0.0331 or 3.31%)
@@ -124,7 +124,7 @@ Electricity prices are extracted from utility bills using the **Google Gen AI SD
 #### Weekly Carbon Credits
 
 ```
-weeklyCredits = weeklyConsumptionMWh × carbonOffsetsPerMwh × (1 - uncertaintyMultiplier)
+weeklyCredits = (annualConsumptionMWh / 52.18) × carbonOffsetsPerMwh × (1 - uncertaintyMultiplier)
 ```
 
 Where:
@@ -170,7 +170,7 @@ Source: `src/constants/protocol-fee-assumptions.ts`
 
 ```
 netWeeklyCc = max(0, weeklyCredits - weeklyDebt)
-netCcPerMwh = netWeeklyCc / weeklyConsumptionMWh
+netCcPerMwh = netWeeklyCc / (annualConsumptionMWh / 52.18)
 ```
 
 ### 4. Efficiency Score
@@ -224,7 +224,7 @@ All quotes are persisted to the `non_account_quotes` table:
 
 **Input Validation:**
 
-- `weeklyConsumptionMWh > 0`
+- `annualConsumptionMWh > 0`
 - `systemSizeKw > 0`
 - Valid latitude/longitude ranges
 - Region code must exist in SDK metadata

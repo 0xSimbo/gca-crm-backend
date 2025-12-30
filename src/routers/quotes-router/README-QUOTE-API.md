@@ -63,7 +63,7 @@ Create a new quote using **either** wallet signature auth **or** API key auth (`
 
 **Required Fields:**
 
-- `weeklyConsumptionMWh` (string): Weekly energy consumption in MWh
+- `annualConsumptionMWh` (string): Annual energy consumption in MWh
 - `systemSizeKw` (string): Solar system size in kW
 - `latitude` (string): Location latitude
 - `longitude` (string): Location longitude
@@ -85,10 +85,10 @@ Create a new quote using **either** wallet signature auth **or** API key auth (`
 **Message to Sign:**
 
 ```
-{weeklyConsumptionMWh},{systemSizeKw},{latitude},{longitude},{timestamp}
+{annualConsumptionMWh},{systemSizeKw},{latitude},{longitude},{timestamp}
 ```
 
-Example: `0.3798,0.01896,39.0707,-94.3561,1699564800000`
+Example: `19.8235,0.01896,39.0707,-94.3561,1699564800000`
 
 ### 2b. Create Lebanon Project Quote (Fixed Rate, No Utility Bill)
 
@@ -102,7 +102,7 @@ Create a new **Lebanon** quote using a fixed blended electricity rate of **0.347
 
 **Required Fields:**
 
-- `weeklyConsumptionMWh` (string): Weekly energy consumption in MWh
+- `annualConsumptionMWh` (string): Annual energy consumption in MWh
 - `systemSizeKw` (string): Solar system size in kW
 - `latitude` (string): Location latitude
 - `longitude` (string): Location longitude
@@ -123,7 +123,7 @@ Create a new **Lebanon** quote using a fixed blended electricity rate of **0.347
 **Message to Sign (wallet auth):**
 
 ```
-{weeklyConsumptionMWh},{systemSizeKw},{latitude},{longitude},{timestamp}
+{annualConsumptionMWh},{systemSizeKw},{latitude},{longitude},{timestamp}
 ```
 
 **Response notes:**
@@ -379,7 +379,7 @@ const wallet = new Wallet(process.env.PRIVATE_KEY);
 
 // Prepare quote data
 const quoteData = {
-  weeklyConsumptionMWh: "0.3798",
+  annualConsumptionMWh: "19.8235",
   systemSizeKw: "0.01896",
   latitude: "39.0707",
   longitude: "-94.3561",
@@ -387,14 +387,14 @@ const quoteData = {
 };
 
 // Create message to sign
-const message = `${quoteData.weeklyConsumptionMWh},${quoteData.systemSizeKw},${quoteData.latitude},${quoteData.longitude},${quoteData.timestamp}`;
+const message = `${quoteData.annualConsumptionMWh},${quoteData.systemSizeKw},${quoteData.latitude},${quoteData.longitude},${quoteData.timestamp}`;
 
 // Sign the message
 const signature = await wallet.signMessage(message);
 
 // Prepare form data
 const formData = new FormData();
-formData.append("weeklyConsumptionMWh", quoteData.weeklyConsumptionMWh);
+formData.append("annualConsumptionMWh", quoteData.annualConsumptionMWh);
 formData.append("systemSizeKw", quoteData.systemSizeKw);
 formData.append("latitude", quoteData.latitude);
 formData.append("longitude", quoteData.longitude);
@@ -473,14 +473,14 @@ const wallet = new Wallet(process.env.PRIVATE_KEY);
 
 const timestamp = Date.now();
 const body = {
-  weeklyConsumptionMWh: "0.3798",
+  annualConsumptionMWh: "19.8235",
   systemSizeKw: "0.01896",
   latitude: "33.8938",
   longitude: "35.5018",
   timestamp: timestamp.toString(),
 };
 
-const message = `${body.weeklyConsumptionMWh},${body.systemSizeKw},${body.latitude},${body.longitude},${timestamp}`;
+const message = `${body.annualConsumptionMWh},${body.systemSizeKw},${body.latitude},${body.longitude},${timestamp}`;
 const signature = await wallet.signMessage(message);
 
 const response = await fetch(
@@ -506,13 +506,13 @@ const wallet = new Wallet(process.env.PRIVATE_KEY);
 
 const items = [
   {
-    weeklyConsumptionMWh: "0.3798",
+    annualConsumptionMWh: "19.8235",
     systemSizeKw: "0.01896",
     latitude: "39.0707",
     longitude: "-94.3561",
   },
   {
-    weeklyConsumptionMWh: "0.5000",
+    annualConsumptionMWh: "26.0900",
     systemSizeKw: "0.02500",
     latitude: "37.7749",
     longitude: "-122.4194",
@@ -522,7 +522,7 @@ const items = [
 const requests = await Promise.all(
   items.map(async (item) => {
     const timestamp = Date.now().toString();
-    const message = `${item.weeklyConsumptionMWh},${item.systemSizeKw},${item.latitude},${item.longitude},${timestamp}`;
+    const message = `${item.annualConsumptionMWh},${item.systemSizeKw},${item.latitude},${item.longitude},${timestamp}`;
     const signature = await wallet.signMessage(message);
 
     return {

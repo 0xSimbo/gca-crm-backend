@@ -45,6 +45,7 @@ async function testSoniRealQuote() {
     projectData.dcCapacityMw,
     averageSunlightHoursPerDay
   );
+  const annualConsumptionMWh = weeklyConsumptionMWh * WEEKS_PER_YEAR;
   const systemSizeKw = projectData.dcCapacityMw * KW_PER_MW;
 
   console.log("Derived Inputs:");
@@ -53,7 +54,8 @@ async function testSoniRealQuote() {
     averageSunlightHoursPerDay.toFixed(2),
     "hrs/day"
   );
-  console.log("  Weekly Consumption:", weeklyConsumptionMWh.toFixed(4), "MWh");
+  console.log("  Annual Consumption:", annualConsumptionMWh.toFixed(4), "MWh");
+  console.log("  Weekly Consumption (derived):", weeklyConsumptionMWh.toFixed(4), "MWh");
   console.log("  System Size:", systemSizeKw.toFixed(0), "kW\n");
 
   // Step 1: Test PDF extraction

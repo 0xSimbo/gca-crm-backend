@@ -27,14 +27,16 @@ async function main() {
 
   const timestamp = Date.now();
   const request = {
-    weeklyConsumptionMWh: "0.3798269230769231",
+    annualConsumptionMWh: "19.823456423076922",
     systemSizeKw: "18.96",
     latitude: "39.0707091494141",
     longitude: "-94.35609788750925",
     timestamp: timestamp.toString(),
     signature: await wallet.signMessage(
       createMessageToSign({
-        weeklyConsumptionMWh: "0.3798269230769231",
+        // createMessageToSign expects the first segment as `weeklyConsumptionMWh`,
+        // but our API now signs annualConsumptionMWh in that position.
+        weeklyConsumptionMWh: "19.823456423076922",
         systemSizeKw: "18.96",
         latitude: "39.0707091494141",
         longitude: "-94.35609788750925",
@@ -48,7 +50,7 @@ async function main() {
   const pdfBuffer = readFileSync(pdfPath);
 
   const formData = new FormData();
-  formData.append("weeklyConsumptionMWh", request.weeklyConsumptionMWh);
+  formData.append("annualConsumptionMWh", request.annualConsumptionMWh);
   formData.append("systemSizeKw", request.systemSizeKw);
   formData.append("latitude", request.latitude);
   formData.append("longitude", request.longitude);
