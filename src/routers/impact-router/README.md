@@ -309,13 +309,13 @@ Computes Glow Impact Score using:
 Notes:
 
 - **Steering (GCTL → “GLW steered”)**:
-  - Uses global region reward distribution from Control API: `GET /rewards/glw/regions`
-  - Uses wallet per-region stake totals from Control API: `GET /wallets/address/:wallet`
-  - For each region, compute wallet share:
-    - `walletShare = walletRegionStake / regionTotalStake`
+  - Uses epoch-specific region reward distribution from Control API: `GET /regions/rewards/glw/regions?epoch=<week>`
+  - Uses epoch-specific wallet per-region stake snapshots from Control API: `GET /wallets/address/:wallet/stake-by-epoch?startEpoch=<start>&endEpoch=<end>`
+  - For each week/epoch and each region, compute wallet share:
+    - `walletShare = walletRegionStakeWei / regionTotalStakeWei`
     - `walletSteeredGlwWei = regionGlwRewardWei * walletShare`
-  - Sum across regions to get `steeringGlwWei` per week.
-  - Current implementation uses the **current stake snapshot** across the queried week range (no historical stake-by-week yet).
+  - Sum across regions to get `steeringGlwWei` for that week.
+  - If these Control API endpoints are unavailable, the backend falls back to the **current stake snapshot** method.
 - **Unclaimed rewards**:
   - Derived from Control API weekly rewards minus claim rows fetched from the claims API (`https://glow-ponder-listener-2-production.up.railway.app`).
 
