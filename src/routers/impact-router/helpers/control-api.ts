@@ -66,6 +66,21 @@ interface RegionRewardsResponse {
   }>;
 }
 
+interface WalletStakeByEpochResponse {
+  wallet: string;
+  weekRange: { startWeek: number; endWeek: number };
+  results: Array<{
+    epoch: number;
+    regions: Array<{
+      regionId: number;
+      totalStaked: string;
+      pendingUnstake: string;
+      pendingRestakeOut: string;
+      pendingRestakeIn: string;
+    }>;
+  }>;
+}
+
 let cachedRegionRewards: {
   data: RegionRewardsResponse;
   expiresAtMs: number;
@@ -193,6 +208,66 @@ export async function fetchWalletRewardsHistoryMany(params: {
   return result;
 }
 
+const cachedRegionRewardsByEpoch = new Map<
+  number,
+  { data: RegionRewardsResponse; expiresAtMs: number }
+>();
+
+async function getRegionRewardsAtEpoch(params: {
+  epoch: number;
+  ttlMs?: number;
+}): Promise<RegionRewardsResponse> {
+  const { epoch, ttlMs = 30_000 } = params;
+  const now = Date.now();
+  const cached = cachedRegionRewardsByEpoch.get(epoch);
+  if (cached && now < cached.expiresAtMs) return cached.data;
+
+  const response = await fetch(
+    `${getControlApiUrl()}/regions/rewards/glw/regions?epoch=${epoch}`
+  );
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    throw new Error(
+      `Control API region rewards (epoch=${epoch}) failed (${response.status}): ${text}`
+    );
+  }
+  const data = (await response.json()) as RegionRewardsResponse;
+  cachedRegionRewardsByEpoch.set(epoch, { data, expiresAtMs: now + ttlMs });
+  return data;
+}
+
+async function getWalletStakeByEpoch(params: {
+  walletAddress: string;
+  startWeek: number;
+  endWeek: number;
+}): Promise<Map<number, Array<{ regionId: number; totalStakedWei: bigint }>>> {
+  const wallet = params.walletAddress.toLowerCase();
+  const response = await fetch(
+    `${getControlApiUrl()}/wallets/address/${wallet}/stake-by-epoch?startEpoch=${
+      params.startWeek
+    }&endEpoch=${params.endWeek}`
+  );
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    throw new Error(
+      `Control API wallet stake-by-epoch failed (${response.status}): ${text}`
+    );
+  }
+  const data = (await response.json()) as WalletStakeByEpochResponse;
+  const map = new Map<
+    number,
+    Array<{ regionId: number; totalStakedWei: bigint }>
+  >();
+  for (const row of data.results || []) {
+    const regions = (row.regions || []).map((r) => ({
+      regionId: r.regionId,
+      totalStakedWei: BigInt(r.totalStaked || "0"),
+    }));
+    map.set(row.epoch, regions);
+  }
+  return map;
+}
+
 export async function getUnclaimedGlwRewardsWei(
   walletAddress: string
 ): Promise<UnclaimedGlwRewardsResult> {
@@ -271,11 +346,55 @@ export async function getGctlSteeringByWeekWei(params: {
 }): Promise<SteeringByWeekResult> {
   const { walletAddress, startWeek, endWeek } = params;
 
-  const snapshot = await getSteeringSnapshot(walletAddress);
   const byWeek = new Map<number, bigint>();
-  for (let w = startWeek; w <= endWeek; w++)
-    byWeek.set(w, snapshot.steeredGlwWeiPerWeek);
-  return { byWeek, dataSource: "control-api" };
+
+  try {
+    const walletStakeByEpoch = await getWalletStakeByEpoch({
+      walletAddress,
+      startWeek,
+      endWeek,
+    });
+
+    for (let w = startWeek; w <= endWeek; w++) {
+      const regionRewards = await getRegionRewardsAtEpoch({ epoch: w });
+      const regionRewardById = new Map<
+        number,
+        { gctlStaked: bigint; glwRewardWei: bigint }
+      >();
+      for (const r of regionRewards.regionRewards || []) {
+        regionRewardById.set(r.regionId, {
+          gctlStaked: BigInt(r.gctlStaked || "0"),
+          glwRewardWei: BigInt(r.glwReward || "0"),
+        });
+      }
+
+      const walletRegions = walletStakeByEpoch.get(w) || [];
+      let steeredGlwWei = BigInt(0);
+      for (const r of walletRegions) {
+        const walletStakeWei = r.totalStakedWei;
+        const region = regionRewardById.get(r.regionId);
+        if (!region) continue;
+        if (walletStakeWei <= BigInt(0) || region.gctlStaked <= BigInt(0))
+          continue;
+        steeredGlwWei +=
+          (region.glwRewardWei * walletStakeWei) / region.gctlStaked;
+      }
+
+      byWeek.set(w, steeredGlwWei);
+    }
+
+    return { byWeek, dataSource: "control-api" };
+  } catch (error) {
+    const snapshot = await getSteeringSnapshot(walletAddress);
+    for (let w = startWeek; w <= endWeek; w++)
+      byWeek.set(w, snapshot.steeredGlwWeiPerWeek);
+    return {
+      byWeek,
+      dataSource: "control-api",
+      isFallback: true,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
 }
 
 export async function getSteeringSnapshot(
