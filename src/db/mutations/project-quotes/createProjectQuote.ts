@@ -2,13 +2,22 @@ import { db } from "../../db";
 import { ProjectQuotes, ProjectQuoteInsertType } from "../../schema";
 import { createSlackClient } from "../../../slack/create-slack-client";
 
-const SLACK_CHANNEL = process.env.SLACK_QUOTES_CHANNEL ?? "#devs";
+const SLACK_CHANNEL = "#devs";
 const WEEKS_PER_YEAR = 52.18;
 
-export async function createProjectQuote(data: ProjectQuoteInsertType) {
+interface CreateProjectQuoteOptions {
+  notifySlack?: boolean;
+}
+
+export async function createProjectQuote(
+  data: ProjectQuoteInsertType,
+  options?: CreateProjectQuoteOptions
+) {
   const [quote] = await db.insert(ProjectQuotes).values(data).returning();
 
-  if (quote && process.env.SLACK_BOT_TOKEN) {
+  const notifySlack = options?.notifySlack ?? true;
+
+  if (quote && notifySlack && process.env.SLACK_BOT_TOKEN) {
     try {
       const slackBot = createSlackClient(process.env.SLACK_BOT_TOKEN);
 

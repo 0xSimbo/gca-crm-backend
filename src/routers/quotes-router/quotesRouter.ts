@@ -26,6 +26,7 @@ import { createQuoteApiKey } from "../../db/mutations/quote-api-keys/createQuote
 import { findQuoteApiKeyByOrgName } from "../../db/queries/quote-api-keys/findQuoteApiKeyByOrgName";
 import { findQuoteApiKeyByHash } from "../../db/queries/quote-api-keys/findQuoteApiKeyByHash";
 import { createHash, randomBytes } from "crypto";
+import { sendQuoteBatchSummaryToSlack } from "../../slack/quote-notifications";
 
 interface QuoteProjectRequest {
   annualConsumptionMWh: string;
@@ -255,6 +256,7 @@ async function createProjectQuoteFromRequest(args: {
   utilityBill: File;
   allowMock: boolean;
   skipDb: boolean;
+  notifySlack?: boolean;
   validateSignatureTimestamp?: boolean;
   authOverride?: { walletAddress: string; userId: string | null };
 }) {
@@ -263,6 +265,7 @@ async function createProjectQuoteFromRequest(args: {
     utilityBill,
     allowMock,
     skipDb,
+    notifySlack,
     validateSignatureTimestamp = true,
     authOverride,
   } = args;
@@ -414,34 +417,37 @@ async function createProjectQuoteFromRequest(args: {
         metadata: request.metadata || null,
         isProjectCompleted,
       }
-    : await createProjectQuote({
-        walletAddress,
-        userId,
-        metadata: request.metadata,
-        isProjectCompleted,
-        regionCode,
-        latitude: latitude.toString(),
-        longitude: longitude.toString(),
-        weeklyConsumptionMWh: weeklyConsumptionMWh.toString(), // DB stores weekly; request is annual
-        systemSizeKw: systemSizeKw.toString(),
-        electricityPricePerKwh: priceExtraction.pricePerKwh.toString(),
-        priceSource: "ai",
-        priceConfidence: priceExtraction.confidence.toString(),
-        utilityBillUrl: billUrl,
-        discountRate: quoteResult.discountRate.toString(),
-        escalatorRate: quoteResult.escalatorRate.toString(),
-        years: quoteResult.years,
-        protocolDepositUsd6: quoteResult.protocolDepositUsd6,
-        weeklyCredits: quoteResult.weeklyCredits.toString(),
-        weeklyDebt: quoteResult.weeklyDebt.toString(),
-        netWeeklyCc: quoteResult.netWeeklyCc.toString(),
-        netCcPerMwh: quoteResult.netCcPerMwh.toString(),
-        weeklyImpactAssetsWad: quoteResult.weeklyImpactAssetsWad,
-        efficiencyScore: quoteResult.efficiencyScore,
-        carbonOffsetsPerMwh: quoteResult.carbonOffsetsPerMwh.toString(),
-        uncertaintyApplied: quoteResult.uncertaintyApplied.toString(),
-        debugJson: quoteResult.debugJson,
-      });
+    : await createProjectQuote(
+        {
+          walletAddress,
+          userId,
+          metadata: request.metadata,
+          isProjectCompleted,
+          regionCode,
+          latitude: latitude.toString(),
+          longitude: longitude.toString(),
+          weeklyConsumptionMWh: weeklyConsumptionMWh.toString(), // DB stores weekly; request is annual
+          systemSizeKw: systemSizeKw.toString(),
+          electricityPricePerKwh: priceExtraction.pricePerKwh.toString(),
+          priceSource: "ai",
+          priceConfidence: priceExtraction.confidence.toString(),
+          utilityBillUrl: billUrl,
+          discountRate: quoteResult.discountRate.toString(),
+          escalatorRate: quoteResult.escalatorRate.toString(),
+          years: quoteResult.years,
+          protocolDepositUsd6: quoteResult.protocolDepositUsd6,
+          weeklyCredits: quoteResult.weeklyCredits.toString(),
+          weeklyDebt: quoteResult.weeklyDebt.toString(),
+          netWeeklyCc: quoteResult.netWeeklyCc.toString(),
+          netCcPerMwh: quoteResult.netCcPerMwh.toString(),
+          weeklyImpactAssetsWad: quoteResult.weeklyImpactAssetsWad,
+          efficiencyScore: quoteResult.efficiencyScore,
+          carbonOffsetsPerMwh: quoteResult.carbonOffsetsPerMwh.toString(),
+          uncertaintyApplied: quoteResult.uncertaintyApplied.toString(),
+          debugJson: quoteResult.debugJson,
+        },
+        { notifySlack }
+      );
 
   return {
     quoteId: savedQuote.id,
@@ -484,12 +490,14 @@ async function createProjectQuoteFromRequest(args: {
 async function createLebanonProjectQuoteFromRequest(args: {
   request: LebanonQuoteProjectRequest;
   skipDb: boolean;
+  notifySlack?: boolean;
   validateSignatureTimestamp?: boolean;
   authOverride?: { walletAddress: string; userId: string | null };
 }) {
   const {
     request,
     skipDb,
+    notifySlack,
     validateSignatureTimestamp = true,
     authOverride,
   } = args;
@@ -580,34 +588,37 @@ async function createLebanonProjectQuoteFromRequest(args: {
         metadata: request.metadata || null,
         isProjectCompleted,
       }
-    : await createProjectQuote({
-        walletAddress,
-        userId,
-        metadata: request.metadata,
-        isProjectCompleted,
-        regionCode: LEBANON_REGION_CODE,
-        latitude: latitude.toString(),
-        longitude: longitude.toString(),
-        weeklyConsumptionMWh: weeklyConsumptionMWh.toString(), // DB stores weekly; request is annual
-        systemSizeKw: systemSizeKw.toString(),
-        electricityPricePerKwh: LEBANON_ELECTRICITY_PRICE_PER_KWH.toString(),
-        priceSource: "blended",
-        priceConfidence: "1",
-        utilityBillUrl: LEBANON_UTILITY_BILL_URL_SENTINEL,
-        discountRate: quoteResult.discountRate.toString(),
-        escalatorRate: quoteResult.escalatorRate.toString(),
-        years: quoteResult.years,
-        protocolDepositUsd6: quoteResult.protocolDepositUsd6,
-        weeklyCredits: quoteResult.weeklyCredits.toString(),
-        weeklyDebt: quoteResult.weeklyDebt.toString(),
-        netWeeklyCc: quoteResult.netWeeklyCc.toString(),
-        netCcPerMwh: quoteResult.netCcPerMwh.toString(),
-        weeklyImpactAssetsWad: quoteResult.weeklyImpactAssetsWad,
-        efficiencyScore: quoteResult.efficiencyScore,
-        carbonOffsetsPerMwh: quoteResult.carbonOffsetsPerMwh.toString(),
-        uncertaintyApplied: quoteResult.uncertaintyApplied.toString(),
-        debugJson: quoteResult.debugJson,
-      });
+    : await createProjectQuote(
+        {
+          walletAddress,
+          userId,
+          metadata: request.metadata,
+          isProjectCompleted,
+          regionCode: LEBANON_REGION_CODE,
+          latitude: latitude.toString(),
+          longitude: longitude.toString(),
+          weeklyConsumptionMWh: weeklyConsumptionMWh.toString(), // DB stores weekly; request is annual
+          systemSizeKw: systemSizeKw.toString(),
+          electricityPricePerKwh: LEBANON_ELECTRICITY_PRICE_PER_KWH.toString(),
+          priceSource: "blended",
+          priceConfidence: "1",
+          utilityBillUrl: LEBANON_UTILITY_BILL_URL_SENTINEL,
+          discountRate: quoteResult.discountRate.toString(),
+          escalatorRate: quoteResult.escalatorRate.toString(),
+          years: quoteResult.years,
+          protocolDepositUsd6: quoteResult.protocolDepositUsd6,
+          weeklyCredits: quoteResult.weeklyCredits.toString(),
+          weeklyDebt: quoteResult.weeklyDebt.toString(),
+          netWeeklyCc: quoteResult.netWeeklyCc.toString(),
+          netCcPerMwh: quoteResult.netCcPerMwh.toString(),
+          weeklyImpactAssetsWad: quoteResult.weeklyImpactAssetsWad,
+          efficiencyScore: quoteResult.efficiencyScore,
+          carbonOffsetsPerMwh: quoteResult.carbonOffsetsPerMwh.toString(),
+          uncertaintyApplied: quoteResult.uncertaintyApplied.toString(),
+          debugJson: quoteResult.debugJson,
+        },
+        { notifySlack }
+      );
 
   return {
     quoteId: savedQuote.id,
@@ -650,6 +661,8 @@ async function createLebanonProjectQuoteFromRequest(args: {
 
 async function processProjectQuoteBatch(args: {
   batchId: string;
+  walletAddress: string;
+  statusEndpoint: string;
   requests: QuoteProjectRequest[];
   utilityBills: File[];
   allowMock: boolean;
@@ -659,6 +672,8 @@ async function processProjectQuoteBatch(args: {
 }) {
   const {
     batchId,
+    walletAddress,
+    statusEndpoint,
     requests,
     utilityBills,
     allowMock,
@@ -685,6 +700,7 @@ async function processProjectQuoteBatch(args: {
             utilityBill: utilityBills[index]!,
             allowMock,
             skipDb,
+            notifySlack: false,
             // Timestamp freshness already validated at submission time.
             validateSignatureTimestamp: false,
             authOverride,
@@ -718,6 +734,26 @@ async function processProjectQuoteBatch(args: {
     errorCount,
     results,
   });
+
+  if (!skipDb) {
+    try {
+      await sendQuoteBatchSummaryToSlack({
+        kind: "project",
+        batchId,
+        statusEndpoint,
+        walletAddress,
+        itemCount: results.length,
+        successCount,
+        errorCount,
+        error: null,
+      });
+    } catch (error) {
+      console.error(
+        "[quotesRouter] Failed to send project batch summary to Slack:",
+        error
+      );
+    }
+  }
 }
 
 export const quotesRouter = new Elysia({ prefix: "/quotes" })
@@ -979,11 +1015,14 @@ export const quotesRouter = new Elysia({ prefix: "/quotes" })
           etaSeconds,
           status: "queued",
         });
+        const statusEndpoint = `/quotes/project/batch/${created.id}`;
 
         // Fire-and-forget background processing (in-process worker).
         queueMicrotask(() => {
           processProjectQuoteBatch({
             batchId: created.id,
+            walletAddress: batchWalletAddress!,
+            statusEndpoint,
             requests,
             utilityBills,
             allowMock,
@@ -998,6 +1037,26 @@ export const quotesRouter = new Elysia({ prefix: "/quotes" })
               completedAt: new Date(),
               error: message,
             });
+
+            if (!skipDb) {
+              try {
+                await sendQuoteBatchSummaryToSlack({
+                  kind: "project",
+                  batchId: created.id,
+                  statusEndpoint,
+                  walletAddress: batchWalletAddress!,
+                  itemCount: requests.length,
+                  successCount: 0,
+                  errorCount: requests.length,
+                  error: message,
+                });
+              } catch (slackError) {
+                console.error(
+                  "[quotesRouter] Failed to send project batch failure to Slack:",
+                  slackError
+                );
+              }
+            }
           });
         });
 
@@ -1005,7 +1064,7 @@ export const quotesRouter = new Elysia({ prefix: "/quotes" })
         return {
           batchId: created.id,
           etaSeconds,
-          statusEndpoint: `/quotes/project/batch/${created.id}`,
+          statusEndpoint,
         };
       } catch (e) {
         if (e instanceof Error) {
@@ -1369,6 +1428,7 @@ export const quotesRouter = new Elysia({ prefix: "/quotes" })
                   request,
                   skipDb,
                   authOverride: batchAuthOverride,
+                  notifySlack: false,
                 });
                 return { index, success: true as const, quoteId: data.quoteId };
               } catch (error) {
@@ -1382,6 +1442,24 @@ export const quotesRouter = new Elysia({ prefix: "/quotes" })
 
         const successCount = results.filter((r) => r.success).length;
         const errorCount = results.length - successCount;
+
+        if (!skipDb) {
+          try {
+            await sendQuoteBatchSummaryToSlack({
+              kind: "lebanon",
+              walletAddress: batchAuthOverride.walletAddress,
+              itemCount: results.length,
+              successCount,
+              errorCount,
+              error: null,
+            });
+          } catch (error) {
+            console.error(
+              "[quotesRouter] Failed to send Lebanon batch summary to Slack:",
+              error
+            );
+          }
+        }
 
         return {
           itemCount: results.length,
