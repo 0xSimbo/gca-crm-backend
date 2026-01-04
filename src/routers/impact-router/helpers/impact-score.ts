@@ -13,6 +13,7 @@ import { getCurrentEpoch } from "../../../utils/getProtocolWeek";
 import { getLiquidGlwBalanceWei } from "./glw-balance";
 import {
   fetchWalletRewardsHistoryBatch,
+  fetchGlwTwabByWeekWeiMany,
   getGctlSteeringByWeekWei,
   getSteeringSnapshot,
   getUnclaimedGlwRewardsWei,
@@ -243,6 +244,24 @@ export async function computeGlowImpactScores(params: {
   if (wallets.length === 0) return [];
 
   const glwSpotPriceUsd = await getCachedGlwSpotPriceNumber();
+
+  // Liquid GLW TWAB per wallet/week (anti-gaming): computed from indexed ERC20 Transfer history.
+  // If the downstream service is unavailable, we fall back to using the current onchain balance
+  // (which reintroduces the "flash transfer" vector).
+  let liquidTwabByWalletWeek = new Map<string, Map<number, bigint>>();
+  try {
+    liquidTwabByWalletWeek = await fetchGlwTwabByWeekWeiMany({
+      wallets,
+      startWeek,
+      endWeek,
+    });
+  } catch (e) {
+    console.error(
+      `[impact-score] TWAB fetch failed (wallets=${wallets.length}, startWeek=${startWeek}, endWeek=${endWeek})`,
+      e
+    );
+    liquidTwabByWalletWeek = new Map();
+  }
 
   // Fetch Control API rewards for all wallets (batch)
   const walletRewardsMap = new Map<string, ControlApiFarmReward[]>();
@@ -511,8 +530,10 @@ export async function computeGlowImpactScores(params: {
         multiplierScaled6: totalMultiplierScaled6,
       });
 
+      const liquidTwabWeekWei =
+        liquidTwabByWalletWeek.get(wallet)?.get(week) ?? liquidGlwWei;
       const glowWorthWeekWei =
-        liquidGlwWei + delegatedActive + unclaimed.amountWei;
+        liquidTwabWeekWei + delegatedActive + unclaimed.amountWei;
       const continuousPts = glwWeiToPointsScaled6(
         glowWorthWeekWei,
         GLOW_WORTH_POINTS_PER_GLW_SCALED6

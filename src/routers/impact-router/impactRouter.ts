@@ -126,7 +126,7 @@ export const impactRouter = new Elysia({ prefix: "/impact" })
       detail: {
         summary: "Get Glow Worth (GLW-denominated position)",
         description:
-          "GlowWorth = LiquidGLW + DelegatedActiveGLW + UnclaimedGLWRewards. DelegatedActiveGLW is computed as delegated launchpad GLW minus recovered protocol-deposit rewards (converted to GLW using spot price). Unclaimed rewards are mocked until Control API endpoint is available.",
+          "GlowWorth = LiquidGLW + DelegatedActiveGLW + UnclaimedGLWRewards. LiquidGLW is the current on-chain ERC20 balanceOf(wallet). DelegatedActiveGLW is computed as delegated launchpad GLW minus recovered protocol-deposit rewards (converted to GLW using spot price). Unclaimed rewards are derived from Control API weekly rewards minus claim events from the claims API.",
         tags: [TAG.REWARDS],
       },
     }
@@ -242,7 +242,7 @@ export const impactRouter = new Elysia({ prefix: "/impact" })
       detail: {
         summary: "Get Glow Impact Score",
         description:
-          "Computes weekly rollover points (emissions + steering + vault bonus) with a total multiplier (base cash-miner multiplier + impact streak bonus), plus continuous GlowWorth accrual. GCTL steering is derived from Control API stakedControl. Unclaimed rewards are mocked until Control API endpoint is available.",
+          "Computes weekly rollover points (emissions + steering + vault bonus) with a total multiplier (base cash-miner multiplier + impact streak bonus), plus continuous GlowWorth accrual. For continuous points, LiquidGLW uses a per-week time-weighted average balance (TWAB) derived from indexed ERC20 Transfer history (ponder listener). GCTL steering is derived from Control API stake-by-epoch; if unavailable it falls back to the current stake snapshot.",
         tags: [TAG.REWARDS],
       },
     }

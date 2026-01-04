@@ -43,10 +43,11 @@ All points are computed internally with **6-decimal fixed-point precision** and 
 
 ### What updates instantly (next fetch)
 
-If you **buy/receive GLW now**, the **leaderboard score can change immediately** (i.e. as soon as the on-chain transfer is mined and the client refetches), because:
+If you **buy/receive GLW now**, the score can change, but it no longer “backfills” the entire history range for liquid balance. The scoring model now uses a **per-week time-weighted average balance (TWAB)** for `LiquidGLW`, derived from indexed ERC20 `Transfer` events, so a brief spike in balance only affects the weeks where you actually held it.
 
-- `LiquidGLW` is fetched from the chain via `balanceOf(wallet)` (current state)
-- The score includes **continuous points** based on `GlowWorth` for each week in the requested range, and this implementation uses the **current** `GlowWorth` inputs when computing those weeks.
+- `GET /impact/glow-worth` still uses on-chain `balanceOf(wallet)` for the **current** `LiquidGLW`.
+- The score includes **continuous points** based on `GlowWorth` for each week in the requested range. For those computations, `LiquidGLW` uses **weekly TWAB** (transfer-indexed) rather than the current `balanceOf` snapshot.
+  - This inherently includes **swaps**, since swaps move GLW via standard ERC20 `Transfer` events.
 
 ### What does _not_ update instantly
 
