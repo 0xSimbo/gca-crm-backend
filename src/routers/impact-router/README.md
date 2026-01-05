@@ -13,9 +13,17 @@ This is a **status-only leaderboard** (no monetary rewards are paid out by this 
 \]
 
 - `LiquidGLW`: on-chain ERC20 GLW `balanceOf(wallet)` (18 decimals / wei)
-- `DelegatedActiveGLW`: net delegated GLW currently active in launchpad fractions, modeled as:
-  - `sum(launchpad purchases)` **minus** `sum(launchpad refunds)` **minus** `sum(protocolDepositRewardsReceived)` (converted to GLW when needed)
-- `UnclaimedGLWRewards`: claimable rewards minus on-chain claims (see details below)
+- `DelegatedActiveGLW`: the wallet’s **vault ownership** share of remaining **GLW protocol-deposit principal**, modeled as:
+  - For each farm \(f\):
+    - `principalPaidGlwWei(f)`: the farm’s GLW protocol deposit principal from `applications.paymentAmount` where `paymentCurrency=GLW` and `status=completed`
+    - `distributedGlwWeiToWeek(f, week)`: cumulative `protocolDepositRewardsDistributed` from Control API farm weekly rewards where `paymentCurrency=GLW`
+    - `remainingGlwWei(f, week) = max(0, principalPaidGlwWei(f) - distributedGlwWeiToWeek(f, week))`
+    - `walletSplit6(f, week)`: the wallet’s `depositSplitPercent6Decimals` ownership at that week (Control API split history; `POST /farms/by-wallet/deposit-splits-history/batch`)
+    - `walletShareRemainingGlwWei(f, week) = remainingGlwWei(f, week) * walletSplit6(f, week) / 1_000_000`
+  - Then: `DelegatedActiveGLW(week) = sum_farms walletShareRemainingGlwWei(f, week)`
+  - Accounting starts at **week 97** (first week vault ownership exists). Even if you query `startWeek > 97`, we compute ownership from week 97 so farm distributions earlier in the range don’t distort `remainingGlwWei`.
+  - **Miners** do not participate in protocol-deposit vaults; mining-center `depositSplitPercent6Decimals` is always `0`.
+- `UnclaimedGLWRewards`: claimable rewards minus claims (see details below)
 
 ### Glow Impact Score
 
@@ -302,6 +310,18 @@ export async function getImpactLeaderboard(params: {
 - The `/impact/glow-score` **list** response is cached in-process for ~10 minutes (single-wallet responses are not cached, since `currentWeekProjection` is meant to feel “live”).
 - In list mode, the backend may score a **candidate subset** (e.g. protocol wallets + GCTL stakers + top GLW holders) to keep latency reasonable while still returning the top `limit` by score.
 
+### Profiling / debugging leaderboard latency
+
+`GET /impact/glow-score` supports an on-demand timing log (list mode only):
+
+- Add `debugTimings=true` (or `1`) to emit a single summary log showing which stages are slow.
+
+Local repro script:
+
+```bash
+bun run scripts/debug-impact-leaderboard.ts --limit 50 --warmup 1 --repeat 3
+```
+
 ## `GET /impact/glow-worth`
 
 Computes the wallet's GLW-denominated position:
@@ -310,9 +330,23 @@ Computes the wallet's GLW-denominated position:
 - `LiquidGLW`: onchain ERC20 GLW `balanceOf` via `viem`
 - `DelegatedActiveGLW`: launchpad GLW delegated minus protocol-deposit rewards received (converted to GLW using current spot price)
 - `UnclaimedGLWRewards`: computed as:
-  - **Claimable GLW** from Control API weekly rewards (`/wallets/address/:wallet/weekly-rewards?paymentCurrency=GLW`)
-  - minus **Claimed GLW** from claims API (`https://glow-ponder-listener-2-production.up.railway.app/rewards/claims/:address`)
-  - with a **lag window** (currently 3 weeks) so we don’t treat the most recent weeks as claimable yet
+  - **Claimable GLW** from Control API weekly rewards (`/wallets/address/:wallet/weekly-rewards?paymentCurrency=GLW&limit=520`)
+    - When `paymentCurrency=GLW`, both:
+      - `glowInflationTotal`
+      - `protocolDepositRewardsReceived`
+        are **GLW-denominated** (18-decimal wei).
+  - We only treat weeks as claimable once they’re finalized (matches wallet claims UX):
+    - GLW inflation finalizes after **3** weeks
+    - protocol-deposit payouts finalize after **4** weeks
+    - so the effective claimable cutoff is `min(currentEpoch - 3, currentEpoch - 4)`
+  - **Claimed GLW** is derived from the claims API (`/rewards/claims/:address`) by filtering:
+    - `token == 0xf4fbc617a5733eaaf9af08e1ab816b103388d8b6` (GLW)
+  - Claims are attributed to the **reward week** (not the claim timestamp):
+    - **RewardsKernel** claims include `nonce` → week mapping (v2 nonce 0 corresponds to week 97): `week = 97 + nonce`
+    - **MinerPool** claims are indexed from GLW `Transfer` logs and do not include a week; in **single-wallet (“accurate”)** mode we infer the reward week by matching the claim `amount` to the Control API `glowInflationTotal` for that week (with a tiny wei epsilon to tolerate downstream rounding)
+  - **Modes**:
+    - **Single wallet** (`walletAddress=...`): uses `"accurate"` attribution (RewardsKernel nonce + MinerPool amount matching) to match on-chain truth without doing direct onchain reads
+    - **List/leaderboard mode**: uses `"lite"` behavior to keep scoring cheap; it does not attempt MinerPool week inference, so unclaimed inflation can be an over-estimate (upper bound)
 
 Query:
 

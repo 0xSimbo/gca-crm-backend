@@ -1,0 +1,28 @@
+baseUrl: http://localhost:3005
+limit: 200
+debugTimings: true
+warmup: 0
+repeat: 1
+
+
+[run 1/1] status=200 ms=12.6 wallets=200
+
+summary:
+{
+  "baseUrl": "http://localhost:3005",
+  "limit": 200,
+  "warmup": 0,
+  "repeat": 1,
+  "debugTimings": true,
+  "weekRange": {
+    "startWeek": 97,
+    "endWeek": 109
+  },
+  "walletsReturned": 200,
+  "ms": {
+    "min": 12.6,
+    "p50": 12.6,
+    "p95": 12.6,
+    "max": 12.6
+  }
+}

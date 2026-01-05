@@ -14,6 +14,26 @@ function parseOptionalInt(value: string | undefined): number | undefined {
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
+function parseOptionalBool(value: string | undefined): boolean {
+  return value === "true" || value === "1";
+}
+
+function createRequestId(): string {
+  try {
+    return crypto.randomUUID();
+  } catch {
+    return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  }
+}
+
+function nowMs(): number {
+  try {
+    return performance.now();
+  } catch {
+    return Date.now();
+  }
+}
+
 const GLOW_SCORE_LIST_CACHE_TTL_MS = 10 * 60_000;
 const glowScoreListCache = new Map<
   string,
@@ -127,7 +147,7 @@ export const impactRouter = new Elysia({ prefix: "/impact" })
       detail: {
         summary: "Get Glow Worth (GLW-denominated position)",
         description:
-          "GlowWorth = LiquidGLW + DelegatedActiveGLW + UnclaimedGLWRewards. LiquidGLW is the current on-chain ERC20 balanceOf(wallet). DelegatedActiveGLW is computed as delegated launchpad GLW minus recovered protocol-deposit rewards (converted to GLW using spot price). Unclaimed rewards are derived from Control API weekly rewards minus claim events from the claims API.",
+          "GlowWorth = LiquidGLW + DelegatedActiveGLW + UnclaimedGLWRewards. LiquidGLW is the current on-chain ERC20 balanceOf(wallet). DelegatedActiveGLW is the wallet’s share of remaining GLW protocol-deposit principal (vault ownership) computed from GLW-paid applications (principal) minus farm-level protocol-deposit rewards distributed (recovered), multiplied by the wallet’s depositSplitPercent6Decimals ownership. Unclaimed rewards are derived from Control API weekly rewards minus claim events from the claims API.",
         tags: [TAG.REWARDS],
       },
     }
@@ -135,10 +155,34 @@ export const impactRouter = new Elysia({ prefix: "/impact" })
   .get(
     "/glow-score",
     async ({
-      query: { walletAddress, startWeek, endWeek, limit, includeWeekly },
+      query: {
+        walletAddress,
+        startWeek,
+        endWeek,
+        limit,
+        includeWeekly,
+        debugTimings,
+      },
       set,
     }) => {
       try {
+        const requestStartMs = nowMs();
+        const shouldLogTimings = parseOptionalBool(debugTimings);
+        const requestId = shouldLogTimings ? createRequestId() : null;
+        const timingEvents: Array<{
+          label: string;
+          ms: number;
+          meta?: Record<string, unknown>;
+        }> = [];
+        const recordTiming = (evt: {
+          label: string;
+          ms: number;
+          meta?: Record<string, unknown>;
+        }) => {
+          if (!shouldLogTimings) return;
+          timingEvents.push(evt);
+        };
+
         const weekRange = getWeekRange();
         const actualStartWeek =
           parseOptionalInt(startWeek) ?? weekRange.startWeek;
@@ -148,6 +192,7 @@ export const impactRouter = new Elysia({ prefix: "/impact" })
         const shouldIncludeWeekly =
           includeWeekly === "true" || includeWeekly === "1" || !!walletAddress;
         const isListMode = !walletAddress;
+        const shouldLogTimingsForRequest = shouldLogTimings && isListMode;
 
         if (actualEndWeek < actualStartWeek) {
           set.status = 400;
@@ -163,12 +208,43 @@ export const impactRouter = new Elysia({ prefix: "/impact" })
             limitWasProvided,
           });
           const cached = readCachedGlowScoreList(cacheKey);
-          if (cached) return cached;
+          if (cached) {
+            if (shouldLogTimingsForRequest) {
+              console.log("[impact-score] leaderboard timings", {
+                requestId,
+                cached: true,
+                weekRange: {
+                  startWeek: actualStartWeek,
+                  endWeek: actualEndWeek,
+                },
+                limit: parsedLimit,
+                includeWeekly: shouldIncludeWeekly,
+                msTotal: nowMs() - requestStartMs,
+              });
+            }
+            return cached;
+          }
         }
 
+        const universeStartMs = nowMs();
         const universe = walletAddress
           ? null
-          : await getImpactLeaderboardWalletUniverse({ limit: parsedLimit });
+          : await getImpactLeaderboardWalletUniverse({
+              limit: parsedLimit,
+              debug: shouldLogTimingsForRequest
+                ? { requestId: requestId!, recordTiming }
+                : undefined,
+            });
+        recordTiming({
+          label: "router.universe.total",
+          ms: nowMs() - universeStartMs,
+          meta: universe
+            ? {
+                eligibleWallets: universe.eligibleWallets.length,
+                candidateWallets: universe.candidateWallets.length,
+              }
+            : undefined,
+        });
         const eligibleWalletCount = universe
           ? filterLeaderboardWallets(universe.eligibleWallets).length
           : 0;
@@ -176,11 +252,20 @@ export const impactRouter = new Elysia({ prefix: "/impact" })
           ? [walletAddress.toLowerCase()]
           : filterLeaderboardWallets(universe!.candidateWallets);
 
+        const computeStartMs = nowMs();
         const results = await computeGlowImpactScores({
           walletAddresses: wallets,
           startWeek: actualStartWeek,
           endWeek: actualEndWeek,
           includeWeeklyBreakdown: shouldIncludeWeekly,
+          debug: shouldLogTimingsForRequest
+            ? { requestId: requestId!, recordTiming }
+            : undefined,
+        });
+        recordTiming({
+          label: "router.compute.total",
+          ms: nowMs() - computeStartMs,
+          meta: { wallets: wallets.length, results: results.length },
         });
 
         if (walletAddress) {
@@ -226,6 +311,37 @@ export const impactRouter = new Elysia({ prefix: "/impact" })
           expiresAtMs: Date.now() + GLOW_SCORE_LIST_CACHE_TTL_MS,
           data: payload,
         });
+
+        if (shouldLogTimingsForRequest) {
+          const msTotal = nowMs() - requestStartMs;
+          timingEvents.push({
+            label: "router.total",
+            ms: msTotal,
+            meta: { cached: false },
+          });
+          console.log("[impact-score] leaderboard timings", {
+            requestId,
+            cached: false,
+            weekRange: { startWeek: actualStartWeek, endWeek: actualEndWeek },
+            limit: parsedLimit,
+            includeWeekly: shouldIncludeWeekly,
+            walletsRequested: wallets.length,
+            walletsReturned: payload.wallets.length,
+            totalWalletCount: !limitWasProvided
+              ? eligibleWalletCount
+              : undefined,
+            timings: timingEvents
+              .slice()
+              .sort((a, b) => b.ms - a.ms)
+              .map((t) => ({
+                label: t.label,
+                ms: Math.round(t.ms * 10) / 10,
+                ...(t.meta ? { meta: t.meta } : {}),
+              })),
+            msTotal: Math.round(msTotal * 10) / 10,
+          });
+        }
+
         return payload;
       } catch (e) {
         if (e instanceof Error) {
@@ -243,6 +359,7 @@ export const impactRouter = new Elysia({ prefix: "/impact" })
         endWeek: t.Optional(t.String()),
         limit: t.Optional(t.String()),
         includeWeekly: t.Optional(t.String()),
+        debugTimings: t.Optional(t.String()),
       }),
       detail: {
         summary: "Get Glow Impact Score",

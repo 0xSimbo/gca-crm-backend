@@ -1,4 +1,4 @@
-import { addresses } from "../../../constants/addresses";
+import { getCurrentEpoch } from "../../../utils/getProtocolWeek";
 
 export interface ControlApiFarmReward {
   weekNumber: number;
@@ -9,6 +9,34 @@ export interface ControlApiFarmReward {
   walletInflationFromMiningCenter?: string;
   walletProtocolDepositFromLaunchpad?: string;
   walletProtocolDepositFromMiningCenter?: string;
+}
+
+export interface ControlApiDepositSplitHistorySegment {
+  farmId: string;
+  startWeek: number;
+  endWeek: number;
+  depositSplitPercent6Decimals: string;
+}
+
+export interface ControlApiBatchDepositSplitsHistoryResponse {
+  results?: Record<string, ControlApiDepositSplitHistorySegment[]>;
+  error?: string;
+}
+
+export interface ControlApiFarmRewardsHistoryRewardRow {
+  weekNumber: number;
+  paymentCurrency: string;
+  protocolDepositRewardsDistributed: string;
+}
+
+export interface ControlApiFarmRewardsHistoryFarmResult {
+  rewards?: ControlApiFarmRewardsHistoryRewardRow[];
+  error?: string;
+}
+
+export interface ControlApiBatchFarmRewardsHistoryResponse {
+  results?: Record<string, ControlApiFarmRewardsHistoryFarmResult>;
+  error?: string;
 }
 
 export interface ControlApiBatchWalletRewardsResponse {
@@ -453,7 +481,28 @@ async function getCachedRegionRewards(
   return data;
 }
 
-const UNCLAIMED_LAG_WEEKS = 3;
+const MAINNET_GLOW_TOKEN =
+  "0xf4fbc617a5733eaaf9af08e1ab816b103388d8b6" as const;
+
+function safeBigInt(value: unknown): bigint {
+  try {
+    if (typeof value === "bigint") return value;
+    if (typeof value === "number") return BigInt(Math.trunc(value));
+    if (typeof value === "string" && value.trim() !== "") return BigInt(value);
+    return BigInt(0);
+  } catch {
+    return BigInt(0);
+  }
+}
+
+function getV2WeekFromNonce(nonce: unknown): number | null {
+  // Next.js app treats week 97 as v2 nonce 0.
+  const FIRST_V2_WEEK = 97;
+  const n = Number(nonce);
+  if (!Number.isFinite(n) || n < 0) return null;
+  const week = FIRST_V2_WEEK + Math.trunc(n);
+  return week >= FIRST_V2_WEEK ? week : null;
+}
 
 export async function fetchWalletRewardsHistoryBatch(params: {
   wallets: string[];
@@ -486,6 +535,80 @@ export async function fetchWalletRewardsHistoryBatch(params: {
     const walletData = results[wallet];
     if (!walletData?.farmRewards) continue;
     result.set(wallet.toLowerCase(), walletData.farmRewards);
+  }
+
+  return result;
+}
+
+export async function fetchDepositSplitsHistoryBatch(params: {
+  wallets: string[];
+  startWeek: number;
+  endWeek: number;
+}): Promise<Map<string, ControlApiDepositSplitHistorySegment[]>> {
+  const { wallets, startWeek, endWeek } = params;
+  const result = new Map<string, ControlApiDepositSplitHistorySegment[]>();
+  if (wallets.length === 0) return result;
+
+  const response = await fetch(
+    `${getControlApiUrl()}/farms/by-wallet/deposit-splits-history/batch`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ wallets, startWeek, endWeek }),
+    }
+  );
+
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    throw new Error(
+      `Control API batch deposit splits history failed (${response.status}): ${text}`
+    );
+  }
+
+  const data =
+    (await response.json()) as ControlApiBatchDepositSplitsHistoryResponse;
+  const results = data.results || {};
+  for (const wallet of wallets) {
+    const rows = results[wallet] || results[wallet.toLowerCase()];
+    if (!rows) continue;
+    result.set(wallet.toLowerCase(), rows);
+  }
+
+  return result;
+}
+
+export async function fetchFarmRewardsHistoryBatch(params: {
+  farmIds: string[];
+  startWeek: number;
+  endWeek: number;
+}): Promise<Map<string, ControlApiFarmRewardsHistoryRewardRow[]>> {
+  const { farmIds, startWeek, endWeek } = params;
+  const result = new Map<string, ControlApiFarmRewardsHistoryRewardRow[]>();
+  if (farmIds.length === 0) return result;
+
+  const response = await fetch(
+    `${getControlApiUrl()}/farms/rewards-history/batch`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ farmIds, startWeek, endWeek }),
+    }
+  );
+
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    throw new Error(
+      `Control API batch farm rewards history failed (${response.status}): ${text}`
+    );
+  }
+
+  const data =
+    (await response.json()) as ControlApiBatchFarmRewardsHistoryResponse;
+  const results = data.results || {};
+  for (const farmId of farmIds) {
+    const row = results[farmId];
+    if (!row?.rewards) continue;
+    result.set(farmId, row.rewards);
   }
 
   return result;
@@ -616,11 +739,15 @@ async function getWalletStakeByEpoch(params: {
 }
 
 export async function getUnclaimedGlwRewardsWei(
-  walletAddress: string
+  walletAddress: string,
+  opts: { mode?: "lite" | "accurate"; startWeek: number; endWeek: number }
 ): Promise<UnclaimedGlwRewardsResult> {
   const wallet = walletAddress.toLowerCase();
+  const mode = opts?.mode ?? "lite";
+  const startWeek = opts.startWeek;
+  const endWeek = opts.endWeek;
 
-  // 1) Total claimable GLW rewards from Control API weekly rewards table (GLW currency only)
+  // 1) Total earned GLW rewards from Control API weekly rewards table (GLW currency only)
   const weeklyResp = await fetch(
     `${getControlApiUrl()}/wallets/address/${wallet}/weekly-rewards?paymentCurrency=GLW&limit=520`
   );
@@ -633,22 +760,8 @@ export async function getUnclaimedGlwRewardsWei(
 
   const weeklyData: any = await weeklyResp.json();
   const rewards: any[] = weeklyData?.rewards || [];
-  const maxWeek = rewards.reduce((max, r) => {
-    const w = Number(r?.weekNumber ?? -1);
-    return Number.isFinite(w) && w > max ? w : max;
-  }, -1);
-  const claimableEndWeek = maxWeek >= 0 ? maxWeek - UNCLAIMED_LAG_WEEKS : -1;
 
-  let claimableGlwWei = BigInt(0);
-  for (const r of rewards) {
-    const weekNumber = Number(r?.weekNumber ?? -1);
-    if (!Number.isFinite(weekNumber)) continue;
-    if (weekNumber > claimableEndWeek) continue;
-    claimableGlwWei += BigInt(r?.glowInflationTotal || "0");
-    claimableGlwWei += BigInt(r?.protocolDepositRewardsReceived || "0");
-  }
-
-  // 2) Claimed GLW from claims API (on-chain claim events)
+  // 2) Claimed GLW from claims API (on-chain claim transfers)
   const claimsResp = await fetch(
     `${getPonderListenerBaseUrl()}/rewards/claims/${wallet}?limit=5000`
   );
@@ -669,21 +782,221 @@ export async function getUnclaimedGlwRewardsWei(
     throw new Error("Claims API is still indexing");
   }
 
-  const glwToken = addresses.glow.toLowerCase();
   const claims: any[] = claimsData?.claims || [];
 
-  let claimedGlwWei = BigInt(0);
-  for (const claim of claims) {
-    const token = (claim?.token || "").toLowerCase();
-    if (token !== glwToken) continue;
-    claimedGlwWei += BigInt(claim?.amount || "0");
+  const glwToken = MAINNET_GLOW_TOKEN;
+
+  // Interpretation that matches the wallet UI + onchain truth:
+  // - Only count weeks that are finalized/claimable (lag windows)
+  // - Attribute claims to the *reward week* (not the claim timestamp)
+  //
+  // RewardsKernel: claim row includes `nonce` -> deterministic week mapping.
+  // MinerPool: claim rows are indexed from GLW Transfer logs; they don't include the week.
+  // We infer the week by matching claim amount to the Control API per-week `glowInflationTotal`
+  // (allowing a tiny wei epsilon to tolerate downstream rounding).
+
+  const maxWeek = rewards.reduce((max, r) => {
+    const w = Number(r?.weekNumber ?? -1);
+    return Number.isFinite(w) && w > max ? w : max;
+  }, -1);
+
+  // Finality windows consistent with the wallet claims UI:
+  // - GLW inflation considered claimable after 3 weeks
+  // - Protocol deposit payouts considered claimable after 4 weeks
+  const nowSec = Math.floor(Date.now() / 1000);
+  const currentEpoch = getCurrentEpoch(nowSec);
+  const claimableThresholdWeek = Math.min(currentEpoch - 3, currentEpoch - 4);
+  const claimableEndWeek = Math.min(endWeek, maxWeek, claimableThresholdWeek);
+  if (claimableEndWeek < startWeek) {
+    return { amountWei: BigInt(0), dataSource: "claims-api+control-api" };
   }
 
-  const unclaimed = claimableGlwWei - claimedGlwWei;
+  // Build week -> {inflation,pd} from Control API
+  const byWeek = new Map<number, { inflationWei: bigint; pdWei: bigint }>();
+  for (const r of rewards) {
+    const weekNumber = Number(r?.weekNumber ?? -1);
+    if (!Number.isFinite(weekNumber) || weekNumber < 0) continue;
+    byWeek.set(weekNumber, {
+      inflationWei: safeBigInt(r?.glowInflationTotal),
+      pdWei: safeBigInt(r?.protocolDepositRewardsReceived),
+    });
+  }
+
+  // Claimed weeks (PD) from RewardsKernel nonce -> week
+  const claimedPdWeeks = new Set<number>();
+  for (const c of claims) {
+    const token = String(c?.token || "").toLowerCase();
+    if (token !== glwToken) continue;
+    const source = String(c?.source || "");
+    if (source !== "rewardsKernel") continue;
+    const week = getV2WeekFromNonce(c?.nonce);
+    if (week != null) claimedPdWeeks.add(week);
+  }
+
+  // Claimed weeks (inflation) from MinerPool transfer amounts -> closest week inflation
+  // We accept matches within this epsilon (observed diffs are a few million wei).
+  const AMOUNT_MATCH_EPSILON_WEI = BigInt(10_000_000);
+  const claimedInflationWeeks = new Set<number>();
+
+  function inferWeekFromInflationAmount(amountWei: bigint): number | null {
+    let bestWeek: number | null = null;
+    let bestDiff: bigint | null = null;
+    let secondBestDiff: bigint | null = null;
+
+    for (const [week, v] of byWeek) {
+      const diff =
+        amountWei >= v.inflationWei
+          ? amountWei - v.inflationWei
+          : v.inflationWei - amountWei;
+      if (bestDiff == null || diff < bestDiff) {
+        secondBestDiff = bestDiff;
+        bestDiff = diff;
+        bestWeek = week;
+        continue;
+      }
+      if (secondBestDiff == null || diff < secondBestDiff)
+        secondBestDiff = diff;
+    }
+
+    if (bestWeek == null || bestDiff == null) return null;
+    if (bestDiff > AMOUNT_MATCH_EPSILON_WEI) return null;
+    // If another week is also within epsilon, we can't safely disambiguate.
+    if (secondBestDiff != null && secondBestDiff <= AMOUNT_MATCH_EPSILON_WEI)
+      return null;
+    return bestWeek;
+  }
+
+  if (mode === "accurate") {
+    for (const c of claims) {
+      const token = String(c?.token || "").toLowerCase();
+      if (token !== glwToken) continue;
+      const source = String(c?.source || "");
+      if (source !== "minerPool") continue;
+      const week = inferWeekFromInflationAmount(safeBigInt(c?.amount));
+      if (week != null) claimedInflationWeeks.add(week);
+    }
+  }
+
+  let unclaimedWei = BigInt(0);
+
+  for (let w = startWeek; w <= claimableEndWeek; w++) {
+    const v = byWeek.get(w);
+    if (!v) continue;
+
+    if (v.inflationWei > BigInt(0)) {
+      // In lite mode we don't try to infer MinerPool claim weeks (keeps leaderboard cheap).
+      const isClaimed =
+        mode === "accurate" ? claimedInflationWeeks.has(w) : false;
+      if (!isClaimed) unclaimedWei += v.inflationWei;
+    }
+
+    if (v.pdWei > BigInt(0)) {
+      const isClaimed = claimedPdWeeks.has(w);
+      if (!isClaimed) unclaimedWei += v.pdWei;
+    }
+  }
+
   return {
-    amountWei: unclaimed > BigInt(0) ? unclaimed : BigInt(0),
+    amountWei: unclaimedWei > BigInt(0) ? unclaimedWei : BigInt(0),
     dataSource: "claims-api+control-api",
   };
+}
+
+export async function fetchClaimedPdWeeksBatch(params: {
+  wallets: string[];
+  startWeek: number;
+  endWeek: number;
+  batchSize?: number;
+  concurrentBatches?: number;
+}): Promise<Map<string, Set<number>>> {
+  const {
+    wallets,
+    startWeek,
+    endWeek,
+    batchSize = 200,
+    concurrentBatches = 4,
+  } = params;
+
+  const result = new Map<string, Set<number>>();
+  const normalizedWallets = Array.from(
+    new Set(wallets.map((w) => w.toLowerCase()))
+  );
+  for (const w of normalizedWallets) result.set(w, new Set());
+  if (normalizedWallets.length === 0) return result;
+
+  const baseUrl = getPonderListenerBaseUrl();
+
+  async function fetchBatch(batch: string[]): Promise<void> {
+    const response = await fetch(`${baseUrl}/rewards/claimed-pd-weeks/batch`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ wallets: batch, startWeek, endWeek }),
+    });
+    const text = await response.text().catch(() => "");
+
+    if (response.status === 503)
+      throw new Error(`Claims API is still indexing: ${text}`);
+    if (!response.ok)
+      throw new Error(
+        `Claims API batch PD weeks failed (${response.status}): ${
+          text || "<empty>"
+        }`
+      );
+
+    let json: any;
+    try {
+      json = JSON.parse(text);
+    } catch {
+      throw new Error(
+        `Claims API batch PD weeks returned invalid JSON: ${text}`
+      );
+    }
+    if (json?.indexingComplete === false)
+      throw new Error(json?.error || "Claims API is still indexing");
+
+    const results = (json?.results || {}) as Record<string, number[]>;
+    for (const wallet of Object.keys(results)) {
+      const weeks = results[wallet];
+      if (!Array.isArray(weeks)) continue;
+      const key = wallet.toLowerCase();
+      if (!result.has(key)) result.set(key, new Set());
+      const set = result.get(key)!;
+      for (const w of weeks) {
+        const weekNumber = Number(w);
+        if (!Number.isFinite(weekNumber)) continue;
+        set.add(Math.trunc(weekNumber));
+      }
+    }
+  }
+
+  for (
+    let i = 0;
+    i < normalizedWallets.length;
+    i += batchSize * concurrentBatches
+  ) {
+    const batchPromises: Array<Promise<void>> = [];
+    for (
+      let j = 0;
+      j < concurrentBatches && i + j * batchSize < normalizedWallets.length;
+      j++
+    ) {
+      const batch = normalizedWallets.slice(
+        i + j * batchSize,
+        i + (j + 1) * batchSize
+      );
+      batchPromises.push(
+        fetchBatch(batch).catch((error) => {
+          console.error(
+            `[claims-api] batch claimed PD weeks failed (wallets=${batch.length}, startWeek=${startWeek}, endWeek=${endWeek})`,
+            error
+          );
+        })
+      );
+    }
+    await Promise.all(batchPromises);
+  }
+
+  return result;
 }
 
 export async function getGctlSteeringByWeekWei(params: {
