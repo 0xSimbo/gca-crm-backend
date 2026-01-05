@@ -309,6 +309,7 @@ export async function getImpactLeaderboard(params: {
 - Some Control API calls are cached in-process to reduce repeated work (e.g. region rewards are cached for ~30s).
 - The `/impact/glow-score` **list** response is cached in-process for ~10 minutes (single-wallet responses are not cached, since `currentWeekProjection` is meant to feel “live”).
 - In list mode, the backend may score a **candidate subset** (e.g. protocol wallets + GCTL stakers + top GLW holders) to keep latency reasonable while still returning the top `limit` by score.
+- Leaderboard list mode computes **unclaimed rewards** without per-wallet claims fetches: it derives inflation/PD from the Control API batch wallet rewards endpoint and uses a Claims API batch helper (`POST /rewards/claimed-pd-weeks/batch`, RewardsKernel-only) to mark claimed PD weeks. This dropped cold list compute from ~30s → ~15s in local profiling; remaining bottlenecks are steering stake-by-epoch + onchain balance calls.
 
 ### Profiling / debugging leaderboard latency
 

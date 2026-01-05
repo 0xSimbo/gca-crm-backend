@@ -9,6 +9,13 @@ This directory contains integration tests for the fractions router endpoints.
 1. Ensure the API server is running (either locally or point to a deployed environment)
 2. Set the `API_URL` environment variable if testing against a non-local server
 
+### Optional: enable server-side timing logs
+
+`/fractions/rewards-breakdown` supports an on-demand timing log:
+
+- Add `debugTimings=true` (or `1`) to emit a single summary log: `[fractionsRouter] /rewards-breakdown timings { ... }`
+- This is useful when investigating performance regressions (DB vs Control API vs compute).
+
 ### Run All Tests
 
 ```bash
@@ -156,9 +163,9 @@ When tests pass, you'll see detailed console output including:
 
 After optimizations, expected performance improvements:
 
-- `/rewards-breakdown` endpoint: 30-50% faster response time
-- Parallel batch processing reduces latency for multi-farm wallets
-- Database query optimization reduces redundant queries
+- `/rewards-breakdown` endpoint: significantly fewer upstream calls (no per-wallet farm-rewards-history fetches in the wallet path)
+- The wallet path now reuses the Control API **batch** wallet rewards endpoint and derives purchases/totals from a single DB query
+- Typical local dev runs for a single wallet should be sub-second on a warm database; prod latency will include network + platform load
 
 ## Troubleshooting
 

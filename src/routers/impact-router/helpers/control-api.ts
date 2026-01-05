@@ -3,12 +3,21 @@ import { getCurrentEpoch } from "../../../utils/getProtocolWeek";
 export interface ControlApiFarmReward {
   weekNumber: number;
   farmId: string;
+  farmName?: string;
+  regionId?: number;
+  builtAt?: string;
+  builtEpoch?: number;
   asset?: string | null;
+  expectedWeeklyCarbonCredits?: string;
+  protocolDepositUSDC6Decimals?: string;
   walletTotalGlowInflationReward?: string;
+  walletTotalProtocolDepositReward?: string;
   walletInflationFromLaunchpad?: string;
   walletInflationFromMiningCenter?: string;
   walletProtocolDepositFromLaunchpad?: string;
   walletProtocolDepositFromMiningCenter?: string;
+  farmTotalInflation?: string;
+  farmTotalProtocolDepositReward?: string;
 }
 
 export interface ControlApiDepositSplitHistorySegment {
