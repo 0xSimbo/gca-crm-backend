@@ -381,3 +381,34 @@ Query:
 - `startWeek`, `endWeek` (optional)
 - `limit` (optional): default `200`
 - `includeWeekly` (optional): `true|1` to include weekly rows when querying multiple wallets (can be large)
+
+## `GET /impact/delegators-leaderboard`
+
+Delegators-only leaderboard (launchpad/vault participants) with **net rewards** accounting.
+
+### What it returns
+
+`wallets[]` rows contain:
+
+- `rank`: 1-based rank (sorted by `netRewardsWei` descending)
+- `walletAddress`
+- `activelyDelegatedGlwWei`: the wallet’s **vault ownership** share of remaining GLW protocol-deposit principal at `endWeek` (wei)
+- `glwPerWeekWei`: **last completed week’s** gross rewards for the wallet (weekNumber = `endWeek`), computed as:
+  - `walletInflationFromLaunchpad` + `walletProtocolDepositFromLaunchpad` (GLW-only)
+- `netRewardsWei`: the wallet’s “true profit” over the requested week range:
+  - `grossRewardsWei - principalAllocatedWei`
+  - where `grossRewardsWei` is the sum over weeks `[startWeek..endWeek]` of (launchpad inflation + GLW protocol-deposit received)
+  - and `principalAllocatedWei` is computed from the vault model as the wallet’s share of protocol-deposit principal released over the same range (farm distributed deltas × wallet split at each week)
+- `sharePercent`: this wallet’s % share of **total gross rewards** across all wallets in the leaderboard period (string like `"13.0"`)
+
+### Query
+
+- `startWeek` (optional): defaults to `getWeekRange().startWeek` (97)
+- `endWeek` (optional): defaults to `getWeekRange().endWeek` (last completed week)
+- `limit` (optional): default `200`
+
+Example:
+
+```bash
+curl -sS "http://localhost:3005/impact/delegators-leaderboard?limit=50"
+```
