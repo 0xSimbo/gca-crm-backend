@@ -5,6 +5,7 @@ import {
   computeGlowImpactScores,
   getCurrentWeekProjection,
   getAllImpactWallets,
+  getImpactLeaderboardWalletUniverse,
 } from "./helpers/impact-score";
 
 function parseOptionalInt(value: string | undefined): number | undefined {
@@ -165,12 +166,15 @@ export const impactRouter = new Elysia({ prefix: "/impact" })
           if (cached) return cached;
         }
 
-        const allWallets = walletAddress
+        const universe = walletAddress
           ? null
-          : filterLeaderboardWallets(await getAllImpactWallets());
+          : await getImpactLeaderboardWalletUniverse({ limit: parsedLimit });
+        const eligibleWalletCount = universe
+          ? filterLeaderboardWallets(universe.eligibleWallets).length
+          : 0;
         const wallets = walletAddress
           ? [walletAddress.toLowerCase()]
-          : allWallets!.slice(0, parsedLimit);
+          : filterLeaderboardWallets(universe!.candidateWallets);
 
         const results = await computeGlowImpactScores({
           walletAddresses: wallets,
@@ -196,7 +200,7 @@ export const impactRouter = new Elysia({ prefix: "/impact" })
           weekRange: { startWeek: actualStartWeek, endWeek: actualEndWeek },
           limit: parsedLimit,
           ...(!limitWasProvided
-            ? { totalWalletCount: allWallets!.length }
+            ? { totalWalletCount: eligibleWalletCount }
             : {}),
           wallets: results
             .map((r) => ({
@@ -210,6 +214,7 @@ export const impactRouter = new Elysia({ prefix: "/impact" })
             }))
             .sort((a, b) => Number(b.totalPoints) - Number(a.totalPoints)),
         };
+        payload.wallets = payload.wallets.slice(0, parsedLimit);
         const cacheKey = getGlowScoreListCacheKey({
           startWeek: actualStartWeek,
           endWeek: actualEndWeek,

@@ -59,6 +59,214 @@ function getPonderListenerBaseUrl(): string {
   return CLAIMS_API_BASE_URL;
 }
 
+interface GlwHolderRow {
+  id: string;
+  balance: string;
+}
+
+interface GlwHoldersPageResponse {
+  data?: {
+    // NOTE: This is not a typo. Ponder's generated GraphQL schema pluralizes
+    // `glowBalances` as `glowBalancess` (double "s"). See `ponder-listener/generated/schema.graphql`.
+    glowBalancess?: {
+      items?: GlwHolderRow[];
+      pageInfo?: { hasNextPage?: boolean; endCursor?: string | null };
+      totalCount?: number;
+    };
+  };
+  errors?: Array<{ message?: string }>;
+}
+
+let cachedGlwHolders: {
+  expiresAtMs: number;
+  data: {
+    holders: string[];
+    topHoldersByBalance: string[];
+    totalCount: number;
+  };
+} | null = null;
+
+export async function fetchGlwHoldersFromPonder(params?: {
+  ttlMs?: number;
+}): Promise<{
+  holders: string[];
+  topHoldersByBalance: string[];
+  totalCount: number;
+}> {
+  const ttlMs = params?.ttlMs ?? 10 * 60_000;
+  const now = Date.now();
+  if (cachedGlwHolders && now < cachedGlwHolders.expiresAtMs)
+    return cachedGlwHolders.data;
+
+  const baseUrl = getPonderListenerBaseUrl();
+  const PAGE_SIZE = 500;
+
+  const holders: string[] = [];
+  const topHoldersByBalance: string[] = [];
+  let totalCount = 0;
+  let after: string | undefined;
+  let seenTotalCount = false;
+
+  const query = `
+    query GlwHolders($where: glowBalancesFilter, $after: String, $limit: Int) {
+      # NOTE: Not a typo: the list field is glowBalancess (double "s") in Ponder's schema.
+      glowBalancess(
+        where: $where
+        orderBy: "balance"
+        orderDirection: "desc"
+        after: $after
+        limit: $limit
+      ) {
+        items { id balance }
+        pageInfo { hasNextPage endCursor }
+        totalCount
+      }
+    }
+  `;
+
+  try {
+    for (;;) {
+      const response = await fetch(`${baseUrl}/graphql`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          query,
+          variables: {
+            where: { balance_gt: "0" },
+            after: after ?? null,
+            limit: PAGE_SIZE,
+          },
+        }),
+      });
+
+      const text = await response.text().catch(() => "");
+      if (!response.ok)
+        throw new Error(
+          `Ponder GraphQL holders failed (${response.status}): ${
+            text || "<empty>"
+          }`
+        );
+
+      let json: GlwHoldersPageResponse;
+      try {
+        json = JSON.parse(text) as GlwHoldersPageResponse;
+      } catch {
+        throw new Error(
+          `Ponder GraphQL holders returned invalid JSON: ${text}`
+        );
+      }
+
+      const errMsg = json.errors?.[0]?.message;
+      if (errMsg) throw new Error(`Ponder GraphQL error: ${errMsg}`);
+
+      const page = json.data?.glowBalancess;
+      const items = page?.items || [];
+      if (!seenTotalCount && typeof page?.totalCount === "number") {
+        totalCount = page.totalCount;
+        seenTotalCount = true;
+      }
+
+      for (const row of items) {
+        const wallet = (row.id || "").toLowerCase();
+        if (!wallet) continue;
+        holders.push(wallet);
+        if (topHoldersByBalance.length < 5000) topHoldersByBalance.push(wallet);
+      }
+
+      const hasNext = page?.pageInfo?.hasNextPage === true;
+      const endCursor = page?.pageInfo?.endCursor || undefined;
+      if (!hasNext || !endCursor) break;
+      after = endCursor;
+    }
+  } catch (error) {
+    // If ponder is down, fail closed (do not silently return empty eligibility).
+    throw error instanceof Error
+      ? error
+      : new Error(`Ponder holders fetch failed: ${String(error)}`);
+  }
+
+  const data = {
+    holders,
+    topHoldersByBalance,
+    totalCount: totalCount || holders.length,
+  };
+  cachedGlwHolders = { expiresAtMs: now + ttlMs, data };
+  return data;
+}
+
+interface ControlStakersPageResponse {
+  wallets?: string[];
+  nextCursor?: string;
+  totalCount?: number;
+  error?: string;
+}
+
+let cachedGctlStakers: {
+  expiresAtMs: number;
+  data: { stakers: string[]; totalCount: number };
+} | null = null;
+
+export async function fetchGctlStakersFromControlApi(params?: {
+  ttlMs?: number;
+}): Promise<{ stakers: string[]; totalCount: number }> {
+  const ttlMs = params?.ttlMs ?? 10 * 60_000;
+  const now = Date.now();
+  if (cachedGctlStakers && now < cachedGctlStakers.expiresAtMs)
+    return cachedGctlStakers.data;
+
+  const baseUrl = getControlApiUrl();
+  const stakers: string[] = [];
+  let totalCount = 0;
+  let cursor: string | undefined;
+  let seenTotal = false;
+
+  try {
+    for (let page = 0; page < 10_000; page++) {
+      const url = new URL("/wallets/stakers", baseUrl);
+      url.searchParams.set("limit", "2000");
+      if (cursor) url.searchParams.set("cursor", cursor);
+
+      const response = await fetch(url);
+      const text = await response.text().catch(() => "");
+      if (!response.ok)
+        throw new Error(
+          `Control API stakers failed (${response.status}): ${
+            text || "<empty>"
+          }`
+        );
+
+      let json: ControlStakersPageResponse;
+      try {
+        json = JSON.parse(text) as ControlStakersPageResponse;
+      } catch {
+        throw new Error(`Control API stakers returned invalid JSON: ${text}`);
+      }
+
+      if (json.error)
+        throw new Error(`Control API stakers error: ${json.error}`);
+
+      const pageWallets = (json.wallets || []).map((w) => w.toLowerCase());
+      for (const w of pageWallets) if (w) stakers.push(w);
+
+      if (!seenTotal && typeof json.totalCount === "number") {
+        totalCount = json.totalCount;
+        seenTotal = true;
+      }
+
+      if (!json.nextCursor) break;
+      cursor = json.nextCursor;
+    }
+  } catch (error) {
+    throw error instanceof Error
+      ? error
+      : new Error(`Control API stakers fetch failed: ${String(error)}`);
+  }
+
+  const data = { stakers, totalCount: totalCount || stakers.length };
+  cachedGctlStakers = { expiresAtMs: now + ttlMs, data };
+  return data;
+}
+
 interface GlwTwabByWeekResponse {
   indexingComplete?: boolean;
   weekRange?: { startWeek: number; endWeek: number };

@@ -13,7 +13,9 @@ import { getCurrentEpoch } from "../../../utils/getProtocolWeek";
 import { getLiquidGlwBalanceWei } from "./glw-balance";
 import {
   fetchWalletRewardsHistoryBatch,
+  fetchGlwHoldersFromPonder,
   fetchGlwTwabByWeekWeiMany,
+  fetchGctlStakersFromControlApi,
   getGctlSteeringByWeekWei,
   getSteeringSnapshot,
   getUnclaimedGlwRewardsWei,
@@ -226,6 +228,39 @@ export async function getAllImpactWallets(): Promise<string[]> {
   for (const row of splitWallets) wallets.add(row.wallet.toLowerCase());
 
   return Array.from(wallets);
+}
+
+export async function getImpactLeaderboardWalletUniverse(params: {
+  limit: number;
+}): Promise<{
+  eligibleWallets: string[];
+  candidateWallets: string[];
+}> {
+  const limit = Math.max(params.limit, 1);
+
+  const [protocolWallets, glwHolders, gctlStakers] = await Promise.all([
+    getAllImpactWallets(),
+    fetchGlwHoldersFromPonder(),
+    fetchGctlStakersFromControlApi(),
+  ]);
+
+  const eligibleSet = new Set<string>();
+  for (const w of protocolWallets) eligibleSet.add(w.toLowerCase());
+  for (const w of glwHolders.holders) eligibleSet.add(w.toLowerCase());
+  for (const w of gctlStakers.stakers) eligibleSet.add(w.toLowerCase());
+
+  const poolSize = Math.max(limit * 3, 600);
+  const topHolders = glwHolders.topHoldersByBalance.slice(0, poolSize);
+
+  const candidateSet = new Set<string>();
+  for (const w of protocolWallets) candidateSet.add(w.toLowerCase());
+  for (const w of gctlStakers.stakers) candidateSet.add(w.toLowerCase());
+  for (const w of topHolders) candidateSet.add(w.toLowerCase());
+
+  return {
+    eligibleWallets: Array.from(eligibleSet),
+    candidateWallets: Array.from(candidateSet),
+  };
 }
 
 export async function computeGlowImpactScores(params: {

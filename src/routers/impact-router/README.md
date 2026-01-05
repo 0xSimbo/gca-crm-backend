@@ -54,7 +54,7 @@ If you **buy/receive GLW now**, the score can change, but it no longer “backfi
 The **weekly rollover components** (inflation / steering / vault bonus / cash-miner multiplier) are derived from **weekNumber-indexed** data sources and behave like weekly accounting:
 
 - Inflation + protocol-deposit recovery come from Control API reward history (by `weekNumber`)
-- Steering is derived from Control API region rewards and the wallet stake snapshot (currently applied uniformly across the queried week range)
+- Steering is derived from Control API **epoch-specific** region rewards and **stake-by-epoch** snapshots; if those endpoints are unavailable, the backend falls back to the **current stake snapshot** method (applied uniformly across the queried week range)
 - Cash-miner bonus depends on whether a mining-center fraction purchase happened in a given `weekNumber`
 
 So buying GLW does **not** retroactively change those weekly rollover rows.
@@ -88,6 +88,10 @@ These are **public HTTP endpoints** exposed by `impactRouter` (Elysia) under the
 - **Single wallet**: pass `walletAddress` → returns a single `glowWorth` object
 - **List**: omit `walletAddress` → returns `{ weekRange, limit, wallets: glowWorth[] }`
 - **List (no `limit`)**: when `limit` query param is omitted, response also includes `totalWalletCount` so UIs can show “displaying 200 of N”.
+
+#### List-mode wallet universe (important)
+
+`GET /impact/glow-worth` list mode is **not** “all GLW holders”. Today it only considers wallets already known to the backend via protocol activity (fraction buyers + reward split wallets), and it excludes internal/team wallets via `EXCLUDED_LEADERBOARD_WALLETS`.
 
 Example (Next.js / React server-side fetch):
 
@@ -140,6 +144,21 @@ There are two shapes, based on `walletAddress`:
 - **Single wallet** (`walletAddress=0x...`): returns the full object including `glowWorth`, `totals`, `weekly[]`, and `currentWeekProjection` (live preview).
 - **Leaderboard/list** (omit `walletAddress`): returns lightweight rows with totals + a `composition` breakdown + `lastWeekPoints` + `activeMultiplier`.
 - **Leaderboard/list (no `limit`)**: when `limit` query param is omitted, response also includes `totalWalletCount`.
+
+#### Leaderboard eligibility (who can show up?)
+
+The leaderboard is **not** limited to “protocol participants” anymore. In list mode, the backend builds an eligible wallet universe from:
+
+- **All GLW holders** (ponder listener `glowBalances` where balance > 0)
+- **All wallets with staked GCTL** (Control API `wallets.stakedControl > 0`)
+- **Protocol wallets** already known to the backend (fraction buyers + reward split wallets)
+
+Internal/team wallets are still excluded via the router’s `EXCLUDED_LEADERBOARD_WALLETS` list.
+
+#### Leaderboard output vs eligibility (why `totalWalletCount` can be > returned rows)
+
+- `totalWalletCount` (when included) refers to the **eligible wallet universe** (after excluding internal/team wallets).
+- To keep latency reasonable, list mode may compute scores over a **candidate subset** (protocol wallets + all GCTL stakers + top GLW holders by balance) and return the top `limit` rows from that scored set.
 
 #### Full breakdown for a single wallet
 
@@ -281,6 +300,7 @@ export async function getImpactLeaderboard(params: {
 - For dashboards, fetch a single wallet with `walletAddress` and a bounded `startWeek/endWeek`.
 - Some Control API calls are cached in-process to reduce repeated work (e.g. region rewards are cached for ~30s).
 - The `/impact/glow-score` **list** response is cached in-process for ~10 minutes (single-wallet responses are not cached, since `currentWeekProjection` is meant to feel “live”).
+- In list mode, the backend may score a **candidate subset** (e.g. protocol wallets + GCTL stakers + top GLW holders) to keep latency reasonable while still returning the top `limit` by score.
 
 ## `GET /impact/glow-worth`
 
