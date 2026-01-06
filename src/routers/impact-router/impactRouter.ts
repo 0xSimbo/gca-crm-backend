@@ -19,6 +19,26 @@ function parseOptionalBool(value: string | undefined): boolean {
   return value === "true" || value === "1";
 }
 
+type ImpactLeaderboardSortKey = "totalPoints" | "lastWeekPoints" | "glowWorth";
+type SortDir = "asc" | "desc";
+
+function parseImpactLeaderboardSortKey(
+  value: string | undefined
+): ImpactLeaderboardSortKey | null {
+  if (!value) return null;
+  if (value === "totalPoints") return "totalPoints";
+  if (value === "lastWeekPoints") return "lastWeekPoints";
+  if (value === "glowWorth") return "glowWorth";
+  return null;
+}
+
+function parseSortDir(value: string | undefined): SortDir | null {
+  if (!value) return null;
+  if (value === "asc") return "asc";
+  if (value === "desc") return "desc";
+  return null;
+}
+
 function createRequestId(): string {
   try {
     return crypto.randomUUID();
@@ -68,6 +88,8 @@ function getGlowScoreListCacheKey(params: {
   limit: number;
   includeWeekly: boolean;
   limitWasProvided: boolean;
+  sort: ImpactLeaderboardSortKey;
+  dir: SortDir;
 }): string {
   return [
     params.startWeek,
@@ -75,6 +97,8 @@ function getGlowScoreListCacheKey(params: {
     params.limit,
     params.includeWeekly ? 1 : 0,
     params.limitWasProvided ? 1 : 0,
+    params.sort,
+    params.dir,
   ].join(":");
 }
 
@@ -244,6 +268,8 @@ export const impactRouter = new Elysia({ prefix: "/impact" })
         limit,
         includeWeekly,
         debugTimings,
+        sort,
+        dir,
       },
       set,
     }) => {
@@ -275,10 +301,24 @@ export const impactRouter = new Elysia({ prefix: "/impact" })
           includeWeekly === "true" || includeWeekly === "1" || !!walletAddress;
         const isListMode = !walletAddress;
         const shouldLogTimingsForRequest = shouldLogTimings && isListMode;
+        const sortKey =
+          parseImpactLeaderboardSortKey(sort) ?? ("totalPoints" as const);
+        const sortDir = parseSortDir(dir) ?? ("desc" as const);
 
         if (actualEndWeek < actualStartWeek) {
           set.status = 400;
           return "endWeek must be >= startWeek";
+        }
+
+        if (isListMode) {
+          if (sort && !parseImpactLeaderboardSortKey(sort)) {
+            set.status = 400;
+            return "sort must be one of: totalPoints, lastWeekPoints, glowWorth";
+          }
+          if (dir && !parseSortDir(dir)) {
+            set.status = 400;
+            return "dir must be one of: asc, desc";
+          }
         }
 
         if (isListMode) {
@@ -288,6 +328,8 @@ export const impactRouter = new Elysia({ prefix: "/impact" })
             limit: parsedLimit,
             includeWeekly: shouldIncludeWeekly,
             limitWasProvided,
+            sort: sortKey,
+            dir: sortDir,
           });
           const cached = readCachedGlowScoreList(cacheKey);
           if (cached) {
@@ -301,6 +343,8 @@ export const impactRouter = new Elysia({ prefix: "/impact" })
                 },
                 limit: parsedLimit,
                 includeWeekly: shouldIncludeWeekly,
+                sort: sortKey,
+                dir: sortDir,
                 msTotal: nowMs() - requestStartMs,
               });
             }
@@ -330,6 +374,9 @@ export const impactRouter = new Elysia({ prefix: "/impact" })
         const eligibleWalletCount = universe
           ? filterLeaderboardWallets(universe.eligibleWallets).length
           : 0;
+        const gctlStakersSet = new Set(
+          universe ? universe.gctlStakers.map((w) => w.toLowerCase()) : []
+        );
         const wallets = walletAddress
           ? [walletAddress.toLowerCase()]
           : filterLeaderboardWallets(universe!.candidateWallets);
@@ -363,31 +410,137 @@ export const impactRouter = new Elysia({ prefix: "/impact" })
           return { ...match, currentWeekProjection };
         }
 
+        function safePointsNumber(value: string | undefined): number {
+          const num = Number(value);
+          return Number.isFinite(num) ? num : 0;
+        }
+
+        function safePointsScaled6(value: string | undefined): bigint {
+          if (!value) return 0n;
+          const raw = value.trim();
+          if (!raw) return 0n;
+          const isNeg = raw.startsWith("-");
+          const abs = isNeg ? raw.slice(1) : raw;
+
+          const parts = abs.split(".");
+          if (parts.length > 2) return 0n;
+          const intPartRaw = parts[0] ?? "";
+          const fracRaw = parts[1] ?? "";
+
+          const intPart = intPartRaw === "" ? "0" : intPartRaw;
+          if (!/^\d+$/.test(intPart)) return 0n;
+          if (fracRaw !== "" && !/^\d+$/.test(fracRaw)) return 0n;
+
+          const frac = (fracRaw + "000000").slice(0, 6);
+          let out = BigInt(intPart) * 1_000_000n + BigInt(frac);
+          if (isNeg) out = -out;
+          return out;
+        }
+
+        function safeBigInt(value: string | undefined): bigint {
+          if (!value) return 0n;
+          try {
+            return BigInt(value);
+          } catch {
+            return 0n;
+          }
+        }
+
+        function compareLeaderboardRows(
+          a: {
+            walletAddress: string;
+            totalPoints: string;
+            lastWeekPoints: string;
+            glowWorthWei: string;
+          },
+          b: {
+            walletAddress: string;
+            totalPoints: string;
+            lastWeekPoints: string;
+            glowWorthWei: string;
+          },
+          params: { sort: ImpactLeaderboardSortKey; dir: SortDir }
+        ) {
+          const factor = params.dir === "asc" ? 1 : -1;
+          if (params.sort === "glowWorth") {
+            const av = safeBigInt(a.glowWorthWei);
+            const bv = safeBigInt(b.glowWorthWei);
+            if (av !== bv) return av > bv ? factor : -factor;
+          } else {
+            const av =
+              params.sort === "lastWeekPoints"
+                ? safePointsScaled6(a.lastWeekPoints)
+                : safePointsScaled6(a.totalPoints);
+            const bv =
+              params.sort === "lastWeekPoints"
+                ? safePointsScaled6(b.lastWeekPoints)
+                : safePointsScaled6(b.totalPoints);
+            if (av !== bv) return av > bv ? factor : -factor;
+          }
+
+          // Deterministic tie-breaker (keeps globalRank stable across runs even on ties).
+          const wa = (a.walletAddress || "").toLowerCase();
+          const wb = (b.walletAddress || "").toLowerCase();
+          if (wa === wb) return 0;
+          return wa > wb ? 1 : -1;
+        }
+
         const payload = {
           weekRange: { startWeek: actualStartWeek, endWeek: actualEndWeek },
           limit: parsedLimit,
           ...(!limitWasProvided
             ? { totalWalletCount: eligibleWalletCount }
             : {}),
-          wallets: results
-            .map((r) => ({
-              walletAddress: r.walletAddress,
-              totalPoints: r.totals.totalPoints,
-              glowWorthWei: r.glowWorth.glowWorthWei,
-              composition: r.composition,
-              lastWeekPoints: r.lastWeekPoints,
-              activeMultiplier: r.activeMultiplier,
-              endWeekMultiplier: r.endWeekMultiplier,
-            }))
-            .sort((a, b) => Number(b.totalPoints) - Number(a.totalPoints)),
+          wallets: results.map((r) => ({
+            walletAddress: r.walletAddress,
+            totalPoints: r.totals.totalPoints,
+            glowWorthWei: r.glowWorth.glowWorthWei,
+            composition: r.composition,
+            lastWeekPoints: r.lastWeekPoints,
+            activeMultiplier: r.activeMultiplier,
+            hasMinerMultiplier: r.hasMinerMultiplier,
+            hasSteeringStake: gctlStakersSet.has(r.walletAddress.toLowerCase()),
+            hasVaultBonus: (() => {
+              try {
+                return BigInt(r.glowWorth.delegatedActiveGlwWei || "0") > 0n;
+              } catch {
+                return false;
+              }
+            })(),
+            endWeekMultiplier: r.endWeekMultiplier,
+            globalRank: 0,
+          })),
         };
+
+        // globalRank is always defined as totalPoints-desc rank (stable across sorts).
+        const globalRankByWallet = new Map<string, number>();
+        payload.wallets
+          .slice()
+          .sort((a, b) =>
+            compareLeaderboardRows(a, b, { sort: "totalPoints", dir: "desc" })
+          )
+          .forEach((row, idx) =>
+            globalRankByWallet.set(row.walletAddress.toLowerCase(), idx + 1)
+          );
+        payload.wallets.forEach((row) => {
+          row.globalRank =
+            globalRankByWallet.get(row.walletAddress.toLowerCase()) ?? 0;
+        });
+
+        // Sort requested key/dir before slicing to limit.
+        payload.wallets.sort((a, b) =>
+          compareLeaderboardRows(a, b, { sort: sortKey, dir: sortDir })
+        );
         payload.wallets = payload.wallets.slice(0, parsedLimit);
+
         const cacheKey = getGlowScoreListCacheKey({
           startWeek: actualStartWeek,
           endWeek: actualEndWeek,
           limit: parsedLimit,
           includeWeekly: shouldIncludeWeekly,
           limitWasProvided,
+          sort: sortKey,
+          dir: sortDir,
         });
         glowScoreListCache.set(cacheKey, {
           expiresAtMs: Date.now() + GLOW_SCORE_LIST_CACHE_TTL_MS,
@@ -407,6 +560,8 @@ export const impactRouter = new Elysia({ prefix: "/impact" })
             weekRange: { startWeek: actualStartWeek, endWeek: actualEndWeek },
             limit: parsedLimit,
             includeWeekly: shouldIncludeWeekly,
+            sort: sortKey,
+            dir: sortDir,
             walletsRequested: wallets.length,
             walletsReturned: payload.wallets.length,
             totalWalletCount: !limitWasProvided
@@ -442,11 +597,13 @@ export const impactRouter = new Elysia({ prefix: "/impact" })
         limit: t.Optional(t.String()),
         includeWeekly: t.Optional(t.String()),
         debugTimings: t.Optional(t.String()),
+        sort: t.Optional(t.String()),
+        dir: t.Optional(t.String()),
       }),
       detail: {
         summary: "Get Glow Impact Score",
         description:
-          "Computes weekly rollover points (emissions + steering + vault bonus) with a total multiplier (base cash-miner multiplier + impact streak bonus), plus continuous GlowWorth accrual. For continuous points, LiquidGLW uses a per-week time-weighted average balance (TWAB) derived from indexed ERC20 Transfer history (ponder listener). GCTL steering is derived from Control API stake-by-epoch; if unavailable it falls back to the current stake snapshot.",
+          "Computes weekly rollover points (emissions + steering + vault bonus) with a total multiplier (base cash-miner multiplier + impact streak bonus). The streak bonus increases on weeks where delegated GLW increases or the wallet buys a mining-center fraction that week. Also includes continuous GlowWorth accrual. For continuous points, LiquidGLW uses a per-week time-weighted average balance (TWAB) derived from indexed ERC20 Transfer history (ponder listener). GCTL steering is derived from Control API stake-by-epoch; if unavailable it falls back to the current stake snapshot.",
         tags: [TAG.REWARDS],
       },
     }

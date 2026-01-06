@@ -23,7 +23,6 @@ const DEFAULT_CLAIMS_API_BASE_URL =
   "https://glow-ponder-listener-2-production.up.railway.app";
 
 const GLW_MAINNET = "0xf4fbC617A5733EAAF9af08E1Ab816B103388d8B6".toLowerCase();
-const GLW_SEPOLIA = "0x2039161fcE4C8e5CF5FE64e17Fd290E8dFF3c9BD".toLowerCase();
 
 interface Args {
   wallet: string;
@@ -45,11 +44,15 @@ function parseArgs(argv: string[]): Args {
     getArgValue(argv, "-w") ??
     "0x77f41144e787cb8cd29a37413a71f53f92ee050c";
 
-  const startWeekRaw = getArgValue(argv, "--startWeek") ?? "99";
+  const startWeekRaw = getArgValue(argv, "--startWeek") ?? "97";
   const endWeekRaw = getArgValue(argv, "--endWeek") ?? "111";
   const startWeek = Number(startWeekRaw);
   const endWeek = Number(endWeekRaw);
-  if (!Number.isFinite(startWeek) || !Number.isFinite(endWeek) || endWeek < startWeek) {
+  if (
+    !Number.isFinite(startWeek) ||
+    !Number.isFinite(endWeek) ||
+    endWeek < startWeek
+  ) {
     throw new Error(
       `Invalid week range: startWeek=${startWeekRaw} endWeek=${endWeekRaw}`
     );
@@ -274,12 +277,9 @@ async function main() {
   }
 
   let claimedGlwWei_mainnet = BigInt(0);
-  let claimedGlwWei_sepolia = BigInt(0);
   let claimedAnyWei = BigInt(0);
   let mainnetMatches = 0;
-  let sepoliaMatches = 0;
   let claimedGlwWei_mainnet_beneficiaryOnly = BigInt(0);
-  let claimedGlwWei_sepolia_beneficiaryOnly = BigInt(0);
   let beneficiaryMismatchCount = 0;
   let claimantMismatchCount = 0;
   let claimedAnyWei_beneficiaryOnly = BigInt(0);
@@ -349,16 +349,9 @@ async function main() {
         txHash,
       });
     }
-    if (token === GLW_SEPOLIA) {
-      claimedGlwWei_sepolia += amount;
-      sepoliaMatches++;
-      if (beneficiary === wallet)
-        claimedGlwWei_sepolia_beneficiaryOnly += amount;
-    }
   }
 
   console.log("GLW mainnet token:", GLW_MAINNET);
-  console.log("GLW sepolia token:", GLW_SEPOLIA);
   console.log(
     "claimedGlwWei_mainnet:",
     claimedGlwWei_mainnet.toString(),
@@ -370,18 +363,6 @@ async function main() {
     "claimedGlwWei_mainnet (beneficiary==wallet only):",
     claimedGlwWei_mainnet_beneficiaryOnly.toString(),
     `(${formatUnits18(claimedGlwWei_mainnet_beneficiaryOnly)} GLW)`
-  );
-  console.log(
-    "claimedGlwWei_sepolia:",
-    claimedGlwWei_sepolia.toString(),
-    `(${formatUnits18(claimedGlwWei_sepolia)} GLW)`,
-    "matches:",
-    sepoliaMatches
-  );
-  console.log(
-    "claimedGlwWei_sepolia (beneficiary==wallet only):",
-    claimedGlwWei_sepolia_beneficiaryOnly.toString(),
-    `(${formatUnits18(claimedGlwWei_sepolia_beneficiaryOnly)} GLW)`
   );
   console.log("claimedAnyWei (all tokens):", claimedAnyWei.toString());
   console.log(
@@ -462,7 +443,9 @@ async function main() {
   }
 
   console.log("");
-  console.log("---- Range-based epoch ledger (earned vs claimed by claim timestamp) ----");
+  console.log(
+    "---- Range-based epoch ledger (earned vs claimed by claim timestamp) ----"
+  );
 
   const earnedByEpoch = new Map<number, bigint>();
   for (const r of rewards) {
@@ -529,9 +512,6 @@ async function main() {
   const unclaimedUsingMainnetClaimsBeneficiaryOnly = clampToZero(
     claimableGlwWei - claimedGlwWei_mainnet_beneficiaryOnly
   );
-  const unclaimedUsingSepoliaClaims = clampToZero(
-    claimableGlwWei - claimedGlwWei_sepolia
-  );
 
   console.log(
     "unclaimed (using claimableGlwWei and mainnet GLW claims):",
@@ -542,11 +522,6 @@ async function main() {
     "unclaimed (using claimableGlwWei and mainnet GLW claims, beneficiary==wallet only):",
     unclaimedUsingMainnetClaimsBeneficiaryOnly.toString(),
     `(${formatUnits18(unclaimedUsingMainnetClaimsBeneficiaryOnly)} GLW)`
-  );
-  console.log(
-    "unclaimed (using claimableGlwWei and sepolia GLW claims):",
-    unclaimedUsingSepoliaClaims.toString(),
-    `(${formatUnits18(unclaimedUsingSepoliaClaims)} GLW)`
   );
   console.log(
     "unclaimed (alt claimableGlwWei_alt_walletTotal - mainnet claims):",

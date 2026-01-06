@@ -217,6 +217,8 @@ interface ImpactScoreResponse {
   };
   lastWeekPoints: string;
   activeMultiplier: boolean;
+  hasMinerMultiplier: boolean;
+  endWeekMultiplier: number;
   weekly: ImpactScoreWeeklyRow[];
   currentWeekProjection: {
     weekNumber: number;
@@ -272,6 +274,13 @@ interface ImpactScoreLeaderboardRow {
   // Points earned in the previous week relative to `endWeek` (i.e. weekNumber = endWeek - 1)
   lastWeekPoints: string;
   activeMultiplier: boolean;
+  hasMinerMultiplier: boolean;
+  hasSteeringStake: boolean;
+  hasVaultBonus: boolean;
+  endWeekMultiplier: number;
+  // Stable rank by totalPoints (descending) for the scored candidate set.
+  // This does NOT change when you sort by lastWeekPoints or glowWorth.
+  globalRank: number;
   // rankDelta?: number; // intentionally omitted today (expensive to compute)
 }
 
@@ -287,6 +296,8 @@ export async function getImpactLeaderboard(params: {
   startWeek?: number;
   endWeek?: number;
   limit?: number;
+  sort?: "totalPoints" | "lastWeekPoints" | "glowWorth";
+  dir?: "asc" | "desc";
 }): Promise<ImpactScoreLeaderboardResponse> {
   const url = new URL("/impact/glow-score", params.baseUrl);
   if (params.startWeek != null)
@@ -294,6 +305,8 @@ export async function getImpactLeaderboard(params: {
   if (params.endWeek != null)
     url.searchParams.set("endWeek", String(params.endWeek));
   if (params.limit != null) url.searchParams.set("limit", String(params.limit));
+  if (params.sort != null) url.searchParams.set("sort", params.sort);
+  if (params.dir != null) url.searchParams.set("dir", params.dir);
 
   const res = await fetch(url, { cache: "no-store" });
   if (!res.ok) throw new Error(await res.text());
@@ -301,6 +314,18 @@ export async function getImpactLeaderboard(params: {
   return (await res.json()) as ImpactScoreLeaderboardResponse;
 }
 ```
+
+##### Leaderboard sorting
+
+List mode supports backend-driven sorting:
+
+- `sort`: `totalPoints` (default), `lastWeekPoints`, `glowWorth`
+- `dir`: `desc` (default), `asc`
+
+Notes:
+
+- Sorting is applied **before** slicing to `limit`.
+- `globalRank` always reflects rank by `totalPoints` **descending** (stable across sorts).
 
 ### Performance guidance
 

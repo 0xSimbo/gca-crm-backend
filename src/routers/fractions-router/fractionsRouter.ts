@@ -2602,6 +2602,23 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
 
         // Batch fetch farm names
         const farmNamesMap = await getFarmNamesByApplicationIds(applicationIds);
+        const appIdToFarmId = new Map<string, string>();
+        if (applicationIds.length > 0) {
+          try {
+            const apps = await db.query.applications.findMany({
+              columns: { id: true, farmId: true },
+              where: (apps, { inArray }) => inArray(apps.id, applicationIds),
+            });
+            for (const app of apps) {
+              if (app.farmId) appIdToFarmId.set(app.id, app.farmId);
+            }
+          } catch (error) {
+            console.error(
+              "Failed to batch fetch applications for farmId:",
+              error
+            );
+          }
+        }
 
         // Filter by wallet address if provided
         // Already filtered if walletAddress provided
@@ -2654,6 +2671,7 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
               // Fraction context
               fractionId: fraction.id,
               applicationId: fraction.applicationId,
+              farmId: appIdToFarmId.get(fraction.applicationId) ?? null,
               farmName: farmNamesMap.get(fraction.applicationId) || null,
               fractionStatus: fraction.status,
               isFilled: fraction.isFilled,
@@ -2762,6 +2780,23 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
 
         // Batch fetch farm names
         const farmNamesMap = await getFarmNamesByApplicationIds(applicationIds);
+        const appIdToFarmId = new Map<string, string>();
+        if (applicationIds.length > 0) {
+          try {
+            const apps = await db.query.applications.findMany({
+              columns: { id: true, farmId: true },
+              where: (apps, { inArray }) => inArray(apps.id, applicationIds),
+            });
+            for (const app of apps) {
+              if (app.farmId) appIdToFarmId.set(app.id, app.farmId);
+            }
+          } catch (error) {
+            console.error(
+              "Failed to batch fetch applications for farmId:",
+              error
+            );
+          }
+        }
 
         // Transform the data for better API response, filtering out invalid tokens
         const activityData = filteredActivity
@@ -2803,6 +2838,7 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
               // Fraction context
               fractionId: fraction.id,
               applicationId: fraction.applicationId,
+              farmId: appIdToFarmId.get(fraction.applicationId) ?? null,
               farmName: farmNamesMap.get(fraction.applicationId) || null,
               fractionType: fraction.type,
               fractionStatus: fraction.status,

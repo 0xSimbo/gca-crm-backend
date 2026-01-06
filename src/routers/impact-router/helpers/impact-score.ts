@@ -327,6 +327,7 @@ export interface GlowImpactScoreResult {
   composition: ImpactScoreComposition;
   lastWeekPoints: string;
   activeMultiplier: boolean;
+  hasMinerMultiplier: boolean;
   endWeekMultiplier: number;
   weekly: WeeklyImpactRow[];
 }
@@ -400,6 +401,7 @@ export async function getImpactLeaderboardWalletUniverse(params: {
 }): Promise<{
   eligibleWallets: string[];
   candidateWallets: string[];
+  gctlStakers: string[];
 }> {
   const limit = Math.max(params.limit, 1);
 
@@ -414,17 +416,19 @@ export async function getImpactLeaderboardWalletUniverse(params: {
     ),
   ]);
 
+  const gctlStakerWallets = gctlStakers.stakers.map((w) => w.toLowerCase());
+
   const eligibleSet = new Set<string>();
   for (const w of protocolWallets) eligibleSet.add(w.toLowerCase());
   for (const w of glwHolders.holders) eligibleSet.add(w.toLowerCase());
-  for (const w of gctlStakers.stakers) eligibleSet.add(w.toLowerCase());
+  for (const w of gctlStakerWallets) eligibleSet.add(w);
 
   const poolSize = Math.max(limit * 3, 600);
   const topHolders = glwHolders.topHoldersByBalance.slice(0, poolSize);
 
   const candidateSet = new Set<string>();
   for (const w of protocolWallets) candidateSet.add(w.toLowerCase());
-  for (const w of gctlStakers.stakers) candidateSet.add(w.toLowerCase());
+  for (const w of gctlStakerWallets) candidateSet.add(w);
   for (const w of topHolders) candidateSet.add(w.toLowerCase());
 
   recordTimingSafe(debug, {
@@ -444,6 +448,7 @@ export async function getImpactLeaderboardWalletUniverse(params: {
   return {
     eligibleWallets: Array.from(eligibleSet),
     candidateWallets: Array.from(candidateSet),
+    gctlStakers: gctlStakerWallets,
   };
 }
 
@@ -655,16 +660,20 @@ export async function computeDelegatorsLeaderboard(params: {
 
     const farmStates = new Map<
       string,
-      { split: SegmentState; principalWei: bigint; dist: TimelineState }
+      {
+        splitSegments: ControlApiDepositSplitHistorySegment[];
+        principalWei: bigint;
+        distributedTimeline: FarmDistributionTimelinePoint[];
+      }
     >();
     for (const [farmId, segs] of splitSegmentsByFarm) {
       const principalWei = principalByFarm.get(farmId) || 0n;
       if (principalWei <= 0n) continue;
       const timeline = farmDistributedTimelineByFarm.get(farmId) || [];
       farmStates.set(farmId, {
-        split: makeSegmentState(segs),
+        splitSegments: segs,
         principalWei,
-        dist: makeTimelineState(timeline),
+        distributedTimeline: timeline,
       });
     }
 
@@ -672,10 +681,15 @@ export async function computeDelegatorsLeaderboard(params: {
 
     let activelyDelegatedGlwWei = 0n;
     for (const [, farm] of farmStates) {
-      const splitScaled6 = getSplitScaled6AtWeek(farm.split, endWeek);
+      // IMPORTANT: `SegmentState` and `TimelineState` are cursor-based (mutable).
+      // Never reuse the same state object across different traversal orders.
+      const splitState = makeSegmentState(farm.splitSegments);
+      const distState = makeTimelineState(farm.distributedTimeline);
+
+      const splitScaled6 = getSplitScaled6AtWeek(splitState, endWeek);
       if (splitScaled6 <= 0n) continue;
       const cumulativeDistributed = getCumulativeDistributedGlwWeiAtWeek(
-        farm.dist,
+        distState,
         endWeek
       );
       const remaining = clampToZero(farm.principalWei - cumulativeDistributed);
@@ -685,20 +699,30 @@ export async function computeDelegatorsLeaderboard(params: {
 
     let principalAllocatedWei = 0n;
     for (const [, farm] of farmStates) {
-      for (let week = startWeek; week <= endWeek; week++) {
-        const splitScaled6 = getSplitScaled6AtWeek(farm.split, week);
-        if (splitScaled6 <= 0n) continue;
+      // Fresh cursor states for monotonic week traversal.
+      const splitState = makeSegmentState(farm.splitSegments);
+      const distState = makeTimelineState(farm.distributedTimeline);
+      // Seed the "previous week" cumulative so the first delta is scoped to `startWeek`,
+      // not the entire farm history prior to `startWeek`.
+      let prevCumulativeDistributed =
+        startWeek > 0
+          ? getCumulativeDistributedGlwWeiAtWeek(distState, startWeek - 1)
+          : 0n;
 
+      for (let week = startWeek; week <= endWeek; week++) {
         const cumulative = getCumulativeDistributedGlwWeiAtWeek(
-          farm.dist,
+          distState,
           week
         );
-        const prev =
-          week > 0
-            ? getCumulativeDistributedGlwWeiAtWeek(farm.dist, week - 1)
-            : 0n;
-        const delta = cumulative - prev;
+        const delta = cumulative - prevCumulativeDistributed;
+        // Always advance `prevCumulativeDistributed`, even if we end up skipping this
+        // week due to `splitScaled6 <= 0`. Otherwise, farm distributions from skipped
+        // weeks would be incorrectly attributed to later weeks where the split is > 0.
+        prevCumulativeDistributed = cumulative;
         if (delta <= 0n) continue;
+
+        const splitScaled6 = getSplitScaled6AtWeek(splitState, week);
+        if (splitScaled6 <= 0n) continue;
         principalAllocatedWei += (delta * splitScaled6) / SPLIT_SCALE_SCALED6;
       }
     }
@@ -881,7 +905,7 @@ export async function computeGlowImpactScores(params: {
   const streakSeedStartWeek = Math.max(startWeek - STREAK_BONUS_CAP_WEEKS, 0);
   const miningPurchaseWeeksByWallet = new Map<string, Set<number>>();
 
-  // Mining-center purchases only affect the cash-miner multiplier + streak eligibility (not vault ownership).
+  // Mining-center purchases affect the cash-miner multiplier + streak eligibility (not vault ownership).
   // PD splits for mining center are always zero.
   const miningStartTimestamp = GENESIS_TIMESTAMP + streakSeedStartWeek * 604800;
   const miningEndTimestamp = GENESIS_TIMESTAMP + (endWeek + 1) * 604800 - 1;
@@ -1561,6 +1585,7 @@ export async function computeGlowImpactScores(params: {
     const effectiveLastWeekPoints =
       lastWeek >= startWeek ? lastWeekPointsScaled6 : BigInt(0);
     const activeMultiplier = endWeekMultiplier > 1;
+    const hasMinerMultiplier = cashMinerWeeks.has(endWeek);
 
     results.push({
       walletAddress: wallet,
@@ -1598,6 +1623,7 @@ export async function computeGlowImpactScores(params: {
       },
       lastWeekPoints: formatPointsScaled6(effectiveLastWeekPoints),
       activeMultiplier,
+      hasMinerMultiplier,
       endWeekMultiplier,
       weekly,
     });
@@ -1672,7 +1698,7 @@ async function getImpactStreakSnapshot(params: {
   const startTimestamp = GENESIS_TIMESTAMP + streakSeedStartWeek * 604800;
   const now = Math.floor(Date.now() / 1000);
 
-  // Miner purchases only affect multiplier + streak eligibility.
+  // Miner purchases affect the base multiplier + streak eligibility.
   const miningRows = await db
     .select({
       buyer: fractionSplits.buyer,
