@@ -32,6 +32,7 @@ import { incrementStaleFractions } from "./crons/increment-stale-fractions/incre
 import { expireFractions } from "./crons/expire-fractions/expireFractions";
 import { initializeFractionEventService } from "./services/eventListener";
 import { retryFailedOperations } from "./services/retryFailedOperations";
+import { updateImpactLeaderboard } from "./crons/update-impact-leaderboard";
 import { createSlackClient } from "./slack/create-slack-client";
 
 const PORT = process.env.PORT || 3005;
@@ -169,6 +170,19 @@ const app = new Elysia()
       },
     })
   )
+  .use(
+    cron({
+      name: "Update Impact Leaderboard",
+      pattern: "0 1 * * *", // Daily at 01:00 UTC (1 hour after Thursday rollover)
+      async run() {
+        try {
+          await updateImpactLeaderboard();
+        } catch (error) {
+          console.error("[Cron] Error updating impact leaderboard:", error);
+        }
+      },
+    })
+  )
   .get(
     "/trigger-merkle-root-cron",
     async ({
@@ -207,6 +221,17 @@ const app = new Elysia()
     async ({
       store: {
         cron: { "Retry Failed Operations": cronJob },
+      },
+    }) => {
+      await cronJob.trigger();
+      return { message: "success" };
+    }
+  )
+  .get(
+    "/trigger-impact-leaderboard-cron",
+    async ({
+      store: {
+        cron: { "Update Impact Leaderboard": cronJob },
       },
     }) => {
       await cronJob.trigger();

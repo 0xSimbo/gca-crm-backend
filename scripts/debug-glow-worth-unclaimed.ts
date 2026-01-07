@@ -23,6 +23,7 @@ const DEFAULT_CLAIMS_API_BASE_URL =
   "https://glow-ponder-listener-2-production.up.railway.app";
 
 const GLW_MAINNET = "0xf4fbC617A5733EAAF9af08E1Ab816B103388d8B6".toLowerCase();
+const GENESIS_TIMESTAMP = 1700352000;
 
 interface Args {
   wallet: string;
@@ -102,6 +103,15 @@ async function fetchJsonOrThrow(url: string, init?: RequestInit): Promise<any> {
   }
 }
 
+function getV2WeekFromNonce(nonce: unknown): number | null {
+  // Next.js app treats week 97 as v2 nonce 0.
+  const FIRST_V2_WEEK = 97;
+  const n = Number(nonce);
+  if (!Number.isFinite(n) || n < 0) return null;
+  const week = FIRST_V2_WEEK + Math.trunc(n);
+  return week >= FIRST_V2_WEEK ? week : null;
+}
+
 async function main() {
   const { wallet, startWeek, endWeek } = parseArgs(process.argv);
   const apiUrl = process.env.API_URL ?? DEFAULT_API_URL;
@@ -154,110 +164,13 @@ async function main() {
     : [];
 
   console.log("weekly rewards rows:", rewards.length);
-  if (rewards[0] && typeof rewards[0] === "object") {
-    console.log(
-      "weekly rewards keys (first row):",
-      Object.keys(rewards[0]).sort()
-    );
-    console.log(
-      "weekly rewards first row sample:",
-      JSON.stringify(rewards[0], null, 2)
-    );
-  }
 
   const maxWeek = rewards.reduce((max, r) => {
     const w = Number(r?.weekNumber ?? -1);
     return Number.isFinite(w) && w > max ? w : max;
   }, -1);
-  const minWeek = rewards.reduce((min, r) => {
-    const w = Number(r?.weekNumber ?? -1);
-    return Number.isFinite(w) && w >= 0 && w < min ? w : min;
-  }, Number.POSITIVE_INFINITY);
 
-  const UNCLAIMED_LAG_WEEKS = 3;
-  const claimableEndWeek = maxWeek >= 0 ? maxWeek - UNCLAIMED_LAG_WEEKS : -1;
-  console.log("minWeek:", Number.isFinite(minWeek) ? minWeek : null);
   console.log("maxWeek:", maxWeek);
-  console.log("UNCLAIMED_LAG_WEEKS:", UNCLAIMED_LAG_WEEKS);
-  console.log("claimableEndWeek:", claimableEndWeek);
-
-  let claimableGlwWei = BigInt(0);
-  let claimableGlwWei_alt_walletTotal = BigInt(0);
-  let claimableGlwWei_alt_inflationOnly = BigInt(0);
-
-  const claimableByWeek: Array<{
-    weekNumber: number;
-    glowInflationTotalWei: string;
-    protocolDepositRewardsReceivedWei: string;
-    walletTotalGlowInflationRewardWei: string;
-    walletProtocolDepositFromLaunchpadWei: string;
-    walletProtocolDepositFromMiningCenterWei: string;
-  }> = [];
-
-  for (const r of rewards) {
-    const weekNumber = Number(r?.weekNumber ?? -1);
-    if (!Number.isFinite(weekNumber)) continue;
-    if (weekNumber > claimableEndWeek) continue;
-
-    const glowInflationTotal = safeBigInt(r?.glowInflationTotal);
-    const protocolDepositRewardsReceived = safeBigInt(
-      r?.protocolDepositRewardsReceived
-    );
-
-    // Alternative field names we’ve seen in other Control API payloads.
-    const walletTotalGlowInflationReward = safeBigInt(
-      r?.walletTotalGlowInflationReward
-    );
-    const walletProtocolDepositFromLaunchpad = safeBigInt(
-      r?.walletProtocolDepositFromLaunchpad
-    );
-    const walletProtocolDepositFromMiningCenter = safeBigInt(
-      r?.walletProtocolDepositFromMiningCenter
-    );
-
-    claimableGlwWei += glowInflationTotal + protocolDepositRewardsReceived;
-    claimableGlwWei_alt_walletTotal +=
-      walletTotalGlowInflationReward +
-      walletProtocolDepositFromLaunchpad +
-      walletProtocolDepositFromMiningCenter;
-    claimableGlwWei_alt_inflationOnly += glowInflationTotal;
-
-    claimableByWeek.push({
-      weekNumber,
-      glowInflationTotalWei: glowInflationTotal.toString(),
-      protocolDepositRewardsReceivedWei:
-        protocolDepositRewardsReceived.toString(),
-      walletTotalGlowInflationRewardWei:
-        walletTotalGlowInflationReward.toString(),
-      walletProtocolDepositFromLaunchpadWei:
-        walletProtocolDepositFromLaunchpad.toString(),
-      walletProtocolDepositFromMiningCenterWei:
-        walletProtocolDepositFromMiningCenter.toString(),
-    });
-  }
-
-  claimableByWeek.sort((a, b) => a.weekNumber - b.weekNumber);
-
-  console.log("claimable rows counted:", claimableByWeek.length);
-  console.log(
-    "claimableGlwWei (glowInflationTotal + protocolDepositRewardsReceived):",
-    claimableGlwWei.toString(),
-    `(${formatUnits18(claimableGlwWei)} GLW)`
-  );
-  console.log(
-    "claimableGlwWei_alt_walletTotal (walletTotalGlowInflationReward + walletProtocolDepositFrom*):",
-    claimableGlwWei_alt_walletTotal.toString(),
-    `(${formatUnits18(claimableGlwWei_alt_walletTotal)} GLW)`
-  );
-
-  // Print the last few claimable weeks (most relevant).
-  console.log("");
-  console.log("last 8 claimable weeks (raw fields):");
-  for (const row of claimableByWeek.slice(-8)) {
-    console.log(
-      `- week ${row.weekNumber}: glowInflationTotal=${row.glowInflationTotalWei} protocolDepositRewardsReceived=${row.protocolDepositRewardsReceivedWei} walletTotalGlowInflationReward=${row.walletTotalGlowInflationRewardWei}`
-    );
-  }
 
   console.log("");
   console.log("---- Claims API (claimed) ----");
@@ -271,266 +184,189 @@ async function main() {
     ? claimsData.claims
     : [];
   console.log("claims rows:", claims.length);
-  if (claims[0] && typeof claims[0] === "object") {
-    console.log("claims keys (first row):", Object.keys(claims[0]).sort());
-    console.log("claims first row sample:", JSON.stringify(claims[0], null, 2));
-  }
 
-  let claimedGlwWei_mainnet = BigInt(0);
-  let claimedAnyWei = BigInt(0);
-  let mainnetMatches = 0;
-  let claimedGlwWei_mainnet_beneficiaryOnly = BigInt(0);
-  let beneficiaryMismatchCount = 0;
-  let claimantMismatchCount = 0;
-  let claimedAnyWei_beneficiaryOnly = BigInt(0);
-  let minClaimTs = Number.POSITIVE_INFINITY;
-  let maxClaimTs = -1;
-  const amountsByNonceMainnet = new Map<string, bigint>();
-  const nonceCountsMainnet = new Map<string, number>();
-  const sourceTotalsMainnet = new Map<string, bigint>();
-  const sourceCountsMainnet = new Map<string, number>();
-  const topClaimsMainnet: Array<{
-    amountWei: bigint;
-    amountGlw: string;
-    timestamp: number | null;
-    source: string;
-    nonce: string;
-    txHash: string;
-  }> = [];
+  const rewardTimeline = {
+    inflation: new Map<number, bigint>(),
+    pd: new Map<number, bigint>(),
+  };
 
-  for (const c of claims) {
-    const token = String(c?.token || "").toLowerCase();
-    const amount = safeBigInt(c?.amount);
-    const beneficiary = String(c?.wallet || "").toLowerCase();
-    const claimant = String(c?.claimant || "").toLowerCase();
-    const ts = Number(c?.timestamp ?? NaN);
-    if (Number.isFinite(ts)) {
-      if (ts < minClaimTs) minClaimTs = ts;
-      if (ts > maxClaimTs) maxClaimTs = ts;
-    }
-
-    claimedAnyWei += amount;
-    if (beneficiary === wallet) claimedAnyWei_beneficiaryOnly += amount;
-    if (beneficiary && beneficiary !== wallet) beneficiaryMismatchCount++;
-    if (claimant && claimant !== wallet) claimantMismatchCount++;
-
-    if (token === GLW_MAINNET) {
-      claimedGlwWei_mainnet += amount;
-      mainnetMatches++;
-      if (beneficiary === wallet)
-        claimedGlwWei_mainnet_beneficiaryOnly += amount;
-      const nonce = String(c?.nonce ?? "");
-      if (nonce) {
-        amountsByNonceMainnet.set(
-          nonce,
-          (amountsByNonceMainnet.get(nonce) || BigInt(0)) + amount
-        );
-        nonceCountsMainnet.set(nonce, (nonceCountsMainnet.get(nonce) || 0) + 1);
-      }
-
-      const source = String(c?.source ?? "unknown");
-      sourceTotalsMainnet.set(
-        source,
-        (sourceTotalsMainnet.get(source) || BigInt(0)) + amount
-      );
-      sourceCountsMainnet.set(
-        source,
-        (sourceCountsMainnet.get(source) || 0) + 1
-      );
-
-      // Track top claim amounts for inspection.
-      const txHash = String(c?.txHash ?? "");
-      topClaimsMainnet.push({
-        amountWei: amount,
-        amountGlw: formatUnits18(amount),
-        timestamp: Number.isFinite(ts) ? ts : null,
-        source,
-        nonce,
-        txHash,
-      });
-    }
-  }
-
-  console.log("GLW mainnet token:", GLW_MAINNET);
-  console.log(
-    "claimedGlwWei_mainnet:",
-    claimedGlwWei_mainnet.toString(),
-    `(${formatUnits18(claimedGlwWei_mainnet)} GLW)`,
-    "matches:",
-    mainnetMatches
-  );
-  console.log(
-    "claimedGlwWei_mainnet (beneficiary==wallet only):",
-    claimedGlwWei_mainnet_beneficiaryOnly.toString(),
-    `(${formatUnits18(claimedGlwWei_mainnet_beneficiaryOnly)} GLW)`
-  );
-  console.log("claimedAnyWei (all tokens):", claimedAnyWei.toString());
-  console.log(
-    "claimedAnyWei (all tokens, beneficiary==wallet only):",
-    claimedAnyWei_beneficiaryOnly.toString()
-  );
-  console.log(
-    "claims where beneficiary(wallet) != requested wallet:",
-    beneficiaryMismatchCount
-  );
-  console.log(
-    "claims where claimant != requested wallet:",
-    claimantMismatchCount
-  );
-  console.log(
-    "claims timestamp range:",
-    Number.isFinite(minClaimTs)
-      ? new Date(minClaimTs * 1000).toISOString()
-      : null,
-    "→",
-    maxClaimTs >= 0 ? new Date(maxClaimTs * 1000).toISOString() : null
-  );
-
-  const topNonces = Array.from(amountsByNonceMainnet.entries())
-    .map(([nonce, amountWei]) => ({
-      nonce,
-      amountWei,
-      count: nonceCountsMainnet.get(nonce) || 0,
-    }))
-    .sort((a, b) =>
-      a.amountWei > b.amountWei ? -1 : a.amountWei < b.amountWei ? 1 : 0
-    )
-    .slice(0, 12);
-
-  console.log("");
-  console.log("top nonces by claimed GLW (mainnet token):");
-  for (const n of topNonces) {
-    console.log(
-      `- nonce ${n.nonce}: ${formatUnits18(n.amountWei)} GLW (events=${
-        n.count
-      })`
-    );
-  }
-
-  const sources = Array.from(sourceTotalsMainnet.entries())
-    .map(([source, amountWei]) => ({
-      source,
-      amountWei,
-      count: sourceCountsMainnet.get(source) || 0,
-    }))
-    .sort((a, b) =>
-      a.amountWei > b.amountWei ? -1 : a.amountWei < b.amountWei ? 1 : 0
-    );
-
-  console.log("");
-  console.log("claimed GLW by `source` (mainnet token):");
-  for (const s of sources) {
-    console.log(
-      `- ${s.source}: ${formatUnits18(s.amountWei)} GLW (events=${s.count})`
-    );
-  }
-
-  topClaimsMainnet.sort((a, b) =>
-    a.amountWei > b.amountWei ? -1 : a.amountWei < b.amountWei ? 1 : 0
-  );
-  console.log("");
-  console.log("top 12 claim events by amount (mainnet token):");
-  for (const c of topClaimsMainnet.slice(0, 12)) {
-    const tsLabel =
-      c.timestamp != null
-        ? new Date(c.timestamp * 1000).toISOString()
-        : "unknown";
-    console.log(
-      `- ${c.amountGlw} GLW | source=${c.source} nonce=${
-        c.nonce || "<empty>"
-      } ts=${tsLabel} tx=${c.txHash || "<empty>"}`
-    );
-  }
-
-  console.log("");
-  console.log(
-    "---- Range-based epoch ledger (earned vs claimed by claim timestamp) ----"
-  );
-
-  const earnedByEpoch = new Map<number, bigint>();
   for (const r of rewards) {
-    const weekNumber = Number(r?.weekNumber ?? -1);
-    if (!Number.isFinite(weekNumber)) continue;
-    if (weekNumber < startWeek || weekNumber > endWeek) continue;
-    const earnedWei =
-      safeBigInt(r?.glowInflationTotal) +
-      safeBigInt(r?.protocolDepositRewardsReceived);
-    earnedByEpoch.set(weekNumber, earnedWei);
+    const week = Number(r.weekNumber);
+    if (!Number.isFinite(week)) continue;
+    const inflation = safeBigInt(r.glowInflationTotal);
+    if (inflation > 0n) rewardTimeline.inflation.set(week, inflation);
+
+    const pdRaw = safeBigInt(r.protocolDepositRewardsReceived);
+    // Protocol deposit is usually GLW if paymentCurrency=GLW was requested
+    if (pdRaw > 0n) rewardTimeline.pd.set(week, pdRaw);
   }
 
-  const claimedByEpoch = new Map<number, bigint>();
+  // Claim data: week -> claimTimestamp
+  // Filter out claims from before Week 97 (v2 system start)
+  const WEEK_97_START_TIMESTAMP = GENESIS_TIMESTAMP + 97 * 604800;
+  const claimPdData = new Map<number, number>();
+  const claimInflationData = new Map<number, number>();
+  const AMOUNT_MATCH_EPSILON_WEI = BigInt(10_000_000);
+
+  // 1. PD claims (deterministic from nonce)
   for (const c of claims) {
     const token = String(c?.token || "").toLowerCase();
     if (token !== GLW_MAINNET) continue;
-    const ts = Number(c?.timestamp ?? NaN);
-    if (!Number.isFinite(ts)) continue;
-    const weekNumber = getCurrentEpoch(ts);
-    if (weekNumber < startWeek || weekNumber > endWeek) continue;
-    const amount = safeBigInt(c?.amount);
-    claimedByEpoch.set(
-      weekNumber,
-      (claimedByEpoch.get(weekNumber) || BigInt(0)) + amount
+    const timestamp = Number(c?.timestamp);
+    if (timestamp < WEEK_97_START_TIMESTAMP) continue;
+    const source = String(c?.source || "");
+    if (source !== "rewardsKernel") continue;
+    const week = getV2WeekFromNonce(c?.nonce);
+    if (week != null && week >= 97) claimPdData.set(week, timestamp);
+  }
+
+  // 2. Inflation claims (inferred from transfer amounts)
+  for (const c of claims) {
+    const token = String(c?.token || "").toLowerCase();
+    if (token !== GLW_MAINNET) continue;
+    const timestamp = Number(c?.timestamp);
+    if (timestamp < WEEK_97_START_TIMESTAMP) continue;
+    const source = String(c?.source || "");
+    if (source !== "minerPool") continue;
+
+    const amountWei = safeBigInt(c?.amount);
+    let bestWeek: number | null = null;
+    let bestDiff: bigint | null = null;
+    let secondBestDiff: bigint | null = null;
+
+    for (const [week, inflationWei] of rewardTimeline.inflation) {
+      if (week < 97) continue;
+      const diff =
+        amountWei >= inflationWei
+          ? amountWei - inflationWei
+          : inflationWei - amountWei;
+      if (bestDiff == null || diff < bestDiff) {
+        secondBestDiff = bestDiff;
+        bestDiff = diff;
+        bestWeek = week;
+        continue;
+      }
+      if (secondBestDiff == null || diff < secondBestDiff)
+        secondBestDiff = diff;
+    }
+
+    if (
+      bestWeek != null &&
+      bestDiff != null &&
+      bestDiff <= AMOUNT_MATCH_EPSILON_WEI
+    ) {
+      // Disambiguate: only if second best is not also within epsilon
+      if (secondBestDiff == null || secondBestDiff > AMOUNT_MATCH_EPSILON_WEI) {
+        claimInflationData.set(bestWeek, timestamp);
+      }
+    }
+  }
+
+  console.log("");
+  console.log("---- Detected Claims ----");
+  console.log(
+    `PD Claims (from RewardsKernel nonce): ${claimPdData.size} weeks`
+  );
+  for (const [week, ts] of claimPdData) {
+    console.log(
+      `  - Week ${week}: claimed at ${new Date(ts * 1000).toISOString()}`
+    );
+  }
+  console.log(
+    `Inflation Claims (inferred from MinerPool amounts): ${claimInflationData.size} weeks`
+  );
+  for (const [week, ts] of claimInflationData) {
+    console.log(
+      `  - Week ${week}: claimed at ${new Date(ts * 1000).toISOString()}`
     );
   }
 
-  let totalEarnedWei = BigInt(0);
-  let totalClaimedWei = BigInt(0);
-  let runningUnclaimedWei = BigInt(0);
+  console.log("");
+  console.log(
+    "---- Historical Unclaimed Ledger (New Logic Reconstructed) ----"
+  );
+  console.log(
+    "This ledgers simulates the Glow Worth calculation for each week."
+  );
+  console.log(
+    "Note: Claims made today should NOT affect the unclaimed balance of past weeks."
+  );
+  console.log("");
+
+  let totalEarnedWeiRange = BigInt(0);
 
   for (let w = startWeek; w <= endWeek; w++) {
-    const earnedWei = earnedByEpoch.get(w) || BigInt(0);
-    const claimedWei = claimedByEpoch.get(w) || BigInt(0);
-    totalEarnedWei += earnedWei;
-    totalClaimedWei += claimedWei;
-    runningUnclaimedWei += earnedWei - claimedWei;
+    const weekEndTimestamp = GENESIS_TIMESTAMP + (w + 1) * 604800;
+    const inflationClaimableUpToWeek = w - 3;
+    const pdClaimableUpToWeek = w - 4;
+
+    let historicalUnclaimedWei = 0n;
+    let inflationUnclaimedAtTimeW = 0n;
+    let pdUnclaimedAtTimeW = 0n;
+
+    // Sum unclaimed inflation (using inferred timestamps)
+    for (const [rw, amount] of rewardTimeline.inflation) {
+      if (rw <= inflationClaimableUpToWeek) {
+        const claimTimestamp = claimInflationData.get(rw);
+        // If never claimed OR claimed AFTER this week's end -> It was unclaimed at this week
+        if (!claimTimestamp || claimTimestamp > weekEndTimestamp) {
+          inflationUnclaimedAtTimeW += amount;
+          historicalUnclaimedWei += amount;
+        }
+      }
+    }
+
+    // Sum unclaimed PD
+    for (const [rw, amount] of rewardTimeline.pd) {
+      if (rw <= pdClaimableUpToWeek) {
+        const claimTimestamp = claimPdData.get(rw);
+        // If never claimed OR claimed AFTER this week's end -> It was unclaimed AT THAT TIME
+        if (!claimTimestamp || claimTimestamp > weekEndTimestamp) {
+          pdUnclaimedAtTimeW += amount;
+          historicalUnclaimedWei += amount;
+        }
+      }
+    }
+
     console.log(
-      `- week ${w}: earned=${formatUnits18(earnedWei)} claimed=${formatUnits18(
-        claimedWei
-      )} runningUnclaimed=${formatUnits18(runningUnclaimedWei)}`
+      `- Week ${String(w).padStart(3)} | Unclaimed: ${formatUnits18(
+        historicalUnclaimedWei
+      ).padStart(12)} GLW | (Inflation: ${formatUnits18(
+        inflationUnclaimedAtTimeW
+      )} GLW, PD: ${formatUnits18(pdUnclaimedAtTimeW)} GLW)`
     );
   }
 
   console.log("");
-  console.log(
-    `range totals (weeks ${startWeek}..${endWeek}): earned=${formatUnits18(
-      totalEarnedWei
-    )} claimed=${formatUnits18(totalClaimedWei)} net=${formatUnits18(
-      totalEarnedWei - totalClaimedWei
-    )}`
+  console.log("---- Current Snapshot Totals ----");
+  const nowSec = Math.floor(Date.now() / 1000);
+  const currentThresholdWeek = Math.min(
+    getCurrentEpoch(nowSec) - 3,
+    getCurrentEpoch(nowSec) - 4
   );
 
-  console.log("");
-  console.log("---- Unclaimed computed ----");
-
-  function clampToZero(x: bigint): bigint {
-    return x > BigInt(0) ? x : BigInt(0);
+  let currentTotalUnclaimedWei = 0n;
+  for (const [rw, amount] of rewardTimeline.inflation) {
+    if (rw <= currentThresholdWeek && !claimInflationData.has(rw))
+      currentTotalUnclaimedWei += amount;
+  }
+  for (const [rw, amount] of rewardTimeline.pd) {
+    if (rw <= currentThresholdWeek && !claimPdData.has(rw))
+      currentTotalUnclaimedWei += amount;
   }
 
-  const unclaimedUsingMainnetClaims = clampToZero(
-    claimableGlwWei - claimedGlwWei_mainnet
-  );
-  const unclaimedUsingMainnetClaimsBeneficiaryOnly = clampToZero(
-    claimableGlwWei - claimedGlwWei_mainnet_beneficiaryOnly
-  );
-
   console.log(
-    "unclaimed (using claimableGlwWei and mainnet GLW claims):",
-    unclaimedUsingMainnetClaims.toString(),
-    `(${formatUnits18(unclaimedUsingMainnetClaims)} GLW)`
+    `Current Unclaimed (Lagged): ${formatUnits18(currentTotalUnclaimedWei)} GLW`
   );
   console.log(
-    "unclaimed (using claimableGlwWei and mainnet GLW claims, beneficiary==wallet only):",
-    unclaimedUsingMainnetClaimsBeneficiaryOnly.toString(),
-    `(${formatUnits18(unclaimedUsingMainnetClaimsBeneficiaryOnly)} GLW)`
+    `Total Inflation Earned: ${formatUnits18(
+      Array.from(rewardTimeline.inflation.values()).reduce((a, b) => a + b, 0n)
+    )} GLW`
   );
   console.log(
-    "unclaimed (alt claimableGlwWei_alt_walletTotal - mainnet claims):",
-    clampToZero(
-      claimableGlwWei_alt_walletTotal - claimedGlwWei_mainnet
-    ).toString(),
-    `(${formatUnits18(
-      clampToZero(claimableGlwWei_alt_walletTotal - claimedGlwWei_mainnet)
-    )} GLW)`
+    `Total PD Earned:        ${formatUnits18(
+      Array.from(rewardTimeline.pd.values()).reduce((a, b) => a + b, 0n)
+    )} GLW`
   );
 }
 

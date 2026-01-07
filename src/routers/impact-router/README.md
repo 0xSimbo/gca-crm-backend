@@ -69,10 +69,12 @@ So buying GLW does **not** retroactively change those weekly rollover rows.
 
 ### Default week cutoff nuance
 
-By default, `startWeek/endWeek` use `getWeekRange()`:
+By default, `startWeek/endWeek` use `getWeekRangeForImpact()`:
 
 - `startWeek`: fixed start (currently `97`)
-- `endWeek`: the **last completed week for reports** (based on a Thursday 00:00 UTC report schedule), not “the in-progress current protocol week”.
+- `endWeek`: the **last completed protocol week** (based on actual protocol week boundaries: Sunday 00:00 UTC rollover from GENESIS_TIMESTAMP), not "the in-progress current protocol week".
+
+**Important**: This is different from `getWeekRange()` used by fractions/rewards, which uses Thursday 00:00 UTC GCA report timing. Impact scoring can use more recent weeks because TWAB/claims data is available immediately after the protocol week ends, whereas GCA reports need additional processing time.
 
 If you pass explicit `startWeek/endWeek` query params, the backend will compute over that range (it only validates `endWeek >= startWeek`).
 
@@ -151,7 +153,7 @@ There are two shapes, based on `walletAddress`:
 
 - **Single wallet** (`walletAddress=0x...`): returns the full object including `glowWorth`, `totals`, `weekly[]`, and `currentWeekProjection` (live preview).
 - **Leaderboard/list** (omit `walletAddress`): returns lightweight rows with totals + a `composition` breakdown + `lastWeekPoints` + `activeMultiplier`.
-- **Leaderboard/list (no `limit`)**: when `limit` query param is omitted, response also includes `totalWalletCount`.
+- **Leaderboard/list**: response includes `totalWalletCount` so UIs can show “displaying 200 of N”.
 
 #### Leaderboard eligibility (who can show up?)
 
@@ -165,7 +167,7 @@ Internal/team wallets are still excluded via the router’s `EXCLUDED_LEADERBOAR
 
 #### Leaderboard output vs eligibility (why `totalWalletCount` can be > returned rows)
 
-- `totalWalletCount` (when included) refers to the **eligible wallet universe** (after excluding internal/team wallets).
+- `totalWalletCount` refers to the **eligible wallet universe** (after excluding internal/team wallets).
 - To keep latency reasonable, list mode may compute scores over a **candidate subset** (protocol wallets + all GCTL stakers + top GLW holders by balance) and return the top `limit` rows from that scored set.
 
 #### Full breakdown for a single wallet
@@ -327,14 +329,27 @@ Notes:
 - Sorting is applied **before** slicing to `limit`.
 - `globalRank` always reflects rank by `totalPoints` **descending** (stable across sorts).
 
-### Performance guidance
+### Performance guidance & caching
+
+#### Database Cache (Leaderboard)
+
+- **Table**: `impact_leaderboard_cache` stores pre-computed leaderboard rows with `startWeek`, `endWeek`, `rank`, and full JSON payload.
+- **Cron**: Daily at 01:00 UTC (`update-impact-leaderboard` cron job) computes scores for ~1000 wallets and atomically replaces the cache.
+- **Router**: When a request matches the default week range (from `getWeekRangeForImpact()`), the router serves from the database cache (<100ms response time).
+- **Cache validation**: The router validates that `actualStartWeek` and `actualEndWeek` match the cached `startWeek` and `endWeek`. If they don't match (e.g., right after a protocol week rollover but before the cron runs), it falls back to on-the-fly computation.
+- **Single-wallet queries**: Always bypass the cache and compute on-the-fly to include `currentWeekProjection` (live preview for the ongoing week).
+
+#### In-Memory Cache
+
+- Some Control API calls are cached in-process to reduce repeated work (e.g. region rewards are cached for ~30s, GLW holders for 10 minutes).
+- The `/impact/glow-score` **list** response is cached in-memory for ~10 minutes (in addition to the database cache).
+- Single-wallet responses are **not** cached in-memory, since `currentWeekProjection` is meant to feel "live".
+
+#### Other Optimizations
 
 - `includeWeekly=true|1` on `/impact/glow-score` can be **very large** when you query many wallets; avoid using it for leaderboard screens.
 - For dashboards, fetch a single wallet with `walletAddress` and a bounded `startWeek/endWeek`.
-- Some Control API calls are cached in-process to reduce repeated work (e.g. region rewards are cached for ~30s).
-- The `/impact/glow-score` **list** response is cached in-process for ~10 minutes (single-wallet responses are not cached, since `currentWeekProjection` is meant to feel “live”).
-- In list mode, the backend may score a **candidate subset** (e.g. protocol wallets + GCTL stakers + top GLW holders) to keep latency reasonable while still returning the top `limit` by score.
-- Leaderboard list mode computes **unclaimed rewards** without per-wallet claims fetches: it derives inflation/PD from the Control API batch wallet rewards endpoint and uses a Claims API batch helper (`POST /rewards/claimed-pd-weeks/batch`, RewardsKernel-only) to mark claimed PD weeks. This dropped cold list compute from ~30s → ~15s in local profiling; remaining bottlenecks are steering stake-by-epoch + onchain balance calls.
+- In list mode, the backend may score a **candidate subset** (e.g. protocol wallets + GCTL stakers + top GLW holders by balance) to keep latency reasonable while still returning the top `limit` by score.
 
 ### Profiling / debugging leaderboard latency
 
@@ -369,10 +384,8 @@ Computes the wallet's GLW-denominated position:
     - `token == 0xf4fbc617a5733eaaf9af08e1ab816b103388d8b6` (GLW)
   - Claims are attributed to the **reward week** (not the claim timestamp):
     - **RewardsKernel** claims include `nonce` → week mapping (v2 nonce 0 corresponds to week 97): `week = 97 + nonce`
-    - **MinerPool** claims are indexed from GLW `Transfer` logs and do not include a week; in **single-wallet (“accurate”)** mode we infer the reward week by matching the claim `amount` to the Control API `glowInflationTotal` for that week (with a tiny wei epsilon to tolerate downstream rounding)
-  - **Modes**:
-    - **Single wallet** (`walletAddress=...`): uses `"accurate"` attribution (RewardsKernel nonce + MinerPool amount matching) to match on-chain truth without doing direct onchain reads
-    - **List/leaderboard mode**: uses `"lite"` behavior to keep scoring cheap; it does not attempt MinerPool week inference, so unclaimed inflation can be an over-estimate (upper bound)
+    - **MinerPool** claims are indexed from GLW `Transfer` logs and do not include a week; we infer the reward week by matching the claim `amount` to the Control API `glowInflationTotal` for that week (with a 10M wei epsilon to tolerate downstream rounding)
+  - **All wallets** now use "accurate" mode (both single wallet and leaderboard). The leaderboard performance is maintained by caching the results daily in `impact_leaderboard_cache` table.
 
 Query:
 
@@ -399,6 +412,9 @@ Notes:
   - If these Control API endpoints are unavailable, the backend falls back to the **current stake snapshot** method.
 - **Unclaimed rewards**:
   - Derived from Control API weekly rewards minus claim rows fetched from the claims API (`https://glow-ponder-listener-2-production.up.railway.app`).
+  - **Historical accuracy**: Uses claim timestamps to determine if a reward was unclaimed "at the end of week W". If `claimTimestamp > weekEndTimestamp`, the reward counts as unclaimed for that week.
+  - **V1/V2 boundary**: Claims that occurred before Week 97 started (timestamp < 1759104000) are filtered out, even if they have v2-compatible nonces.
+  - **Inflation claim inference**: MinerPool claims (which lack nonces) are attributed to weeks by matching the transfer amount to Control API's `glowInflationTotal` for each week (within 10M wei epsilon). Ambiguous matches are rejected.
 
 Query:
 
@@ -406,6 +422,63 @@ Query:
 - `startWeek`, `endWeek` (optional)
 - `limit` (optional): default `200`
 - `includeWeekly` (optional): `true|1` to include weekly rows when querying multiple wallets (can be large)
+
+## UI Indicator Behavior (Current vs Finalized)
+
+The frontend displays multipliers/bonuses differently based on context:
+
+### Single Wallet View (Rank Widget, Wallet Dashboard)
+
+- **Purpose**: Show what's ACTIVE NOW for the current ongoing week
+- **Data Source**: `currentWeekProjection` from single-wallet API response
+- **Fields**:
+  - `hasMinerMultiplier` - Did you buy a miner THIS week?
+  - `hasSteeringStake` - Do you have GCTL staked NOW?
+  - `streakBonusMultiplier` - What's your current streak bonus?
+- **Why**: Users want to see "what bonuses am I getting RIGHT NOW" to decide whether to take action
+
+### Leaderboard View (Global Leaderboard Table & Breakdown)
+
+- **Purpose**: Show FINALIZED multipliers/bonuses that were used to calculate the displayed score
+- **Data Source**: Fields from the last completed week (`endWeek`)
+- **Fields**:
+  - `hasMinerMultiplier` - Did they have a miner at `endWeek`?
+  - `endWeekMultiplier` - What was their total multiplier at `endWeek`?
+  - `hasSteeringStake` - Did they steer GLW during the scored period? (derived from `totals.totalSteeringGlwWei > 0`)
+  - `hasVaultBonus` - Do they have delegations? (derived from `glowWorth.delegatedActiveGlwWei > 0`)
+- **Why**: The leaderboard shows historical scores, so indicators should reflect the state that produced those points. If someone stakes GCTL today, it shouldn't light up the "steering" indicator on the leaderboard until next week's rollover.
+- **Breakdown Dialog**: When opened from the leaderboard, pass `showCurrentWeekProjection={false}` to hide current week projection and only show finalized data.
+
+## Cache Management
+
+### Manual Cache Refresh
+
+You can manually trigger the impact leaderboard cache update (useful for testing or forcing a refresh):
+
+```bash
+curl http://localhost:3005/trigger-impact-leaderboard-cron
+# Returns: {"message":"success"}
+```
+
+This endpoint triggers the same cron job that runs daily at 01:00 UTC. The update typically takes 20-30 seconds for ~1000 wallets.
+
+### Cache Table Schema
+
+```sql
+CREATE TABLE impact_leaderboard_cache (
+  wallet_address VARCHAR(42) PRIMARY KEY,
+  total_points NUMERIC(20,6) NOT NULL,
+  rank INTEGER NOT NULL,
+  glow_worth_wei NUMERIC(78,0) NOT NULL,
+  last_week_points NUMERIC(20,6) NOT NULL,
+  start_week INTEGER NOT NULL,
+  end_week INTEGER NOT NULL,
+  data JSON NOT NULL,
+  updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+```
+
+The `data` column stores the full `GlowImpactScoreResult` JSON for each wallet.
 
 ## `GET /impact/delegators-leaderboard`
 

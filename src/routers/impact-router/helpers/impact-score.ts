@@ -1,6 +1,7 @@
 import { and, eq, inArray, gte, lte } from "drizzle-orm";
 
 import { db } from "../../../db/db";
+import { addresses } from "../../../constants/addresses";
 import {
   fractionRefunds,
   fractionSplits,
@@ -19,6 +20,7 @@ import {
   fetchGlwTwabByWeekWeiMany,
   fetchGctlStakersFromControlApi,
   fetchClaimedPdWeeksBatch,
+  fetchClaimsBatch,
   getGctlSteeringByWeekWei,
   getSteeringSnapshot,
   getUnclaimedGlwRewardsWei,
@@ -1062,97 +1064,150 @@ export async function computeGlowImpactScores(params: {
   >();
   const steeringByWallet = new Map<string, SteeringByWeekResult>();
 
-  // In leaderboard/list mode, unclaimed rewards are the biggest bottleneck if fetched per-wallet.
-  // We can compute "lite" unclaimed amounts locally from the already-fetched `walletRewardsMap`,
-  // and only need a batched lookup for RewardsKernel PD claimed weeks.
-  if (!isSingleWalletQuery) {
-    const nowSec = Math.floor(Date.now() / 1000);
-    const currentEpoch = getCurrentEpoch(nowSec);
-    const claimableThresholdWeek = Math.min(currentEpoch - 3, currentEpoch - 4);
-    const claimableEndWeek = Math.min(endWeek, claimableThresholdWeek);
-    const claimableStartWeek = startWeek;
+  // Reward timelines for historical unclaimed calculation.
+  const rewardsTimelineByWallet = new Map<
+    string,
+    { inflation: Map<number, bigint>; pd: Map<number, bigint> }
+  >();
+  const claimedPdWeeksByWalletState = new Map<string, Map<number, number>>();
+  const claimedInflationWeeksByWalletState = new Map<
+    string,
+    Map<number, number>
+  >();
 
-    if (claimableEndWeek >= claimableStartWeek) {
-      const claimsStart = nowMs();
-      const claimedPdWeeksByWallet = await fetchClaimedPdWeeksBatch({
-        wallets,
-        startWeek: claimableStartWeek,
-        endWeek: claimableEndWeek,
+  const nowSec = Math.floor(Date.now() / 1000);
+  const currentEpoch = getCurrentEpoch(nowSec);
+  const claimableThresholdWeek = Math.min(currentEpoch - 3, currentEpoch - 4);
+  const claimableEndWeek = Math.min(endWeek, claimableThresholdWeek);
+  const claimableStartWeek = startWeek;
+
+  // Accurate unclaimed calculation for all wallets.
+  // We batch fetch all inputs (rewards, PD claimed weeks, and raw claims for inflation inference).
+  const claimsStart = nowMs();
+  const [claimedPdWeeksByWallet, allClaimsByWallet] = await Promise.all([
+    fetchClaimedPdWeeksBatch({
+      wallets,
+      startWeek: claimableStartWeek,
+      endWeek: claimableEndWeek,
+    }),
+    fetchClaimsBatch({
+      wallets,
+    }),
+  ]);
+  recordTimingSafe(debug, {
+    label: "compute.claims.batch",
+    ms: nowMs() - claimsStart,
+    meta: {
+      wallets: wallets.length,
+      startWeek: claimableStartWeek,
+      endWeek: claimableEndWeek,
+    },
+  });
+
+  const GLW_TOKEN = addresses.glow.toLowerCase();
+  const AMOUNT_MATCH_EPSILON_WEI = BigInt(10_000_000);
+  const WEEK_97_START_TIMESTAMP = GENESIS_TIMESTAMP + 97 * 604800;
+
+  for (const wallet of wallets) {
+    const rewards = walletRewardsMap.get(wallet) || [];
+    const inflationByWeek = new Map<number, bigint>();
+    const pdByWeek = new Map<number, bigint>();
+    let maxWeek = -1;
+
+    for (const r of rewards) {
+      const week = Number(r.weekNumber);
+      if (!Number.isFinite(week)) continue;
+      maxWeek = week > maxWeek ? week : maxWeek;
+
+      const inflation = safeBigInt(r.walletTotalGlowInflationReward);
+      if (inflation > 0n)
+        inflationByWeek.set(
+          week,
+          (inflationByWeek.get(week) || 0n) + inflation
+        );
+
+      const pdRaw = safeBigInt(r.walletProtocolDepositFromLaunchpad);
+      const recoveredGlw = protocolDepositReceivedGlwWei({
+        amountRaw: pdRaw,
+        asset: r.asset,
       });
-      recordTimingSafe(debug, {
-        label: "compute.claimsPdWeeks.batch",
-        ms: nowMs() - claimsStart,
-        meta: {
-          wallets: wallets.length,
-          startWeek: claimableStartWeek,
-          endWeek: claimableEndWeek,
-        },
-      });
+      if (recoveredGlw > 0n)
+        pdByWeek.set(week, (pdByWeek.get(week) || 0n) + recoveredGlw);
+    }
 
-      for (const wallet of wallets) {
-        const rewards = walletRewardsMap.get(wallet) || [];
-        const inflationByWeek = new Map<number, bigint>();
-        const pdByWeek = new Map<number, bigint>();
-        let maxWeek = -1;
+    rewardsTimelineByWallet.set(wallet, {
+      inflation: inflationByWeek,
+      pd: pdByWeek,
+    });
 
-        for (const r of rewards) {
-          const week = Number(r.weekNumber);
-          if (!Number.isFinite(week)) continue;
-          maxWeek = week > maxWeek ? week : maxWeek;
+    // 1. PD claims (deterministic from nonce)
+    const claimPdData =
+      claimedPdWeeksByWallet.get(wallet) || new Map<number, number>();
+    claimedPdWeeksByWalletState.set(wallet, claimPdData);
 
-          if (week < claimableStartWeek || week > claimableEndWeek) continue;
+    // 2. Inflation claims (inferred from transfer amounts)
+    const claims = allClaimsByWallet.get(wallet) || [];
+    const claimedInflationWeeks = new Map<number, number>();
 
-          const inflation = safeBigInt(r.walletTotalGlowInflationReward);
-          if (inflation > 0n)
-            inflationByWeek.set(
-              week,
-              (inflationByWeek.get(week) || 0n) + inflation
-            );
+    for (const c of claims) {
+      const token = String(c?.token || "").toLowerCase();
+      if (token !== GLW_TOKEN) continue;
+      const timestamp = Number(c?.timestamp);
+      if (timestamp < WEEK_97_START_TIMESTAMP) continue;
+      const source = String(c?.source || "");
+      if (source !== "minerPool") continue;
 
-          const pdRaw = safeBigInt(r.walletProtocolDepositFromLaunchpad);
-          const recoveredGlw = protocolDepositReceivedGlwWei({
-            amountRaw: pdRaw,
-            asset: r.asset,
-          });
-          if (recoveredGlw > 0n)
-            pdByWeek.set(week, (pdByWeek.get(week) || 0n) + recoveredGlw);
-        }
+      const amountWei = safeBigInt(c?.amount);
+      let bestWeek: number | null = null;
+      let bestDiff: bigint | null = null;
+      let secondBestDiff: bigint | null = null;
 
-        const effectiveEndWeek = Math.min(claimableEndWeek, maxWeek);
-        if (effectiveEndWeek < claimableStartWeek) {
-          unclaimedByWallet.set(wallet, {
-            amountWei: 0n,
-            dataSource: "claims-api+control-api",
-          });
+      for (const [week, v] of inflationByWeek) {
+        if (week < 97) continue;
+        const diff = amountWei >= v ? amountWei - v : v - amountWei;
+        if (bestDiff == null || diff < bestDiff) {
+          secondBestDiff = bestDiff;
+          bestDiff = diff;
+          bestWeek = week;
           continue;
         }
-
-        const claimedPdWeeks =
-          claimedPdWeeksByWallet.get(wallet) || new Set<number>();
-
-        let unclaimedWei = 0n;
-        for (let w = claimableStartWeek; w <= effectiveEndWeek; w++) {
-          const inflationWei = inflationByWeek.get(w) || 0n;
-          const pdWei = pdByWeek.get(w) || 0n;
-
-          // Lite mode: we do not infer MinerPool claim weeks, so inflation is treated as unclaimed.
-          if (inflationWei > 0n) unclaimedWei += inflationWei;
-          if (pdWei > 0n && !claimedPdWeeks.has(w)) unclaimedWei += pdWei;
-        }
-
-        unclaimedByWallet.set(wallet, {
-          amountWei: unclaimedWei > 0n ? unclaimedWei : 0n,
-          dataSource: "claims-api+control-api",
-        });
+        if (secondBestDiff == null || diff < secondBestDiff)
+          secondBestDiff = diff;
       }
-    } else {
-      for (const wallet of wallets) {
-        unclaimedByWallet.set(wallet, {
-          amountWei: 0n,
-          dataSource: "claims-api+control-api",
-        });
+
+      if (
+        bestWeek != null &&
+        bestDiff != null &&
+        bestDiff <= AMOUNT_MATCH_EPSILON_WEI
+      ) {
+        // Disambiguate: only if second best is not also within epsilon
+        if (
+          secondBestDiff == null ||
+          secondBestDiff > AMOUNT_MATCH_EPSILON_WEI
+        ) {
+          claimedInflationWeeks.set(bestWeek, timestamp);
+        }
       }
     }
+    claimedInflationWeeksByWalletState.set(wallet, claimedInflationWeeks);
+
+    // Calculate "current" unclaimed for static result fields
+    let currentUnclaimedWei = 0n;
+    const effectiveEndWeek = Math.min(claimableEndWeek, maxWeek);
+    if (effectiveEndWeek >= claimableStartWeek) {
+      for (let w = claimableStartWeek; w <= effectiveEndWeek; w++) {
+        const inflationWei = inflationByWeek.get(w) || 0n;
+        const pdWei = pdByWeek.get(w) || 0n;
+        if (inflationWei > 0n && !claimedInflationWeeks.has(w))
+          currentUnclaimedWei += inflationWei;
+        if (pdWei > 0n && !claimPdData.has(w)) currentUnclaimedWei += pdWei;
+      }
+    }
+
+    unclaimedByWallet.set(wallet, {
+      amountWei: currentUnclaimedWei,
+      dataSource: "claims-api+control-api",
+    });
   }
 
   const concurrency = 8;
@@ -1194,16 +1249,10 @@ export async function computeGlowImpactScores(params: {
           liquidMs = nowMs() - liquidStart;
 
           const unclaimedStart = nowMs();
-          const unclaimed = isSingleWalletQuery
-            ? await getUnclaimedGlwRewardsWei(wallet, {
-                mode: "accurate",
-                startWeek,
-                endWeek,
-              })
-            : unclaimedByWallet.get(wallet) || {
-                amountWei: 0n,
-                dataSource: "claims-api+control-api" as const,
-              };
+          const unclaimed = unclaimedByWallet.get(wallet) || {
+            amountWei: 0n,
+            dataSource: "claims-api+control-api" as const,
+          };
           unclaimedMs = nowMs() - unclaimedStart;
 
           const steeringStart = nowMs();
@@ -1514,8 +1563,47 @@ export async function computeGlowImpactScores(params: {
 
       const liquidTwabWeekWei =
         liquidTwabByWalletWeek.get(wallet)?.get(week) ?? liquidGlwWei;
+
+      // Calculate Historical Unclaimed for this specific week
+      const weekEndTimestamp = GENESIS_TIMESTAMP + (week + 1) * 604800;
+      const rewardTimeline = rewardsTimelineByWallet.get(wallet);
+      const claimPdData = claimedPdWeeksByWalletState.get(wallet);
+      const claimInflationData = claimedInflationWeeksByWalletState.get(wallet);
+      let historicalUnclaimedWei = 0n;
+
+      if (rewardTimeline) {
+        const inflationClaimableUpToWeek = week - 3;
+        const pdClaimableUpToWeek = week - 4;
+
+        // Sum unclaimed inflation (using inferred timestamps)
+        for (const [rw, amount] of rewardTimeline.inflation) {
+          if (rw <= inflationClaimableUpToWeek) {
+            const claimTimestamp = claimInflationData?.get(rw);
+            // If never claimed OR claimed AFTER this week's end -> It was unclaimed at this week
+            if (!claimTimestamp || claimTimestamp > weekEndTimestamp) {
+              historicalUnclaimedWei += amount;
+            }
+          }
+        }
+
+        // Sum unclaimed PD (using Ponder timestamps)
+        for (const [rw, amount] of rewardTimeline.pd) {
+          if (rw <= pdClaimableUpToWeek) {
+            const claimTimestamp = claimPdData?.get(rw);
+            // If never claimed OR claimed AFTER this week's end -> It was unclaimed at this week
+            if (!claimTimestamp || claimTimestamp > weekEndTimestamp) {
+              historicalUnclaimedWei += amount;
+            }
+          }
+        }
+      } else {
+        // Fallback for single-wallet query or missing timeline: use the static unclaimed amount
+        // which is less accurate historically but better than nothing.
+        historicalUnclaimedWei = unclaimed.amountWei;
+      }
+
       const glowWorthWeekWei =
-        liquidTwabWeekWei + delegatedActive + unclaimed.amountWei;
+        liquidTwabWeekWei + delegatedActive + historicalUnclaimedWei;
       const continuousPts = glwWeiToPointsScaled6(
         glowWorthWeekWei,
         GLOW_WORTH_POINTS_PER_GLW_SCALED6

@@ -911,13 +911,80 @@ export async function getUnclaimedGlwRewardsWei(
   };
 }
 
+export async function fetchClaimsBatch(params: {
+  wallets: string[];
+  batchSize?: number;
+  concurrentBatches?: number;
+}): Promise<Map<string, any[]>> {
+  const { wallets, batchSize = 500, concurrentBatches = 3 } = params;
+  const result = new Map<string, any[]>();
+  if (wallets.length === 0) return result;
+
+  const normalizedWallets = Array.from(
+    new Set(wallets.map((w) => w.toLowerCase()))
+  );
+
+  const baseUrl = getPonderListenerBaseUrl();
+
+  async function fetchOneBatch(batch: string[]): Promise<void> {
+    const response = await fetch(`${baseUrl}/rewards/claims/batch`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ wallets: batch }),
+    });
+    const text = await response.text().catch(() => "");
+    if (!response.ok) {
+      throw new Error(
+        `Claims API batch failed (${response.status}): ${text || "<empty>"}`
+      );
+    }
+    const json = JSON.parse(text);
+    if (json?.indexingComplete === false)
+      throw new Error(json?.error || "Claims API is still indexing");
+
+    const results = (json?.results || {}) as Record<string, any[]>;
+    for (const [wallet, claims] of Object.entries(results)) {
+      result.set(wallet.toLowerCase(), claims);
+    }
+  }
+
+  for (
+    let i = 0;
+    i < normalizedWallets.length;
+    i += batchSize * concurrentBatches
+  ) {
+    const batchPromises: Array<Promise<void>> = [];
+    for (
+      let j = 0;
+      j < concurrentBatches && i + j * batchSize < normalizedWallets.length;
+      j++
+    ) {
+      const batch = normalizedWallets.slice(
+        i + j * batchSize,
+        i + (j + 1) * batchSize
+      );
+      batchPromises.push(
+        fetchOneBatch(batch).catch((error) => {
+          console.error(
+            `[claims-api] batch claims failed (wallets=${batch.length})`,
+            error
+          );
+        })
+      );
+    }
+    await Promise.all(batchPromises);
+  }
+
+  return result;
+}
+
 export async function fetchClaimedPdWeeksBatch(params: {
   wallets: string[];
   startWeek: number;
   endWeek: number;
   batchSize?: number;
   concurrentBatches?: number;
-}): Promise<Map<string, Set<number>>> {
+}): Promise<Map<string, Map<number, number>>> {
   const {
     wallets,
     startWeek,
@@ -926,14 +993,16 @@ export async function fetchClaimedPdWeeksBatch(params: {
     concurrentBatches = 4,
   } = params;
 
-  const result = new Map<string, Set<number>>();
+  const result = new Map<string, Map<number, number>>();
   const normalizedWallets = Array.from(
     new Set(wallets.map((w) => w.toLowerCase()))
   );
-  for (const w of normalizedWallets) result.set(w, new Set());
+  for (const w of normalizedWallets) result.set(w, new Map());
   if (normalizedWallets.length === 0) return result;
 
   const baseUrl = getPonderListenerBaseUrl();
+  const GENESIS_TIMESTAMP = 1700352000;
+  const WEEK_97_START_TIMESTAMP = GENESIS_TIMESTAMP + 97 * 604800;
 
   async function fetchBatch(batch: string[]): Promise<void> {
     const response = await fetch(`${baseUrl}/rewards/claimed-pd-weeks/batch`, {
@@ -963,17 +1032,24 @@ export async function fetchClaimedPdWeeksBatch(params: {
     if (json?.indexingComplete === false)
       throw new Error(json?.error || "Claims API is still indexing");
 
-    const results = (json?.results || {}) as Record<string, number[]>;
+    const results = (json?.results || {}) as Record<
+      string,
+      Record<string, number>
+    >;
     for (const wallet of Object.keys(results)) {
-      const weeks = results[wallet];
-      if (!Array.isArray(weeks)) continue;
+      const weeksMap = results[wallet];
+      if (!weeksMap || typeof weeksMap !== "object") continue;
       const key = wallet.toLowerCase();
-      if (!result.has(key)) result.set(key, new Set());
-      const set = result.get(key)!;
-      for (const w of weeks) {
-        const weekNumber = Number(w);
+      if (!result.has(key)) result.set(key, new Map());
+      const map = result.get(key)!;
+      for (const [weekStr, timestamp] of Object.entries(weeksMap)) {
+        const weekNumber = Number(weekStr);
         if (!Number.isFinite(weekNumber)) continue;
-        set.add(Math.trunc(weekNumber));
+        const ts = Number(timestamp);
+        // Filter out claims that happened before Week 97 started (v1 system)
+        if (ts < WEEK_97_START_TIMESTAMP) continue;
+        if (weekNumber < 97) continue;
+        map.set(Math.trunc(weekNumber), ts);
       }
     }
   }

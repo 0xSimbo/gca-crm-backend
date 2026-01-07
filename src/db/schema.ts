@@ -47,29 +47,29 @@ export type RewardsSplit = {
     Example: 1 Glow = 100 in the database
     The same follows for USDG
     Example: 1 USDG = 100 in the database
-
-    While rewards are stored in 2 decimals, the `weights` are stored as raw values.
-    Weights are created by the GCAs in the weekly reports. We get these weights directly from
-    the merkletrees that the GCAs provide. Those are stored raw and have 6 decimals of precision
-    which should fit within the SQL bigint limits.
-    The max bigint value in SQL is 2**63 - 1 = 9223372036854775807
-    If GCAs provide weights with 6 decimals, that means that a single bucket would need more than
-    $9,223,372,036,854.775807 as a reward for a single solar farm. We're not there yet.
-
-*/
+    50|
+    51|    While rewards are stored in 2 decimals, the `weights` are stored as raw values.
+    52|    Weights are created by the GCAs in the weekly reports. We get these weights directly from
+    53|    the merkletrees that the GCAs provide. Those are stored raw and have 6 decimals of precision
+    54|    which should fit within the SQL bigint limits.
+    55|    The max bigint value in SQL is 2**63 - 1 = 9223372036854775807
+    56|    If GCAs provide weights with 6 decimals, that means that a single bucket would need more than
+    57|    $9,223,372,036,854.775807 as a reward for a single solar farm. We're not there yet.
+    58|
+    59|*/
 
 /**
  * @dev We keep aggregate counters to avoid needing to calculate them on the fly.
  * @param {string} id - The ethereum wallet address.
  * @param {BigInt} totalUSDGRewards - The total USDG rewards of the user in 2 Decimals
-            - USDG/USDC is in 6 decimals, but for the database, we use 2 decimals
-            - because of SQL's integer limit.
-            - We could save strings, but we may want some calculations in the database at some point
-            - Example: totalUSDGRewards * 100 is $1
+ *            - USDG/USDC is in 6 decimals, but for the database, we use 2 decimals
+ *            - because of SQL's integer limit.
+ *            - We could save strings, but we may want some calculations in the database at some point
+ *            - Example: totalUSDGRewards * 100 is $1
  * @param {BigInt} totalGlowRewards - The total Glow rewards of the user.
-            - Follows same logic as above. 2 Decimals
-            - Even though Glow is 18 Decimals On-Chain
- */
+ *            - Follows same logic as above. 2 Decimals
+ *            - Even though Glow is 18 Decimals On-Chain
+ * 72| */
 export const wallets = pgTable("wallets", {
   id: varchar("wallet_id", { length: 42 }).primaryKey().notNull(),
   totalUSDGRewards: bigint("total_usdg_rewards", { mode: "bigint" })
@@ -801,7 +801,7 @@ export const applicationsDraftRelations = relations(
  * @param {number} currentStep - The current step of the application process.
  * @param {string} roundRobinStatus - The round robin status of the application.
  * @param {string} status - The status of the application.
-
+ *
  * @param {number} enquiryEstimatedQuotePerWatt - The estimated quote per watt for installation.
  * @param {timestamp} updatedAt - The last updated date of the application.
  * @param {string} finalQuotePerWatt - The final quote per watt for installation.
@@ -2065,3 +2065,23 @@ export const QuoteApiKeys = pgTable(
 
 export type QuoteApiKeyType = InferSelectModel<typeof QuoteApiKeys>;
 export type QuoteApiKeyInsertType = typeof QuoteApiKeys.$inferInsert;
+
+export const impactLeaderboardCache = pgTable("impact_leaderboard_cache", {
+  walletAddress: varchar("wallet_address", { length: 42 })
+    .primaryKey()
+    .notNull(),
+  totalPoints: numeric("total_points", { precision: 20, scale: 6 }).notNull(),
+  rank: integer("rank").notNull(),
+  glowWorthWei: numeric("glow_worth_wei", {
+    precision: 78,
+    scale: 0,
+  }).notNull(),
+  lastWeekPoints: numeric("last_week_points", {
+    precision: 20,
+    scale: 6,
+  }).notNull(),
+  startWeek: integer("start_week").notNull(),
+  endWeek: integer("end_week").notNull(),
+  data: json("data").notNull(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});

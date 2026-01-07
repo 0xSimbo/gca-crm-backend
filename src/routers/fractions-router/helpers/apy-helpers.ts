@@ -75,6 +75,15 @@ export function getWeekRange(): { startWeek: number; endWeek: number } {
   return { startWeek, endWeek: finalEndWeek };
 }
 
+export function getWeekRangeForImpact(): { startWeek: number; endWeek: number } {
+  const startWeek = 97;
+  const nowSec = Math.floor(Date.now() / 1000);
+  const currentWeek = Math.floor((nowSec - GENESIS_TIMESTAMP) / 604800);
+  const endWeek = currentWeek - 1;
+  const finalEndWeek = endWeek >= startWeek ? endWeek : startWeek;
+  return { startWeek, endWeek: finalEndWeek };
+}
+
 /**
  * Calculate the last completed week based on Thursday 00:00 UTC weekly report generation schedule
  * Reports are generated every Thursday at 00:00:00 UTC (pattern: '0 0 0 * * 4')

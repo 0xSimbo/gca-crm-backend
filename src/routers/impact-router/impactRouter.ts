@@ -1,6 +1,9 @@
 import { Elysia, t } from "elysia";
+import { desc, asc, sql, and, eq } from "drizzle-orm";
+import { db } from "../../db/db";
+import { impactLeaderboardCache } from "../../db/schema";
 import { TAG } from "../../constants";
-import { getWeekRange } from "../fractions-router/helpers/apy-helpers";
+import { getWeekRangeForImpact } from "../fractions-router/helpers/apy-helpers";
 import {
   computeDelegatorsLeaderboard,
   computeGlowImpactScores,
@@ -127,7 +130,7 @@ export const impactRouter = new Elysia({ prefix: "/impact" })
     "/glow-worth",
     async ({ query: { walletAddress, startWeek, endWeek, limit }, set }) => {
       try {
-        const weekRange = getWeekRange();
+        const weekRange = getWeekRangeForImpact();
         const actualStartWeek =
           parseOptionalInt(startWeek) ?? weekRange.startWeek;
         const actualEndWeek = parseOptionalInt(endWeek) ?? weekRange.endWeek;
@@ -198,7 +201,7 @@ export const impactRouter = new Elysia({ prefix: "/impact" })
     "/delegators-leaderboard",
     async ({ query: { startWeek, endWeek, limit }, set }) => {
       try {
-        const weekRange = getWeekRange();
+        const weekRange = getWeekRangeForImpact();
         const actualStartWeek =
           parseOptionalInt(startWeek) ?? weekRange.startWeek;
         const actualEndWeek = parseOptionalInt(endWeek) ?? weekRange.endWeek;
@@ -291,7 +294,7 @@ export const impactRouter = new Elysia({ prefix: "/impact" })
           timingEvents.push(evt);
         };
 
-        const weekRange = getWeekRange();
+        const weekRange = getWeekRangeForImpact();
         const actualStartWeek =
           parseOptionalInt(startWeek) ?? weekRange.startWeek;
         const actualEndWeek = parseOptionalInt(endWeek) ?? weekRange.endWeek;
@@ -322,6 +325,53 @@ export const impactRouter = new Elysia({ prefix: "/impact" })
         }
 
         if (isListMode) {
+          // Check if we can use the database cache (default week range)
+          const isDefaultRange =
+            (!startWeek || parseInt(startWeek) === weekRange.startWeek) &&
+            (!endWeek || parseInt(endWeek) === weekRange.endWeek);
+
+          if (isDefaultRange) {
+            const sortCol =
+              sortKey === "lastWeekPoints"
+                ? impactLeaderboardCache.lastWeekPoints
+                : sortKey === "glowWorth"
+                ? impactLeaderboardCache.glowWorthWei
+                : impactLeaderboardCache.totalPoints;
+
+            const dbResults = await db
+              .select({ data: impactLeaderboardCache.data })
+              .from(impactLeaderboardCache)
+              .where(
+                and(
+                  eq(impactLeaderboardCache.startWeek, actualStartWeek),
+                  eq(impactLeaderboardCache.endWeek, actualEndWeek)
+                )
+              )
+              .orderBy(sortDir === "asc" ? asc(sortCol) : desc(sortCol))
+              .limit(parsedLimit);
+
+            if (dbResults.length > 0) {
+              const totalCountRes = await db
+                .select({ count: sql<number>`count(*)` })
+                .from(impactLeaderboardCache)
+                .where(
+                  and(
+                    eq(impactLeaderboardCache.startWeek, actualStartWeek),
+                    eq(impactLeaderboardCache.endWeek, actualEndWeek)
+                  )
+                );
+              return {
+                weekRange: {
+                  startWeek: actualStartWeek,
+                  endWeek: actualEndWeek,
+                },
+                limit: parsedLimit,
+                totalWalletCount: Number(totalCountRes[0]?.count || 0),
+                wallets: dbResults.map((r) => r.data),
+              };
+            }
+          }
+
           const cacheKey = getGlowScoreListCacheKey({
             startWeek: actualStartWeek,
             endWeek: actualEndWeek,
@@ -488,28 +538,39 @@ export const impactRouter = new Elysia({ prefix: "/impact" })
         const payload = {
           weekRange: { startWeek: actualStartWeek, endWeek: actualEndWeek },
           limit: parsedLimit,
-          ...(!limitWasProvided
-            ? { totalWalletCount: eligibleWalletCount }
-            : {}),
-          wallets: results.map((r) => ({
-            walletAddress: r.walletAddress,
-            totalPoints: r.totals.totalPoints,
-            glowWorthWei: r.glowWorth.glowWorthWei,
-            composition: r.composition,
-            lastWeekPoints: r.lastWeekPoints,
-            activeMultiplier: r.activeMultiplier,
-            hasMinerMultiplier: r.hasMinerMultiplier,
-            hasSteeringStake: gctlStakersSet.has(r.walletAddress.toLowerCase()),
-            hasVaultBonus: (() => {
+          totalWalletCount: eligibleWalletCount,
+          wallets: results.map((r) => {
+            const hadSteeringAtEndWeek = (() => {
               try {
-                return BigInt(r.glowWorth.delegatedActiveGlwWei || "0") > 0n;
+                const totalSteeringGlwWei = BigInt(
+                  r.totals?.totalSteeringGlwWei || "0"
+                );
+                return totalSteeringGlwWei > 0n;
               } catch {
                 return false;
               }
-            })(),
-            endWeekMultiplier: r.endWeekMultiplier,
-            globalRank: 0,
-          })),
+            })();
+
+            return {
+              walletAddress: r.walletAddress,
+              totalPoints: r.totals.totalPoints,
+              glowWorthWei: r.glowWorth.glowWorthWei,
+              composition: r.composition,
+              lastWeekPoints: r.lastWeekPoints,
+              activeMultiplier: r.activeMultiplier,
+              hasMinerMultiplier: r.hasMinerMultiplier,
+              hasSteeringStake: hadSteeringAtEndWeek,
+              hasVaultBonus: (() => {
+                try {
+                  return BigInt(r.glowWorth.delegatedActiveGlwWei || "0") > 0n;
+                } catch {
+                  return false;
+                }
+              })(),
+              endWeekMultiplier: r.endWeekMultiplier,
+              globalRank: 0,
+            };
+          }),
         };
 
         // globalRank is always defined as totalPoints-desc rank (stable across sorts).
