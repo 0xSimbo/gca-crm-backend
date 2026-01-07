@@ -99,14 +99,14 @@ function getLastCompletedWeekForReports(): number {
   // Calculate days since last Thursday 00:00 UTC
   let daysSinceLastThursday: number;
 
-  if (currentDayOfWeek === 4 && currentHour >= 0) {
-    // It's Thursday and past 00:00 UTC - the report for this week has been generated
+  if (currentDayOfWeek === 4 && currentHour >= 1) {
+    // It's Thursday and past 01:00 UTC - the report for this week has been generated (1 hour buffer)
     daysSinceLastThursday = 0;
   } else if (currentDayOfWeek > 4) {
     // It's Friday, Saturday, or Sunday - count back to Thursday
     daysSinceLastThursday = currentDayOfWeek - 4;
   } else {
-    // It's Monday, Tuesday, Wednesday, or Thursday before 00:00 - count back to previous Thursday
+    // It's Monday, Tuesday, Wednesday, or Thursday before 01:00 - count back to previous Thursday
     daysSinceLastThursday = currentDayOfWeek + 3;
   }
 
