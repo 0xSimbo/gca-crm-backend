@@ -173,7 +173,7 @@ const app = new Elysia()
   .use(
     cron({
       name: "Update Impact Leaderboard",
-      pattern: "0 1 * * *", // Daily at 01:00 UTC (1 hour after Thursday rollover)
+      pattern: "0 1 * * 0", // Weekly on Sunday at 01:00 UTC (1 hour after protocol week rollover)
       async run() {
         try {
           await updateImpactLeaderboard();

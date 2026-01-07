@@ -5,14 +5,7 @@ import {
   computeGlowImpactScores,
 } from "../../routers/impact-router/helpers/impact-score";
 import { getWeekRangeForImpact } from "../../routers/fractions-router/helpers/apy-helpers";
-
-// Same excluded wallets as impactRouter.ts
-const EXCLUDED_LEADERBOARD_WALLETS = new Set(
-  [
-    "0x6972B05A0c80064fBE8a10CBc2a2FBCF6fb47D6a",
-    "0x0b650820dde452b204de44885fc0fbb788fc5e37",
-  ].map((w) => w.toLowerCase())
-);
+import { excludedLeaderboardWalletsSet } from "../../constants/excluded-wallets";
 
 export async function updateImpactLeaderboard() {
   console.log("[Cron] Updating Impact Leaderboard...");
@@ -22,7 +15,7 @@ export async function updateImpactLeaderboard() {
   // 1. Get all eligible wallets
   const universe = await getImpactLeaderboardWalletUniverse({ limit: 10000 });
   const wallets = universe.candidateWallets.filter(
-    (w) => !EXCLUDED_LEADERBOARD_WALLETS.has(w.toLowerCase())
+    (w) => !excludedLeaderboardWalletsSet.has(w.toLowerCase())
   );
 
   console.log(
@@ -37,15 +30,31 @@ export async function updateImpactLeaderboard() {
     includeWeeklyBreakdown: false,
   });
 
-  // 3. Sort and Rank
+  // 3. Filter and Sort
+  // Filter out wallets with insignificant points (dust/rounding errors or no historical contribution)
+  // Threshold: 0.01 points (prevents cluttering leaderboard with dust wallets)
+  const MIN_POINTS_THRESHOLD = 0.01;
+  const filteredResults = results.filter((r) => {
+    const points = parseFloat(r.totals.totalPoints);
+    return Number.isFinite(points) && points >= MIN_POINTS_THRESHOLD;
+  });
+
+  console.log(
+    `[Cron] Filtered to ${
+      filteredResults.length
+    } wallets with points >= ${MIN_POINTS_THRESHOLD} (excluded ${
+      results.length - filteredResults.length
+    } dust/zero-point wallets)`
+  );
+
   // Sort by totalPoints descending
-  results.sort((a, b) => {
+  filteredResults.sort((a, b) => {
     const ap = parseFloat(a.totals.totalPoints);
     const bp = parseFloat(b.totals.totalPoints);
     return bp - ap;
   });
 
-  const rows = results.map((r, index) => {
+  const rows = filteredResults.map((r, index) => {
     const hadSteeringAtEndWeek = (() => {
       try {
         const totalSteeringGlwWei = BigInt(
@@ -108,4 +117,3 @@ export async function updateImpactLeaderboard() {
   );
   return { updated: rows.length };
 }
-

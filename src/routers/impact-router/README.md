@@ -157,13 +157,20 @@ There are two shapes, based on `walletAddress`:
 
 #### Leaderboard eligibility (who can show up?)
 
-The leaderboard is **not** limited to “protocol participants” anymore. In list mode, the backend builds an eligible wallet universe from:
+The leaderboard is **not** limited to "protocol participants" anymore. In list mode, the backend builds an eligible wallet universe from:
 
 - **All GLW holders** (ponder listener `glowBalances` where balance > 0)
 - **All wallets with staked GCTL** (Control API `wallets.stakedControl > 0`)
 - **Protocol wallets** already known to the backend (fraction buyers + reward split wallets)
 
-Internal/team wallets are still excluded via the router’s `EXCLUDED_LEADERBOARD_WALLETS` list.
+**Exclusions**:
+
+- Internal/team wallets (via `EXCLUDED_LEADERBOARD_WALLETS` list)
+- **Wallets with < 0.01 points** - To avoid confusion and clutter from dust wallets, wallets below this threshold are excluded. This filters out:
+  - Wallets with 0 points (no historical contribution yet, typically acquired GLW during current ongoing week)
+  - Dust wallets with negligible amounts (< 0.01 GLW worth over the entire period)
+  - Approximately 86 wallets out of 922 are excluded for this reason
+  - Excluded wallets will appear once they accumulate >= 0.01 points in completed weeks
 
 #### Leaderboard output vs eligibility (why `totalWalletCount` can be > returned rows)
 
@@ -334,7 +341,7 @@ Notes:
 #### Database Cache (Leaderboard)
 
 - **Table**: `impact_leaderboard_cache` stores pre-computed leaderboard rows with `startWeek`, `endWeek`, `rank`, and full JSON payload.
-- **Cron**: Daily at 01:00 UTC (`update-impact-leaderboard` cron job) computes scores for ~1000 wallets and atomically replaces the cache.
+- **Cron**: Weekly on Sunday at 01:00 UTC (`update-impact-leaderboard` cron job) computes scores for ~1000 wallets and atomically replaces the cache.
 - **Router**: When a request matches the default week range (from `getWeekRangeForImpact()`), the router serves from the database cache (<100ms response time).
 - **Cache validation**: The router validates that `actualStartWeek` and `actualEndWeek` match the cached `startWeek` and `endWeek`. If they don't match (e.g., right after a protocol week rollover but before the cron runs), it falls back to on-the-fly computation.
 - **Single-wallet queries**: Always bypass the cache and compute on-the-fly to include `currentWeekProjection` (live preview for the ongoing week).
@@ -460,7 +467,7 @@ curl http://localhost:3005/trigger-impact-leaderboard-cron
 # Returns: {"message":"success"}
 ```
 
-This endpoint triggers the same cron job that runs daily at 01:00 UTC. The update typically takes 20-30 seconds for ~1000 wallets.
+This endpoint triggers the same cron job that runs weekly on Sunday at 01:00 UTC. The update typically takes 20-30 seconds for ~1000 wallets.
 
 ### Cache Table Schema
 

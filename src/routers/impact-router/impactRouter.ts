@@ -3,6 +3,7 @@ import { desc, asc, sql, and, eq } from "drizzle-orm";
 import { db } from "../../db/db";
 import { impactLeaderboardCache } from "../../db/schema";
 import { TAG } from "../../constants";
+import { excludedLeaderboardWalletsSet } from "../../constants/excluded-wallets";
 import { getWeekRangeForImpact } from "../fractions-router/helpers/apy-helpers";
 import {
   computeDelegatorsLeaderboard,
@@ -69,17 +70,6 @@ const delegatorsLeaderboardCache = new Map<
   string,
   { expiresAtMs: number; data: unknown }
 >();
-
-/**
- * Wallets we control (team/treasury/test wallets) that must not appear in user leaderboards.
- * Keep these lowercased.
- */
-const EXCLUDED_LEADERBOARD_WALLETS = [
-  "0x6972B05A0c80064fBE8a10CBc2a2FBCF6fb47D6a",
-  "0x0b650820dde452b204de44885fc0fbb788fc5e37",
-].map((w) => w.toLowerCase());
-
-const excludedLeaderboardWalletsSet = new Set(EXCLUDED_LEADERBOARD_WALLETS);
 
 function filterLeaderboardWallets(wallets: string[]): string[] {
   return wallets.filter((w) => !excludedLeaderboardWalletsSet.has(w));
@@ -572,6 +562,14 @@ export const impactRouter = new Elysia({ prefix: "/impact" })
             };
           }),
         };
+
+        // Filter out wallets with insignificant points (dust/rounding errors or no historical contribution)
+        // Threshold: 0.01 points (prevents cluttering leaderboard with dust wallets)
+        const MIN_POINTS_THRESHOLD_SCALED6 = BigInt(10_000); // 0.01 points
+        payload.wallets = payload.wallets.filter((w) => {
+          const points = safePointsScaled6(w.totalPoints);
+          return points >= MIN_POINTS_THRESHOLD_SCALED6;
+        });
 
         // globalRank is always defined as totalPoints-desc rank (stable across sorts).
         const globalRankByWallet = new Map<string, number>();
