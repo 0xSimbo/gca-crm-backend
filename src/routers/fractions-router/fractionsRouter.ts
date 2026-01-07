@@ -61,6 +61,10 @@ import { FRACTION_STATUS } from "../../constants/fractions";
 import {
   fetchWalletRewardsHistoryBatch,
   fetchWalletRewardsHistoryMany,
+  fetchDepositSplitsHistoryBatch,
+  fetchFarmRewardsHistoryBatch,
+  type ControlApiDepositSplitHistorySegment,
+  type ControlApiFarmRewardsHistoryRewardRow,
 } from "../impact-router/helpers/control-api";
 
 function parseOptionalBool(value: string | undefined): boolean {
@@ -754,84 +758,123 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
           const epochEndDate = getEpochEndDate(actualEndWeek);
 
           const fetchStartMs = nowMs();
-          const [glwSpotPrice, rewardSplits, purchaseRows, walletRewardsMap] =
-            await Promise.all([
-              getCachedGlwSpotPriceNumber(),
-              (async () => {
-                const t0 = nowMs();
-                const rows = await db
-                  .select({
-                    farmId: RewardSplits.farmId,
-                  })
-                  .from(RewardSplits)
-                  .where(
-                    sql`lower(${RewardSplits.walletAddress}) = ${walletLower}`
-                  );
-                recordTiming("rewardsBreakdown.db.rewardSplits", t0, {
-                  rows: rows.length,
+          const DELEGATION_START_WEEK = 97;
+          const [
+            glwSpotPrice,
+            rewardSplits,
+            purchaseRows,
+            walletRewardsMap,
+            depositSplitSegments,
+          ] = await Promise.all([
+            getCachedGlwSpotPriceNumber(),
+            (async () => {
+              const t0 = nowMs();
+              const rows = await db
+                .select({
+                  farmId: RewardSplits.farmId,
+                })
+                .from(RewardSplits)
+                .where(
+                  sql`lower(${RewardSplits.walletAddress}) = ${walletLower}`
+                );
+              recordTiming("rewardsBreakdown.db.rewardSplits", t0, {
+                rows: rows.length,
+              });
+              return rows;
+            })(),
+            (async () => {
+              const t0 = nowMs();
+              const rows = await db
+                .select({
+                  amount: fractionSplits.amount,
+                  stepsPurchased: fractionSplits.stepsPurchased,
+                  createdAt: fractionSplits.createdAt,
+                  fractionType: fractions.type,
+                  applicationId: applications.id,
+                  farmId: applications.farmId,
+                })
+                .from(fractionSplits)
+                .innerJoin(
+                  fractions,
+                  eq(fractionSplits.fractionId, fractions.id)
+                )
+                .innerJoin(
+                  applications,
+                  eq(fractions.applicationId, applications.id)
+                )
+                .where(eq(fractionSplits.buyer, walletLower));
+              recordTiming("rewardsBreakdown.db.purchases", t0, {
+                rows: rows.length,
+              });
+              return rows;
+            })(),
+            (async () => {
+              const t0 = nowMs();
+              try {
+                const m = await fetchWalletRewardsHistoryBatch({
+                  wallets: [walletLower],
+                  startWeek: actualStartWeek,
+                  endWeek: actualEndWeek,
                 });
-                return rows;
-              })(),
-              (async () => {
-                const t0 = nowMs();
-                const rows = await db
-                  .select({
-                    amount: fractionSplits.amount,
-                    stepsPurchased: fractionSplits.stepsPurchased,
-                    createdAt: fractionSplits.createdAt,
-                    fractionType: fractions.type,
-                    applicationId: applications.id,
-                    farmId: applications.farmId,
-                  })
-                  .from(fractionSplits)
-                  .innerJoin(
-                    fractions,
-                    eq(fractionSplits.fractionId, fractions.id)
-                  )
-                  .innerJoin(
-                    applications,
-                    eq(fractions.applicationId, applications.id)
-                  )
-                  .where(eq(fractionSplits.buyer, walletLower));
-                recordTiming("rewardsBreakdown.db.purchases", t0, {
-                  rows: rows.length,
-                });
-                return rows;
-              })(),
-              (async () => {
-                const t0 = nowMs();
-                try {
-                  const m = await fetchWalletRewardsHistoryBatch({
-                    wallets: [walletLower],
+                recordTiming(
+                  "rewardsBreakdown.control.walletRewards.batch",
+                  t0,
+                  {
+                    wallets: 1,
                     startWeek: actualStartWeek,
                     endWeek: actualEndWeek,
-                  });
-                  recordTiming(
-                    "rewardsBreakdown.control.walletRewards.batch",
-                    t0,
-                    {
-                      wallets: 1,
-                      startWeek: actualStartWeek,
-                      endWeek: actualEndWeek,
-                    }
-                  );
-                  return m;
-                } catch (error) {
-                  recordTiming(
-                    "rewardsBreakdown.control.walletRewards.batch",
-                    t0,
-                    {
-                      wallets: 1,
-                      startWeek: actualStartWeek,
-                      endWeek: actualEndWeek,
-                      error:
-                        error instanceof Error ? error.message : String(error),
-                    }
-                  );
-                  return new Map<string, any[]>();
-                }
-              })(),
-            ]);
+                  }
+                );
+                return m;
+              } catch (error) {
+                recordTiming(
+                  "rewardsBreakdown.control.walletRewards.batch",
+                  t0,
+                  {
+                    wallets: 1,
+                    startWeek: actualStartWeek,
+                    endWeek: actualEndWeek,
+                    error:
+                      error instanceof Error ? error.message : String(error),
+                  }
+                );
+                return new Map<string, any[]>();
+              }
+            })(),
+            (async () => {
+              const t0 = nowMs();
+              try {
+                const m = await fetchDepositSplitsHistoryBatch({
+                  wallets: [walletLower],
+                  startWeek: DELEGATION_START_WEEK,
+                  endWeek: actualEndWeek,
+                });
+                recordTiming(
+                  "rewardsBreakdown.control.depositSplits.batch",
+                  t0,
+                  {
+                    wallets: 1,
+                    startWeek: DELEGATION_START_WEEK,
+                    endWeek: actualEndWeek,
+                  }
+                );
+                return m.get(walletLower) || [];
+              } catch (error) {
+                recordTiming(
+                  "rewardsBreakdown.control.depositSplits.batch",
+                  t0,
+                  {
+                    wallets: 1,
+                    startWeek: DELEGATION_START_WEEK,
+                    endWeek: actualEndWeek,
+                    error:
+                      error instanceof Error ? error.message : String(error),
+                  }
+                );
+                return [] as ControlApiDepositSplitHistorySegment[];
+              }
+            })(),
+          ]);
           recordTiming("rewardsBreakdown.fetch.all", fetchStartMs);
 
           const farmPurchaseMap = new Map<
@@ -842,6 +885,7 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
               type: "launchpad" | "mining-center";
               amountInvested: bigint;
               stepsPurchased: number;
+              isVaultOwnership?: boolean;
             }
           >();
 
@@ -894,6 +938,148 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
               if (!recentFarmTypesMap.has(farmId))
                 recentFarmTypesMap.set(farmId, new Set());
               recentFarmTypesMap.get(farmId)!.add(type);
+            }
+          }
+
+          // Process vault ownership (deposit splits) for farms not directly purchased
+          const vaultFarmIds = new Set<string>();
+          for (const seg of depositSplitSegments) {
+            vaultFarmIds.add(seg.farmId);
+          }
+
+          // Remove farms already in farmPurchaseMap (we only add vault farms that weren't directly purchased)
+          const directPurchaseFarmIds = new Set(
+            Array.from(farmPurchaseMap.values()).map((p) => p.farmId)
+          );
+          const vaultOnlyFarmIds = Array.from(vaultFarmIds).filter(
+            (id) => !directPurchaseFarmIds.has(id)
+          );
+
+          // Fetch principals and cumulative distributions for vault-only farms
+          let vaultPrincipalByFarm = new Map<string, bigint>();
+          let vaultAppIdByFarm = new Map<string, string>();
+          let vaultCumulativeDistByFarm = new Map<string, bigint>();
+
+          if (vaultOnlyFarmIds.length > 0) {
+            const vaultT0 = nowMs();
+
+            // Fetch farm principals from DB (GLW-paid applications only)
+            const principalRows = await db
+              .select({
+                farmId: applications.farmId,
+                appId: applications.id,
+                paymentAmount: applications.paymentAmount,
+              })
+              .from(applications)
+              .where(
+                and(
+                  inArray(applications.farmId, vaultOnlyFarmIds),
+                  eq(applications.isCancelled, false),
+                  eq(applications.status, "completed"),
+                  eq(applications.paymentCurrency, "GLW")
+                )
+              );
+
+            for (const row of principalRows) {
+              if (!row.farmId) continue;
+              const amountWei = BigInt(row.paymentAmount || "0");
+              if (amountWei <= BigInt(0)) continue;
+              vaultPrincipalByFarm.set(
+                row.farmId,
+                (vaultPrincipalByFarm.get(row.farmId) || BigInt(0)) + amountWei
+              );
+              if (!vaultAppIdByFarm.has(row.farmId)) {
+                vaultAppIdByFarm.set(row.farmId, row.appId);
+              }
+            }
+
+            // Fetch farm rewards history to calculate cumulative distributions
+            const glwPrincipalFarmIds = vaultOnlyFarmIds.filter(
+              (id) => (vaultPrincipalByFarm.get(id) || BigInt(0)) > BigInt(0)
+            );
+
+            if (glwPrincipalFarmIds.length > 0) {
+              try {
+                const farmRewardsMap = await fetchFarmRewardsHistoryBatch({
+                  farmIds: glwPrincipalFarmIds,
+                  startWeek: DELEGATION_START_WEEK,
+                  endWeek: actualEndWeek,
+                });
+
+                // Calculate cumulative distributed for each farm
+                for (const [farmId, rows] of farmRewardsMap) {
+                  let cumulative = BigInt(0);
+                  for (const r of rows) {
+                    if ((r.paymentCurrency || "").toUpperCase() !== "GLW")
+                      continue;
+                    const distributed = BigInt(
+                      r.protocolDepositRewardsDistributed || "0"
+                    );
+                    if (distributed > BigInt(0)) {
+                      cumulative += distributed;
+                    }
+                  }
+                  vaultCumulativeDistByFarm.set(farmId, cumulative);
+                }
+              } catch (error) {
+                console.error("Failed to fetch farm rewards for vault:", error);
+              }
+            }
+
+            recordTiming("rewardsBreakdown.vault.fetchPrincipals", vaultT0, {
+              vaultFarms: vaultOnlyFarmIds.length,
+              glwPrincipalFarms: glwPrincipalFarmIds.length,
+            });
+
+            // Calculate vault amountInvested and add to farmPurchaseMap
+            const SPLIT_SCALE = BigInt(1_000_000);
+            for (const seg of depositSplitSegments) {
+              // Only process vault-only farms
+              if (directPurchaseFarmIds.has(seg.farmId)) continue;
+
+              const principalWei =
+                vaultPrincipalByFarm.get(seg.farmId) || BigInt(0);
+              if (principalWei <= BigInt(0)) continue;
+
+              // Check if segment overlaps with query range (skip if no overlap)
+              if (
+                seg.endWeek < actualStartWeek ||
+                seg.startWeek > actualEndWeek
+              )
+                continue;
+
+              const splitScaled6 = BigInt(
+                seg.depositSplitPercent6Decimals || "0"
+              );
+              if (splitScaled6 <= BigInt(0)) continue;
+
+              const cumulativeDistributed =
+                vaultCumulativeDistByFarm.get(seg.farmId) || BigInt(0);
+              const remaining =
+                principalWei > cumulativeDistributed
+                  ? principalWei - cumulativeDistributed
+                  : BigInt(0);
+              const amountInvested = (remaining * splitScaled6) / SPLIT_SCALE;
+
+              if (amountInvested <= BigInt(0)) continue;
+
+              const key = `${seg.farmId}-launchpad-vault`;
+              const existing = farmPurchaseMap.get(key);
+              if (existing) {
+                existing.amountInvested += amountInvested;
+              } else {
+                farmPurchaseMap.set(key, {
+                  farmId: seg.farmId,
+                  appId: vaultAppIdByFarm.get(seg.farmId) || "",
+                  type: "launchpad",
+                  amountInvested,
+                  stepsPurchased: 0,
+                  isVaultOwnership: true,
+                });
+              }
+
+              // Add to totalGlwDelegated (vault ownership counts as delegation)
+              totalGlwDelegated += amountInvested;
             }
           }
 
@@ -964,6 +1150,14 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
           const delegatorApyPercent = accurateAPY.delegatorAPY.toFixed(4);
           const minerApyPercentFormatted = accurateAPY.minerAPY.toFixed(4);
 
+          // Create a lookup for isVaultOwnership from farmPurchaseMap
+          const vaultOwnershipLookup = new Map<string, boolean>();
+          for (const [key, purchase] of farmPurchaseMap) {
+            if (purchase.isVaultOwnership) {
+              vaultOwnershipLookup.set(purchase.farmId, true);
+            }
+          }
+
           const farmDetails = accurateAPY.farmBreakdowns.map((farm) => ({
             farmId: farm.farmId,
             type: farm.type,
@@ -982,6 +1176,9 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
               protocolDepositRewards: week.protocolDepositRewards.toString(),
               totalRewards: week.totalRewards.toString(),
             })),
+            ...(vaultOwnershipLookup.get(farm.farmId)
+              ? { isVaultOwnership: true }
+              : {}),
           }));
 
           let delegatorLastWeek = BigInt(0);

@@ -18,6 +18,7 @@ import {
   fetchWalletRewardsHistoryBatch,
   fetchGlwHoldersFromPonder,
   fetchGlwTwabByWeekWeiMany,
+  fetchGlwBalanceSnapshotByWeekMany,
   fetchGctlStakersFromControlApi,
   fetchClaimedPdWeeksBatch,
   fetchClaimsBatch,
@@ -267,6 +268,8 @@ export interface WeeklyImpactRow {
   steeringGlwWei: string;
   delegatedActiveGlwWei: string;
   protocolDepositRecoveredGlwWei: string;
+  liquidGlwWei: string; // Historical liquid balance (TWAB)
+  unclaimedGlwWei: string; // Historical unclaimed rewards
 
   // Points (scaled6 strings)
   inflationPoints: string;
@@ -846,27 +849,48 @@ export async function computeGlowImpactScores(params: {
   // Note: We intentionally do NOT convert non-GLW protocol deposit payouts to GLW
   // for `delegatedActiveGlwWei`. Only GLW-denominated protocol-deposit payouts count.
 
-  // Liquid GLW TWAB per wallet/week (anti-gaming): computed from indexed ERC20 Transfer history.
-  // If the downstream service is unavailable, we fall back to using the current onchain balance
-  // (which reintroduces the "flash transfer" vector).
+  // Liquid GLW per wallet/week: we prefer end-of-week balance snapshots (accurate point-in-time)
+  // over TWAB (time-weighted average) to eliminate "squiggly" charts caused by mid-week activity.
+  // Falls back to TWAB if snapshots aren't available (pre-deployment weeks), then to current balance.
+  let liquidSnapshotByWalletWeek = new Map<string, Map<number, bigint>>();
   let liquidTwabByWalletWeek = new Map<string, Map<number, bigint>>();
-  const twabStart = nowMs();
-  try {
-    liquidTwabByWalletWeek = await fetchGlwTwabByWeekWeiMany({
+  const liquidBalanceStart = nowMs();
+
+  // Fetch both snapshots and TWAB in parallel
+  const [snapshotResult, twabResult] = await Promise.allSettled([
+    fetchGlwBalanceSnapshotByWeekMany({
       wallets,
       startWeek,
       endWeek,
-    });
-  } catch (e) {
+    }),
+    fetchGlwTwabByWeekWeiMany({
+      wallets,
+      startWeek,
+      endWeek,
+    }),
+  ]);
+
+  if (snapshotResult.status === "fulfilled") {
+    liquidSnapshotByWalletWeek = snapshotResult.value;
+  } else {
+    console.error(
+      `[impact-score] Balance snapshot fetch failed (wallets=${wallets.length}, startWeek=${startWeek}, endWeek=${endWeek})`,
+      snapshotResult.reason
+    );
+  }
+
+  if (twabResult.status === "fulfilled") {
+    liquidTwabByWalletWeek = twabResult.value;
+  } else {
     console.error(
       `[impact-score] TWAB fetch failed (wallets=${wallets.length}, startWeek=${startWeek}, endWeek=${endWeek})`,
-      e
+      twabResult.reason
     );
-    liquidTwabByWalletWeek = new Map();
   }
+
   recordTimingSafe(debug, {
-    label: "compute.twab",
-    ms: nowMs() - twabStart,
+    label: "compute.liquidBalance",
+    ms: nowMs() - liquidBalanceStart,
     meta: { wallets: wallets.length, startWeek, endWeek },
   });
 
@@ -1079,7 +1103,11 @@ export async function computeGlowImpactScores(params: {
   const currentEpoch = getCurrentEpoch(nowSec);
   const claimableThresholdWeek = Math.min(currentEpoch - 3, currentEpoch - 4);
   const claimableEndWeek = Math.min(endWeek, claimableThresholdWeek);
-  const claimableStartWeek = startWeek;
+  const claimableStartWeek = startWeek; // For "current unclaimed" snapshot calculation
+  // For historical unclaimed calculation, we need ALL claims from the start of v2 (Week 97)
+  // not just from the user's startWeek. Otherwise, we miss claims for earlier weeks when
+  // calculating historical unclaimed for weeks in the middle of the range.
+  const claimableStartWeekForFetch = DELEGATION_START_WEEK;
 
   // Accurate unclaimed calculation for all wallets.
   // We batch fetch all inputs (rewards, PD claimed weeks, and raw claims for inflation inference).
@@ -1087,7 +1115,7 @@ export async function computeGlowImpactScores(params: {
   const [claimedPdWeeksByWallet, allClaimsByWallet] = await Promise.all([
     fetchClaimedPdWeeksBatch({
       wallets,
-      startWeek: claimableStartWeek,
+      startWeek: claimableStartWeekForFetch,
       endWeek: claimableEndWeek,
     }),
     fetchClaimsBatch({
@@ -1099,7 +1127,7 @@ export async function computeGlowImpactScores(params: {
     ms: nowMs() - claimsStart,
     meta: {
       wallets: wallets.length,
-      startWeek: claimableStartWeek,
+      startWeek: claimableStartWeekForFetch,
       endWeek: claimableEndWeek,
     },
   });
@@ -1561,8 +1589,10 @@ export async function computeGlowImpactScores(params: {
         multiplierScaled6: totalMultiplierScaled6,
       });
 
-      const liquidTwabWeekWei =
-        liquidTwabByWalletWeek.get(wallet)?.get(week) ?? liquidGlwWei;
+      // Prefer end-of-week snapshot (accurate) > TWAB (averaged) > current balance (fallback)
+      const snapshotBalance = liquidSnapshotByWalletWeek.get(wallet)?.get(week);
+      const twabBalance = liquidTwabByWalletWeek.get(wallet)?.get(week);
+      const liquidTwabWeekWei = snapshotBalance ?? twabBalance ?? liquidGlwWei;
 
       // Calculate Historical Unclaimed for this specific week
       const weekEndTimestamp = GENESIS_TIMESTAMP + (week + 1) * 604800;
@@ -1650,6 +1680,8 @@ export async function computeGlowImpactScores(params: {
           protocolDepositRecoveredGlwWei: (
             protocolRecoveredByWeek.get(week) || BigInt(0)
           ).toString(),
+          liquidGlwWei: liquidTwabWeekWei.toString(),
+          unclaimedGlwWei: historicalUnclaimedWei.toString(),
           inflationPoints: formatPointsScaled6(inflationPts),
           steeringPoints: formatPointsScaled6(steeringPts),
           vaultBonusPoints: formatPointsScaled6(vaultPts),
