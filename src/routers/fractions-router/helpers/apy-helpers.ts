@@ -75,35 +75,60 @@ export function getWeekRange(): { startWeek: number; endWeek: number } {
   return { startWeek, endWeek: finalEndWeek };
 }
 
+export function getWeekRangeForImpact(): {
+  startWeek: number;
+  endWeek: number;
+} {
+  const startWeek = 97;
+  const nowSec = Math.floor(Date.now() / 1000);
+  const currentWeek = Math.floor((nowSec - GENESIS_TIMESTAMP) / 604800);
+  const endWeek = currentWeek - 1;
+  const finalEndWeek = endWeek >= startWeek ? endWeek : startWeek;
+  return { startWeek, endWeek: finalEndWeek };
+}
+
 /**
  * Calculate the last completed week based on Thursday 00:00 UTC weekly report generation schedule
  * Reports are generated every Thursday at 00:00:00 UTC (pattern: '0 0 0 * * 4')
  */
 function getLastCompletedWeekForReports(): number {
   const now = new Date();
-  const currentUTC = new Date(now.getTime() + now.getTimezoneOffset() * 60000);
 
-  // Get current day of week (0 = Sunday, 4 = Thursday)
-  const currentDayOfWeek = currentUTC.getUTCDay();
-  const currentHour = currentUTC.getUTCHours();
+  // Get current day of week (0 = Sunday, 4 = Thursday) in UTC
+  const currentDayOfWeek = now.getUTCDay();
+  const currentHour = now.getUTCHours();
 
-  // Calculate days since last Thursday 00:00 UTC
-  let daysSinceLastThursday: number;
+  // Calculate days to go back to get to the last completed Thursday report
+  let daysToGoBack: number;
 
-  if (currentDayOfWeek === 4 && currentHour >= 0) {
-    // It's Thursday and past 00:00 UTC - the report for this week has been generated
-    daysSinceLastThursday = 0;
+  if (currentDayOfWeek === 4 && currentHour >= 1) {
+    // It's Thursday and past 01:00 UTC - the report for this week has been generated (1 hour buffer)
+    daysToGoBack = 0;
+  } else if (currentDayOfWeek === 0) {
+    // Sunday - go back 3 days to Thursday
+    daysToGoBack = 3;
   } else if (currentDayOfWeek > 4) {
-    // It's Friday, Saturday, or Sunday - count back to Thursday
-    daysSinceLastThursday = currentDayOfWeek - 4;
+    // Friday (5) or Saturday (6) - count back to Thursday
+    daysToGoBack = currentDayOfWeek - 4;
   } else {
-    // It's Monday, Tuesday, Wednesday, or Thursday before 00:00 - count back to previous Thursday
-    daysSinceLastThursday = currentDayOfWeek + 3;
+    // Monday (1), Tuesday (2), Wednesday (3), or Thursday before 01:00 - count back to previous Thursday
+    daysToGoBack = currentDayOfWeek + 3;
   }
 
-  // Calculate the timestamp of the last Thursday 00:00 UTC when report was generated
-  const lastThursdayTimestamp =
-    Math.floor(currentUTC.getTime() / 1000) - daysSinceLastThursday * 86400;
+  // Get the date in UTC for the last Thursday at 00:00:00
+  const lastThursday = new Date(
+    Date.UTC(
+      now.getUTCFullYear(),
+      now.getUTCMonth(),
+      now.getUTCDate() - daysToGoBack,
+      0,
+      0,
+      0,
+      0
+    )
+  );
+
+  const lastThursdayTimestamp = Math.floor(lastThursday.getTime() / 1000);
 
   // Calculate which protocol week that timestamp corresponds to
   const secondsSinceGenesis = lastThursdayTimestamp - GENESIS_TIMESTAMP;
@@ -136,7 +161,10 @@ export async function getFilledFractionsUpToEpoch(epochEndDate: Date) {
         ]),
         or(
           lte(fractions.filledAt, epochEndDate),
-          and(isNull(fractions.filledAt), lte(fractions.expirationAt, epochEndDate))
+          and(
+            isNull(fractions.filledAt),
+            lte(fractions.expirationAt, epochEndDate)
+          )
         )
       )
     );

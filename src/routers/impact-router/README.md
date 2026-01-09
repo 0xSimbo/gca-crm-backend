@@ -13,9 +13,17 @@ This is a **status-only leaderboard** (no monetary rewards are paid out by this 
 \]
 
 - `LiquidGLW`: on-chain ERC20 GLW `balanceOf(wallet)` (18 decimals / wei)
-- `DelegatedActiveGLW`: net delegated GLW currently active in launchpad fractions, modeled as:
-  - `sum(launchpad purchases)` **minus** `sum(launchpad refunds)` **minus** `sum(protocolDepositRewardsReceived)` (converted to GLW when needed)
-- `UnclaimedGLWRewards`: claimable rewards minus on-chain claims (see details below)
+- `DelegatedActiveGLW`: the wallet’s **vault ownership** share of remaining **GLW protocol-deposit principal**, modeled as:
+  - For each farm \(f\):
+    - `principalPaidGlwWei(f)`: the farm’s GLW protocol deposit principal from `applications.paymentAmount` where `paymentCurrency=GLW` and `status=completed`
+    - `distributedGlwWeiToWeek(f, week)`: cumulative `protocolDepositRewardsDistributed` from Control API farm weekly rewards where `paymentCurrency=GLW`
+    - `remainingGlwWei(f, week) = max(0, principalPaidGlwWei(f) - distributedGlwWeiToWeek(f, week))`
+    - `walletSplit6(f, week)`: the wallet’s `depositSplitPercent6Decimals` ownership at that week (Control API split history; `POST /farms/by-wallet/deposit-splits-history/batch`)
+    - `walletShareRemainingGlwWei(f, week) = remainingGlwWei(f, week) * walletSplit6(f, week) / 1_000_000`
+  - Then: `DelegatedActiveGLW(week) = sum_farms walletShareRemainingGlwWei(f, week)`
+  - Accounting starts at **week 97** (first week vault ownership exists). Even if you query `startWeek > 97`, we compute ownership from week 97 so farm distributions earlier in the range don’t distort `remainingGlwWei`.
+  - **Miners** do not participate in protocol-deposit vaults; mining-center `depositSplitPercent6Decimals` is always `0`.
+- `UnclaimedGLWRewards`: claimable rewards minus claims (see details below)
 
 ### Glow Impact Score
 
@@ -54,17 +62,19 @@ If you **buy/receive GLW now**, the score can change, but it no longer “backfi
 The **weekly rollover components** (inflation / steering / vault bonus / cash-miner multiplier) are derived from **weekNumber-indexed** data sources and behave like weekly accounting:
 
 - Inflation + protocol-deposit recovery come from Control API reward history (by `weekNumber`)
-- Steering is derived from Control API region rewards and the wallet stake snapshot (currently applied uniformly across the queried week range)
+- Steering is derived from Control API **epoch-specific** region rewards and **stake-by-epoch** snapshots; if those endpoints are unavailable, the backend falls back to the **current stake snapshot** method (applied uniformly across the queried week range)
 - Cash-miner bonus depends on whether a mining-center fraction purchase happened in a given `weekNumber`
 
 So buying GLW does **not** retroactively change those weekly rollover rows.
 
 ### Default week cutoff nuance
 
-By default, `startWeek/endWeek` use `getWeekRange()`:
+By default, `startWeek/endWeek` use `getWeekRangeForImpact()`:
 
 - `startWeek`: fixed start (currently `97`)
-- `endWeek`: the **last completed week for reports** (based on a Thursday 00:00 UTC report schedule), not “the in-progress current protocol week”.
+- `endWeek`: the **last completed protocol week** (based on actual protocol week boundaries: Sunday 00:00 UTC rollover from GENESIS_TIMESTAMP), not "the in-progress current protocol week".
+
+**Important**: This is different from `getWeekRange()` used by fractions/rewards, which uses Thursday 00:00 UTC GCA report timing. Impact scoring can use more recent weeks because TWAB/claims data is available immediately after the protocol week ends, whereas GCA reports need additional processing time.
 
 If you pass explicit `startWeek/endWeek` query params, the backend will compute over that range (it only validates `endWeek >= startWeek`).
 
@@ -88,6 +98,10 @@ These are **public HTTP endpoints** exposed by `impactRouter` (Elysia) under the
 - **Single wallet**: pass `walletAddress` → returns a single `glowWorth` object
 - **List**: omit `walletAddress` → returns `{ weekRange, limit, wallets: glowWorth[] }`
 - **List (no `limit`)**: when `limit` query param is omitted, response also includes `totalWalletCount` so UIs can show “displaying 200 of N”.
+
+#### List-mode wallet universe (important)
+
+`GET /impact/glow-worth` list mode is **not** “all GLW holders”. Today it only considers wallets already known to the backend via protocol activity (fraction buyers + reward split wallets), and it excludes internal/team wallets via `EXCLUDED_LEADERBOARD_WALLETS`.
 
 Example (Next.js / React server-side fetch):
 
@@ -139,7 +153,29 @@ There are two shapes, based on `walletAddress`:
 
 - **Single wallet** (`walletAddress=0x...`): returns the full object including `glowWorth`, `totals`, `weekly[]`, and `currentWeekProjection` (live preview).
 - **Leaderboard/list** (omit `walletAddress`): returns lightweight rows with totals + a `composition` breakdown + `lastWeekPoints` + `activeMultiplier`.
-- **Leaderboard/list (no `limit`)**: when `limit` query param is omitted, response also includes `totalWalletCount`.
+- **Leaderboard/list**: response includes `totalWalletCount` so UIs can show “displaying 200 of N”.
+
+#### Leaderboard eligibility (who can show up?)
+
+The leaderboard is **not** limited to "protocol participants" anymore. In list mode, the backend builds an eligible wallet universe from:
+
+- **All GLW holders** (ponder listener `glowBalances` where balance > 0)
+- **All wallets with staked GCTL** (Control API `wallets.stakedControl > 0`)
+- **Protocol wallets** already known to the backend (fraction buyers + reward split wallets)
+
+**Exclusions**:
+
+- Internal/team wallets (via `EXCLUDED_LEADERBOARD_WALLETS` list)
+- **Wallets with < 0.01 points** - To avoid confusion and clutter from dust wallets, wallets below this threshold are excluded. This filters out:
+  - Wallets with 0 points (no historical contribution yet, typically acquired GLW during current ongoing week)
+  - Dust wallets with negligible amounts (< 0.01 GLW worth over the entire period)
+  - Approximately 86 wallets out of 922 are excluded for this reason
+  - Excluded wallets will appear once they accumulate >= 0.01 points in completed weeks
+
+#### Leaderboard output vs eligibility (why `totalWalletCount` can be > returned rows)
+
+- `totalWalletCount` refers to the **eligible wallet universe** (after excluding internal/team wallets).
+- To keep latency reasonable, list mode may compute scores over a **candidate subset** (protocol wallets + all GCTL stakers + top GLW holders by balance) and return the top `limit` rows from that scored set.
 
 #### Full breakdown for a single wallet
 
@@ -190,6 +226,8 @@ interface ImpactScoreResponse {
   };
   lastWeekPoints: string;
   activeMultiplier: boolean;
+  hasMinerMultiplier: boolean;
+  endWeekMultiplier: number;
   weekly: ImpactScoreWeeklyRow[];
   currentWeekProjection: {
     weekNumber: number;
@@ -245,6 +283,13 @@ interface ImpactScoreLeaderboardRow {
   // Points earned in the previous week relative to `endWeek` (i.e. weekNumber = endWeek - 1)
   lastWeekPoints: string;
   activeMultiplier: boolean;
+  hasMinerMultiplier: boolean;
+  hasSteeringStake: boolean;
+  hasVaultBonus: boolean;
+  endWeekMultiplier: number;
+  // Stable rank by totalPoints (descending) for the scored candidate set.
+  // This does NOT change when you sort by lastWeekPoints or glowWorth.
+  globalRank: number;
   // rankDelta?: number; // intentionally omitted today (expensive to compute)
 }
 
@@ -260,6 +305,8 @@ export async function getImpactLeaderboard(params: {
   startWeek?: number;
   endWeek?: number;
   limit?: number;
+  sort?: "totalPoints" | "lastWeekPoints" | "glowWorth";
+  dir?: "asc" | "desc";
 }): Promise<ImpactScoreLeaderboardResponse> {
   const url = new URL("/impact/glow-score", params.baseUrl);
   if (params.startWeek != null)
@@ -267,6 +314,8 @@ export async function getImpactLeaderboard(params: {
   if (params.endWeek != null)
     url.searchParams.set("endWeek", String(params.endWeek));
   if (params.limit != null) url.searchParams.set("limit", String(params.limit));
+  if (params.sort != null) url.searchParams.set("sort", params.sort);
+  if (params.dir != null) url.searchParams.set("dir", params.dir);
 
   const res = await fetch(url, { cache: "no-store" });
   if (!res.ok) throw new Error(await res.text());
@@ -275,12 +324,51 @@ export async function getImpactLeaderboard(params: {
 }
 ```
 
-### Performance guidance
+##### Leaderboard sorting
+
+List mode supports backend-driven sorting:
+
+- `sort`: `totalPoints` (default), `lastWeekPoints`, `glowWorth`
+- `dir`: `desc` (default), `asc`
+
+Notes:
+
+- Sorting is applied **before** slicing to `limit`.
+- `globalRank` always reflects rank by `totalPoints` **descending** (stable across sorts).
+
+### Performance guidance & caching
+
+#### Database Cache (Leaderboard)
+
+- **Table**: `impact_leaderboard_cache` stores pre-computed leaderboard rows with `startWeek`, `endWeek`, `rank`, and full JSON payload.
+- **Cron**: Weekly on Sunday at 01:00 UTC (`update-impact-leaderboard` cron job) computes scores for ~1000 wallets and atomically replaces the cache.
+- **Router**: When a request matches the default week range (from `getWeekRangeForImpact()`), the router serves from the database cache (<100ms response time).
+- **Cache validation**: The router validates that `actualStartWeek` and `actualEndWeek` match the cached `startWeek` and `endWeek`. If they don't match (e.g., right after a protocol week rollover but before the cron runs), it falls back to on-the-fly computation.
+- **Single-wallet queries**: Always bypass the cache and compute on-the-fly to include `currentWeekProjection` (live preview for the ongoing week).
+
+#### In-Memory Cache
+
+- Some Control API calls are cached in-process to reduce repeated work (e.g. region rewards are cached for ~30s, GLW holders for 10 minutes).
+- The `/impact/glow-score` **list** response is cached in-memory for ~10 minutes (in addition to the database cache).
+- Single-wallet responses are **not** cached in-memory, since `currentWeekProjection` is meant to feel "live".
+
+#### Other Optimizations
 
 - `includeWeekly=true|1` on `/impact/glow-score` can be **very large** when you query many wallets; avoid using it for leaderboard screens.
 - For dashboards, fetch a single wallet with `walletAddress` and a bounded `startWeek/endWeek`.
-- Some Control API calls are cached in-process to reduce repeated work (e.g. region rewards are cached for ~30s).
-- The `/impact/glow-score` **list** response is cached in-process for ~10 minutes (single-wallet responses are not cached, since `currentWeekProjection` is meant to feel “live”).
+- In list mode, the backend may score a **candidate subset** (e.g. protocol wallets + GCTL stakers + top GLW holders by balance) to keep latency reasonable while still returning the top `limit` by score.
+
+### Profiling / debugging leaderboard latency
+
+`GET /impact/glow-score` supports an on-demand timing log (list mode only):
+
+- Add `debugTimings=true` (or `1`) to emit a single summary log showing which stages are slow.
+
+Local repro script:
+
+```bash
+bun run scripts/debug-impact-leaderboard.ts --limit 50 --warmup 1 --repeat 3
+```
 
 ## `GET /impact/glow-worth`
 
@@ -290,9 +378,21 @@ Computes the wallet's GLW-denominated position:
 - `LiquidGLW`: onchain ERC20 GLW `balanceOf` via `viem`
 - `DelegatedActiveGLW`: launchpad GLW delegated minus protocol-deposit rewards received (converted to GLW using current spot price)
 - `UnclaimedGLWRewards`: computed as:
-  - **Claimable GLW** from Control API weekly rewards (`/wallets/address/:wallet/weekly-rewards?paymentCurrency=GLW`)
-  - minus **Claimed GLW** from claims API (`https://glow-ponder-listener-2-production.up.railway.app/rewards/claims/:address`)
-  - with a **lag window** (currently 3 weeks) so we don’t treat the most recent weeks as claimable yet
+  - **Claimable GLW** from Control API weekly rewards (`/wallets/address/:wallet/weekly-rewards?paymentCurrency=GLW&limit=520`)
+    - When `paymentCurrency=GLW`, both:
+      - `glowInflationTotal`
+      - `protocolDepositRewardsReceived`
+        are **GLW-denominated** (18-decimal wei).
+  - We only treat weeks as claimable once they’re finalized (matches wallet claims UX):
+    - GLW inflation finalizes after **3** weeks
+    - protocol-deposit payouts finalize after **4** weeks
+    - so the effective claimable cutoff is `min(currentEpoch - 3, currentEpoch - 4)`
+  - **Claimed GLW** is derived from the claims API (`/rewards/claims/:address`) by filtering:
+    - `token == 0xf4fbc617a5733eaaf9af08e1ab816b103388d8b6` (GLW)
+  - Claims are attributed to the **reward week** (not the claim timestamp):
+    - **RewardsKernel** claims include `nonce` → week mapping (v2 nonce 0 corresponds to week 97): `week = 97 + nonce`
+    - **MinerPool** claims are indexed from GLW `Transfer` logs and do not include a week; we infer the reward week by matching the claim `amount` to the Control API `glowInflationTotal` for that week (with a 10M wei epsilon to tolerate downstream rounding)
+  - **All wallets** now use "accurate" mode (both single wallet and leaderboard). The leaderboard performance is maintained by caching the results daily in `impact_leaderboard_cache` table.
 
 Query:
 
@@ -319,6 +419,9 @@ Notes:
   - If these Control API endpoints are unavailable, the backend falls back to the **current stake snapshot** method.
 - **Unclaimed rewards**:
   - Derived from Control API weekly rewards minus claim rows fetched from the claims API (`https://glow-ponder-listener-2-production.up.railway.app`).
+  - **Historical accuracy**: Uses claim timestamps to determine if a reward was unclaimed "at the end of week W". If `claimTimestamp > weekEndTimestamp`, the reward counts as unclaimed for that week.
+  - **V1/V2 boundary**: Claims that occurred before Week 97 started (timestamp < 1759104000) are filtered out, even if they have v2-compatible nonces.
+  - **Inflation claim inference**: MinerPool claims (which lack nonces) are attributed to weeks by matching the transfer amount to Control API's `glowInflationTotal` for each week (within 10M wei epsilon). Ambiguous matches are rejected.
 
 Query:
 
@@ -326,3 +429,91 @@ Query:
 - `startWeek`, `endWeek` (optional)
 - `limit` (optional): default `200`
 - `includeWeekly` (optional): `true|1` to include weekly rows when querying multiple wallets (can be large)
+
+## UI Indicator Behavior (Current vs Finalized)
+
+The frontend displays multipliers/bonuses differently based on context:
+
+### Single Wallet View (Rank Widget, Wallet Dashboard)
+
+- **Purpose**: Show what's ACTIVE NOW for the current ongoing week
+- **Data Source**: `currentWeekProjection` from single-wallet API response
+- **Fields**:
+  - `hasMinerMultiplier` - Did you buy a miner THIS week?
+  - `hasSteeringStake` - Do you have GCTL staked NOW?
+  - `streakBonusMultiplier` - What's your current streak bonus?
+- **Why**: Users want to see "what bonuses am I getting RIGHT NOW" to decide whether to take action
+
+### Leaderboard View (Global Leaderboard Table & Breakdown)
+
+- **Purpose**: Show FINALIZED multipliers/bonuses that were used to calculate the displayed score
+- **Data Source**: Fields from the last completed week (`endWeek`)
+- **Fields**:
+  - `hasMinerMultiplier` - Did they have a miner at `endWeek`?
+  - `endWeekMultiplier` - What was their total multiplier at `endWeek`?
+  - `hasSteeringStake` - Did they steer GLW during the scored period? (derived from `totals.totalSteeringGlwWei > 0`)
+  - `hasVaultBonus` - Do they have delegations? (derived from `glowWorth.delegatedActiveGlwWei > 0`)
+- **Why**: The leaderboard shows historical scores, so indicators should reflect the state that produced those points. If someone stakes GCTL today, it shouldn't light up the "steering" indicator on the leaderboard until next week's rollover.
+- **Breakdown Dialog**: When opened from the leaderboard, pass `showCurrentWeekProjection={false}` to hide current week projection and only show finalized data.
+
+## Cache Management
+
+### Manual Cache Refresh
+
+You can manually trigger the impact leaderboard cache update (useful for testing or forcing a refresh):
+
+```bash
+curl http://localhost:3005/trigger-impact-leaderboard-cron
+# Returns: {"message":"success"}
+```
+
+This endpoint triggers the same cron job that runs weekly on Sunday at 01:00 UTC. The update typically takes 20-30 seconds for ~1000 wallets.
+
+### Cache Table Schema
+
+```sql
+CREATE TABLE impact_leaderboard_cache (
+  wallet_address VARCHAR(42) PRIMARY KEY,
+  total_points NUMERIC(20,6) NOT NULL,
+  rank INTEGER NOT NULL,
+  glow_worth_wei NUMERIC(78,0) NOT NULL,
+  last_week_points NUMERIC(20,6) NOT NULL,
+  start_week INTEGER NOT NULL,
+  end_week INTEGER NOT NULL,
+  data JSON NOT NULL,
+  updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+```
+
+The `data` column stores the full `GlowImpactScoreResult` JSON for each wallet.
+
+## `GET /impact/delegators-leaderboard`
+
+Delegators-only leaderboard (launchpad/vault participants) with **net rewards** accounting.
+
+### What it returns
+
+`wallets[]` rows contain:
+
+- `rank`: 1-based rank (sorted by `netRewardsWei` descending)
+- `walletAddress`
+- `activelyDelegatedGlwWei`: the wallet’s **vault ownership** share of remaining GLW protocol-deposit principal at `endWeek` (wei)
+- `glwPerWeekWei`: **last completed week’s** gross rewards for the wallet (weekNumber = `endWeek`), computed as:
+  - `walletInflationFromLaunchpad` + `walletProtocolDepositFromLaunchpad` (GLW-only)
+- `netRewardsWei`: the wallet’s “true profit” over the requested week range:
+  - `grossRewardsWei - principalAllocatedWei`
+  - where `grossRewardsWei` is the sum over weeks `[startWeek..endWeek]` of (launchpad inflation + GLW protocol-deposit received)
+  - and `principalAllocatedWei` is computed from the vault model as the wallet’s share of protocol-deposit principal released over the same range (farm distributed deltas × wallet split at each week)
+- `sharePercent`: this wallet’s % share of **total gross rewards** across all wallets in the leaderboard period (string like `"13.0"`)
+
+### Query
+
+- `startWeek` (optional): defaults to `getWeekRange().startWeek` (97)
+- `endWeek` (optional): defaults to `getWeekRange().endWeek` (last completed week)
+- `limit` (optional): default `200`
+
+Example:
+
+```bash
+curl -sS "http://localhost:3005/impact/delegators-leaderboard?limit=50"
+```

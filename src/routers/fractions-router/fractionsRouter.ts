@@ -61,7 +61,31 @@ import { FRACTION_STATUS } from "../../constants/fractions";
 import {
   fetchWalletRewardsHistoryBatch,
   fetchWalletRewardsHistoryMany,
+  fetchDepositSplitsHistoryBatch,
+  fetchFarmRewardsHistoryBatch,
+  type ControlApiDepositSplitHistorySegment,
+  type ControlApiFarmRewardsHistoryRewardRow,
 } from "../impact-router/helpers/control-api";
+
+function parseOptionalBool(value: string | undefined): boolean {
+  return value === "true" || value === "1";
+}
+
+function nowMs(): number {
+  try {
+    return performance.now();
+  } catch {
+    return Date.now();
+  }
+}
+
+function createRequestId(): string {
+  try {
+    return crypto.randomUUID();
+  } catch {
+    return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  }
+}
 
 export const fractionsRouter = new Elysia({ prefix: "/fractions" })
   .get(
@@ -680,12 +704,32 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
   )
   .get(
     "/rewards-breakdown",
-    async ({ query: { walletAddress, farmId, startWeek, endWeek }, set }) => {
+    async ({
+      query: { walletAddress, farmId, startWeek, endWeek, debugTimings },
+      set,
+    }) => {
       try {
         if (!process.env.CONTROL_API_URL) {
           set.status = 500;
           return "CONTROL_API_URL not configured";
         }
+
+        const shouldLogTimings = parseOptionalBool(debugTimings);
+        const requestId = shouldLogTimings ? createRequestId() : null;
+        const requestStartMs = nowMs();
+        const timingEvents: Array<{
+          label: string;
+          ms: number;
+          meta?: Record<string, unknown>;
+        }> = [];
+        const recordTiming = (
+          label: string,
+          startMs: number,
+          meta?: Record<string, unknown>
+        ) => {
+          if (!shouldLogTimings) return;
+          timingEvents.push({ label, ms: nowMs() - startMs, meta });
+        };
 
         if (!walletAddress && !farmId) {
           set.status = 400;
@@ -708,19 +752,338 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
           return "Invalid week range";
         }
 
-        const glwSpotPrice = await getCachedGlwSpotPriceNumber();
-
         if (walletAddress) {
+          const walletStartMs = nowMs();
           const walletLower = walletAddress.toLowerCase();
+          const epochEndDate = getEpochEndDate(actualEndWeek);
 
-          const farmPurchases = await getWalletFarmPurchases(walletLower);
+          const fetchStartMs = nowMs();
+          const DELEGATION_START_WEEK = 97;
+          const [
+            glwSpotPrice,
+            rewardSplits,
+            purchaseRows,
+            walletRewardsMap,
+            depositSplitSegments,
+          ] = await Promise.all([
+            getCachedGlwSpotPriceNumber(),
+            (async () => {
+              const t0 = nowMs();
+              const rows = await db
+                .select({
+                  farmId: RewardSplits.farmId,
+                })
+                .from(RewardSplits)
+                .where(
+                  sql`lower(${RewardSplits.walletAddress}) = ${walletLower}`
+                );
+              recordTiming("rewardsBreakdown.db.rewardSplits", t0, {
+                rows: rows.length,
+              });
+              return rows;
+            })(),
+            (async () => {
+              const t0 = nowMs();
+              const rows = await db
+                .select({
+                  amount: fractionSplits.amount,
+                  stepsPurchased: fractionSplits.stepsPurchased,
+                  createdAt: fractionSplits.createdAt,
+                  fractionType: fractions.type,
+                  applicationId: applications.id,
+                  farmId: applications.farmId,
+                })
+                .from(fractionSplits)
+                .innerJoin(
+                  fractions,
+                  eq(fractionSplits.fractionId, fractions.id)
+                )
+                .innerJoin(
+                  applications,
+                  eq(fractions.applicationId, applications.id)
+                )
+                .where(eq(fractionSplits.buyer, walletLower));
+              recordTiming("rewardsBreakdown.db.purchases", t0, {
+                rows: rows.length,
+              });
+              return rows;
+            })(),
+            (async () => {
+              const t0 = nowMs();
+              try {
+                const m = await fetchWalletRewardsHistoryBatch({
+                  wallets: [walletLower],
+                  startWeek: actualStartWeek,
+                  endWeek: actualEndWeek,
+                });
+                recordTiming(
+                  "rewardsBreakdown.control.walletRewards.batch",
+                  t0,
+                  {
+                    wallets: 1,
+                    startWeek: actualStartWeek,
+                    endWeek: actualEndWeek,
+                  }
+                );
+                return m;
+              } catch (error) {
+                recordTiming(
+                  "rewardsBreakdown.control.walletRewards.batch",
+                  t0,
+                  {
+                    wallets: 1,
+                    startWeek: actualStartWeek,
+                    endWeek: actualEndWeek,
+                    error:
+                      error instanceof Error ? error.message : String(error),
+                  }
+                );
+                return new Map<string, any[]>();
+              }
+            })(),
+            (async () => {
+              const t0 = nowMs();
+              try {
+                const m = await fetchDepositSplitsHistoryBatch({
+                  wallets: [walletLower],
+                  startWeek: DELEGATION_START_WEEK,
+                  endWeek: actualEndWeek,
+                });
+                recordTiming(
+                  "rewardsBreakdown.control.depositSplits.batch",
+                  t0,
+                  {
+                    wallets: 1,
+                    startWeek: DELEGATION_START_WEEK,
+                    endWeek: actualEndWeek,
+                  }
+                );
+                return m.get(walletLower) || [];
+              } catch (error) {
+                recordTiming(
+                  "rewardsBreakdown.control.depositSplits.batch",
+                  t0,
+                  {
+                    wallets: 1,
+                    startWeek: DELEGATION_START_WEEK,
+                    endWeek: actualEndWeek,
+                    error:
+                      error instanceof Error ? error.message : String(error),
+                  }
+                );
+                return [] as ControlApiDepositSplitHistorySegment[];
+              }
+            })(),
+          ]);
+          recordTiming("rewardsBreakdown.fetch.all", fetchStartMs);
 
-          const rewardSplits = await db
-            .select({
-              farmId: RewardSplits.farmId,
-            })
-            .from(RewardSplits)
-            .where(sql`lower(${RewardSplits.walletAddress}) = ${walletLower}`);
+          const farmPurchaseMap = new Map<
+            string,
+            {
+              farmId: string;
+              appId: string;
+              type: "launchpad" | "mining-center";
+              amountInvested: bigint;
+              stepsPurchased: number;
+              isVaultOwnership?: boolean;
+            }
+          >();
+
+          let totalGlwDelegated = BigInt(0);
+          let totalUsdcSpent = BigInt(0);
+          let totalGlwDelegatedAfter = BigInt(0);
+          let totalUsdcSpentAfter = BigInt(0);
+
+          const recentFarmTypesMap = new Map<
+            string,
+            Set<"launchpad" | "mining-center">
+          >();
+
+          for (const row of purchaseRows) {
+            const farmId = row.farmId;
+            if (!farmId) continue;
+            const type =
+              row.fractionType === "mining-center"
+                ? "mining-center"
+                : "launchpad";
+
+            let amount = BigInt(0);
+            try {
+              amount = BigInt(row.amount);
+            } catch {
+              amount = BigInt(0);
+            }
+            const steps = row.stepsPurchased || 0;
+
+            const key = `${farmId}-${type}`;
+            const existing = farmPurchaseMap.get(key) || {
+              farmId,
+              appId: row.applicationId,
+              type,
+              amountInvested: BigInt(0),
+              stepsPurchased: 0,
+            };
+            existing.amountInvested += amount;
+            existing.stepsPurchased += steps;
+            farmPurchaseMap.set(key, existing);
+
+            const createdAt = row.createdAt;
+            const isUpToWeek = createdAt ? createdAt <= epochEndDate : true;
+            if (isUpToWeek) {
+              if (type === "launchpad") totalGlwDelegated += amount;
+              else totalUsdcSpent += amount;
+            } else {
+              if (type === "launchpad") totalGlwDelegatedAfter += amount;
+              else totalUsdcSpentAfter += amount;
+              if (!recentFarmTypesMap.has(farmId))
+                recentFarmTypesMap.set(farmId, new Set());
+              recentFarmTypesMap.get(farmId)!.add(type);
+            }
+          }
+
+          // Process vault ownership (deposit splits) for farms not directly purchased
+          const vaultFarmIds = new Set<string>();
+          for (const seg of depositSplitSegments) {
+            vaultFarmIds.add(seg.farmId);
+          }
+
+          // Remove farms already in farmPurchaseMap (we only add vault farms that weren't directly purchased)
+          const directPurchaseFarmIds = new Set(
+            Array.from(farmPurchaseMap.values()).map((p) => p.farmId)
+          );
+          const vaultOnlyFarmIds = Array.from(vaultFarmIds).filter(
+            (id) => !directPurchaseFarmIds.has(id)
+          );
+
+          // Fetch principals and cumulative distributions for vault-only farms
+          let vaultPrincipalByFarm = new Map<string, bigint>();
+          let vaultAppIdByFarm = new Map<string, string>();
+          let vaultCumulativeDistByFarm = new Map<string, bigint>();
+
+          if (vaultOnlyFarmIds.length > 0) {
+            const vaultT0 = nowMs();
+
+            // Fetch farm principals from DB (GLW-paid applications only)
+            const principalRows = await db
+              .select({
+                farmId: applications.farmId,
+                appId: applications.id,
+                paymentAmount: applications.paymentAmount,
+              })
+              .from(applications)
+              .where(
+                and(
+                  inArray(applications.farmId, vaultOnlyFarmIds),
+                  eq(applications.isCancelled, false),
+                  eq(applications.status, "completed"),
+                  eq(applications.paymentCurrency, "GLW")
+                )
+              );
+
+            for (const row of principalRows) {
+              if (!row.farmId) continue;
+              const amountWei = BigInt(row.paymentAmount || "0");
+              if (amountWei <= BigInt(0)) continue;
+              vaultPrincipalByFarm.set(
+                row.farmId,
+                (vaultPrincipalByFarm.get(row.farmId) || BigInt(0)) + amountWei
+              );
+              if (!vaultAppIdByFarm.has(row.farmId)) {
+                vaultAppIdByFarm.set(row.farmId, row.appId);
+              }
+            }
+
+            // Fetch farm rewards history to calculate cumulative distributions
+            const glwPrincipalFarmIds = vaultOnlyFarmIds.filter(
+              (id) => (vaultPrincipalByFarm.get(id) || BigInt(0)) > BigInt(0)
+            );
+
+            if (glwPrincipalFarmIds.length > 0) {
+              try {
+                const farmRewardsMap = await fetchFarmRewardsHistoryBatch({
+                  farmIds: glwPrincipalFarmIds,
+                  startWeek: DELEGATION_START_WEEK,
+                  endWeek: actualEndWeek,
+                });
+
+                // Calculate cumulative distributed for each farm
+                for (const [farmId, rows] of farmRewardsMap) {
+                  let cumulative = BigInt(0);
+                  for (const r of rows) {
+                    if ((r.paymentCurrency || "").toUpperCase() !== "GLW")
+                      continue;
+                    const distributed = BigInt(
+                      r.protocolDepositRewardsDistributed || "0"
+                    );
+                    if (distributed > BigInt(0)) {
+                      cumulative += distributed;
+                    }
+                  }
+                  vaultCumulativeDistByFarm.set(farmId, cumulative);
+                }
+              } catch (error) {
+                console.error("Failed to fetch farm rewards for vault:", error);
+              }
+            }
+
+            recordTiming("rewardsBreakdown.vault.fetchPrincipals", vaultT0, {
+              vaultFarms: vaultOnlyFarmIds.length,
+              glwPrincipalFarms: glwPrincipalFarmIds.length,
+            });
+
+            // Calculate vault amountInvested and add to farmPurchaseMap
+            const SPLIT_SCALE = BigInt(1_000_000);
+            for (const seg of depositSplitSegments) {
+              // Only process vault-only farms
+              if (directPurchaseFarmIds.has(seg.farmId)) continue;
+
+              const principalWei =
+                vaultPrincipalByFarm.get(seg.farmId) || BigInt(0);
+              if (principalWei <= BigInt(0)) continue;
+
+              // Check if segment overlaps with query range (skip if no overlap)
+              if (
+                seg.endWeek < actualStartWeek ||
+                seg.startWeek > actualEndWeek
+              )
+                continue;
+
+              const splitScaled6 = BigInt(
+                seg.depositSplitPercent6Decimals || "0"
+              );
+              if (splitScaled6 <= BigInt(0)) continue;
+
+              const cumulativeDistributed =
+                vaultCumulativeDistByFarm.get(seg.farmId) || BigInt(0);
+              const remaining =
+                principalWei > cumulativeDistributed
+                  ? principalWei - cumulativeDistributed
+                  : BigInt(0);
+              const amountInvested = (remaining * splitScaled6) / SPLIT_SCALE;
+
+              if (amountInvested <= BigInt(0)) continue;
+
+              const key = `${seg.farmId}-launchpad-vault`;
+              const existing = farmPurchaseMap.get(key);
+              if (existing) {
+                existing.amountInvested += amountInvested;
+              } else {
+                farmPurchaseMap.set(key, {
+                  farmId: seg.farmId,
+                  appId: vaultAppIdByFarm.get(seg.farmId) || "",
+                  type: "launchpad",
+                  amountInvested,
+                  stepsPurchased: 0,
+                  isVaultOwnership: true,
+                });
+              }
+
+              // Add to totalGlwDelegated (vault ownership counts as delegation)
+              totalGlwDelegated += amountInvested;
+            }
+          }
+
+          const farmPurchases = Array.from(farmPurchaseMap.values());
 
           if (farmPurchases.length === 0) {
             const farmsWithSplits = new Set(
@@ -765,23 +1128,35 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
             }
           }
 
-          const [purchasesUpToWeek, accurateAPY, purchasesAfterWeek] =
-            await Promise.all([
-              getPurchasesUpToWeek(walletLower, actualEndWeek),
-              calculateAccurateWalletAPY(
-                walletLower,
-                actualStartWeek,
-                actualEndWeek,
-                glwSpotPrice
-              ),
-              getPurchasesAfterWeek(walletLower, actualEndWeek),
-            ]);
-
-          const totalGlwDelegated = purchasesUpToWeek.totalGlwDelegated;
-          const totalMiningCenterVolume = purchasesUpToWeek.totalUsdcSpent;
+          const walletRewards = walletRewardsMap.get(walletLower) || [];
+          const accurateStartMs = nowMs();
+          const accurateAPY = await calculateAccurateWalletAPY(
+            walletLower,
+            actualStartWeek,
+            actualEndWeek,
+            glwSpotPrice,
+            walletRewards,
+            farmPurchases
+          );
+          recordTiming(
+            "rewardsBreakdown.compute.accurateApy",
+            accurateStartMs,
+            {
+              farms: farmPurchases.length,
+              rewardRows: walletRewards.length,
+            }
+          );
 
           const delegatorApyPercent = accurateAPY.delegatorAPY.toFixed(4);
           const minerApyPercentFormatted = accurateAPY.minerAPY.toFixed(4);
+
+          // Create a lookup for isVaultOwnership from farmPurchaseMap
+          const vaultOwnershipLookup = new Map<string, boolean>();
+          for (const [key, purchase] of farmPurchaseMap) {
+            if (purchase.isVaultOwnership) {
+              vaultOwnershipLookup.set(purchase.farmId, true);
+            }
+          }
 
           const farmDetails = accurateAPY.farmBreakdowns.map((farm) => ({
             farmId: farm.farmId,
@@ -801,6 +1176,9 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
               protocolDepositRewards: week.protocolDepositRewards.toString(),
               totalRewards: week.totalRewards.toString(),
             })),
+            ...(vaultOwnershipLookup.get(farm.farmId)
+              ? { isVaultOwnership: true }
+              : {}),
           }));
 
           let delegatorLastWeek = BigInt(0);
@@ -837,136 +1215,136 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
           let otherFarmsRewards: any[] = [];
           if (otherFarmIds.length > 0) {
             try {
-              const response = await fetch(
-                `${process.env.CONTROL_API_URL}/farms/by-wallet/${walletLower}/farm-rewards-history?startWeek=${actualStartWeek}&endWeek=${actualEndWeek}`
-              );
-
-              if (response.ok) {
-                const data: any = await response.json();
-                const allFarmRewards = data.farmRewards || [];
-
-                const otherFarmsMap = new Map<
-                  string,
-                  {
-                    farmId: string;
-                    farmName: string | null;
-                    builtEpoch: number | null;
-                    asset: string | null;
-                    totalInflationRewards: bigint;
-                    totalProtocolDepositRewards: bigint;
+              const otherT0 = nowMs();
+              const otherFarmsMap = new Map<
+                string,
+                {
+                  farmId: string;
+                  farmName: string | null;
+                  builtEpoch: number | null;
+                  asset: string | null;
+                  totalInflationRewards: bigint;
+                  totalProtocolDepositRewards: bigint;
+                  totalRewards: bigint;
+                  lastWeekRewards: bigint;
+                  lastWeekNumber: number | null;
+                  weeklyBreakdown: Array<{
+                    weekNumber: number;
+                    inflationRewards: bigint;
+                    protocolDepositRewards: bigint;
                     totalRewards: bigint;
-                    lastWeekRewards: bigint;
-                    lastWeekNumber: number | null;
-                    weeklyBreakdown: Array<{
-                      weekNumber: number;
-                      inflationRewards: bigint;
-                      protocolDepositRewards: bigint;
-                      totalRewards: bigint;
-                    }>;
-                  }
-                >();
+                  }>;
+                }
+              >();
 
-                for (const reward of allFarmRewards) {
-                  if (!otherFarmIds.includes(reward.farmId)) {
-                    continue;
-                  }
-
-                  if (!otherFarmsMap.has(reward.farmId)) {
-                    otherFarmsMap.set(reward.farmId, {
-                      farmId: reward.farmId,
-                      farmName: reward.farmName || null,
-                      builtEpoch: reward.builtEpoch || null,
-                      asset: reward.asset || null,
-                      totalInflationRewards: BigInt(0),
-                      totalProtocolDepositRewards: BigInt(0),
-                      totalRewards: BigInt(0),
-                      lastWeekRewards: BigInt(0),
-                      lastWeekNumber: null,
-                      weeklyBreakdown: [],
-                    });
-                  }
-
-                  const farm = otherFarmsMap.get(reward.farmId)!;
-
-                  const inflationReward = BigInt(
-                    reward.walletTotalGlowInflationReward || "0"
-                  );
-                  const depositReward = BigInt(
-                    reward.walletTotalProtocolDepositReward || "0"
-                  );
-                  const totalReward = inflationReward + depositReward;
-
-                  farm.totalInflationRewards += inflationReward;
-                  farm.totalProtocolDepositRewards += depositReward;
-                  farm.totalRewards += totalReward;
-
-                  if (totalReward > BigInt(0)) {
-                    farm.weeklyBreakdown.push({
-                      weekNumber: reward.weekNumber,
-                      inflationRewards: inflationReward,
-                      protocolDepositRewards: depositReward,
-                      totalRewards: totalReward,
-                    });
-                  }
-
-                  if (
-                    farm.lastWeekNumber === null ||
-                    reward.weekNumber > farm.lastWeekNumber
-                  ) {
-                    farm.lastWeekNumber = reward.weekNumber;
-                    farm.lastWeekRewards = totalReward;
-                  }
+              for (const reward of walletRewards as any[]) {
+                if (!otherFarmIds.includes(reward.farmId)) {
+                  continue;
                 }
 
-                const currentWeek = actualEndWeek;
+                if (!otherFarmsMap.has(reward.farmId)) {
+                  otherFarmsMap.set(reward.farmId, {
+                    farmId: reward.farmId,
+                    farmName: reward.farmName || null,
+                    builtEpoch: reward.builtEpoch || null,
+                    asset: reward.asset || null,
+                    totalInflationRewards: BigInt(0),
+                    totalProtocolDepositRewards: BigInt(0),
+                    totalRewards: BigInt(0),
+                    lastWeekRewards: BigInt(0),
+                    lastWeekNumber: null,
+                    weeklyBreakdown: [],
+                  });
+                }
 
-                otherFarmsRewards = Array.from(otherFarmsMap.values())
-                  .filter((f) => f.totalRewards > BigInt(0))
-                  .map((f) => {
-                    let weeksLeft: number | null = null;
+                const farm = otherFarmsMap.get(reward.farmId)!;
 
-                    if (f.builtEpoch !== null) {
-                      if (f.builtEpoch < 97) {
-                        const weeksLivedInV1 = 97 - f.builtEpoch;
-                        const v2EquivalentWeeksLived = weeksLivedInV1 / 2.08;
-                        const remainingV2Weeks = 100 - v2EquivalentWeeksLived;
-                        const endEpoch = 97 + remainingV2Weeks;
-                        weeksLeft = Math.max(
-                          0,
-                          Math.floor(endEpoch - currentWeek)
-                        );
-                      } else {
-                        weeksLeft = Math.max(
-                          0,
-                          f.builtEpoch + 100 - currentWeek
-                        );
-                      }
-                    }
+                // IMPORTANT: Avoid `BigInt(bigint)` from `||` operator precedence.
+                // If `walletTotal*` is missing, we compute totals from components directly.
+                const inflationReward =
+                  reward.walletTotalGlowInflationReward != null
+                    ? BigInt(reward.walletTotalGlowInflationReward || "0")
+                    : BigInt(reward.walletInflationFromLaunchpad || "0") +
+                      BigInt(reward.walletInflationFromMiningCenter || "0");
+                const depositReward =
+                  reward.walletTotalProtocolDepositReward != null
+                    ? BigInt(reward.walletTotalProtocolDepositReward || "0")
+                    : BigInt(reward.walletProtocolDepositFromLaunchpad || "0") +
+                      BigInt(
+                        reward.walletProtocolDepositFromMiningCenter || "0"
+                      );
+                const totalReward = inflationReward + depositReward;
 
-                    return {
-                      farmId: f.farmId,
-                      farmName: f.farmName,
-                      builtEpoch: f.builtEpoch,
-                      weeksLeft,
-                      asset: f.asset,
-                      totalInflationRewards: f.totalInflationRewards.toString(),
-                      totalProtocolDepositRewards:
-                        f.totalProtocolDepositRewards.toString(),
-                      totalRewards: f.totalRewards.toString(),
-                      lastWeekRewards: f.lastWeekRewards.toString(),
-                      weeklyBreakdown: f.weeklyBreakdown.map((week) => ({
-                        weekNumber: week.weekNumber,
-                        inflationRewards: week.inflationRewards.toString(),
-                        protocolDepositRewards:
-                          week.protocolDepositRewards.toString(),
-                        totalRewards: week.totalRewards.toString(),
-                      })),
-                    };
-                  })
-                  .sort((a, b) =>
-                    Number(BigInt(b.totalRewards) - BigInt(a.totalRewards))
-                  );
+                farm.totalInflationRewards += inflationReward;
+                farm.totalProtocolDepositRewards += depositReward;
+                farm.totalRewards += totalReward;
+
+                if (totalReward > BigInt(0)) {
+                  farm.weeklyBreakdown.push({
+                    weekNumber: reward.weekNumber,
+                    inflationRewards: inflationReward,
+                    protocolDepositRewards: depositReward,
+                    totalRewards: totalReward,
+                  });
+                }
+
+                if (
+                  farm.lastWeekNumber === null ||
+                  reward.weekNumber > farm.lastWeekNumber
+                ) {
+                  farm.lastWeekNumber = reward.weekNumber;
+                  farm.lastWeekRewards = totalReward;
+                }
               }
+
+              const currentWeek = actualEndWeek;
+
+              otherFarmsRewards = Array.from(otherFarmsMap.values())
+                .filter((f) => f.totalRewards > BigInt(0))
+                .map((f) => {
+                  let weeksLeft: number | null = null;
+
+                  if (f.builtEpoch !== null) {
+                    if (f.builtEpoch < 97) {
+                      const weeksLivedInV1 = 97 - f.builtEpoch;
+                      const v2EquivalentWeeksLived = weeksLivedInV1 / 2.08;
+                      const remainingV2Weeks = 100 - v2EquivalentWeeksLived;
+                      const endEpoch = 97 + remainingV2Weeks;
+                      weeksLeft = Math.max(
+                        0,
+                        Math.floor(endEpoch - currentWeek)
+                      );
+                    } else {
+                      weeksLeft = Math.max(0, f.builtEpoch + 100 - currentWeek);
+                    }
+                  }
+
+                  return {
+                    farmId: f.farmId,
+                    farmName: f.farmName,
+                    builtEpoch: f.builtEpoch,
+                    weeksLeft,
+                    asset: f.asset,
+                    totalInflationRewards: f.totalInflationRewards.toString(),
+                    totalProtocolDepositRewards:
+                      f.totalProtocolDepositRewards.toString(),
+                    totalRewards: f.totalRewards.toString(),
+                    lastWeekRewards: f.lastWeekRewards.toString(),
+                    weeklyBreakdown: f.weeklyBreakdown.map((week) => ({
+                      weekNumber: week.weekNumber,
+                      inflationRewards: week.inflationRewards.toString(),
+                      protocolDepositRewards:
+                        week.protocolDepositRewards.toString(),
+                      totalRewards: week.totalRewards.toString(),
+                    })),
+                  };
+                })
+                .sort((a, b) =>
+                  Number(BigInt(b.totalRewards) - BigInt(a.totalRewards))
+                );
+              recordTiming("rewardsBreakdown.compute.otherFarms", otherT0, {
+                otherFarms: otherFarmsRewards.length,
+              });
             } catch (error) {
               console.error("Failed to fetch other farms rewards:", error);
             }
@@ -978,56 +1356,38 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
           }> = [];
 
           if (
-            purchasesAfterWeek.totalGlwDelegatedAfter > BigInt(0) ||
-            purchasesAfterWeek.totalUsdcSpentAfter > BigInt(0)
+            totalGlwDelegatedAfter > BigInt(0) ||
+            totalUsdcSpentAfter > BigInt(0)
           ) {
-            const epochEndDate = getEpochEndDate(actualEndWeek);
-
-            const recentSplits = await db
-              .select({
-                fraction: fractions,
-                application: applications,
-              })
-              .from(fractionSplits)
-              .innerJoin(fractions, eq(fractionSplits.fractionId, fractions.id))
-              .innerJoin(
-                applications,
-                eq(fractions.applicationId, applications.id)
-              )
-              .where(
-                and(
-                  eq(fractionSplits.buyer, walletLower),
-                  gt(fractionSplits.createdAt, epochEndDate)
-                )
-              );
-
-            const farmTypesMap = new Map<
-              string,
-              Set<"launchpad" | "mining-center">
-            >();
-
-            for (const split of recentSplits) {
-              const farmId = split.application.farmId;
-              if (!farmId) continue;
-
-              if (!farmTypesMap.has(farmId)) {
-                farmTypesMap.set(farmId, new Set());
-              }
-
-              if (
-                split.fraction.type === "launchpad" ||
-                split.fraction.type === "mining-center"
-              ) {
-                farmTypesMap.get(farmId)!.add(split.fraction.type);
-              }
-            }
-
-            for (const [farmId, typesSet] of farmTypesMap) {
+            for (const [farmId, typesSet] of recentFarmTypesMap) {
               recentPurchasesWithoutRewards.push({
                 farmId,
                 types: Array.from(typesSet),
               });
             }
+          }
+
+          recordTiming("rewardsBreakdown.wallet.total", walletStartMs, {
+            farms: farms.length,
+            otherFarms: otherFarmIds.length,
+          });
+          if (shouldLogTimings) {
+            const msTotal = nowMs() - requestStartMs;
+            timingEvents.push({ label: "rewardsBreakdown.total", ms: msTotal });
+            console.log("[fractionsRouter] /rewards-breakdown timings", {
+              requestId,
+              wallet: walletLower,
+              weekRange: { startWeek: actualStartWeek, endWeek: actualEndWeek },
+              timings: timingEvents
+                .slice()
+                .sort((a, b) => b.ms - a.ms)
+                .map((t) => ({
+                  label: t.label,
+                  ms: Math.round(t.ms * 10) / 10,
+                  ...(t.meta ? { meta: t.meta } : {}),
+                })),
+              msTotal: Math.round(msTotal * 10) / 10,
+            });
           }
 
           return {
@@ -1042,7 +1402,7 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
             },
             totals: {
               totalGlwDelegated: totalGlwDelegated.toString(),
-              totalUsdcSpentByMiners: totalMiningCenterVolume.toString(),
+              totalUsdcSpentByMiners: totalUsdcSpent.toString(),
             },
             weekRange: {
               startWeek: actualStartWeek,
@@ -1050,10 +1410,8 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
               weeksWithRewards: weeksWithRewardsSet.size,
             },
             delegatedAfterWeekRange: {
-              totalGlwDelegatedAfter:
-                purchasesAfterWeek.totalGlwDelegatedAfter.toString(),
-              totalUsdcSpentAfter:
-                purchasesAfterWeek.totalUsdcSpentAfter.toString(),
+              totalGlwDelegatedAfter: totalGlwDelegatedAfter.toString(),
+              totalUsdcSpentAfter: totalUsdcSpentAfter.toString(),
             },
             recentPurchasesWithoutRewards,
             rewards: {
@@ -1079,6 +1437,7 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
         }
 
         if (farmId) {
+          const farmStartMs = nowMs();
           const [purchaseInfo, farmPurchasesAfterWeek] = await Promise.all([
             getWalletPurchaseTypesByFarmUpToWeek({
               endWeek: actualEndWeek,
@@ -1205,6 +1564,11 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
         endWeek: t.Optional(
           t.String({
             description: "End week number (defaults to last completed week)",
+          })
+        ),
+        debugTimings: t.Optional(
+          t.String({
+            description: "Emit timing logs (true|1)",
           })
         ),
       }),
@@ -2448,6 +2812,23 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
 
         // Batch fetch farm names
         const farmNamesMap = await getFarmNamesByApplicationIds(applicationIds);
+        const appIdToFarmId = new Map<string, string>();
+        if (applicationIds.length > 0) {
+          try {
+            const apps = await db.query.applications.findMany({
+              columns: { id: true, farmId: true },
+              where: (apps, { inArray }) => inArray(apps.id, applicationIds),
+            });
+            for (const app of apps) {
+              if (app.farmId) appIdToFarmId.set(app.id, app.farmId);
+            }
+          } catch (error) {
+            console.error(
+              "Failed to batch fetch applications for farmId:",
+              error
+            );
+          }
+        }
 
         // Filter by wallet address if provided
         // Already filtered if walletAddress provided
@@ -2500,6 +2881,7 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
               // Fraction context
               fractionId: fraction.id,
               applicationId: fraction.applicationId,
+              farmId: appIdToFarmId.get(fraction.applicationId) ?? null,
               farmName: farmNamesMap.get(fraction.applicationId) || null,
               fractionStatus: fraction.status,
               isFilled: fraction.isFilled,
@@ -2608,6 +2990,23 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
 
         // Batch fetch farm names
         const farmNamesMap = await getFarmNamesByApplicationIds(applicationIds);
+        const appIdToFarmId = new Map<string, string>();
+        if (applicationIds.length > 0) {
+          try {
+            const apps = await db.query.applications.findMany({
+              columns: { id: true, farmId: true },
+              where: (apps, { inArray }) => inArray(apps.id, applicationIds),
+            });
+            for (const app of apps) {
+              if (app.farmId) appIdToFarmId.set(app.id, app.farmId);
+            }
+          } catch (error) {
+            console.error(
+              "Failed to batch fetch applications for farmId:",
+              error
+            );
+          }
+        }
 
         // Transform the data for better API response, filtering out invalid tokens
         const activityData = filteredActivity
@@ -2649,6 +3048,7 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
               // Fraction context
               fractionId: fraction.id,
               applicationId: fraction.applicationId,
+              farmId: appIdToFarmId.get(fraction.applicationId) ?? null,
               farmName: farmNamesMap.get(fraction.applicationId) || null,
               fractionType: fraction.type,
               fractionStatus: fraction.status,
