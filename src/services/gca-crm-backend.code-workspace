@@ -1,0 +1,17 @@
+{
+  "folders": [
+	{
+		"path": "../.."
+	},
+	{
+		"path": "../../../../glow-control-backend"
+	},
+	{
+		"path": "../../../../ponder-listener"
+	},
+	{
+		"path": "../../../../glow-smart-route-nextJS"
+	}
+],
+  "settings": {}
+}

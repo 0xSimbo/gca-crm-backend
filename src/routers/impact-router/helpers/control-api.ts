@@ -65,6 +65,7 @@ export interface UnclaimedGlwRewardsResult {
 
 export interface SteeringByWeekResult {
   byWeek: Map<number, bigint>;
+  byWeekAndRegion?: Map<number, Map<number, bigint>>;
   dataSource: "control-api";
   /**
    * True when we had to fall back to zero-values due to a downstream failure.
@@ -80,6 +81,7 @@ export interface SteeringByWeekResult {
 export interface SteeringSnapshot {
   steeredGlwWeiPerWeek: bigint;
   hasSteeringStake: boolean;
+  byRegion?: Map<number, bigint>;
 }
 
 function getControlApiUrl(): string {
@@ -611,7 +613,7 @@ let cachedRegionRewards: {
   expiresAtMs: number;
 } | null = null;
 
-async function getCachedRegionRewards(
+export async function getCachedRegionRewards(
   ttlMs = 30_000
 ): Promise<RegionRewardsResponse> {
   const now = Date.now();
@@ -833,7 +835,7 @@ const cachedRegionRewardsByEpoch = new Map<
   { data: RegionRewardsResponse; expiresAtMs: number }
 >();
 
-async function getRegionRewardsAtEpoch(params: {
+export async function getRegionRewardsAtEpoch(params: {
   epoch: number;
   ttlMs?: number;
 }): Promise<RegionRewardsResponse> {
@@ -1233,6 +1235,7 @@ export async function getGctlSteeringByWeekWei(params: {
   const { walletAddress, startWeek, endWeek } = params;
 
   const byWeek = new Map<number, bigint>();
+  const byWeekAndRegion = new Map<number, Map<number, bigint>>();
 
   try {
     const walletStakeByEpoch = await getWalletStakeByEpoch({
@@ -1256,26 +1259,39 @@ export async function getGctlSteeringByWeekWei(params: {
 
       const walletRegions = walletStakeByEpoch.get(w) || [];
       let steeredGlwWei = BigInt(0);
+      const regionSteering = new Map<number, bigint>();
+
       for (const r of walletRegions) {
         const walletStakeWei = r.totalStakedWei;
         const region = regionRewardById.get(r.regionId);
         if (!region) continue;
         if (walletStakeWei <= BigInt(0) || region.gctlStaked <= BigInt(0))
           continue;
-        steeredGlwWei +=
+
+        const regionSteered =
           (region.glwRewardWei * walletStakeWei) / region.gctlStaked;
+        steeredGlwWei += regionSteered;
+        regionSteering.set(r.regionId, regionSteered);
       }
 
       byWeek.set(w, steeredGlwWei);
+      byWeekAndRegion.set(w, regionSteering);
     }
 
-    return { byWeek, dataSource: "control-api" };
+    return { byWeek, byWeekAndRegion, dataSource: "control-api" };
   } catch (error) {
     const snapshot = await getSteeringSnapshot(walletAddress);
-    for (let w = startWeek; w <= endWeek; w++)
+    for (let w = startWeek; w <= endWeek; w++) {
       byWeek.set(w, snapshot.steeredGlwWeiPerWeek);
+      if (snapshot.byRegion) {
+        if (!byWeekAndRegion.has(w)) byWeekAndRegion.set(w, new Map());
+        const weekMap = byWeekAndRegion.get(w)!;
+        for (const [rid, val] of snapshot.byRegion) weekMap.set(rid, val);
+      }
+    }
     return {
       byWeek,
+      byWeekAndRegion: snapshot.byRegion ? byWeekAndRegion : undefined,
       dataSource: "control-api",
       isFallback: true,
       error: error instanceof Error ? error.message : String(error),
@@ -1284,22 +1300,41 @@ export async function getGctlSteeringByWeekWei(params: {
 }
 
 export async function getSteeringSnapshot(
-  walletAddress: string
+  walletAddress: string,
+  epoch?: number
 ): Promise<SteeringSnapshot> {
   const wallet = walletAddress.toLowerCase();
-  const response = await fetch(
-    `${getControlApiUrl()}/wallets/address/${wallet}`
-  );
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(
-      `Control API wallet fetch failed (${response.status}): ${text}`
+
+  let walletRegions: Array<{ regionId: number; totalStaked: string }> = [];
+
+  if (epoch != null) {
+    // Use epoch-based stake snapshot from getWalletStakeByEpoch
+    const stakeByEpoch = await getWalletStakeByEpoch({
+      walletAddress: wallet,
+      startWeek: epoch,
+      endWeek: epoch,
+    });
+    const epochStakes = stakeByEpoch.get(epoch) || [];
+    walletRegions = epochStakes.map((r) => ({
+      regionId: r.regionId,
+      totalStaked: r.totalStakedWei.toString(),
+    }));
+  } else {
+    // Fall back to current stake snapshot
+    const response = await fetch(
+      `${getControlApiUrl()}/wallets/address/${wallet}`
     );
+    if (!response.ok) {
+      const text = await response.text().catch(() => "");
+      throw new Error(
+        `Control API wallet fetch failed (${response.status}): ${text}`
+      );
+    }
+
+    const data: any = await response.json();
+    walletRegions = data?.regions || [];
   }
 
-  const data: any = await response.json();
-  const walletRegions: Array<{ regionId: number; totalStaked: string }> =
-    data?.regions || [];
   const hasSteeringStake = walletRegions.some((r) => {
     try {
       return BigInt(r.totalStaked || "0") > BigInt(0);
@@ -1308,7 +1343,9 @@ export async function getSteeringSnapshot(
     }
   });
 
-  const regionRewards = await getCachedRegionRewards();
+  const regionRewards = epoch
+    ? await getRegionRewardsAtEpoch({ epoch })
+    : await getCachedRegionRewards();
   const regionRewardById = new Map<
     number,
     { gctlStaked: bigint; glwRewardWei: bigint }
@@ -1320,20 +1357,21 @@ export async function getSteeringSnapshot(
     });
   }
 
-  // Compute "GLW steered" per week as the wallet's share of the regional GLW rewards,
-  // based on the wallet's current staked GCTL per region.
-  //
-  // NOTE: This uses *current* stake totals (not historical per-week stake snapshots).
-  // Once stake-by-epoch data is available, we can compute this per week accurately.
+  // Compute "GLW steered" per week as the wallet's share of the regional GLW rewards
   let steeredGlwWeiPerWeek = BigInt(0);
+  const byRegion = new Map<number, bigint>();
+
   for (const r of walletRegions) {
     const walletStake = BigInt(r.totalStaked || "0");
     const region = regionRewardById.get(r.regionId);
     if (!region) continue;
     if (walletStake <= BigInt(0) || region.gctlStaked <= BigInt(0)) continue;
-    steeredGlwWeiPerWeek +=
+
+    const regionSteered =
       (region.glwRewardWei * walletStake) / region.gctlStaked;
+    steeredGlwWeiPerWeek += regionSteered;
+    byRegion.set(r.regionId, regionSteered);
   }
 
-  return { steeredGlwWeiPerWeek, hasSteeringStake };
+  return { steeredGlwWeiPerWeek, hasSteeringStake, byRegion };
 }

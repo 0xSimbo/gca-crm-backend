@@ -18,11 +18,15 @@ function getGlowTokenAddress(): `0x${string}` {
 export async function getLiquidGlwBalanceWei(
   walletAddress: `0x${string}`
 ): Promise<bigint> {
-  const glw = getGlowTokenAddress();
-  return await viemClient.readContract({
-    address: glw,
-    abi: ERC20_ABI,
-    functionName: "balanceOf",
-    args: [walletAddress],
-  });
+  if (process.env.NODE_ENV === "production") {
+    const glw = getGlowTokenAddress();
+    return await viemClient.readContract({
+      address: glw,
+      abi: ERC20_ABI,
+      functionName: "balanceOf",
+      args: [walletAddress],
+    });
+  } else {
+    return BigInt(0);
+  }
 }
