@@ -497,10 +497,12 @@ Delegators-only leaderboard (launchpad/vault participants) with **net rewards** 
 
 - `rank`: 1-based rank (sorted by `netRewardsWei` descending)
 - `walletAddress`
-- `activelyDelegatedGlwWei`: the wallet’s **vault ownership** share of remaining GLW protocol-deposit principal at `endWeek` (wei)
-- `glwPerWeekWei`: **last completed week’s** gross rewards for the wallet (weekNumber = `endWeek`), computed as:
+- `activelyDelegatedGlwWei`: the wallet's **vault ownership** share of remaining GLW protocol-deposit principal at `endWeek` (wei)
+- `glwPerWeekWei`: **most recent week's** gross rewards for the wallet, computed as:
   - `walletInflationFromLaunchpad` + `walletProtocolDepositFromLaunchpad` (GLW-only)
-- `netRewardsWei`: the wallet’s “true profit” over the requested week range:
+  - Uses the most recent week that actually has finalized rewards data from Control API (may be < `endWeek` if GCA reports haven't been generated yet)
+  - Control API rewards are finalized on Thursday for the previous week, so there's typically a lag of a few days after the protocol week ends (Sunday 00:00 UTC)
+- `netRewardsWei`: the wallet's "true profit" over the requested week range:
   - `grossRewardsWei - principalAllocatedWei`
   - where `grossRewardsWei` is the sum over weeks `[startWeek..endWeek]` of (launchpad inflation + GLW protocol-deposit received)
   - and `principalAllocatedWei` is computed from the vault model as the wallet’s share of protocol-deposit principal released over the same range (farm distributed deltas × wallet split at each week)

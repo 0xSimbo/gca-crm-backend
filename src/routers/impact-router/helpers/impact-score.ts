@@ -536,6 +536,27 @@ export async function computeDelegatorsLeaderboard(params: {
     meta: { wallets: wallets.length, batches: walletRewardsBatches },
   });
 
+  // Find the actual maximum week in the rewards data (may be < endWeek if Control API data isn't finalized yet).
+  // This is used for glwPerWeekWei calculation to avoid always returning 0 when endWeek has no data yet.
+  let actualMaxWeekInRewards = -1;
+  for (const rewards of walletRewardsMap.values()) {
+    for (const r of rewards) {
+      const week = Number(r.weekNumber);
+      if (Number.isFinite(week) && week >= startWeek && week <= endWeek) {
+        actualMaxWeekInRewards = Math.max(actualMaxWeekInRewards, week);
+      }
+    }
+  }
+  // Fallback to endWeek if no rewards found (e.g. all wallets have no rewards yet).
+  const glwPerWeekTargetWeek =
+    actualMaxWeekInRewards >= startWeek ? actualMaxWeekInRewards : endWeek;
+
+  recordTimingSafe(debug, {
+    label: "delegators.actualMaxWeekInRewards",
+    ms: 0,
+    meta: { endWeek, actualMaxWeekInRewards, glwPerWeekTargetWeek },
+  });
+
   // 2) Vault model inputs: deposit split history + farm principal + farm cumulative distributions.
   const depositSplitHistoryByWallet = new Map<
     string,
@@ -746,7 +767,7 @@ export async function computeDelegatorsLeaderboard(params: {
 
     const rewards = walletRewardsMap.get(wallet) || [];
     let grossRewardsWei = 0n;
-    let glwPerWeekWei = 0n; // last completed week (endWeek)
+    let glwPerWeekWei = 0n; // most recent week with finalized rewards (glwPerWeekTargetWeek)
 
     for (const r of rewards) {
       const week = Number(r.weekNumber);
@@ -762,7 +783,8 @@ export async function computeDelegatorsLeaderboard(params: {
 
       const grossThisWeek = inflationLaunchpad + pdGlw;
       grossRewardsWei += grossThisWeek;
-      if (week === endWeek) {
+      // Use the most recent week that actually has rewards data (Control API finalization lag).
+      if (week === glwPerWeekTargetWeek) {
         glwPerWeekWei += grossThisWeek;
       }
     }
