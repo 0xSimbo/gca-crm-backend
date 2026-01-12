@@ -28,11 +28,13 @@ import { zonesRouter } from "./routers/zones/zonesRouter";
 import { fractionsRouter } from "./routers/fractions-router/fractionsRouter";
 import { quotesRouter } from "./routers/quotes-router/quotesRouter";
 import { impactRouter } from "./routers/impact-router/impactRouter";
+import { solarCollectorRouter } from "./routers/solar-collector-router/solarCollectorRouter";
 import { incrementStaleFractions } from "./crons/increment-stale-fractions/incrementStaleFractions";
 import { expireFractions } from "./crons/expire-fractions/expireFractions";
 import { initializeFractionEventService } from "./services/eventListener";
 import { retryFailedOperations } from "./services/retryFailedOperations";
 import { updateImpactLeaderboard } from "./crons/update-impact-leaderboard";
+import { updateImpactLeaderboardByRegion } from "./crons/update-impact-leaderboard-by-region/update-impact-leaderboard-by-region";
 import { createSlackClient } from "./slack/create-slack-client";
 
 const PORT = process.env.PORT || 3005;
@@ -183,6 +185,22 @@ const app = new Elysia()
       },
     })
   )
+  .use(
+    cron({
+      name: "Update Impact Leaderboard By Region",
+      pattern: "0 1 * * 0", // Weekly on Sunday at 01:00 UTC (runs alongside global leaderboard update)
+      async run() {
+        try {
+          await updateImpactLeaderboardByRegion();
+        } catch (error) {
+          console.error(
+            "[Cron] Error updating impact leaderboard by region:",
+            error
+          );
+        }
+      },
+    })
+  )
   .get(
     "/trigger-merkle-root-cron",
     async ({
@@ -238,6 +256,17 @@ const app = new Elysia()
       return { message: "success" };
     }
   )
+  .get(
+    "/trigger-impact-leaderboard-by-region-cron",
+    async ({
+      store: {
+        cron: { "Update Impact Leaderboard By Region": cronJob },
+      },
+    }) => {
+      await cronJob.trigger();
+      return { message: "success" };
+    }
+  )
   .use(protocolFeeRouter)
   .use(rewardsRouter)
   .use(accountsRouter)
@@ -255,6 +284,7 @@ const app = new Elysia()
   .use(fractionsRouter)
   .use(quotesRouter)
   .use(impactRouter)
+  .use(solarCollectorRouter)
   .get("/update-rewards-for-current-week", async () => {
     //Will only work if the GCA has submitted the report for the current week.
     const currentWeek = getProtocolWeek();

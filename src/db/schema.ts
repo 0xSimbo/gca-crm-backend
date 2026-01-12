@@ -2085,3 +2085,38 @@ export const impactLeaderboardCache = pgTable("impact_leaderboard_cache", {
   data: json("data").notNull(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
+
+export const impactLeaderboardCacheByRegion = pgTable(
+  "impact_leaderboard_cache_by_region",
+  {
+    id: serial("id").primaryKey(),
+    walletAddress: varchar("wallet_address", { length: 42 }).notNull(),
+    regionId: integer("region_id").notNull(),
+    directPoints: numeric("direct_points", {
+      precision: 20,
+      scale: 6,
+    }).notNull(),
+    glowWorthPoints: numeric("glow_worth_points", {
+      precision: 20,
+      scale: 6,
+    }).notNull(),
+    startWeek: integer("start_week").notNull(),
+    endWeek: integer("end_week").notNull(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    walletRegionWeekIndex: uniqueIndex("wallet_region_week_unique_ix").on(
+      t.walletAddress,
+      t.regionId,
+      t.startWeek,
+      t.endWeek
+    ),
+    regionIndex: index("region_id_ix").on(t.regionId),
+  })
+);
+
+export type ImpactLeaderboardCacheByRegionType = InferSelectModel<
+  typeof impactLeaderboardCacheByRegion
+>;
+export type ImpactLeaderboardCacheByRegionInsertType =
+  typeof impactLeaderboardCacheByRegion.$inferInsert;

@@ -54,6 +54,8 @@ export async function updateImpactLeaderboard() {
     return bp - ap;
   });
 
+  const globalRegionTotals = new Map<string, bigint>();
+
   const rows = filteredResults.map((r, index) => {
     const hadSteeringAtEndWeek = (() => {
       try {
@@ -65,6 +67,16 @@ export async function updateImpactLeaderboard() {
         return false;
       }
     })();
+
+    if (r.pointsPerRegion) {
+      for (const [rid, ptsStr] of Object.entries(r.pointsPerRegion)) {
+        const parts = ptsStr.split(".");
+        const intPart = BigInt(parts[0] || "0");
+        const fracPart = BigInt((parts[1] || "").padEnd(6, "0").slice(0, 6));
+        const val = intPart * 1000000n + fracPart;
+        globalRegionTotals.set(rid, (globalRegionTotals.get(rid) || 0n) + val);
+      }
+    }
 
     return {
       walletAddress: r.walletAddress,
@@ -92,12 +104,42 @@ export async function updateImpactLeaderboard() {
         })(),
         endWeekMultiplier: r.endWeekMultiplier,
         globalRank: index + 1,
+        pointsPerRegion: r.pointsPerRegion,
       },
       updatedAt: new Date(),
     };
   });
 
-  if (rows.length === 0) return { updated: 0 };
+  // Early return if no wallet data to cache
+  if (rows.length === 0) {
+    console.log("[Cron] No wallet data to cache");
+    return { updated: 0 };
+  }
+
+  // Build global region totals record for the system row
+  const globalRegionTotalsRecord: Record<string, string> = {};
+  for (const [rid, val] of globalRegionTotals) {
+    const s = val.toString().padStart(7, "0");
+    const intPart = s.slice(0, s.length - 6);
+    const fracPart = s.slice(s.length - 6);
+    globalRegionTotalsRecord[rid] = `${intPart}.${fracPart}`;
+  }
+
+  // Add System Row for Global Totals (different data structure, cast to satisfy TS)
+  rows.push({
+    walletAddress: "0x0000000000000000000000000000000000000000",
+    totalPoints: "0",
+    rank: -1,
+    glowWorthWei: "0",
+    lastWeekPoints: "0",
+    startWeek,
+    endWeek,
+    data: {
+      isSystemRow: true,
+      globalRegionTotals: globalRegionTotalsRecord,
+    } as unknown as (typeof rows)[0]["data"],
+    updatedAt: new Date(),
+  });
 
   // 4. Atomic Replace
   await db.transaction(async (tx) => {
