@@ -293,6 +293,37 @@ bun run scripts/impact-score.ts 0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb --star
 
 Debug tools for GLW rewards calculations, delegation, and unclaimed balances.
 
+### `debug-total-actively-delegated.ts` - Total Actively Delegated GLW Comparison
+
+Compares two different methods for calculating total actively delegated GLW across all wallets.
+
+**Usage:**
+
+```bash
+bun run scripts/debug-total-actively-delegated.ts
+```
+
+**What it compares:**
+
+- **Method 1 (Fractions):** Sum of historical GLW purchase amounts from launchpad fractions
+- **Method 2 (Vault Ownership):** Current vault ownership share of remaining GLW protocol-deposit principal
+
+**Output:**
+
+- Total GLW from each method
+- Top 10 delegators by vault ownership
+- Explanation of differences
+- Why Method 2 is correct for "actively delegated" metrics
+
+**Use case:** Debug why `/fractions/total-actively-delegated` gives different numbers than the delegators leaderboard. The leaderboard uses Method 2 (vault ownership) which accounts for protocol deposit distributions over time.
+
+**Environment:**
+
+- `PG_DATABASE_URL` - Database connection
+- `CONTROL_API_URL` - Glow Control API
+
+---
+
 ### `debug-delegated-active-glw.ts` - Delegated Active GLW Breakdown
 
 Explains how `delegatedActiveGlwWei` is computed for a wallet under the vault-ownership model.

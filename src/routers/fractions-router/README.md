@@ -12,9 +12,10 @@ This document describes the unauthenticated routes exposed by `fractionsRouter.t
 
 ### New Endpoints
 
+- **`/total-actively-delegated`**: Get total GLW delegated across all wallets (fast aggregated query for dashboards)
 - **`/wallets/activity`**: List all wallets with their delegation amounts and rewards earned
 - **`/farms/activity`**: List all farms with total rewards distributed and participant counts
-- Both endpoints support filtering by type (delegator/miner/both), custom sorting, and limiting results
+- Both activity endpoints support filtering by type (delegator/miner/both), custom sorting, and limiting results
 
 ### Enhanced Data
 
@@ -350,6 +351,44 @@ The router uses optimized data fetching strategies:
 
   # Custom week range
   curl -s "http://localhost:3005/fractions/rewards-breakdown?walletAddress=0x5abc...&startWeek=98&endWeek=100"
+  ```
+
+## `GET /fractions/total-actively-delegated`
+
+- Returns the total amount of GLW actively delegated across all wallets using the vault ownership model.
+- **Response**
+  ```typescript
+  {
+    weekRange: {
+      startWeek: number; // Always 97 (first week of vault ownership)
+      endWeek: number; // Current protocol week (getCurrentEpoch())
+    }
+    totalGlwDelegatedWei: string; // Total GLW actively delegated (18 decimals)
+    totalWallets: number; // Number of wallets with active vault ownership
+  }
+  ```
+- **Calculation Method**
+  - Uses **vault ownership model** (same as delegators leaderboard): `sum_wallets(sum_farms(remaining_principal × depositSplit%))`
+  - `remaining_principal = max(0, GLW_paid - protocol_deposit_distributed)`
+  - This accounts for protocol deposit recovery over time
+  - **More accurate than purchase amounts** because it:
+    - Includes wallets that received vault ownership via transfers (not just direct purchases)
+    - Reflects actual remaining delegation after protocol deposit distributions
+    - Matches the "actively delegated" calculation used throughout the platform
+- **Performance**
+  - Fast (~200-500ms) using batch Control API calls
+  - Fetches deposit split history for all delegator wallets
+  - Computes vault ownership for farms with GLW principals
+- **Notes**
+  - Always uses current protocol week (`getCurrentEpoch()`) as endWeek for real-time data
+  - Only includes GLW-paid farms (launchpad fractions with GLW protocol deposits)
+  - Excludes internal/team wallets via `EXCLUDED_LEADERBOARD_WALLETS`
+  - This is the same calculation the delegators leaderboard uses for `activelyDelegatedGlwWei`
+- **Example**
+
+  ```bash
+  # Get total actively delegated GLW
+  curl -s "http://localhost:3005/fractions/total-actively-delegated"
   ```
 
 ## `GET /fractions/wallets/activity`

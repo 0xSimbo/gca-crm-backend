@@ -36,6 +36,7 @@ import { and, desc, eq, inArray, lte, sql, gt } from "drizzle-orm";
 import { getCachedGlwSpotPriceNumber } from "../../utils/glw-spot";
 import {
   getWeekRange,
+  getWeekRangeForImpact,
   buildWalletFarmMap,
   aggregateRewardsByWallet,
   getEpochEndDate,
@@ -66,6 +67,9 @@ import {
   type ControlApiDepositSplitHistorySegment,
   type ControlApiFarmRewardsHistoryRewardRow,
 } from "../impact-router/helpers/control-api";
+import { getCurrentEpoch } from "../../utils/getProtocolWeek";
+import { getAllDelegatorWallets } from "../impact-router/helpers/impact-score";
+import { excludedLeaderboardWalletsSet } from "../../constants/excluded-wallets";
 
 function parseOptionalBool(value: string | undefined): boolean {
   return value === "true" || value === "1";
@@ -1584,37 +1588,130 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
     "/total-actively-delegated",
     async ({ set }) => {
       try {
-        const weekRange = getWeekRange();
-        const { startWeek, endWeek } = weekRange;
+        const DELEGATION_START_WEEK = 97;
+        const endWeek = getCurrentEpoch();
 
-        const purchaseInfo = await getWalletPurchaseTypesByFarmUpToWeek({
+        const allWallets = await getAllDelegatorWallets();
+        const walletsToProcess = allWallets.filter(
+          (w) => !excludedLeaderboardWalletsSet.has(w)
+        );
+
+        const depositSplitsMap = await fetchDepositSplitsHistoryBatch({
+          wallets: walletsToProcess,
+          startWeek: DELEGATION_START_WEEK,
           endWeek,
         });
-        const walletsToProcess = Array.from(
-          purchaseInfo.walletToFarmTypes.keys()
+
+        const allFarmIds = new Set<string>();
+        for (const segments of depositSplitsMap.values()) {
+          for (const seg of segments) {
+            allFarmIds.add(seg.farmId);
+          }
+        }
+
+        if (allFarmIds.size === 0) {
+          return {
+            weekRange: {
+              startWeek: DELEGATION_START_WEEK,
+              endWeek,
+            },
+            totalGlwDelegatedWei: "0",
+            totalWallets: 0,
+          };
+        }
+
+        const farmIds = Array.from(allFarmIds);
+        const principalRows = await db
+          .select({
+            farmId: applications.farmId,
+            paymentAmount: applications.paymentAmount,
+          })
+          .from(applications)
+          .where(
+            and(
+              inArray(applications.farmId, farmIds),
+              eq(applications.isCancelled, false),
+              eq(applications.status, "completed"),
+              eq(applications.paymentCurrency, "GLW")
+            )
+          );
+
+        const farmPrincipals = new Map<string, bigint>();
+        for (const row of principalRows) {
+          if (!row.farmId) continue;
+          const amountWei = BigInt(row.paymentAmount || "0");
+          if (amountWei <= BigInt(0)) continue;
+          farmPrincipals.set(
+            row.farmId,
+            (farmPrincipals.get(row.farmId) || BigInt(0)) + amountWei
+          );
+        }
+
+        const glwPrincipalFarmIds = farmIds.filter(
+          (id) => (farmPrincipals.get(id) || BigInt(0)) > BigInt(0)
         );
 
-        const allPurchasesUpToWeek = await getBatchPurchasesUpToWeek(
-          walletsToProcess,
-          endWeek
-        );
+        const farmRewardsMap = await fetchFarmRewardsHistoryBatch({
+          farmIds: glwPrincipalFarmIds,
+          startWeek: DELEGATION_START_WEEK,
+          endWeek,
+        });
+
+        const farmCumulativeDistributions = new Map<string, bigint>();
+        for (const [farmId, rows] of farmRewardsMap) {
+          let cumulative = BigInt(0);
+          for (const r of rows) {
+            if ((r.paymentCurrency || "").toUpperCase() !== "GLW") continue;
+            const distributed = BigInt(
+              r.protocolDepositRewardsDistributed || "0"
+            );
+            if (distributed > BigInt(0)) {
+              cumulative += distributed;
+            }
+          }
+          farmCumulativeDistributions.set(farmId, cumulative);
+        }
 
         let totalGlwDelegatedWei = BigInt(0);
+        let walletCount = 0;
+        const SPLIT_SCALE = BigInt(1_000_000);
 
-        for (const wallet of walletsToProcess) {
-          const purchasesUpToWeek = allPurchasesUpToWeek.get(wallet);
-          if (purchasesUpToWeek) {
-            totalGlwDelegatedWei += purchasesUpToWeek.totalGlwDelegated;
+        for (const [wallet, segments] of depositSplitsMap) {
+          let walletTotal = BigInt(0);
+
+          for (const seg of segments) {
+            const principalWei = farmPrincipals.get(seg.farmId) || BigInt(0);
+            if (principalWei <= BigInt(0)) continue;
+
+            const cumulativeDistributed =
+              farmCumulativeDistributions.get(seg.farmId) || BigInt(0);
+            const remaining =
+              principalWei > cumulativeDistributed
+                ? principalWei - cumulativeDistributed
+                : BigInt(0);
+
+            const splitScaled6 = BigInt(
+              seg.depositSplitPercent6Decimals || "0"
+            );
+            if (splitScaled6 <= BigInt(0)) continue;
+
+            const walletShare = (remaining * splitScaled6) / SPLIT_SCALE;
+            walletTotal += walletShare;
+          }
+
+          if (walletTotal > BigInt(0)) {
+            walletCount++;
+            totalGlwDelegatedWei += walletTotal;
           }
         }
 
         return {
           weekRange: {
-            startWeek,
+            startWeek: DELEGATION_START_WEEK,
             endWeek,
           },
           totalGlwDelegatedWei: totalGlwDelegatedWei.toString(),
-          totalWallets: walletsToProcess.length,
+          totalWallets: walletCount,
         };
       } catch (e) {
         if (e instanceof Error) {
@@ -1628,7 +1725,7 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
       detail: {
         summary: "Get total actively delegated GLW across all wallets",
         description:
-          "Returns the total amount of GLW actively delegated across all wallets with launchpad fractions. This includes all GLW delegated through the protocol up to the last completed week. The value is returned in wei (18 decimals).",
+          "Returns the total amount of GLW actively delegated across all wallets using the vault ownership model (same calculation as delegators leaderboard). This represents each wallet's share of remaining GLW protocol-deposit principal: sum_wallets(sum_farms(remaining_principal × depositSplit%)). Uses the current protocol week for real-time data. The value is returned in wei (18 decimals).",
         tags: [TAG.APPLICATIONS],
       },
     }
