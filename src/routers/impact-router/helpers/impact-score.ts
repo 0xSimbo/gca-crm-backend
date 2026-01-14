@@ -303,6 +303,13 @@ export interface RegionBreakdown {
   glowWorthPoints: string;
 }
 
+export interface WeeklyRegionBreakdown {
+  weekNumber: number;
+  regionId: number;
+  directPoints: string;
+  glowWorthPoints: string;
+}
+
 export interface CurrentWeekProjection {
   weekNumber: number;
   hasMinerMultiplier: boolean;
@@ -331,6 +338,7 @@ export interface GlowImpactScoreResult {
   };
   pointsPerRegion?: Record<string, string>;
   regionBreakdown?: RegionBreakdown[];
+  weeklyRegionBreakdown?: WeeklyRegionBreakdown[];
   totals: {
     totalPoints: string;
     rolloverPoints: string;
@@ -868,6 +876,7 @@ export async function computeGlowImpactScores(params: {
   endWeek: number;
   includeWeeklyBreakdown: boolean;
   includeRegionBreakdown?: boolean;
+  includeWeeklyRegionBreakdown?: boolean;
   debug?: ImpactTimingCollector;
 }): Promise<GlowImpactScoreResult[]> {
   const {
@@ -876,6 +885,7 @@ export async function computeGlowImpactScores(params: {
     endWeek,
     includeWeeklyBreakdown,
     includeRegionBreakdown = false,
+    includeWeeklyRegionBreakdown = false,
     debug,
   } = params;
   const overallStart = nowMs();
@@ -1911,7 +1921,7 @@ export async function computeGlowImpactScores(params: {
 
       if (week === endWeek) endWeekMultiplier = rolloverMultiplier;
 
-      if (includeWeeklyBreakdown) {
+      if (includeWeeklyBreakdown || includeWeeklyRegionBreakdown) {
         const weeklyPointsPerRegionRecord: Record<string, string> = {};
         for (const [rid, pts] of weeklyRegionPoints) {
           // Apply multiplier here too for the weekly view?
@@ -2164,6 +2174,136 @@ export async function computeGlowImpactScores(params: {
     recordTimingSafe(debug, {
       label: "compute.regionBreakdown",
       ms: nowMs() - regionBreakdownStart,
+      meta: { wallets: results.length },
+    });
+  }
+
+  // Compute weekly region breakdown if requested
+  if (includeWeeklyRegionBreakdown) {
+    const weeklyRegionBreakdownStart = nowMs();
+    for (let i = 0; i < results.length; i++) {
+      const result = results[i]!;
+      const wallet = result.walletAddress;
+      const rewards = walletRewardsMap.get(wallet) || [];
+      const steering = steeringByWallet.get(wallet);
+      const weeklyRegionBreakdown: WeeklyRegionBreakdown[] = [];
+
+      for (const weeklyRow of result.weekly) {
+        const week = weeklyRow.weekNumber;
+        const regionPointsMap = new Map<
+          number,
+          { directPointsScaled6: bigint; glowWorthPointsScaled6: bigint }
+        >();
+
+        // 1. Inflation points for this week (from rewards history)
+        for (const r of rewards) {
+          if (r.weekNumber !== week) continue;
+          const regionId = r.regionId;
+          if (regionId == null) continue;
+
+          const inflation = BigInt(r.walletTotalGlowInflationReward || "0");
+          const inflationPts = glwWeiToPointsScaled6(
+            inflation,
+            INFLATION_POINTS_PER_GLW_SCALED6
+          );
+
+          const current = regionPointsMap.get(regionId) || {
+            directPointsScaled6: BigInt(0),
+            glowWorthPointsScaled6: BigInt(0),
+          };
+          current.directPointsScaled6 += inflationPts;
+          regionPointsMap.set(regionId, current);
+        }
+
+        // 2. Steering points for this week (from steering history)
+        const regionMap = steering?.byWeekAndRegion?.get(week);
+        if (regionMap) {
+          for (const [regionId, steeringGlwWei] of regionMap) {
+            const steeringPts = glwWeiToPointsScaled6(
+              steeringGlwWei,
+              STEERING_POINTS_PER_GLW_SCALED6
+            );
+            const current = regionPointsMap.get(regionId) || {
+              directPointsScaled6: BigInt(0),
+              glowWorthPointsScaled6: BigInt(0),
+            };
+            current.directPointsScaled6 += steeringPts;
+            regionPointsMap.set(regionId, current);
+          }
+        }
+
+        // 3. Vault bonus points - distribute across regions with activity this week
+        const weeklyVaultBonusPtsPreMultiplier = BigInt(
+          Math.floor(parseFloat(weeklyRow.vaultBonusPoints) * 1_000_000)
+        );
+
+        const regionsWithActivity = Array.from(regionPointsMap.keys());
+        if (
+          regionsWithActivity.length > 0 &&
+          weeklyVaultBonusPtsPreMultiplier > 0n
+        ) {
+          const perRegion =
+            weeklyVaultBonusPtsPreMultiplier /
+            BigInt(regionsWithActivity.length);
+          for (const regionId of regionsWithActivity) {
+            const current = regionPointsMap.get(regionId)!;
+            current.directPointsScaled6 += perRegion;
+          }
+        }
+
+        // Apply weekly multiplier to all direct points so far
+        const multiplierScaled6 = BigInt(
+          Math.round(weeklyRow.rolloverMultiplier * 1_000_000)
+        );
+        for (const [regionId, points] of regionPointsMap.entries()) {
+          points.directPointsScaled6 = applyMultiplierScaled6({
+            pointsScaled6: points.directPointsScaled6,
+            multiplierScaled6,
+          });
+        }
+
+        // 4. GlowWorth continuous points for this week (no multiplier)
+        const weeklyWorthPts = BigInt(
+          Math.floor(parseFloat(weeklyRow.continuousPoints) * 1_000_000)
+        );
+        const weekEmissions = regionRewardsByWeek.get(week);
+        if (weeklyWorthPts > 0n && weekEmissions) {
+          const totalEmissions = Array.from(
+            weekEmissions.byRegion.values()
+          ).reduce((sum, val) => sum + val, 0n);
+          if (totalEmissions > 0n) {
+            // Distribute worth points across ALL regions that had emissions this week
+            for (const [
+              regionId,
+              regionEmissions,
+            ] of weekEmissions.byRegion.entries()) {
+              const current = regionPointsMap.get(regionId) || {
+                directPointsScaled6: BigInt(0),
+                glowWorthPointsScaled6: BigInt(0),
+              };
+              const distributedWorth =
+                (weeklyWorthPts * regionEmissions) / totalEmissions;
+              current.glowWorthPointsScaled6 += distributedWorth;
+              regionPointsMap.set(regionId, current);
+            }
+          }
+        }
+
+        // Convert this week's region map to the output format
+        for (const [regionId, points] of regionPointsMap.entries()) {
+          weeklyRegionBreakdown.push({
+            weekNumber: week,
+            regionId,
+            directPoints: formatPointsScaled6(points.directPointsScaled6),
+            glowWorthPoints: formatPointsScaled6(points.glowWorthPointsScaled6),
+          });
+        }
+      }
+      result.weeklyRegionBreakdown = weeklyRegionBreakdown;
+    }
+    recordTimingSafe(debug, {
+      label: "compute.weeklyRegionBreakdown",
+      ms: nowMs() - weeklyRegionBreakdownStart,
       meta: { wallets: results.length },
     });
   }

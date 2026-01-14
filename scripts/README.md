@@ -16,7 +16,7 @@ bun run scripts/<script-name>.ts
 - [Project Quotes](#project-quotes)
 - [Impact Leaderboard & Performance](#impact-leaderboard--performance)
 - [Rewards & GLW Debugging](#rewards--glw-debugging)
-- [Solar Collector Debugging](#solar-collector-debugging)
+- [Solar Collector Debugging & Diagnostics](#solar-collector-debugging)
 - [Utilities](#utilities)
 
 ---
@@ -449,7 +449,7 @@ CONTROL_API_URL=https://api-prod-34ce.up.railway.app bun run scripts/debug-week-
 
 ---
 
-## Solar Collector Debugging
+## Solar Collector Debugging & Diagnostics
 
 ### `debug-solar-collector.ts` - Solar Collector Stats Investigation
 
@@ -459,9 +459,6 @@ Investigates why `/solar-collector/stats` returns 0 watts for a wallet while `/i
 
 ```bash
 bun run scripts/debug-solar-collector.ts --wallet 0x77f41144E787CB8Cd29A37413A71F53f92ee050C
-
-# Test against different environment
-bun run scripts/debug-solar-collector.ts --baseUrl http://localhost:3005 --wallet 0x...
 ```
 
 **What it checks:**
@@ -471,19 +468,61 @@ bun run scripts/debug-solar-collector.ts --baseUrl http://localhost:3005 --walle
 3. `/impact/glow-score` - Gets wallet's impact score with weekly breakdown
 4. Cross-references finalized farms
 
+---
+
+### `debug-watts-by-week.ts` - Regional Watts Verification
+
+Verifies the watts distribution for a specific wallet in a specific region (default: Colorado).
+
+**Usage:**
+
+```bash
+bun run scripts/debug-watts-by-week.ts <walletAddress> [regionId]
+```
+
 **Output:**
 
-- Comparison of all endpoints
-- Analysis: has impact score? has watts? in leaderboard?
-- Potential issues checklist
-- Debug SQL queries to run
+- User share percentage per week
+- Farm-by-farm breakdown of captured watts
+- Comparison against regional power cache
 
-**Common issues:**
+---
 
-- No finalized farms exist (missing `protocolFeePaymentHash`)
-- Farms lack audit fields with `systemWattageOutput`
-- Week calculation mismatch
-- Impact score weeks don't overlap with farm drop weeks
+### `debug-farm-watts-distribution.ts` - Farm Level Breakdown
+
+Shows how watts from a single farm were distributed across the entire network.
+
+**Usage:**
+
+```bash
+bun run scripts/debug-farm-watts-distribution.ts <farmId>
+```
+
+---
+
+### `generate-impact-diagnostics.ts` - Data Export for Visualization
+
+Generates a comprehensive `solar_footprint_data.json` file containing full weekly power history and farm capture details.
+
+**Usage:**
+
+```bash
+bun run scripts/generate-impact-diagnostics.ts <walletAddress>
+```
+
+**Use Case:** Prepares data for Python visualization scripts (`visualize_points.py`, `visualize_footprint.py`).
+
+---
+
+### `backfill-weekly-power.ts` - Historical Data Migration
+
+Backfills the `power_by_region_by_week` table with historical data from Week 97 onwards.
+
+**Usage:**
+
+```bash
+bun run scripts/backfill-weekly-power.ts
+```
 
 ---
 

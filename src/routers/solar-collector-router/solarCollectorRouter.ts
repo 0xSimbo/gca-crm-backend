@@ -16,9 +16,14 @@ export const solarCollectorRouter = new Elysia({ prefix: "/solar-collector" })
         const wallet = walletAddress.toLowerCase();
 
         // 1. Compute total Watts on-the-fly based on historical performance
-        const { totalWatts, wattsByRegion } = await computeTotalWattsCaptured(
-          wallet
-        );
+        const {
+          totalWatts,
+          wattsByRegion,
+          powerByRegion,
+          strongholdRegionId,
+          recentDrop,
+          weeklyHistory,
+        } = await computeTotalWattsCaptured(wallet);
 
         // 2. Get impact score projection for streak and multiplier info
         const projection = await getCurrentWeekProjection(wallet);
@@ -44,6 +49,21 @@ export const solarCollectorRouter = new Elysia({ prefix: "/solar-collector" })
           panelsByRegion[Number(rid)] = Math.floor(watts / WATTS_PER_PANEL);
         }
 
+        // Stronghold data (if exists)
+        const stronghold = strongholdRegionId
+          ? {
+              regionId: strongholdRegionId,
+              userPower: powerByRegion[strongholdRegionId]?.userPower || 0,
+              totalNetworkPower:
+                powerByRegion[strongholdRegionId]?.totalNetworkPower || 0,
+              powerPercentile:
+                powerByRegion[strongholdRegionId]?.powerPercentile || 0,
+              rank: powerByRegion[strongholdRegionId]?.rank || 0,
+              totalWallets:
+                powerByRegion[strongholdRegionId]?.totalWallets || 0,
+            }
+          : null;
+
         return {
           totalWatts,
           wattsByRegion,
@@ -56,6 +76,9 @@ export const solarCollectorRouter = new Elysia({ prefix: "/solar-collector" })
             atRisk,
             multiplier: projection.totalMultiplier,
           },
+          stronghold,
+          recentDrop,
+          weeklyHistory,
         };
       } catch (e) {
         if (e instanceof Error) {

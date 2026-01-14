@@ -60,4 +60,15 @@ Run the dev server
 
 #### When To Cache
 
-TODO: Write this section;
+- **Impact Scoring**: Pre-computed weekly.
+- **Regional Power**: Cached per-week in `power_by_region_by_week`. This is critical for the Solar Collector, ensuring that captured watts are calculated using the network state at the exact moment a farm was finalized.
+
+### ☀️ Solar Collector Logic
+
+The Solar Collector tracks a user's "Verified Solar Footprint" by calculating their share of clean energy capacity from onboarded solar farms.
+
+- **Calculation**: For each farm $F$ finalized in week $W$ and region $R$:
+  $\text{Watts Captured} = \text{Capacity}(F) \times \frac{\text{Power}(user, R, W)}{\text{Total Network Power}(R, W)}$
+- **Power Components**: Power is composed of `Direct Points` (steering/emissions) and `GlowWorth Points` (liquid assets).
+- **Temporal Integrity**: The system uses per-week snapshots of power to ensure impact metrics reflect the user's actual participation at the time of deployment.
+- **Environmental Impact**: Metrics like "Homes Powered" and "Trees Equivalent" follow standard Solar-Fleet conversion constants (1.17 kW per U.S. home, 0.022 tonnes CO₂/yr per mature tree).

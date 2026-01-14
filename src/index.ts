@@ -35,6 +35,7 @@ import { initializeFractionEventService } from "./services/eventListener";
 import { retryFailedOperations } from "./services/retryFailedOperations";
 import { updateImpactLeaderboard } from "./crons/update-impact-leaderboard";
 import { updateImpactLeaderboardByRegion } from "./crons/update-impact-leaderboard-by-region/update-impact-leaderboard-by-region";
+import { updatePowerByRegionByWeek } from "./crons/update-power-by-region-by-week/update-power-by-region-by-week";
 import { createSlackClient } from "./slack/create-slack-client";
 
 const PORT = process.env.PORT || 3005;
@@ -203,6 +204,22 @@ const app = new Elysia()
       },
     })
   )
+  .use(
+    cron({
+      name: "Update Power By Region By Week",
+      pattern: "0 1 * * 0", // Weekly on Sunday at 01:00 UTC
+      async run() {
+        try {
+          await updatePowerByRegionByWeek();
+        } catch (error) {
+          console.error(
+            "[Cron] Error updating power by region by week:",
+            error
+          );
+        }
+      },
+    })
+  )
   .get(
     "/trigger-merkle-root-cron",
     async ({
@@ -263,6 +280,17 @@ const app = new Elysia()
     async ({
       store: {
         cron: { "Update Impact Leaderboard By Region": cronJob },
+      },
+    }) => {
+      await cronJob.trigger();
+      return { message: "success" };
+    }
+  )
+  .get(
+    "/trigger-power-by-region-by-week-cron",
+    async ({
+      store: {
+        cron: { "Update Power By Region By Week": cronJob },
       },
     }) => {
       await cronJob.trigger();

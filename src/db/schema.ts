@@ -2190,3 +2190,36 @@ export type ImpactLeaderboardCacheByRegionType = InferSelectModel<
 >;
 export type ImpactLeaderboardCacheByRegionInsertType =
   typeof impactLeaderboardCacheByRegion.$inferInsert;
+
+export const powerByRegionByWeek = pgTable(
+  "power_by_region_by_week",
+  {
+    walletAddress: varchar("wallet_address", { length: 42 }).notNull(),
+    regionId: integer("region_id").notNull(),
+    weekNumber: integer("week_number").notNull(),
+    directPoints: numeric("direct_points", {
+      precision: 20,
+      scale: 6,
+    }).notNull(),
+    glowWorthPoints: numeric("glow_worth_points", {
+      precision: 20,
+      scale: 6,
+    }).notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    pk: primaryKey({
+      columns: [table.walletAddress, table.regionId, table.weekNumber],
+    }),
+    weekRegionIdx: index("power_week_region_idx").on(
+      table.weekNumber,
+      table.regionId
+    ),
+  })
+);
+
+export type PowerByRegionByWeekType = InferSelectModel<
+  typeof powerByRegionByWeek
+>;
+export type PowerByRegionByWeekInsertType =
+  typeof powerByRegionByWeek.$inferInsert;

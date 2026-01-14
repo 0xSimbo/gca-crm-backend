@@ -36,7 +36,10 @@ Where **Capture Power** for a user in a specific region is:
 
 ### Data Source
 
-Capture Power data is read from the `impact_leaderboard_cache_by_region` table, which is populated by the weekly cron `update-impact-leaderboard-by-region` (runs Sunday 01:00 UTC alongside the main impact leaderboard update).
+Capture Power data is primarily read from the `power_by_region_by_week` table, which stores per-week snapshots of regional power for all wallets. This ensures that when a farm is finalized, the watts captured reflect the user's influence at that specific point in time.
+
+- **Table**: `power_by_region_by_week` (populated by `updatePowerByRegionByWeek` cron)
+- **Fallback**: If a weekly snapshot is missing (e.g. before the cron runs or for early weeks), the system falls back to the latest aggregate regional power from `impact_leaderboard_cache_by_region`.
 
 ## Endpoints
 
@@ -67,6 +70,12 @@ Returns the wallet's current Solar Collector statistics.
     atRisk: boolean;            // Had streak last week but no action this week yet
     multiplier: number;         // Current total multiplier
   };
+  weeklyHistory: Array<{        // Historical capture trend
+    weekNumber: number;
+    wattsCaptured: number;
+    cumulativeWatts: number;
+    regionalShare: Record<number, { sharePercent: number; wattsCaptured: number }>;
+  }>;
 }
 ```
 
@@ -117,11 +126,11 @@ Placeholder endpoint for marking drops as seen. Currently a no-op since seen sta
 
 The `computeTotalWattsCaptured` function in `helpers/compute-watts.ts`:
 
-1. **Fetch finalized farms**: Queries all farms with a `protocolFeePaymentHash` (indicating protocol fee was paid)
+1. **Fetch finalized farms**: Queries all farms with a `protocolFeePaymentHash` (V2 farms starting from week 97).
 
-2. **Get cache data**: Reads the user's region breakdown from `impact_leaderboard_cache_by_region`
+2. **Get weekly snapshots**: For each week a farm was finalized, the system queries the `power_by_region_by_week` table for that specific week and region.
 
-3. **Group farms by region and week**: Organizes farms by their `zoneId` (region) and finalization week
+3. **Fallback to Aggregate**: If no weekly snapshot exists, the system uses the latest aggregate power from `impact_leaderboard_cache_by_region` as a high-quality approximation.
 
 4. **Compute power per region**:
 
@@ -148,11 +157,13 @@ The `computeTotalWattsCaptured` function in `helpers/compute-watts.ts`:
 
 | Cache Table                          | Updated By                                 | Schedule                 |
 | ------------------------------------ | ------------------------------------------ | ------------------------ |
+| `power_by_region_by_week`            | `Update Power By Region By Week` cron      | Weekly, Sunday 01:00 UTC |
 | `impact_leaderboard_cache_by_region` | `update-impact-leaderboard-by-region` cron | Weekly, Sunday 01:00 UTC |
 
 **Manual refresh:**
 
 ```bash
+curl http://localhost:3005/trigger-power-by-region-by-week-cron
 curl http://localhost:3005/trigger-impact-leaderboard-by-region-cron
 ```
 
