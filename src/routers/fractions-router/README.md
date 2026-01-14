@@ -12,7 +12,8 @@ This document describes the unauthenticated routes exposed by `fractionsRouter.t
 
 ### New Endpoints
 
-- **`/total-actively-delegated`**: Get total GLW delegated across all wallets (fast aggregated query for dashboards)
+- **`/total-actively-delegated`**: Get total GLW actively delegated across all wallets using vault ownership model (fast aggregated query for dashboards)
+- **`/actively-delegated-by-week`**: Get actively delegated GLW per week for historical trend analysis (vault ownership model)
 - **`/wallets/activity`**: List all wallets with their delegation amounts and rewards earned
 - **`/farms/activity`**: List all farms with total rewards distributed and participant counts
 - Both activity endpoints support filtering by type (delegator/miner/both), custom sorting, and limiting results
@@ -389,6 +390,50 @@ The router uses optimized data fetching strategies:
   ```bash
   # Get total actively delegated GLW
   curl -s "http://localhost:3005/fractions/total-actively-delegated"
+  ```
+
+## `GET /fractions/actively-delegated-by-week`
+
+- Returns actively delegated GLW for each week using the vault ownership model (time-series data).
+- Optional query params:
+  - `startWeek` (`string`): Start week number (defaults to 97)
+  - `endWeek` (`string`): End week number (defaults to current week)
+- **Response**
+  ```typescript
+  {
+    weekRange: {
+      startWeek: number;
+      endWeek: number;
+    }
+    byWeek: Record<number, string>; // Week number -> GLW wei string
+  }
+  ```
+- **Calculation Method**
+  - For each week in the range, calculates: `sum_wallets(sum_farms(remaining_principal_at_week × depositSplit%))`
+  - `remaining_principal_at_week = max(0, GLW_paid - cumulative_protocol_deposit_distributed_up_to_week)`
+  - Shows how actively delegated GLW changed over time as:
+    - New delegations were added
+    - Protocol deposits were distributed (reduces remaining principal)
+    - Vault ownership was transferred between wallets
+- **Performance**
+  - Moderately fast (~500ms-1s depending on week range)
+  - Fetches deposit split history once for all weeks
+  - Builds cumulative distribution timeline per farm
+  - Computes vault ownership for each week in the range
+- **Notes**
+  - Returns vault ownership amounts, not cumulative purchase amounts
+  - Useful for historical trend analysis and charts
+  - Each week's value is independent (not cumulative)
+  - Only includes GLW-paid farms (launchpad fractions with GLW protocol deposits)
+  - Excludes internal/team wallets via `EXCLUDED_LEADERBOARD_WALLETS`
+- **Example**
+
+  ```bash
+  # Get actively delegated by week for default range (97 to current)
+  curl -s "http://localhost:3005/fractions/actively-delegated-by-week"
+
+  # Get specific week range
+  curl -s "http://localhost:3005/fractions/actively-delegated-by-week?startWeek=100&endWeek=110"
   ```
 
 ## `GET /fractions/wallets/activity`

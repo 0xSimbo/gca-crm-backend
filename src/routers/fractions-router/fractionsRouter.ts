@@ -1657,10 +1657,18 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
           endWeek,
         });
 
-        const farmCumulativeDistributions = new Map<string, bigint>();
+        // Build cumulative distribution per farm with week-by-week tracking
+        const farmDistributionsByWeek = new Map<string, Map<number, bigint>>();
         for (const [farmId, rows] of farmRewardsMap) {
+          const weeklyDist = new Map<number, bigint>();
           let cumulative = BigInt(0);
-          for (const r of rows) {
+
+          // Sort rows by week to ensure cumulative is built correctly
+          const sortedRows = rows
+            .slice()
+            .sort((a, b) => a.weekNumber - b.weekNumber);
+
+          for (const r of sortedRows) {
             if ((r.paymentCurrency || "").toUpperCase() !== "GLW") continue;
             const distributed = BigInt(
               r.protocolDepositRewardsDistributed || "0"
@@ -1668,8 +1676,9 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
             if (distributed > BigInt(0)) {
               cumulative += distributed;
             }
+            weeklyDist.set(r.weekNumber, cumulative);
           }
-          farmCumulativeDistributions.set(farmId, cumulative);
+          farmDistributionsByWeek.set(farmId, weeklyDist);
         }
 
         let totalGlwDelegatedWei = BigInt(0);
@@ -1680,11 +1689,32 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
           let walletTotal = BigInt(0);
 
           for (const seg of segments) {
+            // Check if segment is active during endWeek
+            if (endWeek < seg.startWeek || endWeek > seg.endWeek) continue;
+
             const principalWei = farmPrincipals.get(seg.farmId) || BigInt(0);
             if (principalWei <= BigInt(0)) continue;
 
-            const cumulativeDistributed =
-              farmCumulativeDistributions.get(seg.farmId) || BigInt(0);
+            // Get cumulative distribution up to endWeek
+            // If no data for this exact week, find the latest week <= endWeek
+            const weeklyDist = farmDistributionsByWeek.get(seg.farmId);
+            let cumulativeDistributed = BigInt(0);
+            if (weeklyDist) {
+              // Try exact week first
+              if (weeklyDist.has(endWeek)) {
+                cumulativeDistributed = weeklyDist.get(endWeek)!;
+              } else {
+                // Find the most recent week with data that's <= endWeek
+                let latestWeek = -1;
+                for (const [w, val] of weeklyDist) {
+                  if (w <= endWeek && w > latestWeek) {
+                    latestWeek = w;
+                    cumulativeDistributed = val;
+                  }
+                }
+              }
+            }
+
             const remaining =
               principalWei > cumulativeDistributed
                 ? principalWei - cumulativeDistributed
@@ -1726,6 +1756,211 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
         summary: "Get total actively delegated GLW across all wallets",
         description:
           "Returns the total amount of GLW actively delegated across all wallets using the vault ownership model (same calculation as delegators leaderboard). This represents each wallet's share of remaining GLW protocol-deposit principal: sum_wallets(sum_farms(remaining_principal × depositSplit%)). Uses the current protocol week for real-time data. The value is returned in wei (18 decimals).",
+        tags: [TAG.APPLICATIONS],
+      },
+    }
+  )
+  .get(
+    "/actively-delegated-by-week",
+    async ({ query: { startWeek, endWeek }, set }) => {
+      try {
+        const DELEGATION_START_WEEK = 97;
+        const currentWeek = getCurrentEpoch();
+        const actualStartWeek = startWeek
+          ? parseInt(startWeek)
+          : DELEGATION_START_WEEK;
+        const actualEndWeek = endWeek ? parseInt(endWeek) : currentWeek;
+
+        if (isNaN(actualStartWeek) || isNaN(actualEndWeek)) {
+          set.status = 400;
+          return "Invalid week range";
+        }
+
+        if (actualEndWeek < actualStartWeek) {
+          set.status = 400;
+          return "endWeek must be >= startWeek";
+        }
+
+        const allWallets = await getAllDelegatorWallets();
+        const walletsToProcess = allWallets.filter(
+          (w) => !excludedLeaderboardWalletsSet.has(w)
+        );
+
+        const depositSplitsMap = await fetchDepositSplitsHistoryBatch({
+          wallets: walletsToProcess,
+          startWeek: DELEGATION_START_WEEK,
+          endWeek: actualEndWeek,
+        });
+
+        const allFarmIds = new Set<string>();
+        for (const segments of depositSplitsMap.values()) {
+          for (const seg of segments) {
+            allFarmIds.add(seg.farmId);
+          }
+        }
+
+        if (allFarmIds.size === 0) {
+          return {
+            weekRange: {
+              startWeek: actualStartWeek,
+              endWeek: actualEndWeek,
+            },
+            byWeek: {},
+          };
+        }
+
+        const farmIds = Array.from(allFarmIds);
+        const principalRows = await db
+          .select({
+            farmId: applications.farmId,
+            paymentAmount: applications.paymentAmount,
+          })
+          .from(applications)
+          .where(
+            and(
+              inArray(applications.farmId, farmIds),
+              eq(applications.isCancelled, false),
+              eq(applications.status, "completed"),
+              eq(applications.paymentCurrency, "GLW")
+            )
+          );
+
+        const farmPrincipals = new Map<string, bigint>();
+        for (const row of principalRows) {
+          if (!row.farmId) continue;
+          const amountWei = BigInt(row.paymentAmount || "0");
+          if (amountWei <= BigInt(0)) continue;
+          farmPrincipals.set(
+            row.farmId,
+            (farmPrincipals.get(row.farmId) || BigInt(0)) + amountWei
+          );
+        }
+
+        const glwPrincipalFarmIds = farmIds.filter(
+          (id) => (farmPrincipals.get(id) || BigInt(0)) > BigInt(0)
+        );
+
+        const farmRewardsMap = await fetchFarmRewardsHistoryBatch({
+          farmIds: glwPrincipalFarmIds,
+          startWeek: DELEGATION_START_WEEK,
+          endWeek: actualEndWeek,
+        });
+
+        // Build cumulative distribution per farm per week
+        const farmDistributionsByWeek = new Map<string, Map<number, bigint>>();
+        for (const [farmId, rows] of farmRewardsMap) {
+          const weeklyDist = new Map<number, bigint>();
+          let cumulative = BigInt(0);
+
+          // Sort rows by week to ensure cumulative is built correctly
+          const sortedRows = rows
+            .slice()
+            .sort((a, b) => a.weekNumber - b.weekNumber);
+
+          for (const r of sortedRows) {
+            if ((r.paymentCurrency || "").toUpperCase() !== "GLW") continue;
+            const distributed = BigInt(
+              r.protocolDepositRewardsDistributed || "0"
+            );
+            if (distributed > BigInt(0)) {
+              cumulative += distributed;
+            }
+            weeklyDist.set(r.weekNumber, cumulative);
+          }
+          farmDistributionsByWeek.set(farmId, weeklyDist);
+        }
+
+        const SPLIT_SCALE = BigInt(1_000_000);
+        const byWeek: Record<number, string> = {};
+
+        // Calculate actively delegated for each week
+        for (let week = actualStartWeek; week <= actualEndWeek; week++) {
+          let totalForWeek = BigInt(0);
+
+          for (const [wallet, segments] of depositSplitsMap) {
+            let walletTotal = BigInt(0);
+
+            for (const seg of segments) {
+              // Check if segment is active during this week
+              if (week < seg.startWeek || week > seg.endWeek) continue;
+
+              const principalWei = farmPrincipals.get(seg.farmId) || BigInt(0);
+              if (principalWei <= BigInt(0)) continue;
+
+              // Get cumulative distribution up to this week
+              // If no data for this exact week, find the latest week <= current week
+              const weeklyDist = farmDistributionsByWeek.get(seg.farmId);
+              let cumulativeDistributed = BigInt(0);
+              if (weeklyDist) {
+                // Try exact week first
+                if (weeklyDist.has(week)) {
+                  cumulativeDistributed = weeklyDist.get(week)!;
+                } else {
+                  // Find the most recent week with data that's <= current week
+                  let latestWeek = -1;
+                  for (const [w, val] of weeklyDist) {
+                    if (w <= week && w > latestWeek) {
+                      latestWeek = w;
+                      cumulativeDistributed = val;
+                    }
+                  }
+                }
+              }
+
+              const remaining =
+                principalWei > cumulativeDistributed
+                  ? principalWei - cumulativeDistributed
+                  : BigInt(0);
+
+              const splitScaled6 = BigInt(
+                seg.depositSplitPercent6Decimals || "0"
+              );
+              if (splitScaled6 <= BigInt(0)) continue;
+
+              const walletShare = (remaining * splitScaled6) / SPLIT_SCALE;
+              walletTotal += walletShare;
+            }
+
+            if (walletTotal > BigInt(0)) {
+              totalForWeek += walletTotal;
+            }
+          }
+
+          byWeek[week] = totalForWeek.toString();
+        }
+
+        return {
+          weekRange: {
+            startWeek: actualStartWeek,
+            endWeek: actualEndWeek,
+          },
+          byWeek,
+        };
+      } catch (e) {
+        if (e instanceof Error) {
+          set.status = 400;
+          return e.message;
+        }
+        throw new Error("Error Occurred");
+      }
+    },
+    {
+      query: t.Object({
+        startWeek: t.Optional(
+          t.String({
+            description: "Start week number (defaults to 97)",
+          })
+        ),
+        endWeek: t.Optional(
+          t.String({
+            description: "End week number (defaults to current week)",
+          })
+        ),
+      }),
+      detail: {
+        summary: "Get actively delegated GLW by week (vault ownership model)",
+        description:
+          "Returns actively delegated GLW for each week using the vault ownership model. For each week, calculates sum_wallets(sum_farms(remaining_principal_at_week × depositSplit%)). This shows how actively delegated GLW changed over time as protocol deposits were distributed. Uses weeks 97-current by default. Values are returned in wei (18 decimals).",
         tags: [TAG.APPLICATIONS],
       },
     }
