@@ -162,10 +162,12 @@ const app = new Elysia()
       pattern: "*/15 * * * *", // Every 15 minutes
       async run() {
         try {
-          const result = await retryFailedOperations();
-          console.log(
-            `[Cron] Retry Failed Operations: ${result.retried} retried, ${result.resolved} resolved, ${result.failed} failed`
-          );
+          if (process.env.NODE_ENV === "production") {
+            const result = await retryFailedOperations();
+            console.log(
+              `[Cron] Retry Failed Operations: ${result.retried} retried, ${result.resolved} resolved, ${result.failed} failed`
+            );
+          }
         } catch (error) {
           console.error("[Cron] Error in Retry Failed Operations:", error);
         }

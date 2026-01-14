@@ -818,110 +818,130 @@ export const applicationsDraftRelations = relations(
  * @param {timestamp} gcaAcceptanceTimestamp - The timestamp when the GCA accepted the assignment.
  * @param {string} gcaAddress - The address of the GCA.
  */
-export const applications = pgTable("applications", {
-  id: text("application_id").primaryKey(),
-  userId: varchar("user_id", { length: 42 }).notNull(),
-  zoneId: integer("zone_id").notNull().default(1),
-  farmId: varchar("farm_id", { length: 66 })
-    .unique()
-    .references(() => farms.id, { onDelete: "cascade" }),
-  createdAt: timestamp("createdAt").notNull(),
-  currentStep: integer("current_step").notNull(),
-  roundRobinStatus: roundRobinStatusEnum("round_robin_status").notNull(),
-  status: applicationStatusEnum("application_status").notNull(),
-  isCancelled: boolean("is_cancelled").notNull().default(false),
-  isDocumentsCorrupted: boolean("is_documents_corrupted")
-    .notNull()
-    .default(false),
-  // null if application just got created
-  updatedAt: timestamp("updatedAt"),
-  declarationOfIntentionSignature: varchar(
-    "declaration_of_intention_signature",
-    { length: 255 }
-  ),
-  declarationOfIntentionSignatureDate: timestamp(
-    "declaration_of_intention_signature_date"
-  ),
-  declarationOfIntentionFieldsValue: json(
-    "declaration_of_intention_fields_value"
-  ),
-  declarationOfIntentionCommitedOnChainTxHash: varchar(
-    "declaration_of_intention_commited_on_chain_tx_hash",
-    { length: 66 }
-  ),
-  declarationOfIntentionVersion: varchar("declaration_of_intention_version", {
-    length: 12,
-  }),
-  auditFees: bigint("audit_fees", { mode: "bigint" }).default(sql`'0'::bigint`),
-  auditFeesTxHash: varchar("audit_fees_tx_hash", { length: 66 }),
-  auditFeesPaymentDate: timestamp("audit_fees_payment_date"),
-  // wallet signature of the account owner
-  finalQuotePerWatt: varchar("final_quote_per_watt", { length: 255 }),
-  revisedKwhGeneratedPerYear: numeric("revised_kwh_generated_per_year", {
-    precision: 10,
-    scale: 2,
-  }),
-  revisedCostOfPowerPerKWh: numeric("revised_cost_of_power_per_kwh", {
-    precision: 10,
-    scale: 2,
-  }),
-  revisedEstimatedProtocolFees: numeric("revised_estimated_protocol_fees", {
-    precision: 10,
-    scale: 2,
-  }),
-  // permit-documentation step fields
-  // --- estimated installation date provided by the installer / farm owner
-  certifiedInstallerId: varchar("certified_installer_id", {
-    length: 255,
-  }).references(() => installers.id, { onDelete: "cascade" }),
-  estimatedInstallDate: timestamp("estimated_install_date"),
-  preInstallVisitDate: timestamp("pre_install_visit_date"),
-  preInstallVisitDateConfirmedTimestamp: timestamp(
-    "pre_install_visit_date_confirmed_timestamp"
-  ),
-  // inspection-pto step fields
-  // --- final installation date provided by the installer / farm owner
-  installFinishedDate: timestamp("install_finished_date"),
-  afterInstallVisitDate: timestamp("after_install_visit_date"),
-  afterInstallVisitDateConfirmedTimestamp: timestamp(
-    "after_install_visit_date_confirmed_timestamp"
-  ),
-  finalProtocolFee: bigint("final_protocol_fee", { mode: "bigint" })
-    .default(sql`'0'::bigint`)
-    .notNull(),
-  // payment step fields
-  paymentDate: timestamp("payment_date"),
-  paymentTxHash: varchar("payment_tx_hash", { length: 66 }),
-  additionalPaymentTxHash: varchar("additional_payment_tx_hash", {
-    length: 66,
-  }),
-  paymentAmount: numeric("payment_amount", {
-    precision: 38,
-    scale: 0,
+export const applications = pgTable(
+  "applications",
+  {
+    id: text("application_id").primaryKey(),
+    userId: varchar("user_id", { length: 42 }).notNull(),
+    zoneId: integer("zone_id").notNull().default(1),
+    farmId: varchar("farm_id", { length: 66 })
+      .unique()
+      .references(() => farms.id, { onDelete: "cascade" }),
+    createdAt: timestamp("createdAt").notNull(),
+    currentStep: integer("current_step").notNull(),
+    roundRobinStatus: roundRobinStatusEnum("round_robin_status").notNull(),
+    status: applicationStatusEnum("application_status").notNull(),
+    isCancelled: boolean("is_cancelled").notNull().default(false),
+    isDocumentsCorrupted: boolean("is_documents_corrupted")
+      .notNull()
+      .default(false),
+    // null if application just got created
+    updatedAt: timestamp("updatedAt"),
+    declarationOfIntentionSignature: varchar(
+      "declaration_of_intention_signature",
+      { length: 255 }
+    ),
+    declarationOfIntentionSignatureDate: timestamp(
+      "declaration_of_intention_signature_date"
+    ),
+    declarationOfIntentionFieldsValue: json(
+      "declaration_of_intention_fields_value"
+    ),
+    declarationOfIntentionCommitedOnChainTxHash: varchar(
+      "declaration_of_intention_commited_on_chain_tx_hash",
+      { length: 66 }
+    ),
+    declarationOfIntentionVersion: varchar("declaration_of_intention_version", {
+      length: 12,
+    }),
+    auditFees: bigint("audit_fees", { mode: "bigint" }).default(
+      sql`'0'::bigint`
+    ),
+    auditFeesTxHash: varchar("audit_fees_tx_hash", { length: 66 }),
+    auditFeesPaymentDate: timestamp("audit_fees_payment_date"),
+    // wallet signature of the account owner
+    finalQuotePerWatt: varchar("final_quote_per_watt", { length: 255 }),
+    revisedKwhGeneratedPerYear: numeric("revised_kwh_generated_per_year", {
+      precision: 10,
+      scale: 2,
+    }),
+    revisedCostOfPowerPerKWh: numeric("revised_cost_of_power_per_kwh", {
+      precision: 10,
+      scale: 2,
+    }),
+    revisedEstimatedProtocolFees: numeric("revised_estimated_protocol_fees", {
+      precision: 10,
+      scale: 2,
+    }),
+    // permit-documentation step fields
+    // --- estimated installation date provided by the installer / farm owner
+    certifiedInstallerId: varchar("certified_installer_id", {
+      length: 255,
+    }).references(() => installers.id, { onDelete: "cascade" }),
+    estimatedInstallDate: timestamp("estimated_install_date"),
+    preInstallVisitDate: timestamp("pre_install_visit_date"),
+    preInstallVisitDateConfirmedTimestamp: timestamp(
+      "pre_install_visit_date_confirmed_timestamp"
+    ),
+    // inspection-pto step fields
+    // --- final installation date provided by the installer / farm owner
+    installFinishedDate: timestamp("install_finished_date"),
+    afterInstallVisitDate: timestamp("after_install_visit_date"),
+    afterInstallVisitDateConfirmedTimestamp: timestamp(
+      "after_install_visit_date_confirmed_timestamp"
+    ),
+    finalProtocolFee: bigint("final_protocol_fee", { mode: "bigint" })
+      .default(sql`'0'::bigint`)
+      .notNull(),
+    // payment step fields
+    paymentDate: timestamp("payment_date"),
+    paymentTxHash: varchar("payment_tx_hash", { length: 66 }),
+    additionalPaymentTxHash: varchar("additional_payment_tx_hash", {
+      length: 66,
+    }),
+    paymentAmount: numeric("payment_amount", {
+      precision: 38,
+      scale: 0,
+    })
+      .default(sql`'0'::numeric`)
+      .notNull(),
+    paymentCurrency: varchar("payment_currency", { length: 20 })
+      .notNull()
+      .default("USDG"), // USDG or GCTL or USDC or GLW or GCTL or SGCTL
+    paymentEventType: varchar("payment_event_type", { length: 66 })
+      .notNull()
+      .default("PayProtocolFee"), // PayProtocolFee or PayProtocolFeeAndMintGCTLAndStake
+    // gca assignement fields
+    gcaAssignedTimestamp: timestamp("gca_assigned_timestamp"),
+    gcaAcceptanceTimestamp: timestamp("gca_acceptance_timestamp"),
+    gcaAddress: varchar("gca_address", { length: 42 }),
+    gcaAcceptanceSignature: varchar("gca_acceptance_signature", {
+      length: 255,
+    }),
+    // allowed zones for the application. 1 is zone CGP, 2 is zone UTAH, etc.
+    allowedZones: integer("allowed_zones")
+      .array()
+      .notNull()
+      .default(sql`'{}'::integer[]`),
+    // Maximum splits value in USDC (6 decimals) - can be overridden per application
+    maxSplits: bigint("max_splits", { mode: "bigint" })
+      .default(sql`'0'::bigint`)
+      .notNull(),
+  },
+  (t) => ({
+    // Performance indexes for GLW vault principal queries (critical for delegators leaderboard)
+    statusIndex: index("applications_status_idx").on(t.status),
+    paymentCurrencyIndex: index("applications_payment_currency_idx").on(
+      t.paymentCurrency
+    ),
+    vaultLookupIndex: index("applications_vault_lookup_idx").on(
+      t.farmId,
+      t.isCancelled,
+      t.status,
+      t.paymentCurrency
+    ),
   })
-    .default(sql`'0'::numeric`)
-    .notNull(),
-  paymentCurrency: varchar("payment_currency", { length: 20 })
-    .notNull()
-    .default("USDG"), // USDG or GCTL or USDC or GLW or GCTL or SGCTL
-  paymentEventType: varchar("payment_event_type", { length: 66 })
-    .notNull()
-    .default("PayProtocolFee"), // PayProtocolFee or PayProtocolFeeAndMintGCTLAndStake
-  // gca assignement fields
-  gcaAssignedTimestamp: timestamp("gca_assigned_timestamp"),
-  gcaAcceptanceTimestamp: timestamp("gca_acceptance_timestamp"),
-  gcaAddress: varchar("gca_address", { length: 42 }),
-  gcaAcceptanceSignature: varchar("gca_acceptance_signature", { length: 255 }),
-  // allowed zones for the application. 1 is zone CGP, 2 is zone UTAH, etc.
-  allowedZones: integer("allowed_zones")
-    .array()
-    .notNull()
-    .default(sql`'{}'::integer[]`),
-  // Maximum splits value in USDC (6 decimals) - can be overridden per application
-  maxSplits: bigint("max_splits", { mode: "bigint" })
-    .default(sql`'0'::bigint`)
-    .notNull(),
-});
+);
 
 /**
  * @dev Fields for competitive recursive subsidy applications
@@ -1429,24 +1449,37 @@ export const DocumentsMissingWithReasonRelations = relations(
  * @param {number} usdgSplitPercent - The percentage split of USDG rewards.
  */
 // Reward Splits for USDG and GLOW add up to 100% for each token
-export const RewardSplits = pgTable("rewardsSplits", {
-  id: text("rewards_split_id")
-    .primaryKey()
-    .$defaultFn(() => crypto.randomUUID()),
-  applicationId: text("application_id"),
-  // farmId can be null if the application is not yet completed, it's being patched after the farm is created.
-  farmId: varchar("farm_id", { length: 66 }),
-  walletAddress: varchar("wallet_address", { length: 42 }).notNull(),
-  glowSplitPercent: numeric("glow_split_percent", {
-    precision: 5,
-    scale: 2,
-  }).notNull(),
-  usdgSplitPercent: numeric("usdg_split_percent", {
-    precision: 5,
-    scale: 2,
-  }).notNull(),
-  updatedAt: timestamp("updated_at"),
-});
+export const RewardSplits = pgTable(
+  "rewardsSplits",
+  {
+    id: text("rewards_split_id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    applicationId: text("application_id"),
+    // farmId can be null if the application is not yet completed, it's being patched after the farm is created.
+    farmId: varchar("farm_id", { length: 66 }),
+    walletAddress: varchar("wallet_address", { length: 42 }).notNull(),
+    glowSplitPercent: numeric("glow_split_percent", {
+      precision: 5,
+      scale: 2,
+    }).notNull(),
+    usdgSplitPercent: numeric("usdg_split_percent", {
+      precision: 5,
+      scale: 2,
+    }).notNull(),
+    updatedAt: timestamp("updated_at"),
+  },
+  (t) => ({
+    // Performance indexes for wallet and farm reward lookups
+    walletAddressIndex: index("rewards_splits_wallet_address_idx").on(
+      t.walletAddress
+    ),
+    farmIdIndex: index("rewards_splits_farm_id_idx").on(t.farmId),
+    applicationIdIndex: index("rewards_splits_application_id_idx").on(
+      t.applicationId
+    ),
+  })
+);
 
 export const RewardsSplitsHistory = pgTable("rewardsSplitsHistory", {
   id: text("rewards_splits_history_id")
@@ -1746,6 +1779,14 @@ export const fractions = pgTable(
     applicationIdIndex: index("fractions_application_id_ix").on(
       t.applicationId
     ),
+    // Performance indexes for common query patterns
+    typeIndex: index("fractions_type_idx").on(t.type),
+    statusIndex: index("fractions_status_idx").on(t.status),
+    statusTypeIndex: index("fractions_status_type_idx").on(t.status, t.type),
+    statusFilledAtIndex: index("fractions_status_filled_at_idx").on(
+      t.status,
+      t.filledAt
+    ),
   })
 );
 
@@ -1781,6 +1822,13 @@ export const fractionSplits = pgTable(
     ).on(t.transactionHash, t.logIndex),
     creatorIndex: index("fraction_splits_creator_ix").on(t.creator),
     buyerIndex: index("fraction_splits_buyer_ix").on(t.buyer),
+    // Performance indexes for mining purchase queries (critical for impact score)
+    timestampIndex: index("fraction_splits_timestamp_idx").on(t.timestamp),
+    buyerTimestampIndex: index("fraction_splits_buyer_timestamp_idx").on(
+      t.buyer,
+      t.timestamp
+    ),
+    createdAtIndex: index("fraction_splits_created_at_idx").on(t.createdAt),
   })
 );
 
@@ -2066,25 +2114,47 @@ export const QuoteApiKeys = pgTable(
 export type QuoteApiKeyType = InferSelectModel<typeof QuoteApiKeys>;
 export type QuoteApiKeyInsertType = typeof QuoteApiKeys.$inferInsert;
 
-export const impactLeaderboardCache = pgTable("impact_leaderboard_cache", {
-  walletAddress: varchar("wallet_address", { length: 42 })
-    .primaryKey()
-    .notNull(),
-  totalPoints: numeric("total_points", { precision: 20, scale: 6 }).notNull(),
-  rank: integer("rank").notNull(),
-  glowWorthWei: numeric("glow_worth_wei", {
-    precision: 78,
-    scale: 0,
-  }).notNull(),
-  lastWeekPoints: numeric("last_week_points", {
-    precision: 20,
-    scale: 6,
-  }).notNull(),
-  startWeek: integer("start_week").notNull(),
-  endWeek: integer("end_week").notNull(),
-  data: json("data").notNull(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+export const impactLeaderboardCache = pgTable(
+  "impact_leaderboard_cache",
+  {
+    walletAddress: varchar("wallet_address", { length: 42 })
+      .primaryKey()
+      .notNull(),
+    totalPoints: numeric("total_points", { precision: 20, scale: 6 }).notNull(),
+    rank: integer("rank").notNull(),
+    glowWorthWei: numeric("glow_worth_wei", {
+      precision: 78,
+      scale: 0,
+    }).notNull(),
+    lastWeekPoints: numeric("last_week_points", {
+      precision: 20,
+      scale: 6,
+    }).notNull(),
+    startWeek: integer("start_week").notNull(),
+    endWeek: integer("end_week").notNull(),
+    data: json("data").notNull(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    // Composite indexes for common query patterns
+    // Note: In Drizzle ORM v0.30.1, column ordering (.desc()/.asc()) is not supported in index definitions
+    // The index will be created as ASC by default, but query performance is still improved
+    // Ordering is handled by the orderBy clause in queries
+    weekRangeTotalPointsIdx: index("impact_cache_week_total_points_idx").on(
+      table.startWeek,
+      table.endWeek,
+      table.totalPoints
+    ),
+    weekRangeLastWeekPointsIdx: index(
+      "impact_cache_week_last_week_points_idx"
+    ).on(table.startWeek, table.endWeek, table.lastWeekPoints),
+    weekRangeGlowWorthIdx: index("impact_cache_week_glow_worth_idx").on(
+      table.startWeek,
+      table.endWeek,
+      table.glowWorthWei
+    ),
+  })
+);
 
 export const impactLeaderboardCacheByRegion = pgTable(
   "impact_leaderboard_cache_by_region",

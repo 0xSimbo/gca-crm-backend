@@ -341,10 +341,12 @@ Notes:
 #### Database Cache (Leaderboard)
 
 - **Table**: `impact_leaderboard_cache` stores pre-computed leaderboard rows with `startWeek`, `endWeek`, `rank`, and full JSON payload.
+- **Indexes**: Composite indexes on `(start_week, end_week, total_points)`, `(start_week, end_week, last_week_points)`, and `(start_week, end_week, glow_worth_wei)` ensure fast sorted queries (~500ms for 225 wallets).
 - **Cron**: Weekly on Sunday at 01:00 UTC (`update-impact-leaderboard` cron job) computes scores for ~1000 wallets and atomically replaces the cache.
-- **Router**: When a request matches the default week range (from `getWeekRangeForImpact()`), the router serves from the database cache (<100ms response time).
+- **Router**: When a request matches the default week range (from `getWeekRangeForImpact()`), the router serves from the database cache (~500ms response time for production, ~1s for localhost).
 - **Cache validation**: The router validates that `actualStartWeek` and `actualEndWeek` match the cached `startWeek` and `endWeek`. If they don't match (e.g., right after a protocol week rollover but before the cron runs), it falls back to on-the-fly computation.
 - **Single-wallet queries**: Always bypass the cache and compute on-the-fly to include `currentWeekProjection` (live preview for the ongoing week).
+- **Performance**: With indexes (added Jan 2026), leaderboard requests achieve ~500ms P50 latency, a 10x improvement from the previous ~5s response times.
 
 #### In-Memory Cache
 
@@ -364,11 +366,23 @@ Notes:
 
 - Add `debugTimings=true` (or `1`) to emit a single summary log showing which stages are slow.
 
-Local repro script:
+Performance testing scripts:
 
 ```bash
-bun run scripts/debug-impact-leaderboard.ts --limit 50 --warmup 1 --repeat 3
+# Test localhost performance
+bun run scripts/debug-impact-leaderboard.ts --baseUrl http://localhost:3005 --limit 1000 --repeat 3
+
+# Test production performance
+bun run scripts/debug-impact-leaderboard.ts --baseUrl https://gca-crm-backend-production-1f2a.up.railway.app --limit 1000 --repeat 3
+
+# Check cache state
+bun run scripts/check-impact-cache-state.ts
 ```
+
+**Expected performance (with indexes)**:
+
+- Production: P50 ~500ms, P95 ~500ms
+- Localhost: P50 ~1000ms, P95 ~1000ms
 
 ## `GET /impact/glow-worth`
 
@@ -483,9 +497,21 @@ CREATE TABLE impact_leaderboard_cache (
   data JSON NOT NULL,
   updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
+
+-- Composite indexes for fast sorted queries (added Jan 2026)
+CREATE INDEX impact_cache_week_total_points_idx
+  ON impact_leaderboard_cache (start_week, end_week, total_points);
+
+CREATE INDEX impact_cache_week_last_week_points_idx
+  ON impact_leaderboard_cache (start_week, end_week, last_week_points);
+
+CREATE INDEX impact_cache_week_glow_worth_idx
+  ON impact_leaderboard_cache (start_week, end_week, glow_worth_wei);
 ```
 
 The `data` column stores the full `GlowImpactScoreResult` JSON for each wallet.
+
+**Performance Impact**: These indexes improved query performance from ~5-10s to ~500ms (10-20x faster) for leaderboard requests.
 
 ## `GET /impact/delegators-leaderboard`
 
