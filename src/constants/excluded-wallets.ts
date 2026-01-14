@@ -9,7 +9,9 @@ export const EXCLUDED_LEADERBOARD_WALLETS = [
   "0x0116da066517f010e59b32274bf18083af34e108",
   "0x6fa8c7a89b22bf3212392b778905b12f3dbaf5c4",
   "0x3d2788a847a6386275776c0551a1ac453efd8028",
+  "0xd8cf559B95E51F0aCc97CFE56DA61fe37178DDC9",
 ].map((w) => w.toLowerCase());
 
-export const excludedLeaderboardWalletsSet = new Set(EXCLUDED_LEADERBOARD_WALLETS);
-
+export const excludedLeaderboardWalletsSet = new Set(
+  EXCLUDED_LEADERBOARD_WALLETS
+);

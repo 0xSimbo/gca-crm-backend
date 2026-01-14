@@ -1581,6 +1581,59 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
     }
   )
   .get(
+    "/total-actively-delegated",
+    async ({ set }) => {
+      try {
+        const weekRange = getWeekRange();
+        const { startWeek, endWeek } = weekRange;
+
+        const purchaseInfo = await getWalletPurchaseTypesByFarmUpToWeek({
+          endWeek,
+        });
+        const walletsToProcess = Array.from(
+          purchaseInfo.walletToFarmTypes.keys()
+        );
+
+        const allPurchasesUpToWeek = await getBatchPurchasesUpToWeek(
+          walletsToProcess,
+          endWeek
+        );
+
+        let totalGlwDelegatedWei = BigInt(0);
+
+        for (const wallet of walletsToProcess) {
+          const purchasesUpToWeek = allPurchasesUpToWeek.get(wallet);
+          if (purchasesUpToWeek) {
+            totalGlwDelegatedWei += purchasesUpToWeek.totalGlwDelegated;
+          }
+        }
+
+        return {
+          weekRange: {
+            startWeek,
+            endWeek,
+          },
+          totalGlwDelegatedWei: totalGlwDelegatedWei.toString(),
+          totalWallets: walletsToProcess.length,
+        };
+      } catch (e) {
+        if (e instanceof Error) {
+          set.status = 400;
+          return e.message;
+        }
+        throw new Error("Error Occurred");
+      }
+    },
+    {
+      detail: {
+        summary: "Get total actively delegated GLW across all wallets",
+        description:
+          "Returns the total amount of GLW actively delegated across all wallets with launchpad fractions. This includes all GLW delegated through the protocol up to the last completed week. The value is returned in wei (18 decimals).",
+        tags: [TAG.APPLICATIONS],
+      },
+    }
+  )
+  .get(
     "/wallets/activity",
     async ({ query: { type, sortBy, limit }, set }) => {
       try {
