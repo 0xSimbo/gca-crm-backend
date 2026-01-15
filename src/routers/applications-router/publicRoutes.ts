@@ -3,6 +3,7 @@ import { TAG } from "../../constants";
 import {
   findAllCompletedApplications,
   findCompletedApplication,
+  findCompletedApplicationsSummary,
 } from "../../db/queries/applications/findAllCompletedApplications";
 import { findAllWaitingForPaymentApplications } from "../../db/queries/applications/findAllWaitingForPaymentApplications";
 import {
@@ -603,6 +604,29 @@ export const publicApplicationsRoutes = new Elysia()
       detail: {
         summary: "Get all completed applications ",
         description: `Get all completed applications `,
+        tags: [TAG.APPLICATIONS],
+      },
+    }
+  )
+  .get(
+    "/completed/summary",
+    async ({ set }) => {
+      try {
+        return await findCompletedApplicationsSummary();
+      } catch (e) {
+        if (e instanceof Error) {
+          set.status = 400;
+          return e.message;
+        }
+        console.log("[applicationsRouter] /completed/summary", e);
+        throw new Error("Error Occured");
+      }
+    },
+    {
+      detail: {
+        summary: "Get completed applications summary",
+        description:
+          "Returns a slimmed-down completed applications payload for public stats pages.",
         tags: [TAG.APPLICATIONS],
       },
     }

@@ -191,9 +191,13 @@ export async function getGlowWorth(params: {
 
 There are two shapes, based on `walletAddress`:
 
-- **Single wallet** (`walletAddress=0x...`): returns the full object including `glowWorth`, `totals`, `weekly[]`, and `currentWeekProjection` (live preview).
-- **Leaderboard/list** (omit `walletAddress`): returns lightweight rows with totals + a `composition` breakdown + `lastWeekPoints` + `activeMultiplier`.
+- **Single wallet** (`walletAddress=0x...`): returns `glowWorth`, `totals`, `regionBreakdown`, and `currentWeekProjection` (live preview). **Weekly breakdown is only included when `includeWeekly=1`.**
+- **Leaderboard/list** (omit `walletAddress`): returns lightweight rows with totals + a `composition` breakdown + `lastWeekPoints` + `activeMultiplier` (no weekly data).
 - **Leaderboard/list**: response includes `totalWalletCount` so UIs can show “displaying 200 of N”.
+
+#### `includeWeekly` (optional)
+
+By default, weekly breakdown is **not** returned. Set `includeWeekly=1` (or `includeWeekly=true`) to include the `weekly[]` array and `pointsPerRegion` breakdown in weekly rows.
 
 #### Leaderboard eligibility (who can show up?)
 

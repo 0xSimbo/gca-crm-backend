@@ -31,6 +31,44 @@ type StringifiedApplicationResult = {
   [key: string]: any;
 };
 
+export interface CompletedApplicationSummary {
+  id: string;
+  status: string;
+  createdAt: Date;
+  paymentDate?: Date | null;
+  installFinishedDate?: Date | null;
+  revisedInstallFinishedDate?: Date | null;
+  gcaAcceptanceTimestamp?: Date | null;
+  paymentCurrency: string;
+  paymentAmount: string;
+  netCarbonCreditEarningWeekly?: string;
+  solarPanelsQuantity?: number | null;
+  farm?: {
+    id: string;
+    auditCompleteDate?: Date | null;
+    name?: string | null;
+    region?: string | null;
+    regionFullName?: string | null;
+  } | null;
+  zone?: {
+    id: number;
+    name: string;
+    isActive?: boolean | null;
+    isAcceptingSponsors?: boolean | null;
+  } | null;
+}
+
+function toStringIfBigint(value: unknown): string | undefined {
+  if (value === undefined || value === null) return undefined;
+  return typeof value === "bigint" ? value.toString() : String(value);
+}
+
+function toNumberIfDefined(value: unknown): number | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  return typeof value === "bigint" ? Number(value) : Number(value);
+}
+
 function stringifyApplicationFields(
   application: any, // Keep flexible for now since query structure varies
   zone: any,
@@ -290,6 +328,84 @@ export const findAllCompletedApplications = async (withDocuments?: boolean) => {
         a.farm!!.auditCompleteDate.getTime()
     )
     .reverse();
+};
+
+export const findCompletedApplicationsSummary = async (): Promise<
+  CompletedApplicationSummary[]
+> => {
+  try {
+    const applicationsDb = await db.query.applications.findMany({
+      where: and(
+        eq(applications.isCancelled, false),
+        eq(applications.status, ApplicationStatusEnum.completed)
+      ),
+      columns: {
+        id: true,
+        status: true,
+        createdAt: true,
+        paymentDate: true,
+        installFinishedDate: true,
+        gcaAcceptanceTimestamp: true,
+        paymentCurrency: true,
+        paymentAmount: true,
+      },
+      with: {
+        farm: {
+          columns: {
+            id: true,
+            auditCompleteDate: true,
+            name: true,
+            region: true,
+            regionFullName: true,
+          },
+        },
+        zone: {
+          columns: {
+            id: true,
+            name: true,
+            isActive: true,
+            isAcceptingSponsors: true,
+          },
+        },
+        auditFieldsCRS: {
+          columns: {
+            netCarbonCreditEarningWeekly: true,
+            solarPanelsQuantity: true,
+            revisedInstallFinishedDate: true,
+          },
+        },
+      },
+    });
+
+    return applicationsDb
+      .map(({ auditFieldsCRS, farm, zone, ...application }) => ({
+        id: application.id,
+        status: application.status,
+        createdAt: application.createdAt,
+        paymentDate: application.paymentDate,
+        installFinishedDate: application.installFinishedDate,
+        revisedInstallFinishedDate: auditFieldsCRS?.revisedInstallFinishedDate,
+        gcaAcceptanceTimestamp: application.gcaAcceptanceTimestamp,
+        paymentCurrency: application.paymentCurrency,
+        paymentAmount: toStringIfBigint(application.paymentAmount) ?? "0",
+        netCarbonCreditEarningWeekly: toStringIfBigint(
+          auditFieldsCRS?.netCarbonCreditEarningWeekly
+        ),
+        solarPanelsQuantity: toNumberIfDefined(
+          auditFieldsCRS?.solarPanelsQuantity
+        ),
+        farm: farm ?? undefined,
+        zone: zone ?? undefined,
+      }))
+      .sort((a, b) => {
+        const aTimestamp = a.farm?.auditCompleteDate?.getTime() ?? 0;
+        const bTimestamp = b.farm?.auditCompleteDate?.getTime() ?? 0;
+        return aTimestamp - bTimestamp;
+      });
+  } catch (error) {
+    if (error instanceof Error) throw error;
+    throw new Error("Failed to load completed applications summary");
+  }
 };
 
 export const findCompletedApplication = async ({

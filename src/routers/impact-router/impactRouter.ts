@@ -291,7 +291,7 @@ export const impactRouter = new Elysia({ prefix: "/impact" })
         const parsedLimit = parseOptionalInt(limit) ?? 200;
         const limitWasProvided = limit != null;
         const shouldIncludeWeekly =
-          includeWeekly === "true" || includeWeekly === "1" || !!walletAddress;
+          includeWeekly === "true" || includeWeekly === "1";
         const isListMode = !walletAddress;
         const shouldLogTimingsForRequest = shouldLogTimings && isListMode;
         const sortKey =
