@@ -44,6 +44,17 @@ export interface ComputeQuoteResult {
   debugJson: any;
 }
 
+function normalizeStateName(state: string | null): string | null {
+  if (!state) return null;
+  return state.replace(/ /g, "").toLowerCase();
+}
+
+function isLebanonState(state: string | null): boolean {
+  const normalizedState = normalizeStateName(state);
+  if (!normalizedState) return false;
+  return normalizedState.includes("lebanon");
+}
+
 /**
  * Calculate NPV using monthly cash flows (matches spreadsheet methodology)
  * This is more accurate than the growing annuity formula for long-term projections
@@ -125,23 +136,35 @@ export async function computeProjectQuote(
     override,
   } = params;
 
+  let foundState: string | null = null;
+  if (
+    typeof override?.discountRate !== "number" ||
+    typeof override?.escalatorRate !== "number"
+  ) {
+    try {
+      foundState = await getStateFromCoordinates({ latitude, longitude });
+    } catch (error) {
+      foundState = null;
+    }
+  }
+
   // Get rates from constants and geography
   const discountRate =
-    override?.discountRate ?? protocolFeeAssumptions.cashflowDiscount;
+    override?.discountRate ??
+    (isLebanonState(foundState)
+      ? protocolFeeAssumptions.lebanonDiscountRate
+      : protocolFeeAssumptions.cashflowDiscount);
   const years = override?.years ?? protocolFeeAssumptions.commitmentPeriod;
 
   // Get escalator rate from state
-  let foundState: string | null = null;
   let escalatorRate = 0.0331; // default
   if (typeof override?.escalatorRate === "number") {
     escalatorRate = override.escalatorRate;
   } else {
-    foundState = await getStateFromCoordinates({ latitude, longitude });
     if (foundState) {
       const stateEscalator = statesWithEscalatorFees.find(
         ({ state }) =>
-          state.replace(/ /g, "").toLowerCase() ===
-          foundState!.replace(/ /g, "").toLowerCase()
+          normalizeStateName(state) === normalizeStateName(foundState)
       );
       if (stateEscalator) {
         escalatorRate = stateEscalator.percent;
@@ -165,15 +188,21 @@ export async function computeProjectQuote(
   const protocolDepositUsd6 = Math.round(protocolDepositUsd * 1e6).toString();
 
   // Get carbon certificates from lat/lng
-  const carbonOffsetsPerMwh =
-    typeof override?.carbonOffsetsPerMwh === "number"
-      ? override.carbonOffsetsPerMwh
-      : (
-          await getSunlightHoursAndCertificates({
-            latitude,
-            longitude,
-          })
-        ).average_carbon_certificates;
+  let carbonOffsetsPerMwh = 0;
+  if (typeof override?.carbonOffsetsPerMwh === "number") {
+    carbonOffsetsPerMwh = override.carbonOffsetsPerMwh;
+  } else {
+    try {
+      carbonOffsetsPerMwh = (
+        await getSunlightHoursAndCertificates({
+          latitude,
+          longitude,
+        })
+      ).average_carbon_certificates;
+    } catch (error) {
+      throw error;
+    }
+  }
 
   const uncertaintyApplied = protocolFeeAssumptions.uncertaintyMultiplier;
 

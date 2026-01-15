@@ -27,6 +27,7 @@ import { findQuoteApiKeyByOrgName } from "../../db/queries/quote-api-keys/findQu
 import { findQuoteApiKeyByHash } from "../../db/queries/quote-api-keys/findQuoteApiKeyByHash";
 import { createHash, randomBytes } from "crypto";
 import { sendQuoteBatchSummaryToSlack } from "../../slack/quote-notifications";
+import { protocolFeeAssumptions } from "../../constants/protocol-fee-assumptions";
 
 interface QuoteProjectRequest {
   annualConsumptionMWh: string;
@@ -61,6 +62,7 @@ const LEBANON_ELECTRICITY_PRICE_PER_KWH = 0.3474;
 const LEBANON_REGION_CODE = "LB";
 const LEBANON_UTILITY_BILL_URL_SENTINEL = "lebanon-fixed-rate";
 const LEBANON_ESCALATOR_RATE = 0.0331;
+const LEBANON_DISCOUNT_RATE = protocolFeeAssumptions.lebanonDiscountRate;
 const LEBANON_RATE_LIMIT_PER_HOUR = 500;
 
 const quoteProjectRequestSchema = t.Object({
@@ -576,6 +578,7 @@ async function createLebanonProjectQuoteFromRequest(args: {
     override: {
       // Avoid US-only reverse-geocode call for escalator logic.
       escalatorRate: LEBANON_ESCALATOR_RATE,
+      discountRate: LEBANON_DISCOUNT_RATE,
     },
   });
 
@@ -1283,7 +1286,7 @@ export const quotesRouter = new Elysia({ prefix: "/quotes" })
         summary:
           "Create a Lebanon project quote (fixed blended rate, wallet signature auth or API key auth)",
         description:
-          "Create a new Lebanon quote without uploading a utility bill. Uses a fixed blended electricity rate of $0.3474/kWh. Authenticate via wallet signature (timestamp+signature) or via API key (x-api-key header). Returns estimated protocol deposit, carbon metrics, and efficiency scores.",
+          "Create a new Lebanon quote without uploading a utility bill. Uses a fixed blended electricity rate of $0.3474/kWh and a fixed discount rate of 35%. Authenticate via wallet signature (timestamp+signature) or via API key (x-api-key header). Returns estimated protocol deposit, carbon metrics, and efficiency scores.",
         tags: [TAG.APPLICATIONS],
       },
     }

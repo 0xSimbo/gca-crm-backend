@@ -160,6 +160,8 @@ The `computeTotalWattsCaptured` function in `helpers/compute-watts.ts`:
 | `power_by_region_by_week`            | `Update Power By Region By Week` cron      | Weekly, Sunday 01:00 UTC |
 | `impact_leaderboard_cache_by_region` | `update-impact-leaderboard-by-region` cron | Weekly, Sunday 01:00 UTC |
 
+**Excluded wallets**: Any wallet listed in `EXCLUDED_LEADERBOARD_WALLETS` is filtered out of both caches above, which will result in `0` watts for Solar Collector even if the wallet has impact points.
+
 **Manual refresh:**
 
 ```bash

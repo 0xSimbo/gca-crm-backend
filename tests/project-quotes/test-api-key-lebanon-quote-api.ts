@@ -85,6 +85,11 @@ async function main() {
       "[lebanon-api-key] single extraction:",
       JSON.stringify(json.extraction ?? null)
     );
+    if (Number(json?.rates?.discountRate) !== 0.35) {
+      throw new Error(
+        `Expected discountRate 0.35, got ${String(json?.rates?.discountRate)}`
+      );
+    }
   }
 
   // ---- Batch (Lebanon, JSON body)

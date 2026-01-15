@@ -8,6 +8,7 @@ This guide shows how to:
 - Retrieve quotes created by your API key
 
 Lebanon quotes use a fixed blended electricity rate of **0.3474 USD/kWh** (no AI extraction).
+The protocol discount rate for Lebanon is fixed at **35%**.
 
 ---
 
@@ -122,6 +123,9 @@ You’ll receive a `quoteId` plus the computed metrics. The extraction block sho
 {
   "quoteId": "uuid",
   "regionCode": "LB",
+  "rates": {
+    "discountRate": 0.35
+  },
   "extraction": {
     "electricityPricePerKwh": 0.3474,
     "confidence": 1,

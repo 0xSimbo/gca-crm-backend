@@ -96,7 +96,7 @@ Example: `19.8235,0.01896,39.0707,-94.3561,1699564800000`
 POST /quotes/project/lebanon
 ```
 
-Create a new **Lebanon** quote using a fixed blended electricity rate of **0.3474 USD/kWh**. This endpoint does **not** require a utility bill upload and does **not** use AI extraction.
+Create a new **Lebanon** quote using a fixed blended electricity rate of **0.3474 USD/kWh** and a fixed discount rate of **35%**. This endpoint does **not** require a utility bill upload and does **not** use AI extraction.
 
 **Request (JSON):** `application/json`
 
@@ -131,6 +131,7 @@ Create a new **Lebanon** quote using a fixed blended electricity rate of **0.347
 - Response shape matches `POST /quotes/project`.
 - `extraction.utilityBillUrl` will be the sentinel string `"lebanon-fixed-rate"`.
 - `extraction.electricityPricePerKwh` will be `0.3474` with confidence `1`.
+- `rates.discountRate` will be `0.35`.
 
 ### 3. Create Project Quotes (Batch, Async)
 

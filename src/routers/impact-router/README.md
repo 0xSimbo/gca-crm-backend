@@ -190,6 +190,7 @@ The leaderboard is **not** limited to "protocol participants" anymore. In list m
 **Exclusions**:
 
 - Internal/team wallets (via `EXCLUDED_LEADERBOARD_WALLETS` list)
+- Excluded wallets are also filtered out of **region cache** and **weekly power** snapshots, so they will not appear in Solar Collector watts.
 - **Wallets with < 0.01 points** - To avoid confusion and clutter from dust wallets, wallets below this threshold are excluded. This filters out:
   - Wallets with 0 points (no historical contribution yet, typically acquired GLW during current ongoing week)
   - Dust wallets with negligible amounts (< 0.01 GLW worth over the entire period)
