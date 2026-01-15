@@ -42,8 +42,11 @@ export async function updatePowerByRegionByWeek(params?: {
     walletAddress: string;
     regionId: number;
     weekNumber: number;
-    directPoints: string;
+    inflationPoints: string;
+    steeringPoints: string;
+    vaultBonusPoints: string;
     glowWorthPoints: string;
+    directPoints: string;
   }> = [];
 
   for (const result of results) {
@@ -55,8 +58,11 @@ export async function updatePowerByRegionByWeek(params?: {
         walletAddress: result.walletAddress,
         regionId: item.regionId,
         weekNumber: item.weekNumber,
-        directPoints: item.directPoints,
+        inflationPoints: item.inflationPoints,
+        steeringPoints: item.steeringPoints,
+        vaultBonusPoints: item.vaultBonusPoints,
         glowWorthPoints: item.glowWorthPoints,
+        directPoints: item.directPoints,
       });
     }
   }

@@ -306,8 +306,11 @@ export interface RegionBreakdown {
 export interface WeeklyRegionBreakdown {
   weekNumber: number;
   regionId: number;
-  directPoints: string;
+  inflationPoints: string;
+  steeringPoints: string;
+  vaultBonusPoints: string;
   glowWorthPoints: string;
+  directPoints: string; // total of first 3
 }
 
 export interface CurrentWeekProjection {
@@ -2148,14 +2151,32 @@ export async function computeGlowImpactScores(params: {
         }
 
         if (totalEmissions > 0n) {
-          for (const regionId of regionsWithActivity) {
-            const current = regionPointsMap.get(regionId);
-            if (!current) continue;
+          // GLOW WORTH REGIONAL DISTRIBUTION:
+          // Glow Worth represents passive ownership from holding GLW tokens. Unlike
+          // direct activity points (inflation, steering, vault bonus) which only
+          // accrue in regions where the user actively participates, Glow Worth is
+          // distributed proportionally across ALL regions based on their share of
+          // total network emissions.
+          //
+          // This means a user holding GLW earns worth points from every region with
+          // emissions, even if they never staked GCTL or delegated to farms there.
+          // The regionBreakdown will include regions with directPoints="0.000000"
+          // but non-zero glowWorthPoints - this is intentional and accurate.
+          //
+          // Formula: glowWorthPoints[region] = totalGlowWorth × (regionEmissions / totalEmissions)
+          for (const [
+            regionId,
+            regionEmissions,
+          ] of totalEmissionsByRegion.entries()) {
+            const current = regionPointsMap.get(regionId) || {
+              directPointsScaled6: BigInt(0),
+              glowWorthPointsScaled6: BigInt(0),
+            };
 
-            const regionEmissions = totalEmissionsByRegion.get(regionId) || 0n;
             const distributedWorth =
               (compositionWorthScaled6 * regionEmissions) / totalEmissions;
             current.glowWorthPointsScaled6 = distributedWorth;
+            regionPointsMap.set(regionId, current);
           }
         }
       }
@@ -2192,7 +2213,12 @@ export async function computeGlowImpactScores(params: {
         const week = weeklyRow.weekNumber;
         const regionPointsMap = new Map<
           number,
-          { directPointsScaled6: bigint; glowWorthPointsScaled6: bigint }
+          {
+            inflationPointsScaled6: bigint;
+            steeringPointsScaled6: bigint;
+            vaultBonusPointsScaled6: bigint;
+            glowWorthPointsScaled6: bigint;
+          }
         >();
 
         // 1. Inflation points for this week (from rewards history)
@@ -2208,10 +2234,12 @@ export async function computeGlowImpactScores(params: {
           );
 
           const current = regionPointsMap.get(regionId) || {
-            directPointsScaled6: BigInt(0),
-            glowWorthPointsScaled6: BigInt(0),
+            inflationPointsScaled6: 0n,
+            steeringPointsScaled6: 0n,
+            vaultBonusPointsScaled6: 0n,
+            glowWorthPointsScaled6: 0n,
           };
-          current.directPointsScaled6 += inflationPts;
+          current.inflationPointsScaled6 += inflationPts;
           regionPointsMap.set(regionId, current);
         }
 
@@ -2224,10 +2252,12 @@ export async function computeGlowImpactScores(params: {
               STEERING_POINTS_PER_GLW_SCALED6
             );
             const current = regionPointsMap.get(regionId) || {
-              directPointsScaled6: BigInt(0),
-              glowWorthPointsScaled6: BigInt(0),
+              inflationPointsScaled6: 0n,
+              steeringPointsScaled6: 0n,
+              vaultBonusPointsScaled6: 0n,
+              glowWorthPointsScaled6: 0n,
             };
-            current.directPointsScaled6 += steeringPts;
+            current.steeringPointsScaled6 += steeringPts;
             regionPointsMap.set(regionId, current);
           }
         }
@@ -2247,22 +2277,32 @@ export async function computeGlowImpactScores(params: {
             BigInt(regionsWithActivity.length);
           for (const regionId of regionsWithActivity) {
             const current = regionPointsMap.get(regionId)!;
-            current.directPointsScaled6 += perRegion;
+            current.vaultBonusPointsScaled6 += perRegion;
           }
         }
 
-        // Apply weekly multiplier to all direct points so far
+        // Apply weekly multiplier to all direct points (Inflation, Steering, Vault)
         const multiplierScaled6 = BigInt(
           Math.round(weeklyRow.rolloverMultiplier * 1_000_000)
         );
         for (const [regionId, points] of regionPointsMap.entries()) {
-          points.directPointsScaled6 = applyMultiplierScaled6({
-            pointsScaled6: points.directPointsScaled6,
+          points.inflationPointsScaled6 = applyMultiplierScaled6({
+            pointsScaled6: points.inflationPointsScaled6,
+            multiplierScaled6,
+          });
+          points.steeringPointsScaled6 = applyMultiplierScaled6({
+            pointsScaled6: points.steeringPointsScaled6,
+            multiplierScaled6,
+          });
+          points.vaultBonusPointsScaled6 = applyMultiplierScaled6({
+            pointsScaled6: points.vaultBonusPointsScaled6,
             multiplierScaled6,
           });
         }
 
         // 4. GlowWorth continuous points for this week (no multiplier)
+        // See "GLOW WORTH REGIONAL DISTRIBUTION" comment above for the rationale
+        // on distributing worth across all regions with emissions.
         const weeklyWorthPts = BigInt(
           Math.floor(parseFloat(weeklyRow.continuousPoints) * 1_000_000)
         );
@@ -2272,14 +2312,18 @@ export async function computeGlowImpactScores(params: {
             weekEmissions.byRegion.values()
           ).reduce((sum, val) => sum + val, 0n);
           if (totalEmissions > 0n) {
-            // Distribute worth points across ALL regions that had emissions this week
+            // Distribute worth points across ALL regions that had emissions this week.
+            // Glow Worth is passive ownership - a GLW holder earns from every region
+            // proportional to emissions, even without direct participation there.
             for (const [
               regionId,
               regionEmissions,
             ] of weekEmissions.byRegion.entries()) {
               const current = regionPointsMap.get(regionId) || {
-                directPointsScaled6: BigInt(0),
-                glowWorthPointsScaled6: BigInt(0),
+                inflationPointsScaled6: 0n,
+                steeringPointsScaled6: 0n,
+                vaultBonusPointsScaled6: 0n,
+                glowWorthPointsScaled6: 0n,
               };
               const distributedWorth =
                 (weeklyWorthPts * regionEmissions) / totalEmissions;
@@ -2291,11 +2335,21 @@ export async function computeGlowImpactScores(params: {
 
         // Convert this week's region map to the output format
         for (const [regionId, points] of regionPointsMap.entries()) {
+          const directTotal =
+            points.inflationPointsScaled6 +
+            points.steeringPointsScaled6 +
+            points.vaultBonusPointsScaled6;
+
           weeklyRegionBreakdown.push({
             weekNumber: week,
             regionId,
-            directPoints: formatPointsScaled6(points.directPointsScaled6),
+            inflationPoints: formatPointsScaled6(points.inflationPointsScaled6),
+            steeringPoints: formatPointsScaled6(points.steeringPointsScaled6),
+            vaultBonusPoints: formatPointsScaled6(
+              points.vaultBonusPointsScaled6
+            ),
             glowWorthPoints: formatPointsScaled6(points.glowWorthPointsScaled6),
+            directPoints: formatPointsScaled6(directTotal),
           });
         }
       }

@@ -2197,11 +2197,25 @@ export const powerByRegionByWeek = pgTable(
     walletAddress: varchar("wallet_address", { length: 42 }).notNull(),
     regionId: integer("region_id").notNull(),
     weekNumber: integer("week_number").notNull(),
-    directPoints: numeric("direct_points", {
+    // Granular point components
+    inflationPoints: numeric("inflation_points", {
+      precision: 20,
+      scale: 6,
+    }).notNull(),
+    steeringPoints: numeric("steering_points", {
+      precision: 20,
+      scale: 6,
+    }).notNull(),
+    vaultBonusPoints: numeric("vault_bonus_points", {
       precision: 20,
       scale: 6,
     }).notNull(),
     glowWorthPoints: numeric("glow_worth_points", {
+      precision: 20,
+      scale: 6,
+    }).notNull(),
+    // Totals for legacy support
+    directPoints: numeric("direct_points", {
       precision: 20,
       scale: 6,
     }).notNull(),

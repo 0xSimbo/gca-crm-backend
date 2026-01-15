@@ -47,6 +47,30 @@ For each week in the requested week range, we compute:
 
 All points are computed internally with **6-decimal fixed-point precision** and returned as strings.
 
+### Regional Breakdown
+
+The `regionBreakdown` field (returned for single-wallet queries) shows how a user's points are distributed across regions. Points are categorized as:
+
+- **Direct Points** (`directPoints`): Points from active participation - inflation rewards, GCTL steering, and vault bonus. Only regions where the user actively participated will have non-zero direct points.
+
+- **Glow Worth Points** (`glowWorthPoints`): Points from passive GLW ownership. Unlike direct points, Glow Worth is distributed proportionally across **ALL regions with emissions**, not just regions where the user has direct activity.
+
+**Why Glow Worth spans all regions:**
+
+Glow Worth represents passive ownership from holding GLW tokens. The value of that GLW is tied to the entire protocol's emissions across all regions. A user holding 1M GLW earns worth points from every active region, even if they never staked GCTL or delegated to farms there.
+
+**Formula:**
+
+\[
+\text{glowWorthPoints}[\text{region}] = \text{totalGlowWorth} \times \frac{\text{regionEmissions}}{\text{totalEmissions}}
+\]
+
+**Implications for `regionBreakdown`:**
+
+- Regions may appear with `directPoints: "0.000000"` but non-zero `glowWorthPoints` - this is intentional and accurate
+- The sum of all regional `glowWorthPoints` equals the wallet's total `continuousPoints`
+- The sum of all regional `directPoints` equals the wallet's total `rolloverPoints` (after multiplier)
+
 ## Leaderboard timing: “do I move up instantly?”
 
 ### What updates instantly (next fetch)

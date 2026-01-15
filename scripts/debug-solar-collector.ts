@@ -198,18 +198,32 @@ async function debugSolarCollector(walletAddress: string) {
       const weekNumber = getCurrentEpoch(dropDate.getTime() / 1000);
       const key = `${weekNumber}-${regionId}`;
 
-      // Prefer weekly snapshot, fall back to latest aggregate
+      // Check if network data exists for this week-region
+      const hasNetworkDataForWeek = networkPowerMap.has(key);
+
+      // FALLBACK LOGIC:
+      // - If weekly snapshot exists → use it
+      // - If NO network data for this week-region (data gap) → use fallback
+      // - If network data EXISTS but user has no row → user had 0 power
       const userPower = userPowerMap.has(key)
         ? userPowerMap.get(key)!
-        : latestUserPower;
+        : hasNetworkDataForWeek
+        ? 0 // Network has data but user doesn't → user had 0 power
+        : latestUserPower; // No data at all → fallback
 
-      const totalNetworkPower = networkPowerMap.has(key)
+      const totalNetworkPower = hasNetworkDataForWeek
         ? networkPowerMap.get(key)!
         : fallbackNetworkPowerMap.get(regionId) || 0;
 
+      const usedFallback = !hasNetworkDataForWeek && totalNetworkPower > 0;
+      const hadZeroPower = hasNetworkDataForWeek && !userPowerMap.has(key);
+
       if (totalNetworkPower <= 0 || userPower <= 0) {
+        const reason = hadZeroPower
+          ? "User had 0 power this week"
+          : "No data available";
         console.log(
-          `   ${idx + 1}. ${farm.farmName || "Unknown"} (SKIP: Power=0)`
+          `   ${idx + 1}. ${farm.farmName || "Unknown"} (SKIP: ${reason})`
         );
         return;
       }
@@ -228,11 +242,12 @@ async function debugSolarCollector(walletAddress: string) {
       const wattsCaptured = capacityWatts * (userPower / totalNetworkPower);
       regionWatts += wattsCaptured;
 
+      const sourceLabel = usedFallback ? " [FALLBACK]" : "";
       console.log(
         `   ${idx + 1}. ${farm.farmName || "Unknown"} (${farm.farmId.slice(
           0,
           8
-        )}...)`
+        )}...)${sourceLabel}`
       );
       console.log(
         `      Week: ${weekNumber} | Share: ${sharePercent.toFixed(

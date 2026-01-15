@@ -1,411 +1,481 @@
 {
-  "walletAddress": "0x77f41144e787cb8cd29a37413a71f53f92ee050c",
-  "generatedAt": "2026-01-14T19:09:23.518Z",
+  "walletAddress": "0x3d06bffcbb4a62791756b6008c2f0001aa61963d",
+  "generatedAt": "2026-01-15T00:28:25.683Z",
+  "summary": {
+    "totalWatts": 1868,
+    "totalPanels": 4,
+    "farmsCount": 22,
+    "farmsWithSnapshots": 20,
+    "farmsWithZeroPower": 2,
+    "farmsUsingFallback": 0,
+    "regionTotals": {
+      "2": 1108,
+      "3": 746,
+      "4": 15
+    }
+  },
   "weeks": [
     {
-      "weekNumber": 97,
-      "regionId": 3,
-      "directPoints": 19430.930993,
-      "worthPoints": 28.651779,
-      "totalPoints": 19459.582772,
-      "networkTotalPower": 71052.81021,
-      "sharePercent": 27.387492084389443
-    },
-    {
-      "weekNumber": 97,
-      "regionId": 2,
-      "directPoints": 3242.03618,
-      "worthPoints": 42.295483,
-      "totalPoints": 3284.331663,
-      "networkTotalPower": 103562.443709,
-      "sharePercent": 3.171353963246213
-    },
-    {
-      "weekNumber": 97,
-      "regionId": 4,
-      "directPoints": 3242.03618,
-      "worthPoints": 28.651779,
-      "totalPoints": 3270.687959,
-      "networkTotalPower": 70405.254419,
-      "sharePercent": 4.645516852386165
-    },
-    {
-      "weekNumber": 98,
-      "regionId": 4,
-      "directPoints": 18790.898181,
-      "worthPoints": 96.538244,
-      "totalPoints": 18887.436425,
-      "networkTotalPower": 265412.899962,
-      "sharePercent": 7.116246583230948
-    },
-    {
       "weekNumber": 98,
       "regionId": 2,
-      "directPoints": 13641.670317,
-      "worthPoints": 47.907358,
-      "totalPoints": 13689.577675,
-      "networkTotalPower": 125859.731951,
-      "sharePercent": 10.876852717539283
+      "inflationPoints": 3927.93582,
+      "steeringPoints": 16.030959,
+      "vaultBonusPoints": 466.460364,
+      "glowWorthPoints": 10.173814,
+      "totalPoints": 4420.600957,
+      "networkTotalPower": 125859.731944,
+      "sharePercent": 3.512323511833714
     },
     {
       "weekNumber": 98,
       "regionId": 3,
-      "directPoints": 29057.390196,
-      "worthPoints": 34.315914,
-      "totalPoints": 29091.70611,
-      "networkTotalPower": 96463.217895,
-      "sharePercent": 30.15834091463366
+      "inflationPoints": 2085.550528,
+      "steeringPoints": 0,
+      "vaultBonusPoints": 466.460364,
+      "glowWorthPoints": 7.287476,
+      "totalPoints": 2559.2983679999998,
+      "networkTotalPower": 96463.217892,
+      "sharePercent": 2.6531339342892175
     },
     {
-      "weekNumber": 99,
+      "weekNumber": 98,
       "regionId": 4,
-      "directPoints": 21499.868862,
-      "worthPoints": 98.350939,
-      "totalPoints": 21598.219801,
-      "networkTotalPower": 270889.591623,
-      "sharePercent": 7.97307112155807
+      "inflationPoints": 0,
+      "steeringPoints": 0,
+      "vaultBonusPoints": 0,
+      "glowWorthPoints": 20.50128,
+      "totalPoints": 20.50128,
+      "networkTotalPower": 265412.899947,
+      "sharePercent": 0.007724296748234119
     },
     {
       "weekNumber": 99,
       "regionId": 2,
-      "directPoints": 16320.195059,
-      "worthPoints": 48.896395,
-      "totalPoints": 16369.091454,
-      "networkTotalPower": 128653.363668,
-      "sharePercent": 12.723407291737596
+      "inflationPoints": 1239.19299,
+      "steeringPoints": 5.04246,
+      "vaultBonusPoints": 141.946546,
+      "glowWorthPoints": 10.324087,
+      "totalPoints": 1396.506083,
+      "networkTotalPower": 128653.363666,
+      "sharePercent": 1.0854796510610496
     },
     {
       "weekNumber": 99,
       "regionId": 3,
-      "directPoints": 34722.508658,
-      "worthPoints": 34.954228,
-      "totalPoints": 34757.462886,
-      "networkTotalPower": 104732.973047,
-      "sharePercent": 33.186743271770034
+      "inflationPoints": 656.636172,
+      "steeringPoints": 0,
+      "vaultBonusPoints": 141.946546,
+      "glowWorthPoints": 7.380309,
+      "totalPoints": 805.963027,
+      "networkTotalPower": 104732.973046,
+      "sharePercent": 0.7695408652688693
     },
     {
-      "weekNumber": 100,
+      "weekNumber": 99,
       "regionId": 4,
-      "directPoints": 12026.087383,
-      "worthPoints": 108.130335,
-      "totalPoints": 12134.217718,
-      "networkTotalPower": 249779.893737,
-      "sharePercent": 4.857964160548665
+      "inflationPoints": 0,
+      "steeringPoints": 0,
+      "vaultBonusPoints": 0,
+      "glowWorthPoints": 20.766024,
+      "totalPoints": 20.766024,
+      "networkTotalPower": 270889.59162,
+      "sharePercent": 0.007665862640130625
     },
     {
       "weekNumber": 100,
       "regionId": 2,
-      "directPoints": 9827.392353,
-      "worthPoints": 54.315699,
-      "totalPoints": 9881.708052,
-      "networkTotalPower": 128164.592489,
-      "sharePercent": 7.710170071229398
+      "inflationPoints": 1652.685405,
+      "steeringPoints": 6.647812,
+      "vaultBonusPoints": 182.369306,
+      "glowWorthPoints": 10.895862,
+      "totalPoints": 1852.598385,
+      "networkTotalPower": 128164.592488,
+      "sharePercent": 1.4454837713258895
     },
     {
       "weekNumber": 100,
       "regionId": 3,
-      "directPoints": 19894.712027,
-      "worthPoints": 42.498857,
-      "totalPoints": 19937.210884,
-      "networkTotalPower": 103707.285323,
-      "sharePercent": 19.224503680628466
+      "inflationPoints": 1160.968583,
+      "steeringPoints": 0,
+      "vaultBonusPoints": 182.369306,
+      "glowWorthPoints": 8.525375,
+      "totalPoints": 1351.8632639999998,
+      "networkTotalPower": 103707.28532,
+      "sharePercent": 1.3035374128526074
     },
     {
-      "weekNumber": 101,
+      "weekNumber": 100,
       "regionId": 4,
-      "directPoints": 36215.66949,
-      "worthPoints": 112.39353,
-      "totalPoints": 36328.06302,
-      "networkTotalPower": 271300.800534,
-      "sharePercent": 13.390326511567846
+      "inflationPoints": 0,
+      "steeringPoints": 0,
+      "vaultBonusPoints": 0,
+      "glowWorthPoints": 21.69121,
+      "totalPoints": 21.69121,
+      "networkTotalPower": 249779.893735,
+      "sharePercent": 0.008684129725434564
     },
     {
       "weekNumber": 101,
       "regionId": 2,
-      "directPoints": 31582.582349,
-      "worthPoints": 56.281917,
-      "totalPoints": 31638.864266,
-      "networkTotalPower": 154993.650504,
-      "sharePercent": 20.413006702609074
+      "inflationPoints": 1307.349433,
+      "steeringPoints": 5.258722,
+      "vaultBonusPoints": 144.248428,
+      "glowWorthPoints": 10.987341,
+      "totalPoints": 1467.843924,
+      "networkTotalPower": 154993.650503,
+      "sharePercent": 0.947034874807074
     },
     {
       "weekNumber": 101,
       "regionId": 3,
-      "directPoints": 72499.92177,
-      "worthPoints": 55.324808,
-      "totalPoints": 72555.246578,
-      "networkTotalPower": 177379.027166,
-      "sharePercent": 40.9040728981444
+      "inflationPoints": 1153.77497,
+      "steeringPoints": 0,
+      "vaultBonusPoints": 144.248428,
+      "glowWorthPoints": 10.800495,
+      "totalPoints": 1308.823893,
+      "networkTotalPower": 177379.027162,
+      "sharePercent": 0.7378684582617837
     },
     {
-      "weekNumber": 102,
+      "weekNumber": 101,
       "regionId": 4,
-      "directPoints": 10661.624729,
-      "worthPoints": 117.552766,
-      "totalPoints": 10779.177495,
-      "networkTotalPower": 244210.158851,
-      "sharePercent": 4.413893977922803
+      "inflationPoints": 0,
+      "steeringPoints": 0,
+      "vaultBonusPoints": 0,
+      "glowWorthPoints": 21.941436,
+      "totalPoints": 21.941436,
+      "networkTotalPower": 271300.800528,
+      "sharePercent": 0.008087494013028355
     },
     {
       "weekNumber": 102,
       "regionId": 2,
-      "directPoints": 9720.757285,
-      "worthPoints": 58.865444,
-      "totalPoints": 9779.622728999999,
+      "inflationPoints": 1308.005149,
+      "steeringPoints": 5.26136,
+      "vaultBonusPoints": 142.601412,
+      "glowWorthPoints": 11.148582,
+      "totalPoints": 1467.016503,
       "networkTotalPower": 127437.83849,
-      "sharePercent": 7.674033744512547
+      "sharePercent": 1.151162417993394
     },
     {
       "weekNumber": 102,
       "regionId": 3,
-      "directPoints": 22317.022514,
-      "worthPoints": 57.8644,
-      "totalPoints": 22374.886914,
+      "inflationPoints": 1154.35366,
+      "steeringPoints": 0,
+      "vaultBonusPoints": 142.601412,
+      "glowWorthPoints": 10.958993,
+      "totalPoints": 1307.914065,
       "networkTotalPower": 123555.617769,
-      "sharePercent": 18.1091619450539
+      "sharePercent": 1.0585630088024653
     },
     {
-      "weekNumber": 103,
+      "weekNumber": 102,
       "regionId": 4,
-      "directPoints": 10544.712934,
-      "worthPoints": 122.316552,
-      "totalPoints": 10667.029486,
-      "networkTotalPower": 250962.978909,
-      "sharePercent": 4.250439460183448
+      "inflationPoints": 0,
+      "steeringPoints": 0,
+      "vaultBonusPoints": 0,
+      "glowWorthPoints": 22.263429,
+      "totalPoints": 22.263429,
+      "networkTotalPower": 244210.158844,
+      "sharePercent": 0.009116504041185997
     },
     {
       "weekNumber": 103,
       "regionId": 2,
-      "directPoints": 9718.778214,
-      "worthPoints": 61.260936,
-      "totalPoints": 9780.03915,
-      "networkTotalPower": 128917.822783,
-      "sharePercent": 7.58625839226449
+      "inflationPoints": 1308.180235,
+      "steeringPoints": 20.606395,
+      "vaultBonusPoints": 140.954396,
+      "glowWorthPoints": 11.548722,
+      "totalPoints": 1481.289748,
+      "networkTotalPower": 128917.822781,
+      "sharePercent": 1.1490185887767828
     },
     {
       "weekNumber": 103,
       "regionId": 3,
-      "directPoints": 22314.621937,
-      "worthPoints": 60.209336,
-      "totalPoints": 22374.831273,
-      "networkTotalPower": 126000.528525,
-      "sharePercent": 17.75772811029167
+      "inflationPoints": 1154.319919,
+      "steeringPoints": 0,
+      "vaultBonusPoints": 140.954396,
+      "glowWorthPoints": 11.350477,
+      "totalPoints": 1306.6247919999998,
+      "networkTotalPower": 126000.528523,
+      "sharePercent": 1.0369994533487135
     },
     {
-      "weekNumber": 104,
+      "weekNumber": 103,
       "regionId": 4,
-      "directPoints": 10292.542203,
-      "worthPoints": 127.775108,
-      "totalPoints": 10420.317311,
-      "networkTotalPower": 250780.833574,
-      "sharePercent": 4.15514900500767
+      "inflationPoints": 0,
+      "steeringPoints": 0,
+      "vaultBonusPoints": 0,
+      "glowWorthPoints": 23.058738,
+      "totalPoints": 23.058738,
+      "networkTotalPower": 250962.978906,
+      "sharePercent": 0.009188103400954935
     },
     {
       "weekNumber": 104,
       "regionId": 2,
-      "directPoints": 9722.173159,
-      "worthPoints": 63.994795,
-      "totalPoints": 9786.167954,
+      "inflationPoints": 1308.900942,
+      "steeringPoints": 20.617748,
+      "vaultBonusPoints": 139.271708,
+      "glowWorthPoints": 11.993919,
+      "totalPoints": 1480.784317,
       "networkTotalPower": 129166.464571,
-      "sharePercent": 7.576399947542697
+      "sharePercent": 1.146415458469133
     },
     {
       "weekNumber": 104,
       "regionId": 3,
-      "directPoints": 17727.87891,
-      "worthPoints": 62.896266,
-      "totalPoints": 17790.775176,
+      "inflationPoints": 744.328172,
+      "steeringPoints": 0,
+      "vaultBonusPoints": 139.271708,
+      "glowWorthPoints": 11.788033,
+      "totalPoints": 895.387913,
       "networkTotalPower": 124940.77114,
-      "sharePercent": 14.239367192687554
+      "sharePercent": 0.7166499012533628
+    },
+    {
+      "weekNumber": 104,
+      "regionId": 4,
+      "inflationPoints": 0,
+      "steeringPoints": 0,
+      "vaultBonusPoints": 0,
+      "glowWorthPoints": 23.94764,
+      "totalPoints": 23.94764,
+      "networkTotalPower": 250780.833571,
+      "sharePercent": 0.009549230560803621
+    },
+    {
+      "weekNumber": 105,
+      "regionId": 2,
+      "inflationPoints": 1250.233957,
+      "steeringPoints": 20.352369,
+      "vaultBonusPoints": 137.554295,
+      "glowWorthPoints": 12.270487,
+      "totalPoints": 1420.411108,
+      "networkTotalPower": 129286.774277,
+      "sharePercent": 1.0986515178704477
+    },
+    {
+      "weekNumber": 105,
+      "regionId": 3,
+      "inflationPoints": 789.099812,
+      "steeringPoints": 0,
+      "vaultBonusPoints": 137.554295,
+      "glowWorthPoints": 12.951967,
+      "totalPoints": 939.6060739999999,
+      "networkTotalPower": 140278.032868,
+      "sharePercent": 0.6698169733276473
     },
     {
       "weekNumber": 105,
       "regionId": 4,
-      "directPoints": 10160.563779,
-      "worthPoints": 131.295207,
-      "totalPoints": 10291.858986,
-      "networkTotalPower": 246986.624214,
-      "sharePercent": 4.166970182596885
-    },
-    {
-      "weekNumber": 105,
-      "regionId": 2,
-      "directPoints": 9587.081126,
-      "worthPoints": 65.757799,
-      "totalPoints": 9652.838925,
-      "networkTotalPower": 129286.774279,
-      "sharePercent": 7.46622303699003
-    },
-    {
-      "weekNumber": 105,
-      "regionId": 3,
-      "directPoints": 18108.683293,
-      "worthPoints": 69.409869,
-      "totalPoints": 18178.093161999997,
-      "networkTotalPower": 140278.032871,
-      "sharePercent": 12.958617104872443
-    },
-    {
-      "weekNumber": 106,
-      "regionId": 4,
-      "directPoints": 12774.444398,
-      "worthPoints": 136.234968,
-      "totalPoints": 12910.679366,
-      "networkTotalPower": 243592.55738,
-      "sharePercent": 5.3001124110124485
+      "inflationPoints": 0,
+      "steeringPoints": 0,
+      "vaultBonusPoints": 0,
+      "glowWorthPoints": 24.499849,
+      "totalPoints": 24.499849,
+      "networkTotalPower": 246986.624211,
+      "sharePercent": 0.009919504377317957
     },
     {
       "weekNumber": 106,
       "regionId": 2,
-      "directPoints": 12892.289675,
-      "worthPoints": 68.231825,
-      "totalPoints": 12960.5215,
-      "networkTotalPower": 128397.990258,
-      "sharePercent": 10.094022090188034
+      "inflationPoints": 1124.721826,
+      "steeringPoints": 20.352369,
+      "vaultBonusPoints": 135.811583,
+      "glowWorthPoints": 12.699666,
+      "totalPoints": 1293.585444,
+      "networkTotalPower": 128397.990248,
+      "sharePercent": 1.007481068435298
     },
     {
       "weekNumber": 106,
       "regionId": 3,
-      "directPoints": 22709.593791,
-      "worthPoints": 72.021298,
-      "totalPoints": 22781.615089,
-      "networkTotalPower": 137339.079711,
-      "sharePercent": 16.58786059797322
+      "inflationPoints": 789.099812,
+      "steeringPoints": 0,
+      "vaultBonusPoints": 135.811583,
+      "glowWorthPoints": 13.404983,
+      "totalPoints": 938.316378,
+      "networkTotalPower": 137339.079708,
+      "sharePercent": 0.6832114937678172
     },
     {
-      "weekNumber": 107,
+      "weekNumber": 106,
       "regionId": 4,
-      "directPoints": 10217.103942,
-      "worthPoints": 139.463283,
-      "totalPoints": 10356.567224999999,
-      "networkTotalPower": 245023.424612,
-      "sharePercent": 4.226766172009819
+      "inflationPoints": 0,
+      "steeringPoints": 0,
+      "vaultBonusPoints": 0,
+      "glowWorthPoints": 25.356769,
+      "totalPoints": 25.356769,
+      "networkTotalPower": 243592.557375,
+      "sharePercent": 0.010409500714327807
     },
     {
       "weekNumber": 107,
       "regionId": 2,
-      "directPoints": 10311.380163,
-      "worthPoints": 69.848693,
-      "totalPoints": 10381.228856,
-      "networkTotalPower": 128818.407531,
-      "sharePercent": 8.058808562356873
+      "inflationPoints": 1124.721826,
+      "steeringPoints": 20.352369,
+      "vaultBonusPoints": 134.065123,
+      "glowWorthPoints": 13.056124,
+      "totalPoints": 1292.195442,
+      "networkTotalPower": 128818.407529,
+      "sharePercent": 1.003113970112615
     },
     {
       "weekNumber": 107,
       "regionId": 3,
-      "directPoints": 17000.922173,
-      "worthPoints": 73.727963,
-      "totalPoints": 17074.650136,
-      "networkTotalPower": 140485.284992,
-      "sharePercent": 12.154048829364815
+      "inflationPoints": 685.100181,
+      "steeringPoints": 0,
+      "vaultBonusPoints": 134.065123,
+      "glowWorthPoints": 13.781237,
+      "totalPoints": 832.946541,
+      "networkTotalPower": 140485.28499,
+      "sharePercent": 0.5929066101544306
     },
     {
-      "weekNumber": 108,
+      "weekNumber": 107,
       "regionId": 4,
-      "directPoints": 12846.59304,
-      "worthPoints": 142.712574,
-      "totalPoints": 12989.305613999999,
-      "networkTotalPower": 248488.91087,
-      "sharePercent": 5.227318019352386
+      "inflationPoints": 0,
+      "steeringPoints": 0,
+      "vaultBonusPoints": 0,
+      "glowWorthPoints": 26.06849,
+      "totalPoints": 26.06849,
+      "networkTotalPower": 245023.42461,
+      "sharePercent": 0.010639182780786292
     },
     {
       "weekNumber": 108,
       "regionId": 2,
-      "directPoints": 13726.10516,
-      "worthPoints": 71.476065,
-      "totalPoints": 13797.581225,
-      "networkTotalPower": 128712.757462,
-      "sharePercent": 10.719668739187314
+      "inflationPoints": 1051.637661,
+      "steeringPoints": 20.352369,
+      "vaultBonusPoints": 132.313584,
+      "glowWorthPoints": 13.412288,
+      "totalPoints": 1217.715902,
+      "networkTotalPower": 128712.757457,
+      "sharePercent": 0.9460724220804694
     },
     {
       "weekNumber": 108,
       "regionId": 3,
-      "directPoints": 21326.365828,
-      "worthPoints": 75.445717,
-      "totalPoints": 21401.811545,
+      "inflationPoints": 685.100181,
+      "steeringPoints": 0,
+      "vaultBonusPoints": 132.313584,
+      "glowWorthPoints": 14.157182,
+      "totalPoints": 831.570947,
       "networkTotalPower": 139622.836321,
-      "sharePercent": 15.328303097779896
+      "sharePercent": 0.595583766174307
     },
     {
-      "weekNumber": 109,
+      "weekNumber": 108,
       "regionId": 4,
-      "directPoints": 15531.662208,
-      "worthPoints": 146.046127,
-      "totalPoints": 15677.708335,
-      "networkTotalPower": 246108.426303,
-      "sharePercent": 6.370244436774448
+      "inflationPoints": 0,
+      "steeringPoints": 0,
+      "vaultBonusPoints": 0,
+      "glowWorthPoints": 26.779624,
+      "totalPoints": 26.779624,
+      "networkTotalPower": 248488.910868,
+      "sharePercent": 0.010776989567242953
     },
     {
       "weekNumber": 109,
       "regionId": 2,
-      "directPoints": 16556.969592,
-      "worthPoints": 72.954947,
-      "totalPoints": 16629.924539,
-      "networkTotalPower": 133923.01355,
-      "sharePercent": 12.417525635197297
+      "inflationPoints": 1050.666902,
+      "steeringPoints": 20.333582,
+      "vaultBonusPoints": 130.562047,
+      "glowWorthPoints": 13.735999,
+      "totalPoints": 1215.29853,
+      "networkTotalPower": 133923.013547,
+      "sharePercent": 0.9074605609688535
     },
     {
       "weekNumber": 109,
       "regionId": 3,
-      "directPoints": 25668.863497,
-      "worthPoints": 77.006734,
-      "totalPoints": 25745.870230999997,
-      "networkTotalPower": 141618.408948,
-      "sharePercent": 18.17974825607133
+      "inflationPoints": 684.467771,
+      "steeringPoints": 0,
+      "vaultBonusPoints": 130.562047,
+      "glowWorthPoints": 14.498872,
+      "totalPoints": 829.52869,
+      "networkTotalPower": 141618.408947,
+      "sharePercent": 0.585749194732478
     },
     {
-      "weekNumber": 110,
+      "weekNumber": 109,
       "regionId": 4,
-      "directPoints": 10349.984966,
-      "worthPoints": 148.93726,
-      "totalPoints": 10498.922226,
-      "networkTotalPower": 250236.940428,
-      "sharePercent": 4.195592468499202
+      "inflationPoints": 0,
+      "steeringPoints": 0,
+      "vaultBonusPoints": 0,
+      "glowWorthPoints": 27.497649,
+      "totalPoints": 27.497649,
+      "networkTotalPower": 246108.426298,
+      "sharePercent": 0.011172981524291458
     },
     {
       "weekNumber": 110,
       "regionId": 2,
-      "directPoints": 11033.491171,
-      "worthPoints": 74.397391,
-      "totalPoints": 11107.888562,
-      "networkTotalPower": 126985.818786,
-      "sharePercent": 8.747345702215236
+      "inflationPoints": 1313.313493,
+      "steeringPoints": 25.416587,
+      "vaultBonusPoints": 239.021528,
+      "glowWorthPoints": 13.98833,
+      "totalPoints": 1591.739938,
+      "networkTotalPower": 126985.818782,
+      "sharePercent": 1.253478501195935
     },
     {
       "weekNumber": 110,
       "regionId": 3,
-      "directPoints": 15738.455182,
-      "worthPoints": 78.529288,
-      "totalPoints": 15816.98447,
-      "networkTotalPower": 129925.077961,
-      "sharePercent": 12.173927249632154
+      "inflationPoints": 809.100592,
+      "steeringPoints": 0,
+      "vaultBonusPoints": 239.021528,
+      "glowWorthPoints": 14.765216,
+      "totalPoints": 1062.887336,
+      "networkTotalPower": 129925.077955,
+      "sharePercent": 0.8180771200831103
+    },
+    {
+      "weekNumber": 110,
+      "regionId": 4,
+      "inflationPoints": 0,
+      "steeringPoints": 0,
+      "vaultBonusPoints": 0,
+      "glowWorthPoints": 28.003448,
+      "totalPoints": 28.003448,
+      "networkTotalPower": 250236.940425,
+      "sharePercent": 0.01119077301394399
     },
     {
       "weekNumber": 111,
       "regionId": 2,
-      "directPoints": 30203.505735,
-      "worthPoints": 75.257757,
-      "totalPoints": 30278.763492,
-      "networkTotalPower": 114624.936044,
-      "sharePercent": 26.41551178739779
+      "inflationPoints": 1032.752327,
+      "steeringPoints": 19.986881,
+      "vaultBonusPoints": 188.519431,
+      "glowWorthPoints": 13.412251,
+      "totalPoints": 1254.6708899999999,
+      "networkTotalPower": 153251.646329,
+      "sharePercent": 0.8186997791243804
     },
     {
       "weekNumber": 111,
       "regionId": 3,
-      "directPoints": 30203.505735,
-      "worthPoints": 79.437437,
-      "totalPoints": 30282.943172,
-      "networkTotalPower": 122912.730496,
-      "sharePercent": 24.637759693236582
+      "inflationPoints": 636.253663,
+      "steeringPoints": 0,
+      "vaultBonusPoints": 188.519431,
+      "glowWorthPoints": 14.157143,
+      "totalPoints": 838.930237,
+      "networkTotalPower": 172656.045726,
+      "sharePercent": 0.4858968207411383
     },
     {
       "weekNumber": 111,
       "regionId": 4,
-      "directPoints": 30203.505735,
-      "worthPoints": 150.670672,
-      "totalPoints": 30354.176407,
-      "networkTotalPower": 207993.632731,
-      "sharePercent": 14.593800785362177
+      "inflationPoints": 0,
+      "steeringPoints": 0,
+      "vaultBonusPoints": 0,
+      "glowWorthPoints": 26.852154,
+      "totalPoints": 26.852154,
+      "networkTotalPower": 264130.607869,
+      "sharePercent": 0.01016624094293448
     }
   ],
   "farms": [
@@ -415,9 +485,11 @@
       "weekNumber": 98,
       "finalizedAt": "2025-10-09T21:09:23.000Z",
       "capacityWatts": 11700,
-      "userPower": 29091.70611,
-      "networkPower": 96463.217895,
-      "wattsCaptured": 3528.525887012138
+      "userPower": 2559.2983679999998,
+      "networkPower": 96463.217892,
+      "wattsCaptured": 310.41667031183846,
+      "usedFallback": false,
+      "hadZeroPower": false
     },
     {
       "farmName": "Emerald Crossing",
@@ -425,9 +497,11 @@
       "weekNumber": 111,
       "finalizedAt": "2026-01-06T19:19:35.000Z",
       "capacityWatts": 7110,
-      "userPower": 30354.176407,
-      "networkPower": 207993.632731,
-      "wattsCaptured": 1037.6192358392507
+      "userPower": 26.852154,
+      "networkPower": 264130.607869,
+      "wattsCaptured": 0.7228197310426415,
+      "usedFallback": false,
+      "hadZeroPower": false
     },
     {
       "farmName": "Spirited Hills",
@@ -435,9 +509,11 @@
       "weekNumber": 105,
       "finalizedAt": "2025-11-25T18:02:35.000Z",
       "capacityWatts": 4740,
-      "userPower": 9652.838925,
-      "networkPower": 129286.774279,
-      "wattsCaptured": 353.8989719533274
+      "userPower": 1420.411108,
+      "networkPower": 129286.774277,
+      "wattsCaptured": 52.07608194705922,
+      "usedFallback": false,
+      "hadZeroPower": false
     },
     {
       "farmName": "Exo Flats",
@@ -445,9 +521,11 @@
       "weekNumber": 104,
       "finalizedAt": "2025-11-18T18:01:47.000Z",
       "capacityWatts": 18960,
-      "userPower": 17790.775176,
+      "userPower": 895.387913,
       "networkPower": 124940.77114,
-      "wattsCaptured": 2699.7840197335604
+      "wattsCaptured": 135.8768212776376,
+      "usedFallback": false,
+      "hadZeroPower": false
     },
     {
       "farmName": "Lucid Cypress",
@@ -455,9 +533,11 @@
       "weekNumber": 103,
       "finalizedAt": "2025-11-11T18:02:35.000Z",
       "capacityWatts": 8100,
-      "userPower": 10667.029486,
-      "networkPower": 250962.978909,
-      "wattsCaptured": 344.2855962748593
+      "userPower": 23.058738,
+      "networkPower": 250962.978906,
+      "wattsCaptured": 0.7442363754773498,
+      "usedFallback": false,
+      "hadZeroPower": false
     },
     {
       "farmName": "Mellow Pinnacle",
@@ -465,9 +545,11 @@
       "weekNumber": 108,
       "finalizedAt": "2025-12-20T01:02:59.000Z",
       "capacityWatts": 8690,
-      "userPower": 13797.581225,
-      "networkPower": 128712.757462,
-      "wattsCaptured": 931.5392134353776
+      "userPower": 1217.715902,
+      "networkPower": 128712.757457,
+      "wattsCaptured": 82.21369347879279,
+      "usedFallback": false,
+      "hadZeroPower": false
     },
     {
       "farmName": "Radiative Field",
@@ -475,9 +557,11 @@
       "weekNumber": 98,
       "finalizedAt": "2025-10-10T13:13:47.000Z",
       "capacityWatts": 24885,
-      "userPower": 13689.577675,
-      "networkPower": 125859.731951,
-      "wattsCaptured": 2706.7047987596507
+      "userPower": 4420.600957,
+      "networkPower": 125859.731944,
+      "wattsCaptured": 874.0417059198197,
+      "usedFallback": false,
+      "hadZeroPower": false
     },
     {
       "farmName": "Sandstone Pass",
@@ -485,9 +569,11 @@
       "weekNumber": 104,
       "finalizedAt": "2025-11-21T02:29:47.000Z",
       "capacityWatts": 53100,
-      "userPower": 10420.317311,
-      "networkPower": 250780.833574,
-      "wattsCaptured": 2206.3841216590727
+      "userPower": 23.94764,
+      "networkPower": 250780.833571,
+      "wattsCaptured": 5.0706414277867236,
+      "usedFallback": false,
+      "hadZeroPower": false
     },
     {
       "farmName": "Gleaming Meadow",
@@ -495,9 +581,11 @@
       "weekNumber": 101,
       "finalizedAt": "2025-10-28T18:06:23.000Z",
       "capacityWatts": 7900,
-      "userPower": 36328.06302,
-      "networkPower": 271300.800534,
-      "wattsCaptured": 1057.8357944138597
+      "userPower": 21.941436,
+      "networkPower": 271300.800528,
+      "wattsCaptured": 0.6389120270292401,
+      "usedFallback": false,
+      "hadZeroPower": false
     },
     {
       "farmName": "Amethyst Frontier",
@@ -505,9 +593,11 @@
       "weekNumber": 107,
       "finalizedAt": "2025-12-09T18:07:35.000Z",
       "capacityWatts": 8200,
-      "userPower": 17074.650136,
-      "networkPower": 140485.284992,
-      "wattsCaptured": 996.6320040079148
+      "userPower": 832.946541,
+      "networkPower": 140485.28499,
+      "wattsCaptured": 48.61834203266331,
+      "usedFallback": false,
+      "hadZeroPower": false
     },
     {
       "farmName": "Thriving Alcove",
@@ -515,9 +605,11 @@
       "weekNumber": 110,
       "finalizedAt": "2026-01-02T23:40:23.000Z",
       "capacityWatts": 15800,
-      "userPower": 15816.98447,
-      "networkPower": 129925.077961,
-      "wattsCaptured": 1923.4805054418803
+      "userPower": 1062.887336,
+      "networkPower": 129925.077955,
+      "wattsCaptured": 129.25618497313144,
+      "usedFallback": false,
+      "hadZeroPower": false
     },
     {
       "farmName": "Pristine Overlook",
@@ -525,9 +617,11 @@
       "weekNumber": 99,
       "finalizedAt": "2025-10-16T20:18:47.000Z",
       "capacityWatts": 8400,
-      "userPower": 21598.219801,
-      "networkPower": 270889.591623,
-      "wattsCaptured": 669.737974210878
+      "userPower": 20.766024,
+      "networkPower": 270889.59162,
+      "wattsCaptured": 0.6439324617709724,
+      "usedFallback": false,
+      "hadZeroPower": false
     },
     {
       "farmName": "Lavender Vista",
@@ -535,9 +629,11 @@
       "weekNumber": 100,
       "finalizedAt": "2025-10-21T17:15:47.000Z",
       "capacityWatts": 9315,
-      "userPower": 19937.210884,
-      "networkPower": 103707.285323,
-      "wattsCaptured": 1790.7625178505416
+      "userPower": 1351.8632639999998,
+      "networkPower": 103707.28532,
+      "wattsCaptured": 121.42451000722038,
+      "usedFallback": false,
+      "hadZeroPower": false
     },
     {
       "farmName": "Strata Bayou",
@@ -545,9 +641,11 @@
       "weekNumber": 97,
       "finalizedAt": "2025-10-03T19:54:24.000Z",
       "capacityWatts": 4345,
-      "userPower": 3270.687959,
+      "userPower": 0,
       "networkPower": 70405.254419,
-      "wattsCaptured": 201.84770723617885
+      "wattsCaptured": 0,
+      "usedFallback": false,
+      "hadZeroPower": true
     },
     {
       "farmName": "Helix Dell",
@@ -555,9 +653,11 @@
       "weekNumber": 106,
       "finalizedAt": "2025-12-06T07:26:11.000Z",
       "capacityWatts": 9880,
-      "userPower": 12960.5215,
-      "networkPower": 128397.990258,
-      "wattsCaptured": 997.2893825105779
+      "userPower": 1293.585444,
+      "networkPower": 128397.990248,
+      "wattsCaptured": 99.53912956140744,
+      "usedFallback": false,
+      "hadZeroPower": false
     },
     {
       "farmName": "Effervescent Hollow",
@@ -565,9 +665,11 @@
       "weekNumber": 98,
       "finalizedAt": "2025-10-10T02:23:23.000Z",
       "capacityWatts": 18570,
-      "userPower": 18887.436425,
-      "networkPower": 265412.899962,
-      "wattsCaptured": 1321.486990505987
+      "userPower": 20.50128,
+      "networkPower": 265412.899947,
+      "wattsCaptured": 1.4344019061470759,
+      "usedFallback": false,
+      "hadZeroPower": false
     },
     {
       "farmName": "Eon Delta",
@@ -575,9 +677,11 @@
       "weekNumber": 101,
       "finalizedAt": "2025-10-30T16:26:47.000Z",
       "capacityWatts": 8200,
-      "userPower": 36328.06302,
-      "networkPower": 271300.800534,
-      "wattsCaptured": 1098.0067739485635
+      "userPower": 21.941436,
+      "networkPower": 271300.800528,
+      "wattsCaptured": 0.6631745090683252,
+      "usedFallback": false,
+      "hadZeroPower": false
     },
     {
       "farmName": "Jubilant Drift",
@@ -585,9 +689,11 @@
       "weekNumber": 102,
       "finalizedAt": "2025-11-07T15:25:23.000Z",
       "capacityWatts": 31600,
-      "userPower": 10779.177495,
-      "networkPower": 244210.158851,
-      "wattsCaptured": 1394.790497023606
+      "userPower": 22.263429,
+      "networkPower": 244210.158844,
+      "wattsCaptured": 2.880815277014775,
+      "usedFallback": false,
+      "hadZeroPower": false
     },
     {
       "farmName": "Luminous Grange",
@@ -595,9 +701,11 @@
       "weekNumber": 100,
       "finalizedAt": "2025-10-21T17:05:11.000Z",
       "capacityWatts": 8300,
-      "userPower": 12134.217718,
-      "networkPower": 249779.893737,
-      "wattsCaptured": 403.21102532553925
+      "userPower": 21.69121,
+      "networkPower": 249779.893735,
+      "wattsCaptured": 0.7207827672110688,
+      "usedFallback": false,
+      "hadZeroPower": false
     },
     {
       "farmName": "Jade Delta",
@@ -605,9 +713,11 @@
       "weekNumber": 97,
       "finalizedAt": "2025-10-03T17:24:11.000Z",
       "capacityWatts": 12870,
-      "userPower": 19459.582772,
+      "userPower": 0,
       "networkPower": 71052.81021,
-      "wattsCaptured": 3524.7702312609213
+      "wattsCaptured": 0,
+      "usedFallback": false,
+      "hadZeroPower": true
     },
     {
       "farmName": "Sheltered Pines",
@@ -615,9 +725,11 @@
       "weekNumber": 109,
       "finalizedAt": "2025-12-27T00:09:11.000Z",
       "capacityWatts": 8295,
-      "userPower": 15677.708335,
-      "networkPower": 246108.426303,
-      "wattsCaptured": 528.4117760304405
+      "userPower": 27.497649,
+      "networkPower": 246108.426298,
+      "wattsCaptured": 0.9267988174399764,
+      "usedFallback": false,
+      "hadZeroPower": false
     },
     {
       "farmName": "Grand Field",
@@ -625,9 +737,11 @@
       "weekNumber": 99,
       "finalizedAt": "2025-10-17T22:46:59.000Z",
       "capacityWatts": 4740,
-      "userPower": 21598.219801,
-      "networkPower": 270889.591623,
-      "wattsCaptured": 377.9235711618525
+      "userPower": 20.766024,
+      "networkPower": 270889.59162,
+      "wattsCaptured": 0.3633618891421916,
+      "usedFallback": false,
+      "hadZeroPower": false
     }
   ]
 }

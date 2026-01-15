@@ -427,6 +427,7 @@ export const impactRouter = new Elysia({ prefix: "/impact" })
           startWeek: actualStartWeek,
           endWeek: actualEndWeek,
           includeWeeklyBreakdown: shouldIncludeWeekly,
+          includeRegionBreakdown: !!walletAddress,
           debug: shouldLogTimingsForRequest
             ? { requestId: requestId!, recordTiming }
             : undefined,

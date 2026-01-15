@@ -210,12 +210,21 @@ export async function computeTotalWattsCaptured(
     const regionId = farm.regionId;
     const key = `${weekNumber}-${regionId}`;
 
-    // Prefer weekly snapshot, fall back to latest aggregate
+    // Check if network data exists for this week-region
+    // This tells us if the week has been populated (vs being a data gap)
+    const hasNetworkDataForWeek = networkPowerMap.has(key);
+
+    // FALLBACK LOGIC:
+    // - If weekly snapshot exists → use it
+    // - If NO network data for this week-region (data gap) → use fallback
+    // - If network data EXISTS but user has no row → user had 0 power (not participating)
     const userPower = userPowerMap.has(key)
       ? userPowerMap.get(key)!
-      : fallbackUserPowerMap.get(regionId) || 0;
+      : hasNetworkDataForWeek
+      ? 0 // Network has data but user doesn't → user had 0 power
+      : fallbackUserPowerMap.get(regionId) || 0; // No data at all → fallback
 
-    const totalNetworkPower = networkPowerMap.has(key)
+    const totalNetworkPower = hasNetworkDataForWeek
       ? networkPowerMap.get(key)!
       : fallbackNetworkPowerMap.get(regionId) || 0;
 

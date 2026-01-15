@@ -1,5 +1,10 @@
 /**
  * Expanded diagnostic script to include full weekly power history
+ *
+ * FALLBACK LOGIC (matching compute-watts.ts):
+ * - If weekly snapshot exists for week-region → use it
+ * - If NO network data for week-region (data gap) → use fallback from aggregate cache
+ * - If network data EXISTS but user has no row → user had 0 power (not participating)
  */
 import { db } from "../src/db/db";
 import {
@@ -7,6 +12,7 @@ import {
   applications,
   applicationsAuditFieldsCRS,
   powerByRegionByWeek,
+  impactLeaderboardCacheByRegion,
 } from "../src/db/schema";
 import { eq, isNotNull, and, inArray, sql, gte, lte } from "drizzle-orm";
 import { getCurrentEpoch } from "../src/utils/getProtocolWeek";
@@ -54,7 +60,39 @@ async function generateExpandedBreakdown(walletAddress: string) {
     )
     .groupBy(powerByRegionByWeek.weekNumber, powerByRegionByWeek.regionId);
 
-  // 3. Fetch farms (same as before)
+  // 2.5 Fetch latest aggregate power as fallback (in case weekly snapshots are missing)
+  // This matches the logic in compute-watts.ts
+  const fallbackRegionRows = await db
+    .select()
+    .from(impactLeaderboardCacheByRegion)
+    .where(
+      and(
+        eq(impactLeaderboardCacheByRegion.startWeek, startWeek),
+        eq(impactLeaderboardCacheByRegion.endWeek, endWeek)
+      )
+    );
+
+  const fallbackUserPowerMap = new Map<number, number>();
+  const fallbackNetworkPowerMap = new Map<number, number>();
+
+  for (const row of fallbackRegionRows) {
+    const rid = row.regionId;
+    if (rid === 1) continue; // Exclude CGP
+    const power = Number(row.directPoints) + Number(row.glowWorthPoints);
+    if (row.walletAddress.toLowerCase() === wallet) {
+      fallbackUserPowerMap.set(rid, power);
+    }
+    fallbackNetworkPowerMap.set(
+      rid,
+      (fallbackNetworkPowerMap.get(rid) || 0) + power
+    );
+  }
+
+  console.log(
+    `📊 Fallback power available for ${fallbackUserPowerMap.size} region(s)`
+  );
+
+  // 3. Fetch farms
   const allFinalizedFarms = await db
     .select({
       farmId: farms.id,
@@ -73,15 +111,98 @@ async function generateExpandedBreakdown(walletAddress: string) {
     .where(isNotNull(farms.protocolFeePaymentHash));
 
   const v2Farms = allFinalizedFarms.filter((farm) => {
+    // Exclude CGP (region 1) farms
+    if (farm.regionId === 1) return false;
     const dropDate = farm.paymentDate || farm.createdAt;
     const week = getCurrentEpoch(dropDate.getTime() / 1000);
     return week >= V2_START_WEEK && week <= endWeek;
   });
 
-  // 4. Map data
+  // 4. Map data with correct fallback logic matching compute-watts.ts
+  const farmsData = v2Farms.map((f) => {
+    const dropDate = f.paymentDate || f.createdAt;
+    const week = getCurrentEpoch(dropDate.getTime() / 1000);
+    const p = powerHistory.find(
+      (ph) => ph.weekNumber === week && ph.regionId === f.regionId
+    );
+    const net = networkHistory.find(
+      (nh) => nh.weekNumber === week && nh.regionId === f.regionId
+    );
+
+    let capacityWatts = 0;
+    const match = (f.systemWattageOutput || "").match(/([\d.]+)/);
+    if (match) capacityWatts = parseFloat(match[1]) * 1000;
+
+    // Check if network data exists for this week-region
+    // This tells us if the week has been populated (vs being a data gap)
+    const hasNetworkDataForWeek = !!net;
+
+    // FALLBACK LOGIC:
+    // - If weekly snapshot exists → use it
+    // - If NO network data for this week-region (data gap) → use fallback
+    // - If network data EXISTS but user has no row → user had 0 power (not participating)
+    const userPower = p
+      ? Number(p.directPoints) + Number(p.glowWorthPoints)
+      : hasNetworkDataForWeek
+      ? 0 // Network has data but user doesn't → user had 0 power
+      : fallbackUserPowerMap.get(f.regionId) || 0; // No data at all → fallback
+
+    const netPower = hasNetworkDataForWeek
+      ? Number(net.totalPower)
+      : fallbackNetworkPowerMap.get(f.regionId) || 0;
+
+    const share = netPower > 0 ? userPower / netPower : 0;
+    const usedFallback = !hasNetworkDataForWeek && netPower > 0;
+
+    return {
+      farmName: f.farmName,
+      regionId: f.regionId,
+      weekNumber: week,
+      finalizedAt: dropDate.toISOString(),
+      capacityWatts,
+      userPower,
+      networkPower: netPower,
+      wattsCaptured: capacityWatts * share,
+      usedFallback,
+      hadZeroPower: hasNetworkDataForWeek && !p,
+    };
+  });
+
+  const totalWatts = farmsData.reduce((sum, f) => sum + f.wattsCaptured, 0);
+  const farmsUsingFallback = farmsData.filter((f) => f.usedFallback).length;
+  const farmsWithZeroPower = farmsData.filter((f) => f.hadZeroPower).length;
+  const farmsWithSnapshots =
+    farmsData.length - farmsUsingFallback - farmsWithZeroPower;
+  const regionTotals: Record<number, number> = {};
+  farmsData.forEach((f) => {
+    regionTotals[f.regionId] =
+      (regionTotals[f.regionId] || 0) + f.wattsCaptured;
+  });
+
+  console.log(`📊 Total farms: ${farmsData.length}`);
+  console.log(`   └─ Using weekly snapshots: ${farmsWithSnapshots}`);
+  console.log(
+    `   └─ User had 0 power (not participating): ${farmsWithZeroPower}`
+  );
+  console.log(`   └─ Using fallback (data gap): ${farmsUsingFallback}`);
+
   const resultData = {
     walletAddress: wallet,
     generatedAt: new Date().toISOString(),
+    summary: {
+      totalWatts: Math.round(totalWatts),
+      totalPanels: Math.floor(totalWatts / 400),
+      farmsCount: farmsData.length,
+      farmsWithSnapshots,
+      farmsWithZeroPower,
+      farmsUsingFallback,
+      regionTotals: Object.fromEntries(
+        Object.entries(regionTotals).map(([rid, watts]) => [
+          rid,
+          Math.round(watts),
+        ])
+      ),
+    },
     weeks: powerHistory.map((p) => {
       const net = networkHistory.find(
         (n) => n.weekNumber === p.weekNumber && n.regionId === p.regionId
@@ -89,8 +210,10 @@ async function generateExpandedBreakdown(walletAddress: string) {
       return {
         weekNumber: p.weekNumber,
         regionId: p.regionId,
-        directPoints: Number(p.directPoints),
-        worthPoints: Number(p.glowWorthPoints),
+        inflationPoints: Number(p.inflationPoints),
+        steeringPoints: Number(p.steeringPoints),
+        vaultBonusPoints: Number(p.vaultBonusPoints),
+        glowWorthPoints: Number(p.glowWorthPoints),
         totalPoints: Number(p.directPoints) + Number(p.glowWorthPoints),
         networkTotalPower: net ? Number(net.totalPower) : 0,
         sharePercent: net
@@ -100,37 +223,7 @@ async function generateExpandedBreakdown(walletAddress: string) {
           : 0,
       };
     }),
-    farms: v2Farms.map((f) => {
-      const dropDate = f.paymentDate || f.createdAt;
-      const week = getCurrentEpoch(dropDate.getTime() / 1000);
-      const p = powerHistory.find(
-        (ph) => ph.weekNumber === week && ph.regionId === f.regionId
-      );
-      const net = networkHistory.find(
-        (nh) => nh.weekNumber === week && nh.regionId === f.regionId
-      );
-
-      let capacityWatts = 0;
-      const match = (f.systemWattageOutput || "").match(/([\d.]+)/);
-      if (match) capacityWatts = parseFloat(match[1]) * 1000;
-
-      const userPower = p
-        ? Number(p.directPoints) + Number(p.glowWorthPoints)
-        : 0;
-      const netPower = net ? Number(net.totalPower) : 0;
-      const share = netPower > 0 ? userPower / netPower : 0;
-
-      return {
-        farmName: f.farmName,
-        regionId: f.regionId,
-        weekNumber: week,
-        finalizedAt: dropDate.toISOString(),
-        capacityWatts,
-        userPower,
-        networkPower: netPower,
-        wattsCaptured: capacityWatts * share,
-      };
-    }),
+    farms: farmsData,
   };
 
   writeFileSync(
