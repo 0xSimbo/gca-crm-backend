@@ -22,8 +22,10 @@ export async function updateImpactLeaderboardByRegion() {
   console.log(
     `[Cron] Computing region scores for ${wallets.length} wallets (Weeks ${startWeek}-${endWeek})...`
   );
+  console.log(`[Cron] This may take several minutes...`);
 
   // 2. Compute scores with region breakdown
+  const computeStart = Date.now();
   const results = await computeGlowImpactScores({
     walletAddresses: wallets,
     startWeek,
@@ -31,6 +33,9 @@ export async function updateImpactLeaderboardByRegion() {
     includeWeeklyBreakdown: false,
     includeRegionBreakdown: true,
   });
+  console.log(
+    `[Cron] Score computation complete in ${((Date.now() - computeStart) / 1000).toFixed(1)}s`
+  );
 
   // 3. Prepare rows for insertion
   const rows: Array<{

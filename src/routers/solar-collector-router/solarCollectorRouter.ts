@@ -4,6 +4,7 @@ import { db } from "../../db/db";
 import { farms, applications } from "../../db/schema";
 import { TAG } from "../../constants";
 import { getCurrentWeekProjection } from "../impact-router/helpers/impact-score";
+import { getCurrentEpoch } from "../../utils/getProtocolWeek";
 import { computeTotalWattsCaptured } from "./helpers/compute-watts";
 
 const WATTS_PER_PANEL = 400;
@@ -11,9 +12,14 @@ const WATTS_PER_PANEL = 400;
 export const solarCollectorRouter = new Elysia({ prefix: "/solar-collector" })
   .get(
     "/stats",
-    async ({ query: { walletAddress }, set }) => {
+    async ({ query: { walletAddress, includeCurrentWeekPower }, set }) => {
       try {
         const wallet = walletAddress.toLowerCase();
+        const shouldIncludeCurrentWeekPower =
+          includeCurrentWeekPower === "1" || includeCurrentWeekPower === "true";
+        const powerEndWeek = shouldIncludeCurrentWeekPower
+          ? getCurrentEpoch()
+          : undefined;
 
         // 1. Compute total Watts on-the-fly based on historical performance
         const {
@@ -24,7 +30,9 @@ export const solarCollectorRouter = new Elysia({ prefix: "/solar-collector" })
           recentDrop,
           weeklyHistory,
           weeklyPowerHistory,
-        } = await computeTotalWattsCaptured(wallet);
+        } = await computeTotalWattsCaptured(wallet, {
+          powerEndWeek,
+        });
 
         // 2. Get impact score projection for streak and multiplier info
         const projection = await getCurrentWeekProjection(wallet);
@@ -94,6 +102,7 @@ export const solarCollectorRouter = new Elysia({ prefix: "/solar-collector" })
     {
       query: t.Object({
         walletAddress: t.String({ pattern: "^0x[a-fA-F0-9]{40}$" }),
+        includeCurrentWeekPower: t.Optional(t.String()),
       }),
       detail: {
         summary: "Get Solar Collector stats for a wallet",

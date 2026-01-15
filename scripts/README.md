@@ -526,6 +526,63 @@ bun run scripts/backfill-weekly-power.ts
 
 ---
 
+### `backfill-all-caches.ts` - Backfill All Caches at Once
+
+Runs all cache backfills sequentially and exits when complete. Useful for initial setup or after schema changes.
+
+**Usage:**
+
+```bash
+bun run scripts/backfill-all-caches.ts
+```
+
+**What it backfills (in order):**
+
+1. **Weekly Power by Region** - `power_by_region_by_week` table (weeks 97 to current-1)
+2. **Impact Leaderboard (global)** - `impact_leaderboard_cache` table
+3. **Impact Leaderboard by Region** - `impact_leaderboard_cache_by_region` table
+
+**Output:**
+
+- Progress for each cache
+- Summary with row counts and timing
+- Exits with code 0 on success, 1 on failure
+
+**Example output:**
+
+```
+🚀 Starting backfill of ALL caches...
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1️⃣  Weekly Power by Region
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   Week range: 97 → 110
+   ✅ Updated 1500 rows in 12.3s
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+2️⃣  Impact Leaderboard (global)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   ✅ Updated 850 rows in 45.2s
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+3️⃣  Impact Leaderboard by Region
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   ✅ Updated 2100 rows in 38.7s
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📊 SUMMARY
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   Weekly Power: 1500 rows (12.3s)
+   Impact Leaderboard: 850 rows (45.2s)
+   Impact by Region: 2100 rows (38.7s)
+──────────────────────────────────────────────────
+   TOTAL: 4450 rows in 96.2s
+
+✅ All caches backfilled successfully!
+```
+
+---
+
 ## Utilities
 
 ### `get-farm-name-by-application-id.ts` - Get Farm Name

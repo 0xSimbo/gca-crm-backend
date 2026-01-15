@@ -29,11 +29,12 @@ This is a **status-only leaderboard** (no monetary rewards are paid out by this 
 
 For each week in the requested week range, we compute:
 
-- **Weekly rollover points** (calculated on week rollover):
+- **Base points** (calculated per week):
   - Emissions earned: **+1.0** point per **GLW** earned in emission rewards
   - Steering (sGCTL): **+3.0** points per **GLW** steered by staking GCTL
   - Vault bonus (delegated GLW): **+0.005** points per week per **GLW** in `DelegatedActiveGLW`
-- **Weekly multiplier** (calculated on week rollover):
+  - GLW Worth: **+0.001** points per week per **GLW** of `GlowWorth` for that week
+- **Weekly multiplier** (calculated and applied on week rollover):
   - Total multiplier = **Base multiplier + Streak bonus**
   - Base multiplier:
     - Standard: **1×**
@@ -42,8 +43,13 @@ For each week in the requested week range, we compute:
     - Earn **+0.25×** for every consecutive week you **increase your delegated GLW** (net delegation delta > 0 for that week) **or** **buy a miner**
     - Caps at **+1.0×** (after 4 consecutive weeks)
     - Resets to **0×** if you do neither in a week
-- **Continuous points** (calculated continuously):
-  - GLW Worth: **+0.001** points per week per **GLW** of `GlowWorth` for that week
+  - **The multiplier is applied to ALL base points** (Emissions, Steering, Vault, AND Glow Worth)
+
+**Final Score Formula:**
+
+```
+TotalPoints = (Emissions + Steering + Vault + GlowWorth) × Multiplier
+```
 
 All points are computed internally with **6-decimal fixed-point precision** and returned as strings.
 
@@ -68,8 +74,18 @@ Glow Worth represents passive ownership from holding GLW tokens. The value of th
 **Implications for `regionBreakdown`:**
 
 - Regions may appear with `directPoints: "0.000000"` but non-zero `glowWorthPoints` - this is intentional and accurate
-- The sum of all regional `glowWorthPoints` equals the wallet's total `continuousPoints`
-- The sum of all regional `directPoints` equals the wallet's total `rolloverPoints` (after multiplier)
+- The sum of all regional `glowWorthPoints` equals the wallet's total worth points (after multiplier)
+- The sum of all regional `directPoints` equals the wallet's total direct points (Emissions + Steering + Vault, after multiplier)
+- **Both `directPoints` and `glowWorthPoints` in regional breakdown are post-multiplier values**
+
+**Delegated GLW in regional breakdown:**
+
+Delegated GLW intentionally contributes to both point categories (but at different rates):
+
+1. **Vault bonus (0.005/GLW)** → appears in `directPoints`, attributed to the specific farm's region
+2. **GLW Worth (0.001/GLW)** → appears in `glowWorthPoints`, distributed by emission share (since delegated GLW is part of total GlowWorth)
+
+This matches the totals formula where delegated GLW earns both vault bonus AND contributes to GLW Worth.
 
 ## Leaderboard timing: “do I move up instantly?”
 

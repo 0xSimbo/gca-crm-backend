@@ -5,10 +5,15 @@ import {
   applicationsAuditFieldsCRS,
   powerByRegionByWeek,
   impactLeaderboardCacheByRegion,
+  fractionSplits,
+  fractions,
 } from "../../../db/schema";
 import { eq, isNotNull, and, inArray, sql, gte, lte } from "drizzle-orm";
 import { getCurrentEpoch } from "../../../utils/getProtocolWeek";
 import { getWeekRangeForImpact } from "../../fractions-router/helpers/apy-helpers";
+import { computeGlowImpactScores } from "../../impact-router/helpers/impact-score";
+import { fetchDepositSplitsHistoryBatch } from "../../impact-router/helpers/control-api";
+import { GENESIS_TIMESTAMP } from "../../../constants/genesis-timestamp";
 
 export interface WattsByRegion {
   [regionId: number]: number;
@@ -50,7 +55,13 @@ export interface WeeklyHistoryItem {
 export interface WeeklyPowerHistoryItem {
   weekNumber: number;
   regionId: number;
-  userPower: number;
+  directPoints: number;
+  glowWorthPoints: number;
+  // Multiplier info for this week (shared across all regions)
+  rolloverMultiplier: number;
+  hasCashMinerBonus: boolean;
+  streakBonusMultiplier: number;
+  impactStreakWeeks: number;
 }
 
 export interface ComputeWattsResult {
@@ -74,7 +85,10 @@ export interface ComputeWattsResult {
  * @param walletAddress - The user's wallet address.
  */
 export async function computeTotalWattsCaptured(
-  walletAddress: string
+  walletAddress: string,
+  params?: {
+    powerEndWeek?: number;
+  }
 ): Promise<ComputeWattsResult> {
   const wallet = walletAddress.toLowerCase();
 
@@ -100,7 +114,8 @@ export async function computeTotalWattsCaptured(
     .where(isNotNull(farms.protocolFeePaymentHash));
 
   // 2. Get the week range for impact scores (this is the range of COMPLETED weeks)
-  const { startWeek, endWeek } = getWeekRangeForImpact();
+  const { startWeek, endWeek: completedEndWeek } = getWeekRangeForImpact();
+  const powerEndWeek = params?.powerEndWeek ?? completedEndWeek;
 
   // 2.5 Fetch latest aggregate power as fallback (in case weekly snapshots are missing)
   const fallbackRegionRows = await db
@@ -109,7 +124,7 @@ export async function computeTotalWattsCaptured(
     .where(
       and(
         eq(impactLeaderboardCacheByRegion.startWeek, startWeek),
-        eq(impactLeaderboardCacheByRegion.endWeek, endWeek)
+        eq(impactLeaderboardCacheByRegion.endWeek, completedEndWeek)
       )
     );
 
@@ -137,7 +152,7 @@ export async function computeTotalWattsCaptured(
   const finalizedFarms = allFinalizedFarms.filter((farm) => {
     const dropDate = farm.paymentDate || farm.createdAt;
     const weekNumber = getCurrentEpoch(dropDate.getTime() / 1000);
-    return weekNumber >= V2_START_WEEK && weekNumber <= endWeek;
+    return weekNumber >= V2_START_WEEK && weekNumber <= completedEndWeek;
   });
 
   if (finalizedFarms.length === 0) {
@@ -184,7 +199,7 @@ export async function computeTotalWattsCaptured(
     .where(inArray(powerByRegionByWeek.weekNumber, weeks))
     .groupBy(powerByRegionByWeek.weekNumber, powerByRegionByWeek.regionId);
 
-  const weeklyPowerHistoryRows = await db
+  let weeklyPowerHistoryRows = await db
     .select({
       weekNumber: powerByRegionByWeek.weekNumber,
       regionId: powerByRegionByWeek.regionId,
@@ -195,12 +210,56 @@ export async function computeTotalWattsCaptured(
     .where(
       and(
         eq(powerByRegionByWeek.walletAddress, wallet),
-        sql`${powerByRegionByWeek.regionId} != 1`,
         gte(powerByRegionByWeek.weekNumber, V2_START_WEEK),
-        lte(powerByRegionByWeek.weekNumber, endWeek)
+        lte(powerByRegionByWeek.weekNumber, powerEndWeek)
       )
     )
     .orderBy(powerByRegionByWeek.weekNumber, powerByRegionByWeek.regionId);
+
+  const shouldUseLivePower = powerEndWeek > completedEndWeek;
+  if (shouldUseLivePower) {
+    try {
+      const [result] = await computeGlowImpactScores({
+        walletAddresses: [wallet],
+        startWeek: V2_START_WEEK,
+        endWeek: powerEndWeek,
+        includeWeeklyBreakdown: false,
+        includeWeeklyRegionBreakdown: true,
+      });
+
+      if (result?.weeklyRegionBreakdown?.length) {
+        weeklyPowerHistoryRows = result.weeklyRegionBreakdown.map((item) => ({
+          weekNumber: item.weekNumber,
+          regionId: item.regionId,
+          directPoints: item.directPoints,
+          glowWorthPoints: item.glowWorthPoints,
+        }));
+      }
+    } catch {
+      // Fallback to cached-only weekly history if on-the-fly computation fails.
+    }
+  } else if (weeklyPowerHistoryRows.length === 0) {
+    try {
+      const [result] = await computeGlowImpactScores({
+        walletAddresses: [wallet],
+        startWeek: V2_START_WEEK,
+        endWeek: powerEndWeek,
+        includeWeeklyBreakdown: false,
+        includeWeeklyRegionBreakdown: true,
+      });
+
+      if (result?.weeklyRegionBreakdown?.length) {
+        weeklyPowerHistoryRows = result.weeklyRegionBreakdown.map((item) => ({
+          weekNumber: item.weekNumber,
+          regionId: item.regionId,
+          directPoints: item.directPoints,
+          glowWorthPoints: item.glowWorthPoints,
+        }));
+      }
+    } catch {
+      // Fallback to empty weekly history if on-the-fly computation fails.
+    }
+  }
 
   // 6. Build lookup maps
   const userPowerMap = new Map<string, number>(); // key: "week-region"
@@ -323,12 +382,178 @@ export async function computeTotalWattsCaptured(
     });
   }
 
+  // 8.6 Compute weekly multipliers for the wallet
+  // Fetch mining-center purchases for cash miner bonus
+  const allWeeksForPower = Array.from(
+    new Set(weeklyPowerHistoryRows.map((r) => r.weekNumber))
+  );
+  const minWeekForPower =
+    allWeeksForPower.length > 0 ? Math.min(...allWeeksForPower) : V2_START_WEEK;
+  const maxWeekForPower =
+    allWeeksForPower.length > 0 ? Math.max(...allWeeksForPower) : powerEndWeek;
+
+  // Seed streak calculation from 4 weeks before the range
+  const STREAK_BONUS_CAP_WEEKS = 4;
+  const streakSeedStartWeek = Math.max(
+    minWeekForPower - STREAK_BONUS_CAP_WEEKS,
+    V2_START_WEEK
+  );
+
+  const cashMinerWeeks = new Set<number>();
+  const seedStartTimestamp = GENESIS_TIMESTAMP + streakSeedStartWeek * 604800;
+  const maxWeekEndTimestamp =
+    GENESIS_TIMESTAMP + (maxWeekForPower + 1) * 604800;
+
+  // Fetch mining-center fraction purchases for the wallet
+  const miningRows = await db
+    .select({
+      timestamp: fractionSplits.timestamp,
+    })
+    .from(fractionSplits)
+    .innerJoin(fractions, eq(fractionSplits.fractionId, fractions.id))
+    .where(
+      and(
+        eq(fractionSplits.buyer, wallet),
+        eq(fractions.type, "mining-center"),
+        gte(fractionSplits.timestamp, seedStartTimestamp),
+        lte(fractionSplits.timestamp, maxWeekEndTimestamp)
+      )
+    );
+
+  for (const row of miningRows) {
+    const week = getCurrentEpoch(row.timestamp);
+    if (week >= streakSeedStartWeek && week <= maxWeekForPower) {
+      cashMinerWeeks.add(week);
+    }
+  }
+
+  // Fetch deposit split history for streak computation
+  let splitSegments: Array<{
+    farmId: string;
+    startWeek: number;
+    endWeek: number;
+    depositSplitPercent6Decimals: string;
+    paymentAmount?: string;
+    paymentCurrency?: string;
+  }> = [];
+
+  try {
+    const m = await fetchDepositSplitsHistoryBatch({
+      wallets: [wallet],
+      startWeek: streakSeedStartWeek,
+      endWeek: maxWeekForPower,
+    });
+    splitSegments = m.get(wallet) || [];
+  } catch {
+    // If fetch fails, we'll compute without streak tracking
+  }
+
+  // Group split segments by farm
+  const splitSegmentsByFarm = new Map<string, typeof splitSegments>();
+  for (const seg of splitSegments) {
+    if (!splitSegmentsByFarm.has(seg.farmId)) {
+      splitSegmentsByFarm.set(seg.farmId, []);
+    }
+    splitSegmentsByFarm.get(seg.farmId)!.push(seg);
+  }
+
+  // Helper to get split at a specific week
+  function getSplitAtWeek(farmId: string, week: number): bigint {
+    const segs = splitSegmentsByFarm.get(farmId);
+    if (!segs) return BigInt(0);
+    for (const seg of segs) {
+      if (week >= seg.startWeek && week <= seg.endWeek) {
+        try {
+          return BigInt(seg.depositSplitPercent6Decimals);
+        } catch {
+          return BigInt(0);
+        }
+      }
+    }
+    return BigInt(0);
+  }
+
+  // Get farm principal amounts (for GLW-denominated farms only for streak calculation)
+  const farmPrincipals = new Map<string, bigint>();
+  for (const seg of splitSegments) {
+    if (
+      !farmPrincipals.has(seg.farmId) &&
+      seg.paymentAmount &&
+      seg.paymentCurrency?.toUpperCase() === "GLW"
+    ) {
+      try {
+        farmPrincipals.set(seg.farmId, BigInt(seg.paymentAmount));
+      } catch {
+        // Ignore parse errors
+      }
+    }
+  }
+
+  // Compute multipliers for each week
+  const multipliersByWeek = new Map<
+    number,
+    {
+      rolloverMultiplier: number;
+      hasCashMinerBonus: boolean;
+      streakBonusMultiplier: number;
+      impactStreakWeeks: number;
+    }
+  >();
+
+  let impactStreakWeeks = 0;
+  let previousGrossShareWei = BigInt(0);
+  const SPLIT_SCALE = BigInt(1_000_000);
+
+  for (let week = streakSeedStartWeek; week <= maxWeekForPower; week++) {
+    const hasCashMinerBonus = cashMinerWeeks.has(week);
+
+    // Compute gross share for streak tracking
+    let grossShareWei = BigInt(0);
+    for (const [farmId, principal] of farmPrincipals) {
+      const splitScaled6 = getSplitAtWeek(farmId, week);
+      if (splitScaled6 > BigInt(0)) {
+        grossShareWei += (principal * splitScaled6) / SPLIT_SCALE;
+      }
+    }
+
+    const hasImpactActionThisWeek =
+      grossShareWei > previousGrossShareWei || hasCashMinerBonus;
+    impactStreakWeeks = hasImpactActionThisWeek ? impactStreakWeeks + 1 : 0;
+    previousGrossShareWei = grossShareWei;
+
+    // Compute multipliers
+    const baseMultiplier = hasCashMinerBonus ? 3 : 1;
+    const effectiveStreakWeeks = Math.min(
+      impactStreakWeeks,
+      STREAK_BONUS_CAP_WEEKS
+    );
+    const streakBonusMultiplier = effectiveStreakWeeks * 0.25;
+    const rolloverMultiplier = baseMultiplier + streakBonusMultiplier;
+
+    multipliersByWeek.set(week, {
+      rolloverMultiplier,
+      hasCashMinerBonus,
+      streakBonusMultiplier,
+      impactStreakWeeks,
+    });
+  }
+
   const weeklyPowerHistory: WeeklyPowerHistoryItem[] =
-    weeklyPowerHistoryRows.map((row) => ({
-      weekNumber: row.weekNumber,
-      regionId: row.regionId,
-      userPower: Number(row.directPoints) + Number(row.glowWorthPoints),
-    }));
+    weeklyPowerHistoryRows.map((row) => {
+      const multiplierData = multipliersByWeek.get(row.weekNumber) || {
+        rolloverMultiplier: 1,
+        hasCashMinerBonus: false,
+        streakBonusMultiplier: 0,
+        impactStreakWeeks: 0,
+      };
+      return {
+        weekNumber: row.weekNumber,
+        regionId: row.regionId,
+        directPoints: Number(row.directPoints),
+        glowWorthPoints: Number(row.glowWorthPoints),
+        ...multiplierData,
+      };
+    });
 
   // 9. Determine stronghold
   let strongholdRegionId: number | null = null;

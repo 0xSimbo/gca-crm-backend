@@ -21,14 +21,19 @@ export async function updateImpactLeaderboard() {
   console.log(
     `[Cron] Computing scores for ${wallets.length} wallets (Weeks ${startWeek}-${endWeek})...`
   );
+  console.log(`[Cron] This may take several minutes...`);
 
   // 2. Compute scores (this handles batching internally)
+  const computeStart = Date.now();
   const results = await computeGlowImpactScores({
     walletAddresses: wallets,
     startWeek,
     endWeek,
     includeWeeklyBreakdown: false,
   });
+  console.log(
+    `[Cron] Score computation complete in ${((Date.now() - computeStart) / 1000).toFixed(1)}s`
+  );
 
   // 3. Filter and Sort
   // Filter out wallets with insignificant points (dust/rounding errors or no historical contribution)

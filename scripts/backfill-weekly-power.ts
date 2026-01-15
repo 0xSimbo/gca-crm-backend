@@ -11,6 +11,7 @@ async function main() {
   try {
     const result = await updatePowerByRegionByWeek({ startWeek, endWeek });
     console.log(`✅ Backfill complete! Updated ${result.updated} rows.`);
+    process.exit(0);
   } catch (error) {
     console.error("❌ Backfill failed:", error);
     process.exit(1);
