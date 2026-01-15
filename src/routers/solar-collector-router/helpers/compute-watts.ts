@@ -6,7 +6,7 @@ import {
   powerByRegionByWeek,
   impactLeaderboardCacheByRegion,
 } from "../../../db/schema";
-import { eq, isNotNull, and, inArray, sql } from "drizzle-orm";
+import { eq, isNotNull, and, inArray, sql, gte, lte } from "drizzle-orm";
 import { getCurrentEpoch } from "../../../utils/getProtocolWeek";
 import { getWeekRangeForImpact } from "../../fractions-router/helpers/apy-helpers";
 
@@ -47,6 +47,12 @@ export interface WeeklyHistoryItem {
   };
 }
 
+export interface WeeklyPowerHistoryItem {
+  weekNumber: number;
+  regionId: number;
+  userPower: number;
+}
+
 export interface ComputeWattsResult {
   totalWatts: number;
   wattsByRegion: WattsByRegion;
@@ -54,6 +60,7 @@ export interface ComputeWattsResult {
   strongholdRegionId: number | null;
   recentDrop: RecentDrop | null;
   weeklyHistory: WeeklyHistoryItem[];
+  weeklyPowerHistory: WeeklyPowerHistoryItem[];
 }
 
 /**
@@ -141,6 +148,7 @@ export async function computeTotalWattsCaptured(
       strongholdRegionId: null,
       recentDrop: null,
       weeklyHistory: [],
+      weeklyPowerHistory: [],
     };
   }
 
@@ -175,6 +183,24 @@ export async function computeTotalWattsCaptured(
     .from(powerByRegionByWeek)
     .where(inArray(powerByRegionByWeek.weekNumber, weeks))
     .groupBy(powerByRegionByWeek.weekNumber, powerByRegionByWeek.regionId);
+
+  const weeklyPowerHistoryRows = await db
+    .select({
+      weekNumber: powerByRegionByWeek.weekNumber,
+      regionId: powerByRegionByWeek.regionId,
+      directPoints: powerByRegionByWeek.directPoints,
+      glowWorthPoints: powerByRegionByWeek.glowWorthPoints,
+    })
+    .from(powerByRegionByWeek)
+    .where(
+      and(
+        eq(powerByRegionByWeek.walletAddress, wallet),
+        sql`${powerByRegionByWeek.regionId} != 1`,
+        gte(powerByRegionByWeek.weekNumber, V2_START_WEEK),
+        lte(powerByRegionByWeek.weekNumber, endWeek)
+      )
+    )
+    .orderBy(powerByRegionByWeek.weekNumber, powerByRegionByWeek.regionId);
 
   // 6. Build lookup maps
   const userPowerMap = new Map<string, number>(); // key: "week-region"
@@ -297,6 +323,13 @@ export async function computeTotalWattsCaptured(
     });
   }
 
+  const weeklyPowerHistory: WeeklyPowerHistoryItem[] =
+    weeklyPowerHistoryRows.map((row) => ({
+      weekNumber: row.weekNumber,
+      regionId: row.regionId,
+      userPower: Number(row.directPoints) + Number(row.glowWorthPoints),
+    }));
+
   // 9. Determine stronghold
   let strongholdRegionId: number | null = null;
   let maxWatts = 0;
@@ -354,5 +387,6 @@ export async function computeTotalWattsCaptured(
     strongholdRegionId,
     recentDrop,
     weeklyHistory,
+    weeklyPowerHistory,
   };
 }

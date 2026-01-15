@@ -23,6 +23,7 @@ export const solarCollectorRouter = new Elysia({ prefix: "/solar-collector" })
           strongholdRegionId,
           recentDrop,
           weeklyHistory,
+          weeklyPowerHistory,
         } = await computeTotalWattsCaptured(wallet);
 
         // 2. Get impact score projection for streak and multiplier info
@@ -79,6 +80,7 @@ export const solarCollectorRouter = new Elysia({ prefix: "/solar-collector" })
           stronghold,
           recentDrop,
           weeklyHistory,
+          weeklyPowerHistory,
         };
       } catch (e) {
         if (e instanceof Error) {
