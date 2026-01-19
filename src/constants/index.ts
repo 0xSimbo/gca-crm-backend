@@ -18,4 +18,5 @@ export enum TAG {
   ORGANIZATIONS = "Organizations",
   ZONES = "Zones",
   SOLAR_COLLECTOR = "Solar Collector",
+  REFERRALS = "Referrals",
 }

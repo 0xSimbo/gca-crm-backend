@@ -16,6 +16,7 @@ bun run scripts/<script-name>.ts
 - [Project Quotes](#project-quotes)
 - [Impact Leaderboard & Performance](#impact-leaderboard--performance)
 - [Rewards & GLW Debugging](#rewards--glw-debugging)
+- [Referral System](#referral-system)
 - [Solar Collector Debugging & Diagnostics](#solar-collector-debugging)
 - [Utilities](#utilities)
 
@@ -446,6 +447,24 @@ CONTROL_API_URL=https://api-prod-34ce.up.railway.app bun run scripts/debug-week-
 - Gap analysis
 
 **Use case:** One-off debug for specific discrepancy.
+
+---
+
+## Referral System
+
+### `backfill-referral-codes.ts` - Generate Referral Codes
+
+Generates unique referral codes and shareable links for all existing wallets.
+
+**Usage:**
+
+```bash
+# Dry run
+bun run scripts/backfill-referral-codes.ts --dry-run
+
+# For real
+bun run scripts/backfill-referral-codes.ts
+```
 
 ---
 

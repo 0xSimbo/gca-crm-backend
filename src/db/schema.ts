@@ -84,9 +84,19 @@ export const wallets = pgTable("wallets", {
 /**
  * @dev Each wallets has an array of weekly rewards.
  */
-export const WalletsRelations = relations(wallets, ({ many }) => ({
+export const WalletsRelations = relations(wallets, ({ many, one }) => ({
   weeklyRewards: many(walletWeeklyRewards),
   rewardSplits: many(RewardSplits),
+  referralsAsReferrer: many(referrals, { relationName: "referrer" }),
+  referralAsReferee: one(referrals, {
+    fields: [wallets.id],
+    references: [referrals.refereeWallet],
+    relationName: "referee",
+  }),
+  referralCode: one(referralCodes, {
+    fields: [wallets.id],
+    references: [referralCodes.walletAddress],
+  }),
 }));
 
 export type WalletType = InferSelectModel<typeof wallets>;
@@ -2237,3 +2247,276 @@ export type PowerByRegionByWeekType = InferSelectModel<
 >;
 export type PowerByRegionByWeekInsertType =
   typeof powerByRegionByWeek.$inferInsert;
+
+export const referralNonces = pgTable("referral_nonces", {
+  walletAddress: varchar("wallet_address", { length: 42 }).primaryKey(),
+  nonce: integer("nonce").notNull().default(0),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const referralFeatureLaunchSeen = pgTable(
+  "referral_feature_launch_seen",
+  {
+    walletAddress: varchar("wallet_address", { length: 42 }).primaryKey(),
+    featureLaunchSeenAt: timestamp("feature_launch_seen_at")
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  }
+);
+
+// ============================================
+// Referral System Tables
+// ============================================
+
+export const referrals = pgTable(
+  "referrals",
+  {
+    id: text("referral_id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+
+    // The wallet that referred (has the referral link)
+    referrerWallet: varchar("referrer_wallet", { length: 42 }).notNull(),
+
+    // The wallet that was referred (clicked the link)
+    refereeWallet: varchar("referee_wallet", { length: 42 }).notNull().unique(),
+
+    // Timestamps
+    linkedAt: timestamp("linked_at").notNull().defaultNow(),
+    gracePeriodEndsAt: timestamp("grace_period_ends_at").notNull(), // linkedAt + 7 days
+
+    // Referee bonus tracking
+    refereeBonusEndsAt: timestamp("referee_bonus_ends_at").notNull(), // linkedAt + 12 weeks
+
+    // Status
+    status: varchar("status", { length: 20 }).notNull().default("pending"),
+    // Values: "pending" (linked, < 100 pts), "active" (≥ 100 pts), "inactive" (referee dormant)
+
+    // Activation tracking
+    activatedAt: timestamp("activated_at"), // When referee reached 100 points threshold
+    activationPointsThreshold: integer("activation_points_threshold")
+      .notNull()
+      .default(100),
+
+    // One-time activation bonus (100 pts awarded when referee reaches 100 pts)
+    activationBonusAwarded: boolean("activation_bonus_awarded")
+      .notNull()
+      .default(false),
+    activationBonusAwardedAt: timestamp("activation_bonus_awarded_at"),
+
+    // Modal tracking 
+    featureLaunchSeenAt: timestamp("feature_launch_seen_at"),
+    activationCelebrationSeenAt: timestamp("activation_celebration_seen_at"),
+
+    // Referral code/link
+    referralCode: varchar("referral_code", { length: 32 }).notNull(), // Unique code for the link
+
+    // Previous referrer (for grace period changes)
+    previousReferrerWallet: varchar("previous_referrer_wallet", { length: 42 }),
+    referrerChangedAt: timestamp("referrer_changed_at"),
+
+    // Metadata
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    // === UNIQUE CONSTRAINTS ===
+    // One referrer per wallet (referee can only have one referrer)
+    refereeWalletUniqueIdx: uniqueIndex(
+      "referrals_referee_wallet_unique_ix"
+    ).on(t.refereeWallet),
+
+    // === QUERY INDEXES ===
+    // Referral code lookup (NOT unique - many referees can use the same code)
+    referralCodeIdx: index("referrals_referral_code_ix").on(t.referralCode),
+    // Referrer lookup for all referrals
+    referrerWalletIdx: index("referrals_referrer_wallet_ix").on(
+      t.referrerWallet
+    ),
+
+    // Status filtering (for admin/cron queries + active referral lookups)
+    referrerStatusIdx: index("referrals_referrer_status_ix").on(
+      t.referrerWallet,
+      t.status
+    ),
+
+    // Status-only index for filtering
+    statusIdx: index("referrals_status_ix").on(t.status),
+
+    // Grace period lookups (for "can change referrer" checks)
+    gracePeriodIdx: index("referrals_grace_period_ix").on(
+      t.refereeWallet,
+      t.gracePeriodEndsAt
+    ),
+
+    // Bonus expiration (for cron that processes expiring bonuses)
+    bonusEndsAtIdx: index("referrals_bonus_ends_at_ix").on(
+      t.refereeBonusEndsAt
+    ),
+
+    // Linked at for time-based queries (recent referrals, etc.)
+    linkedAtIdx: index("referrals_linked_at_ix").on(t.linkedAt),
+  })
+);
+
+export type ReferralType = InferSelectModel<typeof referrals>;
+export type ReferralInsertType = typeof referrals.$inferInsert;
+
+export const referralCodes = pgTable(
+  "referral_codes",
+  {
+    id: text("referral_code_id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+
+    walletAddress: varchar("wallet_address", { length: 42 }).notNull().unique(),
+
+    // The unique code (e.g., "alice" from ENS, or short hash like "a7f3x2")
+    code: varchar("code", { length: 32 }).notNull().unique(),
+
+    // Full shareable link (cached for convenience)
+    shareableLink: text("shareable_link").notNull(),
+
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    // One code per wallet (bidirectional uniqueness)
+    walletUniqueIdx: uniqueIndex("referral_codes_wallet_unique_ix").on(
+      t.walletAddress
+    ),
+
+    // Codes must be unique across all wallets
+    codeUniqueIdx: uniqueIndex("referral_codes_code_unique_ix").on(t.code),
+  })
+);
+
+export type ReferralCodeType = InferSelectModel<typeof referralCodes>;
+export type ReferralCodeInsertType = typeof referralCodes.$inferInsert;
+
+export const referralPointsWeekly = pgTable(
+  "referral_points_weekly",
+  {
+    id: text("referral_points_weekly_id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+
+    // The referrer wallet earning points
+    referrerWallet: varchar("referrer_wallet", { length: 42 }).notNull(),
+
+    // The referee wallet generating points
+    refereeWallet: varchar("referee_wallet", { length: 42 }).notNull(),
+
+    // Week number (protocol week)
+    weekNumber: integer("week_number").notNull(),
+
+    // Referee's base points (pre-multiplier) for this week
+    refereeBasePointsScaled6: numeric("referee_base_points_scaled6", {
+      precision: 20,
+      scale: 6,
+    }).notNull(),
+
+    // Referrer's earned points (20% of referee base)
+    referrerEarnedPointsScaled6: numeric("referrer_earned_points_scaled6", {
+      precision: 20,
+      scale: 6,
+    }).notNull(),
+
+    // Referee's bonus points (10% of base, if within bonus period)
+    refereeBonusPointsScaled6: numeric("referee_bonus_points_scaled6", {
+      precision: 20,
+      scale: 6,
+    })
+      .notNull()
+      .default("0"),
+
+    // One-time activation bonus (100 pts), recorded on activation week
+    activationBonusPointsScaled6: numeric("activation_bonus_points_scaled6", {
+      precision: 20,
+      scale: 6,
+    })
+      .notNull()
+      .default("0"),
+
+    // Whether referee was in bonus period this week
+    refereeBonusActive: boolean("referee_bonus_active")
+      .notNull()
+      .default(false),
+
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    // === UNIQUE CONSTRAINTS ===
+    // One record per referrer+referee+week combination
+    uniqueIdx: uniqueIndex("referral_points_unique_ix").on(
+      t.referrerWallet,
+      t.refereeWallet,
+      t.weekNumber
+    ),
+
+    // === QUERY INDEXES ===
+    // Referrer's points by week
+    referrerWeekIdx: index("referral_points_referrer_week_ix").on(
+      t.referrerWallet,
+      t.weekNumber
+    ),
+
+    // Referee lookup by week (for bonus calculations)
+    refereeWeekIdx: index("referral_points_referee_week_ix").on(
+      t.refereeWallet,
+      t.weekNumber
+    ),
+
+    // Week-only index for cron batch processing
+    weekIdx: index("referral_points_week_ix").on(t.weekNumber),
+
+    // Compound index for bonus queries
+    refereeBonusIdx: index("referral_points_referee_bonus_ix").on(
+      t.refereeWallet,
+      t.refereeBonusActive,
+      t.weekNumber
+    ),
+  })
+);
+
+export type ReferralPointsWeeklyType = InferSelectModel<
+  typeof referralPointsWeekly
+>;
+export type ReferralPointsWeeklyInsertType =
+  typeof referralPointsWeekly.$inferInsert;
+
+// ============================================
+// Referral Relations
+// ============================================
+
+export const ReferralsRelations = relations(referrals, ({ one, many }) => ({
+  referrer: one(wallets, {
+    fields: [referrals.referrerWallet],
+    references: [wallets.id],
+    relationName: "referrer",
+  }),
+  referee: one(wallets, {
+    fields: [referrals.refereeWallet],
+    references: [wallets.id],
+    relationName: "referee",
+  }),
+  weeklyPoints: many(referralPointsWeekly),
+}));
+
+export const ReferralCodesRelations = relations(referralCodes, ({ one }) => ({
+  wallet: one(wallets, {
+    fields: [referralCodes.walletAddress],
+    references: [wallets.id],
+  }),
+}));
+
+export const ReferralPointsWeeklyRelations = relations(
+  referralPointsWeekly,
+  ({ one }) => ({
+    referral: one(referrals, {
+      fields: [referralPointsWeekly.refereeWallet],
+      references: [referrals.refereeWallet],
+    }),
+  })
+);

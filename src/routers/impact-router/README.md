@@ -48,10 +48,35 @@ For each week in the requested week range, we compute:
 **Final Score Formula:**
 
 ```
-TotalPoints = (Emissions + Steering + Vault + GlowWorth) × Multiplier
+TotalPoints = (Emissions + Steering + Vault + GlowWorth) × Multiplier + ReferralPoints + ReferralBonusPoints + ActivationBonus
 ```
 
+Where:
+- `ReferralPoints`: sum of tiered % shares from all active referees (for referrers)
+- `ReferralBonusPoints`: 10% of own base points if within 12-week bonus period (for referees)
+- `ActivationBonus`: 100 points one-time when referee reaches 100 total points
+
 All points are computed internally with **6-decimal fixed-point precision** and returned as strings.
+
+### Referral Network Tiers (Referrer)
+
+Referrers earn a percentage of their referees' **base points** (pre-multiplier) based on their active network size:
+
+| Tier | Active Referrals | Referrer Earns |
+| :--- | :--- | :--- |
+| **Seed** | 1 | 5% |
+| **Grow** | 2–3 | 10% |
+| **Scale** | 4–6 | 15% |
+| **Legend** | 7+ | 20% |
+
+- Referral points are **not subject to multipliers** (neither referrer's nor referee's).
+- Referrals activate once the referee earns ≥100 total Impact Points.
+
+### Referral Bonus (Referee)
+
+Referees earn bonuses for joining via a referral link:
+- **+10% Bonus**: On their own base points for 12 weeks.
+- **+100pt Activation Bonus**: One-time award when they first reach 100 total Impact Points.
 
 ### Regional Breakdown
 
@@ -91,11 +116,11 @@ This matches the totals formula where delegated GLW earns both vault bonus AND c
 
 ### What updates instantly (next fetch)
 
-If you **buy/receive GLW now**, the score can change, but it no longer “backfills” the entire history range for liquid balance. The scoring model now uses a **per-week time-weighted average balance (TWAB)** for `LiquidGLW`, derived from indexed ERC20 `Transfer` events, so a brief spike in balance only affects the weeks where you actually held it.
+If you **buy/receive GLW now**, the score can change, but it no longer “backfills” the entire history range for liquid balance. The scoring model now uses **end-of-week balance snapshots** for `LiquidGLW`, so a brief spike in balance only affects the weeks where you actually held it.
 
 - `GET /impact/glow-worth` still uses on-chain `balanceOf(wallet)` for the **current** `LiquidGLW`.
-- The score includes **continuous points** based on `GlowWorth` for each week in the requested range. For those computations, `LiquidGLW` uses **weekly TWAB** (transfer-indexed) rather than the current `balanceOf` snapshot.
-  - This inherently includes **swaps**, since swaps move GLW via standard ERC20 `Transfer` events.
+- The score includes **continuous points** based on `GlowWorth` for each week in the requested range. For those computations, `LiquidGLW` uses **weekly end-of-week balance snapshots** (ponder-indexed) rather than the current `balanceOf` snapshot.
+  - This still includes **swaps**, since swaps move GLW via standard ERC20 `Transfer` events and are reflected in snapshots.
 
 ### What does _not_ update instantly
 
@@ -114,7 +139,7 @@ By default, `startWeek/endWeek` use `getWeekRangeForImpact()`:
 - `startWeek`: fixed start (currently `97`)
 - `endWeek`: the **last completed protocol week** (based on actual protocol week boundaries: Sunday 00:00 UTC rollover from GENESIS_TIMESTAMP), not "the in-progress current protocol week".
 
-**Important**: This is different from `getWeekRange()` used by fractions/rewards, which uses Thursday 00:00 UTC GCA report timing. Impact scoring can use more recent weeks because TWAB/claims data is available immediately after the protocol week ends, whereas GCA reports need additional processing time.
+**Important**: This is different from `getWeekRange()` used by fractions/rewards, which uses Thursday 00:00 UTC GCA report timing. Impact scoring can use more recent weeks because snapshot/claims data is available immediately after the protocol week ends, whereas GCA reports need additional processing time.
 
 If you pass explicit `startWeek/endWeek` query params, the backend will compute over that range (it only validates `endWeek >= startWeek`).
 

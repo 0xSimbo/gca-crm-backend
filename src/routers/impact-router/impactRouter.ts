@@ -12,6 +12,7 @@ import {
   getAllImpactWallets,
   getImpactLeaderboardWalletUniverse,
 } from "./helpers/impact-score";
+import { populateReferralData } from "./helpers/referral-points";
 
 function parseOptionalInt(value: string | undefined): number | undefined {
   if (!value) return undefined;
@@ -448,6 +449,12 @@ export const impactRouter = new Elysia({ prefix: "/impact" })
             walletAddress.toLowerCase(),
             match.glowWorth
           );
+
+          await populateReferralData(
+            [match],
+            actualEndWeek,
+            new Map([[walletAddress.toLowerCase(), currentWeekProjection]])
+          );
           return { ...match, currentWeekProjection };
         }
 
@@ -558,6 +565,8 @@ export const impactRouter = new Elysia({ prefix: "/impact" })
                   return false;
                 }
               })(),
+              hasReferralPoints: parseFloat(r.composition.referralPoints || "0") > 0,
+              referralPointsScaled6: r.composition.referralPoints || "0.000000",
               endWeekMultiplier: r.endWeekMultiplier,
               globalRank: 0,
             };
@@ -663,7 +672,7 @@ export const impactRouter = new Elysia({ prefix: "/impact" })
       detail: {
         summary: "Get Glow Impact Score",
         description:
-          "Computes weekly rollover points (emissions + steering + vault bonus) with a total multiplier (base cash-miner multiplier + impact streak bonus). The streak bonus increases on weeks where delegated GLW increases or the wallet buys a mining-center fraction that week. Also includes continuous GlowWorth accrual. For continuous points, LiquidGLW uses a per-week time-weighted average balance (TWAB) derived from indexed ERC20 Transfer history (ponder listener). GCTL steering is derived from Control API stake-by-epoch; if unavailable it falls back to the current stake snapshot.",
+          "Computes weekly rollover points (emissions + steering + vault bonus) with a total multiplier (base cash-miner multiplier + impact streak bonus). The streak bonus increases on weeks where delegated GLW increases or the wallet buys a mining-center fraction that week. Also includes continuous GlowWorth accrual. For continuous points, LiquidGLW uses end-of-week balance snapshots (point-in-time) with fallback to the current on-chain balance if snapshots are missing. GCTL steering is derived from Control API stake-by-epoch; if unavailable it falls back to the current stake snapshot.",
         tags: [TAG.REWARDS],
       },
     }

@@ -306,141 +306,6 @@ export async function fetchGctlStakersFromControlApi(params?: {
   return data;
 }
 
-interface GlwTwabByWeekResponse {
-  indexingComplete?: boolean;
-  weekRange?: { startWeek: number; endWeek: number };
-  results?: Array<{
-    wallet: string;
-    weeks: Array<{
-      weekNumber: number;
-      balanceSecondsWei: string;
-      twabWei: string;
-      twabGlw: string;
-    }>;
-  }>;
-  error?: string;
-}
-
-export async function fetchGlwTwabByWeekWeiBatch(params: {
-  wallets: string[];
-  startWeek: number;
-  endWeek: number;
-}): Promise<Map<string, Map<number, bigint>>> {
-  const baseUrl = getPonderListenerBaseUrl();
-  const wallets = params.wallets.map((w) => w.toLowerCase());
-
-  const response = await fetch(`${baseUrl}/glow/twab-by-week`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      wallets,
-      startWeek: params.startWeek,
-      endWeek: params.endWeek,
-    }),
-  });
-
-  const text = await response.text().catch(() => "");
-  if (!response.ok) {
-    throw new Error(
-      `Ponder listener TWAB failed (${response.status}): ${text || "<empty>"}`
-    );
-  }
-
-  let data: GlwTwabByWeekResponse;
-  try {
-    data = JSON.parse(text) as GlwTwabByWeekResponse;
-  } catch {
-    throw new Error(`Ponder listener TWAB returned invalid JSON: ${text}`);
-  }
-
-  if (data.indexingComplete === false) {
-    throw new Error(data.error || "Ponder listener is still indexing");
-  }
-
-  const result = new Map<string, Map<number, bigint>>();
-  for (const row of data.results || []) {
-    const wallet = (row.wallet || "").toLowerCase();
-    if (!wallet) continue;
-    if (!result.has(wallet)) result.set(wallet, new Map());
-    const byWeek = result.get(wallet)!;
-    for (const w of row.weeks || []) {
-      const weekNumber = Number(w.weekNumber);
-      if (!Number.isFinite(weekNumber)) continue;
-      try {
-        byWeek.set(weekNumber, BigInt(w.twabWei || "0"));
-      } catch {
-        byWeek.set(weekNumber, BigInt(0));
-      }
-    }
-  }
-  return result;
-}
-
-export async function fetchGlwTwabByWeekWeiMany(params: {
-  wallets: string[];
-  startWeek: number;
-  endWeek: number;
-  batchSize?: number;
-  concurrentBatches?: number;
-}): Promise<Map<string, Map<number, bigint>>> {
-  const {
-    wallets,
-    startWeek,
-    endWeek,
-    batchSize = 500,
-    concurrentBatches = 3,
-  } = params;
-  const result = new Map<string, Map<number, bigint>>();
-  if (wallets.length === 0) return result;
-
-  const normalizedWallets = Array.from(
-    new Set(wallets.map((w) => w.toLowerCase()))
-  );
-
-  // Fast path: single request (the endpoint itself is batch-capable).
-  // We still keep the chunking logic below to support callers who pass > batchSize wallets.
-  if (normalizedWallets.length <= batchSize) {
-    return await fetchGlwTwabByWeekWeiBatch({
-      wallets: normalizedWallets,
-      startWeek,
-      endWeek,
-    });
-  }
-
-  for (
-    let i = 0;
-    i < normalizedWallets.length;
-    i += batchSize * concurrentBatches
-  ) {
-    const batchPromises: Array<Promise<Map<string, Map<number, bigint>>>> = [];
-
-    for (
-      let j = 0;
-      j < concurrentBatches && i + j * batchSize < normalizedWallets.length;
-      j++
-    ) {
-      const batch = normalizedWallets.slice(
-        i + j * batchSize,
-        i + (j + 1) * batchSize
-      );
-      batchPromises.push(
-        fetchGlwTwabByWeekWeiBatch({ wallets: batch, startWeek, endWeek })
-      );
-    }
-
-    const batchResults = await Promise.all(batchPromises);
-    for (const batchMap of batchResults) {
-      for (const [wallet, byWeek] of batchMap) {
-        if (!result.has(wallet)) result.set(wallet, new Map());
-        const acc = result.get(wallet)!;
-        for (const [week, twabWei] of byWeek) acc.set(week, twabWei);
-      }
-    }
-  }
-
-  return result;
-}
-
 interface GlwBalanceSnapshotByWeekResponse {
   indexingComplete?: boolean;
   weekRange?: { startWeek: number; endWeek: number };
@@ -1238,14 +1103,19 @@ export async function getGctlSteeringByWeekWei(params: {
   const byWeekAndRegion = new Map<number, Map<number, bigint>>();
 
   try {
-    const walletStakeByEpoch = await getWalletStakeByEpoch({
-      walletAddress,
-      startWeek,
-      endWeek,
-    });
+    // Fetch wallet stake and all region rewards in parallel
+    const weeks = Array.from({ length: endWeek - startWeek + 1 }, (_, i) => startWeek + i);
+    const [walletStakeByEpoch, ...regionRewardsResults] = await Promise.all([
+      getWalletStakeByEpoch({ walletAddress, startWeek, endWeek }),
+      ...weeks.map((w) => getRegionRewardsAtEpoch({ epoch: w })),
+    ]);
+
+    // Build a map of week -> region rewards
+    const regionRewardsByWeek = new Map<number, RegionRewardsResponse>();
+    weeks.forEach((w, i) => regionRewardsByWeek.set(w, regionRewardsResults[i]));
 
     for (let w = startWeek; w <= endWeek; w++) {
-      const regionRewards = await getRegionRewardsAtEpoch({ epoch: w });
+      const regionRewards = regionRewardsByWeek.get(w)!;
       const regionRewardById = new Map<
         number,
         { gctlStaked: bigint; glwRewardWei: bigint }

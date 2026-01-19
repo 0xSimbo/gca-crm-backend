@@ -29,6 +29,7 @@ import { fractionsRouter } from "./routers/fractions-router/fractionsRouter";
 import { quotesRouter } from "./routers/quotes-router/quotesRouter";
 import { impactRouter } from "./routers/impact-router/impactRouter";
 import { solarCollectorRouter } from "./routers/solar-collector-router/solarCollectorRouter";
+import { referralRouter } from "./routers/referral-router/referralRouter";
 import { incrementStaleFractions } from "./crons/increment-stale-fractions/incrementStaleFractions";
 import { expireFractions } from "./crons/expire-fractions/expireFractions";
 import { initializeFractionEventService } from "./services/eventListener";
@@ -315,6 +316,7 @@ const app = new Elysia()
   .use(quotesRouter)
   .use(impactRouter)
   .use(solarCollectorRouter)
+  .use(referralRouter)
   .get("/update-rewards-for-current-week", async () => {
     //Will only work if the GCA has submitted the report for the current week.
     const currentWeek = getProtocolWeek();

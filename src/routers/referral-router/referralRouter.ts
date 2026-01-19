@@ -1,0 +1,871 @@
+import { Elysia, t } from "elysia";
+import { db } from "../../db/db";
+import {
+  referrals,
+  referralCodes,
+  referralFeatureLaunchSeen,
+  referralPointsWeekly,
+} from "../../db/schema";
+import { eq, and, desc, sql, inArray } from "drizzle-orm";
+import { TAG } from "../../constants";
+import { getOrCreateReferralCode } from "./helpers/referral-code";
+import { linkReferrer } from "./helpers/referral-linking";
+import {
+  validateLinkReferralSignature,
+  validateChangeReferrerSignature,
+  linkReferralSignatureRequestSchema,
+  changeReferrerSignatureRequestSchema,
+} from "../../signature-schemas/referral";
+import {
+  calculateReferrerShare,
+  getReferrerTier,
+  getReferrerStats,
+  applyPostLinkProration,
+} from "../impact-router/helpers/referral-points";
+import {
+  computeGlowImpactScores,
+  getCurrentWeekProjection,
+  type GlowWorthResult,
+} from "../impact-router/helpers/impact-score";
+import { formatPointsScaled6 } from "../impact-router/helpers/points";
+import { viemClient } from "../../lib/web3-providers/viem-client";
+import { getReferralNonce, canClaimReferrer } from "./helpers/referral-validation";
+import { dateToEpoch, getCurrentEpoch, getProtocolWeek } from "../../utils/getProtocolWeek";
+import pLimit from "p-limit";
+
+export const referralRouter = new Elysia({ prefix: "/referral" })
+  .get(
+    "/code",
+    async ({ query: { walletAddress }, set }) => {
+      try {
+        if (!walletAddress) {
+          set.status = 400;
+          return "walletAddress required";
+        }
+        const record = await getOrCreateReferralCode(walletAddress);
+        return {
+          code: record.code,
+          shareableLink: record.shareableLink,
+        };
+      } catch (e) {
+        set.status = 500;
+        return e instanceof Error ? e.message : "Error Occurred";
+      }
+    },
+    {
+      query: t.Object({
+        walletAddress: t.String({ pattern: "^0x[a-fA-F0-9]{40}$" }),
+      }),
+      detail: {
+        summary: "Get or generate referral code for wallet",
+        tags: [TAG.REFERRALS],
+      },
+    }
+  )
+  .post(
+    "/link",
+    async ({ body, set }) => {
+      try {
+        // 1. Signature validation
+        const sigResult = await validateLinkReferralSignature(body);
+        if (!sigResult.valid) {
+          set.status = 401;
+          return sigResult.reason || "Signature verification failed";
+        }
+
+        // 2. Link logic
+        const record = await getReferralCodeRecordByCode(body.referralCode);
+        if (!record) {
+          set.status = 404;
+          return "Invalid referral code";
+        }
+
+        const referral = await linkReferrer({
+          refereeWallet: body.wallet,
+          referralCode: body.referralCode,
+          referrerWallet: record.walletAddress,
+          nonce: body.nonce,
+        });
+
+        return {
+          success: true,
+          referral: {
+            referrerWallet: referral.referrerWallet,
+            linkedAt: referral.linkedAt.toISOString(),
+            gracePeriodEndsAt: referral.gracePeriodEndsAt.toISOString(),
+            refereeBonusEndsAt: referral.refereeBonusEndsAt.toISOString(),
+            status: referral.status,
+          },
+          message: "Referrer linked successfully",
+        };
+      } catch (e) {
+        set.status = 400;
+        return e instanceof Error ? e.message : "Error Occurred";
+      }
+    },
+    {
+      body: linkReferralSignatureRequestSchema,
+      detail: {
+        summary: "Link referee to referrer via code (Requires signature)",
+        tags: [TAG.REFERRALS],
+      },
+    }
+  )
+  .post(
+    "/change",
+    async ({ body, set }) => {
+      try {
+        // 1. Signature validation
+        const sigResult = await validateChangeReferrerSignature(body);
+        if (!sigResult.valid) {
+          set.status = 401;
+          return sigResult.reason || "Signature verification failed";
+        }
+
+        // 2. Resolve new referrer
+        const record = await getReferralCodeRecordByCode(body.newReferralCode);
+        if (!record) {
+          set.status = 404;
+          return "Invalid new referral code";
+        }
+
+        // 3. Link logic (handles grace period checks internally)
+        const referral = await linkReferrer({
+          refereeWallet: body.wallet,
+          referralCode: body.newReferralCode,
+          referrerWallet: record.walletAddress,
+          nonce: body.nonce,
+          requireExisting: true,
+        });
+
+        return {
+          success: true,
+          referral: {
+            referrerWallet: referral.referrerWallet,
+            previousReferrerWallet: referral.previousReferrerWallet,
+            linkedAt: referral.linkedAt.toISOString(),
+            gracePeriodEndsAt: referral.gracePeriodEndsAt.toISOString(),
+            refereeBonusEndsAt: referral.refereeBonusEndsAt.toISOString(),
+            status: referral.status,
+          },
+          message: "Referrer changed successfully",
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : "Error Occurred";
+        if (message === "No existing referral") {
+          set.status = 404;
+          return message;
+        }
+        set.status = 400;
+        return message;
+      }
+    },
+    {
+      body: changeReferrerSignatureRequestSchema,
+      detail: {
+        summary: "Change referrer (Within 7-day grace period, Requires signature)",
+        tags: [TAG.REFERRALS],
+      },
+    }
+  )
+  .get(
+    "/network",
+    async ({ query: { walletAddress, limit }, set }) => {
+      try {
+        const normalizedWallet = walletAddress.toLowerCase();
+        const parsedLimit = limit ? parseInt(limit) : 50;
+        const ACTIVATION_THRESHOLD_SCALED6 = 100_000_000n;
+        const currentWeek = getCurrentEpoch(Math.floor(Date.now() / 1000));
+
+        const parseScaled6 = (val: string | undefined) => {
+          if (!val) return 0n;
+          const raw = val.trim();
+          if (!raw) return 0n;
+          const isNeg = raw.startsWith("-");
+          const abs = isNeg ? raw.slice(1) : raw;
+          const parts = abs.split(".");
+          if (parts.length > 2) return 0n;
+          const intPartRaw = parts[0] ?? "";
+          const fracRaw = parts[1] ?? "";
+
+          const intPart = intPartRaw === "" ? "0" : intPartRaw;
+          if (!/^\d+$/.test(intPart)) return 0n;
+          if (fracRaw !== "" && !/^\d+$/.test(fracRaw)) return 0n;
+
+          const frac = (fracRaw + "000000").slice(0, 6);
+          let out = BigInt(intPart) * 1_000_000n + BigInt(frac);
+          if (isNeg) out = -out;
+          return out;
+        };
+
+        const codeRecord = await getOrCreateReferralCode(normalizedWallet);
+        const maxWeekRes = await db
+          .select({
+            maxWeek: sql<number>`max(${referralPointsWeekly.weekNumber})`,
+          })
+          .from(referralPointsWeekly);
+        const maxWeek = maxWeekRes[0]?.maxWeek;
+
+        const stats = await getReferrerStats(normalizedWallet, maxWeek);
+        const totalsRes = await db
+          .select({
+            totalReferees: sql<number>`count(*)::int`,
+            activeReferees: sql<number>`count(*) filter (where ${referrals.status} = 'active')::int`,
+            pendingReferees: sql<number>`count(*) filter (where ${referrals.status} = 'pending')::int`,
+          })
+          .from(referrals)
+          .where(eq(referrals.referrerWallet, normalizedWallet));
+
+        const totalReferees = totalsRes[0]?.totalReferees || 0;
+        const activeReferees = totalsRes[0]?.activeReferees || 0;
+        const pendingReferees = totalsRes[0]?.pendingReferees || 0;
+        const tier = getReferrerTier(activeReferees);
+
+        const allReferees = await db
+          .select({
+            refereeWallet: referrals.refereeWallet,
+            status: referrals.status,
+            linkedAt: referrals.linkedAt,
+          })
+          .from(referrals)
+          .where(eq(referrals.referrerWallet, normalizedWallet));
+
+        const refereeList = await db
+          .select({
+            refereeWallet: referrals.refereeWallet,
+            status: referrals.status,
+            linkedAt: referrals.linkedAt,
+            activatedAt: referrals.activatedAt,
+            gracePeriodEndsAt: referrals.gracePeriodEndsAt,
+          })
+          .from(referrals)
+          .where(eq(referrals.referrerWallet, normalizedWallet))
+          .orderBy(desc(referrals.linkedAt))
+          .limit(parsedLimit);
+
+        // Fetch recent weekly points for these referees
+        const refereeWallets = refereeList.map((r) => r.refereeWallet);
+        let weeklyPoints: any[] = [];
+
+        if (refereeWallets.length > 0) {
+          weeklyPoints = await db
+            .select({
+              refereeWallet: referralPointsWeekly.refereeWallet,
+              thisWeekPoints: sql<string>`coalesce(sum(${referralPointsWeekly.referrerEarnedPointsScaled6}) filter (where ${referralPointsWeekly.weekNumber} = ${maxWeek || 0}), '0.000000')`,
+              lifetimePoints: sql<string>`coalesce(sum(${referralPointsWeekly.referrerEarnedPointsScaled6}), '0.000000')`,
+            })
+            .from(referralPointsWeekly)
+            .where(inArray(referralPointsWeekly.refereeWallet, refereeWallets))
+            .groupBy(referralPointsWeekly.refereeWallet);
+        }
+
+        const pointsMap = new Map(
+          weeklyPoints.map((p) => [p.refereeWallet, p])
+        );
+
+        const refereeWalletsAll = Array.from(
+          new Set(allReferees.map((r) => r.refereeWallet.toLowerCase()))
+        );
+        const activationStartWeekByReferee = new Map<string, number>();
+        const linkedAtByReferee = new Map<string, Date>();
+        for (const ref of allReferees) {
+          linkedAtByReferee.set(
+            ref.refereeWallet.toLowerCase(),
+            ref.linkedAt
+          );
+          activationStartWeekByReferee.set(
+            ref.refereeWallet.toLowerCase(),
+            dateToEpoch(ref.linkedAt)
+          );
+        }
+
+        const glowWorthByReferee = new Map<string, GlowWorthResult>();
+        if (refereeWalletsAll.length > 0) {
+          try {
+            const glowWorthResults = await computeGlowImpactScores({
+              walletAddresses: refereeWalletsAll,
+              startWeek: currentWeek,
+              endWeek: currentWeek,
+              includeWeeklyBreakdown: false,
+            });
+            for (const result of glowWorthResults) {
+              glowWorthByReferee.set(
+                result.walletAddress.toLowerCase(),
+                result.glowWorth
+              );
+            }
+          } catch (error) {
+            console.error(
+              "[Referral] GlowWorth projection fetch failed",
+              error
+            );
+          }
+        }
+
+        const historicalBasePointsByReferee = new Map<string, bigint>();
+        if (refereeWalletsAll.length > 0) {
+          const basePointRows = await db
+            .select({
+              refereeWallet: referralPointsWeekly.refereeWallet,
+              weekNumber: referralPointsWeekly.weekNumber,
+              basePoints: referralPointsWeekly.refereeBasePointsScaled6,
+            })
+            .from(referralPointsWeekly)
+            .where(inArray(referralPointsWeekly.refereeWallet, refereeWalletsAll));
+
+          for (const row of basePointRows) {
+            const refereeWallet = row.refereeWallet.toLowerCase();
+            const activationStartWeek =
+              activationStartWeekByReferee.get(refereeWallet);
+            if (activationStartWeek == null) continue;
+            if (row.weekNumber < activationStartWeek) continue;
+            const basePoints = parseScaled6(row.basePoints);
+            if (basePoints <= 0n) continue;
+            historicalBasePointsByReferee.set(
+              refereeWallet,
+              (historicalBasePointsByReferee.get(refereeWallet) || 0n) +
+                basePoints
+            );
+          }
+        }
+
+        const projectedBasePointsByReferee = new Map<string, bigint>();
+        const projectionWeekNumber = currentWeek;
+        if (refereeWalletsAll.length > 0) {
+          const limitProjection = pLimit(5);
+          await Promise.all(
+            refereeWalletsAll.map((refereeWallet) =>
+              limitProjection(async () => {
+                try {
+                  const projection = await getCurrentWeekProjection(
+                    refereeWallet,
+                    glowWorthByReferee.get(refereeWallet)
+                  );
+                  const basePointsScaled6 = parseScaled6(
+                    projection.projectedPoints.basePointsPreMultiplierScaled6
+                  );
+                  const linkedAt = linkedAtByReferee.get(refereeWallet);
+                  projectedBasePointsByReferee.set(
+                    refereeWallet,
+                    linkedAt
+                      ? applyPostLinkProration({
+                          basePointsScaled6,
+                          linkedAt,
+                          weekNumber: projectionWeekNumber,
+                        })
+                      : basePointsScaled6
+                  );
+                } catch {
+                  projectedBasePointsByReferee.set(refereeWallet, 0n);
+                }
+              })
+            )
+          );
+        }
+
+        const activationPendingByReferee = new Map<string, boolean>();
+        for (const ref of allReferees) {
+          const refereeWallet = ref.refereeWallet.toLowerCase();
+          const activationStartWeek =
+            activationStartWeekByReferee.get(refereeWallet) ?? currentWeek;
+          const historicalBasePoints =
+            historicalBasePointsByReferee.get(refereeWallet) || 0n;
+          const projectedBasePoints =
+            projectedBasePointsByReferee.get(refereeWallet) || 0n;
+          const includeProjected = currentWeek >= activationStartWeek;
+          const postLinkBasePoints =
+            historicalBasePoints + (includeProjected ? projectedBasePoints : 0n);
+          const activationPending =
+            ref.status === "pending" &&
+            includeProjected &&
+            postLinkBasePoints >= ACTIVATION_THRESHOLD_SCALED6;
+          activationPendingByReferee.set(refereeWallet, activationPending);
+        }
+
+        const projectedActivationCount = Array.from(
+          activationPendingByReferee.values()
+        ).filter(Boolean).length;
+        const projectedActiveCount =
+          activeReferees + projectedActivationCount;
+
+        const projectedShareByReferee = new Map<string, bigint>();
+        let projectedTotalPoints = 0n;
+        for (const ref of allReferees) {
+          const refereeWallet = ref.refereeWallet.toLowerCase();
+          const projectedBasePoints =
+            projectedBasePointsByReferee.get(refereeWallet) || 0n;
+          const activationPending =
+            activationPendingByReferee.get(refereeWallet) || false;
+          const willEarn =
+            ref.status === "active" || activationPending;
+          const projectedShare =
+            willEarn && projectedBasePoints > 0n
+              ? calculateReferrerShare(
+                  projectedBasePoints,
+                  projectedActiveCount
+                )
+              : 0n;
+          projectedShareByReferee.set(refereeWallet, projectedShare);
+          projectedTotalPoints += projectedShare;
+        }
+
+        const now = new Date();
+        const useProjectedThisWeek = maxWeek == null || currentWeek > maxWeek;
+        const referees = await Promise.all(
+          refereeList.map(async (r) => {
+            const p = pointsMap.get(r.refereeWallet);
+            let ensName: string | undefined;
+            try {
+              ensName =
+                (await viemClient.getEnsName({
+                  address: r.refereeWallet as `0x${string}`,
+                })) || undefined;
+            } catch {}
+
+            return {
+              ...r,
+              ensName,
+              linkedAt: r.linkedAt.toISOString(),
+              activatedAt: r.activatedAt?.toISOString(),
+              gracePeriodEndsAt: r.gracePeriodEndsAt.toISOString(),
+              isInGracePeriod: now < r.gracePeriodEndsAt,
+              thisWeekPointsScaled6: useProjectedThisWeek
+                ? formatPointsScaled6(
+                    projectedShareByReferee.get(
+                      r.refereeWallet.toLowerCase()
+                    ) || 0n
+                  )
+                : p?.thisWeekPoints || "0.000000",
+              lifetimePointsScaled6: p?.lifetimePoints || "0.000000",
+              projectedThisWeekPointsScaled6: formatPointsScaled6(
+                projectedShareByReferee.get(
+                  r.refereeWallet.toLowerCase()
+                ) || 0n
+              ),
+              activationPending:
+                activationPendingByReferee.get(
+                  r.refereeWallet.toLowerCase()
+                ) || false,
+            };
+          })
+        );
+
+        const response = {
+          walletAddress: normalizedWallet,
+          code: codeRecord.code,
+          shareableLink: codeRecord.shareableLink,
+          stats: {
+            totalReferees,
+            activeReferees,
+            pendingReferees,
+            totalPointsEarnedScaled6: stats.totalPointsEarnedScaled6,
+            thisWeekPointsScaled6: useProjectedThisWeek
+              ? formatPointsScaled6(projectedTotalPoints)
+              : stats.thisWeekPointsScaled6,
+            projectedThisWeekPointsScaled6: formatPointsScaled6(
+              projectedTotalPoints
+            ),
+            lifetimePointsScaled6: stats.totalPointsEarnedScaled6,
+            currentTier: tier,
+          },
+          referees,
+          projectionWeekNumber,
+          milestones: {
+            firstReferral: { unlocked: totalReferees >= 1 },
+            networkBuilder: {
+              unlocked: activeReferees >= 5,
+              progress: activeReferees,
+              target: 5,
+            },
+            powerBroker: {
+              unlocked: activeReferees >= 10,
+              progress: activeReferees,
+              target: 10,
+            },
+            legendStatus: {
+              unlocked: activeReferees >= 25,
+              progress: activeReferees,
+              target: 25,
+            },
+          },
+        };
+        return response;
+      } catch (e) {
+        set.status = 500;
+        return e instanceof Error ? e.message : "Error Occurred";
+      }
+    },
+    {
+      query: t.Object({
+        walletAddress: t.String({ pattern: "^0x[a-fA-F0-9]{40}$" }),
+        limit: t.Optional(t.String()),
+      }),
+      detail: {
+        summary: "Get referrer's network (list of referees)",
+        tags: [TAG.REFERRALS],
+      },
+    }
+  )
+  .get(
+    "/status",
+    async ({ query: { walletAddress }, set }) => {
+      try {
+        const normalizedWallet = walletAddress.toLowerCase();
+        const [referral, nonce, claimCheck, featureSeen] = await Promise.all([
+          db.query.referrals.findFirst({
+            where: (r, { eq, sql }) => eq(sql`lower(${r.refereeWallet})`, normalizedWallet),
+          }),
+          getReferralNonce(normalizedWallet),
+          canClaimReferrer(normalizedWallet),
+          db.query.referralFeatureLaunchSeen.findFirst({
+            where: eq(referralFeatureLaunchSeen.walletAddress, normalizedWallet),
+          }),
+        ]);
+
+        let referrerEns: string | undefined;
+        if (referral) {
+          try {
+            referrerEns = (await viemClient.getEnsName({ address: referral.referrerWallet as `0x${string}` })) || undefined;
+          } catch {}
+        }
+
+        const now = new Date();
+
+        return {
+          nonce: nonce.toString(),
+          canClaim: claimCheck.canClaim,
+          claimReason: claimCheck.reason,
+          hasReferrer: !!referral,
+          referrer: referral ? {
+            wallet: referral.referrerWallet,
+            ensName: referrerEns,
+            linkedAt: referral.linkedAt.toISOString(),
+            gracePeriodEndsAt: referral.gracePeriodEndsAt.toISOString(),
+            isInGracePeriod: now < referral.gracePeriodEndsAt,
+            canChangeReferrer: now < referral.gracePeriodEndsAt,
+          } : undefined,
+          bonus: referral ? {
+            isActive: now < referral.refereeBonusEndsAt,
+            endsAt: referral.refereeBonusEndsAt.toISOString(),
+            weeksRemaining: Math.max(0, Math.ceil((referral.refereeBonusEndsAt.getTime() - now.getTime()) / (7 * 24 * 60 * 60 * 1000))),
+            bonusPercent: 10,
+          } : undefined,
+          // Modal tracking (replaces localStorage)
+          featureLaunchModal: (() => {
+            const seenAt =
+              referral?.featureLaunchSeenAt ?? featureSeen?.featureLaunchSeenAt;
+            return {
+              seen: !!seenAt,
+              seenAt: seenAt?.toISOString(),
+            };
+          })(),
+          activationBonus: referral ? {
+            awarded: referral.activationBonusAwarded,
+            awardedAt: referral.activationBonusAwardedAt?.toISOString(),
+            pointsAwarded: referral.activationBonusAwarded ? 100 : 0,
+            celebrationSeen: !!referral.activationCelebrationSeenAt,
+            celebrationSeenAt: referral.activationCelebrationSeenAt?.toISOString(),
+          } : undefined,
+        };
+      } catch (e) {
+        set.status = 500;
+        return e instanceof Error ? e.message : "Error Occurred";
+      }
+    },
+    {
+      query: t.Object({
+        walletAddress: t.String({ pattern: "^0x[a-fA-F0-9]{40}$" }),
+      }),
+      detail: {
+        summary: "Get referee's referral status (who referred them)",
+        tags: [TAG.REFERRALS],
+      },
+    }
+  )
+  .get(
+    "/validate/:code",
+    async ({ params: { code }, set }) => {
+      try {
+        const record = await getReferralCodeRecordByCode(code);
+        if (!record) {
+          return { valid: false, message: "Invalid referral code" };
+        }
+
+        let referrerEns: string | undefined;
+        try {
+          referrerEns = (await viemClient.getEnsName({ address: record.walletAddress as `0x${string}` })) || undefined;
+        } catch {}
+
+        return {
+          valid: true,
+          referrerWallet: record.walletAddress,
+          referrerEns,
+          message: "Valid code",
+        };
+      } catch (e) {
+        set.status = 500;
+        return e instanceof Error ? e.message : "Error Occurred";
+      }
+    },
+    {
+      params: t.Object({
+        code: t.String(),
+      }),
+      detail: {
+        summary: "Validate a referral code",
+        tags: [TAG.REFERRALS],
+      },
+    }
+  )
+  .post(
+    "/feature-launch-seen",
+    async ({ body, set }) => {
+      try {
+        const normalizedWallet = body.walletAddress.toLowerCase();
+
+        // Check if user has a referral record (as referee)
+        const existing = await db.query.referrals.findFirst({
+          where: (r, { eq, sql }) => eq(sql`lower(${r.refereeWallet})`, normalizedWallet),
+        });
+
+        const now = new Date();
+        if (existing) {
+          // Update existing record
+          await db
+            .update(referrals)
+            .set({
+              featureLaunchSeenAt: now,
+              updatedAt: now,
+            })
+            .where(eq(referrals.refereeWallet, existing.refereeWallet));
+        } else {
+          await db
+            .insert(referralFeatureLaunchSeen)
+            .values({
+              walletAddress: normalizedWallet,
+              featureLaunchSeenAt: now,
+              updatedAt: now,
+            })
+            .onConflictDoUpdate({
+              target: referralFeatureLaunchSeen.walletAddress,
+              set: { featureLaunchSeenAt: now, updatedAt: now },
+            });
+        }
+
+        return { success: true };
+      } catch (e) {
+        set.status = 500;
+        return e instanceof Error ? e.message : "Error Occurred";
+      }
+    },
+    {
+      body: t.Object({
+        walletAddress: t.String({ pattern: "^0x[a-fA-F0-9]{40}$" }),
+      }),
+      detail: {
+        summary: "Mark feature launch modal as seen",
+        tags: [TAG.REFERRALS],
+      },
+    }
+  )
+  .post(
+    "/activation-seen",
+    async ({ body, set }) => {
+      try {
+        const normalizedWallet = body.walletAddress.toLowerCase();
+
+        // Find the referral record for this referee
+        const existing = await db.query.referrals.findFirst({
+          where: (r, { eq, sql }) => eq(sql`lower(${r.refereeWallet})`, normalizedWallet),
+        });
+
+        if (!existing) {
+          set.status = 404;
+          return "No referral record found";
+        }
+
+        // Update the activation celebration seen timestamp
+        await db
+          .update(referrals)
+          .set({
+            activationCelebrationSeenAt: new Date(),
+            updatedAt: new Date(),
+          })
+          .where(eq(referrals.refereeWallet, existing.refereeWallet));
+
+        return { success: true };
+      } catch (e) {
+        set.status = 500;
+        return e instanceof Error ? e.message : "Error Occurred";
+      }
+    },
+    {
+      body: t.Object({
+        walletAddress: t.String({ pattern: "^0x[a-fA-F0-9]{40}$" }),
+      }),
+      detail: {
+        summary: "Mark activation celebration modal as seen",
+        tags: [TAG.REFERRALS],
+      },
+    }
+  )
+  .get(
+    "/leaderboard",
+    async ({ query: { limit, sortBy }, set }) => {
+      try {
+        const parsedLimit = limit ? parseInt(limit) : 10;
+        const sort =
+          sortBy === "network"
+            ? "network"
+            : sortBy === "hybrid"
+            ? "hybrid"
+            : "points";
+
+        const parseEnvWeek = (value: string | undefined) => {
+          if (!value) return undefined;
+          const parsed = Number(value);
+          return Number.isFinite(parsed) ? Math.trunc(parsed) : undefined;
+        };
+
+        const [pointsRows, activeCountRows] = await Promise.all([
+          db
+            .select({
+              referrerWallet: referralPointsWeekly.referrerWallet,
+              totalPoints: sql<string>`coalesce(sum(${referralPointsWeekly.referrerEarnedPointsScaled6}), '0.000000')`,
+            })
+            .from(referralPointsWeekly)
+            .groupBy(referralPointsWeekly.referrerWallet),
+          db
+            .select({
+              referrerWallet: referrals.referrerWallet,
+              activeCount: sql<number>`count(*)::int`,
+            })
+            .from(referrals)
+            .where(eq(referrals.status, "active"))
+            .groupBy(referrals.referrerWallet),
+        ]);
+
+        const pointsMap = new Map(
+          pointsRows.map((row) => [row.referrerWallet, row.totalPoints])
+        );
+        const activeCountMap = new Map(
+          activeCountRows.map((row) => [row.referrerWallet, row.activeCount])
+        );
+
+        const allWallets = new Set<string>([
+          ...pointsMap.keys(),
+          ...activeCountMap.keys(),
+        ]);
+
+        const entries = Array.from(allWallets).map((wallet) => {
+          const totalReferralPoints = pointsMap.get(wallet) || "0.000000";
+          const activeReferralCount = activeCountMap.get(wallet) || 0;
+          const totalPointsNumber = Number(totalReferralPoints) || 0;
+          const hybridScore = 0.6 * totalPointsNumber + 0.4 * activeReferralCount;
+          return {
+            wallet,
+            totalReferralPoints,
+            activeReferralCount,
+            totalPointsNumber,
+            hybridScore,
+          };
+        });
+
+        entries.sort((a, b) => {
+          if (sort === "network") {
+            if (a.activeReferralCount !== b.activeReferralCount) {
+              return b.activeReferralCount - a.activeReferralCount;
+            }
+            return b.totalPointsNumber - a.totalPointsNumber;
+          }
+          if (sort === "hybrid") {
+            if (a.hybridScore !== b.hybridScore) {
+              return b.hybridScore - a.hybridScore;
+            }
+            return b.totalPointsNumber - a.totalPointsNumber;
+          }
+          if (a.totalPointsNumber !== b.totalPointsNumber) {
+            return b.totalPointsNumber - a.totalPointsNumber;
+          }
+          return b.activeReferralCount - a.activeReferralCount;
+        });
+
+        const limitedEntries = entries.slice(0, parsedLimit);
+        const leaderboard = await Promise.all(
+          limitedEntries.map(async (entry, idx) => {
+            let displayName: string | undefined;
+            try {
+              displayName =
+                (await viemClient.getEnsName({
+                  address: entry.wallet as `0x${string}`,
+                })) || undefined;
+            } catch {}
+
+            const tier = getReferrerTier(entry.activeReferralCount);
+
+            return {
+              rank: idx + 1,
+              wallet: entry.wallet,
+              displayName,
+              totalReferralPoints: entry.totalReferralPoints,
+              activeReferralCount: entry.activeReferralCount,
+              currentTier: { name: tier.name, percent: Number(tier.percent) },
+              hybridScore: sort === "hybrid" ? entry.hybridScore : undefined,
+            };
+          })
+        );
+
+        const eligibleForGiveaway = Array.from(activeCountMap.values()).filter(
+          (count) => count >= 3
+        ).length;
+
+        const currentWeek = getProtocolWeek();
+        const giveawayStartWeek = parseEnvWeek(
+          process.env.REFERRAL_GIVEAWAY_START_WEEK
+        );
+        const giveawayEndWeek = parseEnvWeek(
+          process.env.REFERRAL_GIVEAWAY_END_WEEK
+        );
+        const giveawaySnapshotWeek =
+          parseEnvWeek(process.env.REFERRAL_GIVEAWAY_SNAPSHOT_WEEK) ??
+          giveawayEndWeek;
+
+        let eventStatus: "upcoming" | "active" | "completed" = "upcoming";
+        if (giveawayStartWeek != null && giveawayEndWeek != null) {
+          if (currentWeek < giveawayStartWeek) {
+            eventStatus = "upcoming";
+          } else if (currentWeek <= giveawayEndWeek) {
+            eventStatus = "active";
+          } else {
+            eventStatus = "completed";
+          }
+        }
+
+        return {
+          leaderboard,
+          eligibleForGiveaway,
+          eventStatus,
+          snapshotWeek: giveawaySnapshotWeek,
+        };
+      } catch (e) {
+        set.status = 500;
+        return e instanceof Error ? e.message : "Error Occurred";
+      }
+    },
+    {
+      query: t.Object({
+        limit: t.Optional(t.String()),
+        sortBy: t.Optional(t.String()),
+      }),
+      detail: {
+        summary: "Get referral giveaway leaderboard (Post-MVP)",
+        tags: [TAG.REFERRALS],
+      },
+    }
+  );
+
+async function getReferralCodeRecordByCode(code: string) {
+  return await db.query.referralCodes.findFirst({
+    where: eq(referralCodes.code, code),
+  });
+}

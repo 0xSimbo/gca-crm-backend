@@ -157,7 +157,7 @@ export const publicApplicationsRoutes = new Elysia()
     "/sponsor-listings-applications",
     async ({ query, set }) => {
       try {
-        const { zoneId, sortBy, sortOrder, paymentCurrency, type } = query;
+        const { zoneId, sortBy, sortOrder, paymentCurrency, type, includeFilled } = query;
 
         // Parse zoneId if provided
         const parsedZoneId = zoneId !== undefined ? Number(zoneId) : undefined;
@@ -176,9 +176,18 @@ export const publicApplicationsRoutes = new Elysia()
           );
         } else {
           // For launchpad type or when type is not specified
-          baseConditions.push(
-            eq(applications.status, ApplicationStatusEnum.waitingForPayment)
-          );
+          if (includeFilled === "true") {
+            baseConditions.push(
+              inArray(applications.status, [
+                ApplicationStatusEnum.waitingForPayment,
+                ApplicationStatusEnum.completed,
+              ])
+            );
+          } else {
+            baseConditions.push(
+              eq(applications.status, ApplicationStatusEnum.waitingForPayment)
+            );
+          }
         }
 
         // Add zoneId filter if specified
@@ -201,13 +210,22 @@ export const publicApplicationsRoutes = new Elysia()
           )
         );
 
-        // Add filter to only show applications that have active fractions
+        // Add filter to only show applications that have active or filled fractions
+        const fractionStatuses = ["draft", "committed"];
+        if (includeFilled === "true") {
+          fractionStatuses.push("filled");
+        }
+
         const fractionConditions = [
           eq(fractions.applicationId, applications.id),
-          eq(fractions.status, FRACTION_STATUS.COMMITTED),
-          eq(fractions.isCommittedOnChain, true),
-          gt(fractions.expirationAt, new Date()),
+          inArray(fractions.status, fractionStatuses),
         ];
+
+        // If not including filled, add more strict conditions for active fractions
+        if (includeFilled !== "true") {
+          fractionConditions.push(eq(fractions.isCommittedOnChain, true));
+          fractionConditions.push(gt(fractions.expirationAt, new Date()));
+        }
 
         // Filter by fraction type
         if (type) {
@@ -304,8 +322,7 @@ export const publicApplicationsRoutes = new Elysia()
             },
             fractions: {
               where: and(
-                inArray(fractions.status, ["draft", "committed"]),
-                gt(fractions.expirationAt, new Date()),
+                inArray(fractions.status, fractionStatuses),
                 type
                   ? eq(fractions.type, type)
                   : ne(fractions.type, "mining-center")
@@ -317,6 +334,7 @@ export const publicApplicationsRoutes = new Elysia()
                 sponsorSplitPercent: true,
                 createdAt: true,
                 expirationAt: true,
+                filledAt: true,
                 isCommittedOnChain: true,
                 isFilled: true,
                 rewardScore: true,
@@ -329,7 +347,7 @@ export const publicApplicationsRoutes = new Elysia()
                 txHash: true,
               },
               orderBy: desc(fractions.createdAt),
-              limit: 1, // Get only the latest active fraction
+              limit: 5, // Get a few fractions to find the best active or filled one
             },
           },
         });
@@ -346,11 +364,6 @@ export const publicApplicationsRoutes = new Elysia()
             );
           });
         }
-
-        // Filter out applications without active fractions (double-check SQL filtering)
-        filteredApplications = filteredApplications.filter((app) => {
-          return app.fractions && app.fractions.length > 0;
-        });
 
         // Fetch farm names for all applications
         const applicationIds = filteredApplications.map((app) => app.id);
@@ -427,9 +440,22 @@ export const publicApplicationsRoutes = new Elysia()
           });
         }
         const returnApplications = filteredApplications.map((app) => {
-          // Get the active fraction directly from the query result
-          const activeFraction =
-            app.fractions && app.fractions.length > 0 ? app.fractions[0] : null;
+          // Get the best fraction: prioritized committed > draft > filled
+          const sortedFractions = [...(app.fractions || [])].sort((a, b) => {
+            const statusPriority: Record<string, number> = {
+              committed: 0,
+              draft: 1,
+              filled: 2,
+            };
+            const priorityA = statusPriority[a.status] ?? 99;
+            const priorityB = statusPriority[b.status] ?? 99;
+            if (priorityA !== priorityB) return priorityA - priorityB;
+            return (
+              new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+            );
+          });
+
+          const activeFraction = sortedFractions.length > 0 ? sortedFractions[0] : null;
 
           return {
             id: app.id,
@@ -461,8 +487,10 @@ export const publicApplicationsRoutes = new Elysia()
                   sponsorSplitPercent: activeFraction.sponsorSplitPercent,
                   createdAt: activeFraction.createdAt,
                   expirationAt: activeFraction.expirationAt,
+                  filledAt: activeFraction.filledAt,
                   isCommittedOnChain: activeFraction.isCommittedOnChain,
                   isFilled: activeFraction.isFilled,
+                  rewardScore: activeFraction.rewardScore,
                   totalSteps: activeFraction.totalSteps,
                   splitsSold: activeFraction.splitsSold,
                   stepPrice: activeFraction.stepPrice,
@@ -470,7 +498,6 @@ export const publicApplicationsRoutes = new Elysia()
                   token: activeFraction.token,
                   owner: activeFraction.owner,
                   txHash: activeFraction.txHash,
-                  rewardScore: activeFraction.rewardScore,
                   // Calculate progress percentage
                   progressPercent:
                     activeFraction.totalSteps && activeFraction.splitsSold
@@ -538,6 +565,7 @@ export const publicApplicationsRoutes = new Elysia()
         type: t.Optional(
           t.Union([t.Literal("launchpad"), t.Literal("mining-center")])
         ),
+        includeFilled: t.Optional(t.Literal("true")),
       }),
       detail: {
         summary: "Get auction applications available for sponsorship",

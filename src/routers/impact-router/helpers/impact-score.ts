@@ -17,7 +17,6 @@ import {
   fetchFarmRewardsHistoryBatch,
   fetchWalletRewardsHistoryBatch,
   fetchGlwHoldersFromPonder,
-  fetchGlwTwabByWeekWeiMany,
   fetchGlwBalanceSnapshotByWeekMany,
   fetchGctlStakersFromControlApi,
   fetchClaimedPdWeeksBatch,
@@ -269,7 +268,7 @@ export interface WeeklyImpactRow {
   steeringGlwWei: string;
   delegatedActiveGlwWei: string;
   protocolDepositRecoveredGlwWei: string;
-  liquidGlwWei: string; // Historical liquid balance (TWAB)
+  liquidGlwWei: string; // Historical liquid balance (end-of-week snapshot)
   unclaimedGlwWei: string; // Historical unclaimed rewards
 
   // Points (scaled6 strings)
@@ -295,6 +294,8 @@ export interface ImpactScoreComposition {
   inflationPoints: string;
   worthPoints: string;
   vaultPoints: string;
+  referralPoints?: string;
+  referralBonusPoints?: string;
 }
 
 export interface RegionBreakdown {
@@ -328,6 +329,7 @@ export interface CurrentWeekProjection {
     inflationGlwWei: string;
     delegatedGlwWei: string;
     glowWorthWei: string;
+    basePointsPreMultiplierScaled6: string;
     totalProjectedScore: string;
   };
 }
@@ -342,6 +344,38 @@ export interface GlowImpactScoreResult {
   pointsPerRegion?: Record<string, string>;
   regionBreakdown?: RegionBreakdown[];
   weeklyRegionBreakdown?: WeeklyRegionBreakdown[];
+  referral?: {
+    asReferrer?: {
+      totalPointsEarnedScaled6: string;
+      thisWeekPointsScaled6: string;
+      activeRefereeCount: number;
+      pendingRefereeCount: number;
+      currentTier: {
+        name: "Seed" | "Grow" | "Scale" | "Legend";
+        percent: number;
+      };
+      nextTier?: {
+        name: string;
+        referralsNeeded: number;
+        percent: number;
+      };
+    };
+    asReferee?: {
+      referrerWallet: string;
+      referrerEns?: string;
+      bonusIsActive: boolean;
+      bonusEndsAt?: string;
+      bonusWeeksRemaining?: number;
+      bonusPointsThisWeekScaled6: string;
+      lifetimeBonusPointsScaled6: string;
+      activationBonus: {
+        awarded: boolean;
+        awardedAt?: string;
+        pending?: boolean;
+        pointsAwarded: number;
+      };
+    };
+  };
   totals: {
     totalPoints: string;
     rolloverPoints: string;
@@ -350,6 +384,8 @@ export interface GlowImpactScoreResult {
     steeringPoints: string;
     vaultBonusPoints: string;
     worthPoints: string;
+    basePointsPreMultiplierScaled6: string;
+    basePointsPreMultiplierScaled6ThisWeek: string;
     totalInflationGlwWei: string;
     totalSteeringGlwWei: string;
   };
@@ -917,114 +953,61 @@ export async function computeGlowImpactScores(params: {
   // Note: We intentionally do NOT convert non-GLW protocol deposit payouts to GLW
   // for `delegatedActiveGlwWei`. Only GLW-denominated protocol-deposit payouts count.
 
-  // Liquid GLW per wallet/week: we prefer end-of-week balance snapshots (accurate point-in-time)
-  // over TWAB (time-weighted average) to eliminate "squiggly" charts caused by mid-week activity.
-  // Falls back to TWAB if snapshots aren't available (pre-deployment weeks), then to current balance.
-  let liquidSnapshotByWalletWeek = new Map<string, Map<number, bigint>>();
-  let liquidTwabByWalletWeek = new Map<string, Map<number, bigint>>();
-  const liquidBalanceStart = nowMs();
+  // Prepare parameters for parallel fetches
+  const rewardsFetchStartWeek = Math.min(startWeek, DELEGATION_START_WEEK);
+  const streakSeedStartWeek = Math.max(startWeek - STREAK_BONUS_CAP_WEEKS, 0);
+  const miningStartTimestamp = GENESIS_TIMESTAMP + streakSeedStartWeek * 604800;
+  const miningEndTimestamp = GENESIS_TIMESTAMP + (endWeek + 1) * 604800 - 1;
 
-  // Fetch both snapshots and TWAB in parallel
-  const [snapshotResult, twabResult] = await Promise.allSettled([
-    fetchGlwBalanceSnapshotByWeekMany({
-      wallets,
-      startWeek,
-      endWeek,
-    }),
-    fetchGlwTwabByWeekWeiMany({
-      wallets,
-      startWeek,
-      endWeek,
-    }),
+  // Run independent fetches in parallel
+  const parallelFetchStart = nowMs();
+  const [
+    liquidSnapshotResult,
+    walletRewardsResult,
+    miningRowsResult,
+    depositSplitsResult,
+  ] = await Promise.all([
+    // 1. Liquid GLW balance snapshots
+    fetchGlwBalanceSnapshotByWeekMany({ wallets, startWeek, endWeek })
+      .catch((error) => {
+        console.error(
+          `[impact-score] Balance snapshot fetch failed (wallets=${wallets.length}, startWeek=${startWeek}, endWeek=${endWeek})`,
+          error
+        );
+        return new Map<string, Map<number, bigint>>();
+      }),
+    // 2. Wallet rewards history
+    fetchWalletRewardsHistoryBatch({ wallets, startWeek: rewardsFetchStartWeek, endWeek }),
+    // 3. Mining rows DB query
+    db
+      .select({ buyer: fractionSplits.buyer, timestamp: fractionSplits.timestamp })
+      .from(fractionSplits)
+      .innerJoin(fractions, eq(fractionSplits.fractionId, fractions.id))
+      .where(
+        and(
+          inArray(fractionSplits.buyer, wallets),
+          eq(fractions.type, "mining-center"),
+          gte(fractionSplits.timestamp, miningStartTimestamp),
+          lte(fractionSplits.timestamp, miningEndTimestamp)
+        )
+      ),
+    // 4. Deposit splits history
+    fetchDepositSplitsHistoryBatch({ wallets, startWeek: DELEGATION_START_WEEK, endWeek }),
   ]);
 
-  if (snapshotResult.status === "fulfilled") {
-    liquidSnapshotByWalletWeek = snapshotResult.value;
-  } else {
-    console.error(
-      `[impact-score] Balance snapshot fetch failed (wallets=${wallets.length}, startWeek=${startWeek}, endWeek=${endWeek})`,
-      snapshotResult.reason
-    );
-  }
-
-  if (twabResult.status === "fulfilled") {
-    liquidTwabByWalletWeek = twabResult.value;
-  } else {
-    console.error(
-      `[impact-score] TWAB fetch failed (wallets=${wallets.length}, startWeek=${startWeek}, endWeek=${endWeek})`,
-      twabResult.reason
-    );
-  }
+  // Process results
+  const liquidSnapshotByWalletWeek = liquidSnapshotResult;
+  const walletRewardsMap = walletRewardsResult;
+  const miningRows = miningRowsResult;
+  const depositSplitHistoryByWallet = depositSplitsResult;
 
   recordTimingSafe(debug, {
-    label: "compute.liquidBalance",
-    ms: nowMs() - liquidBalanceStart,
+    label: "compute.parallelFetches",
+    ms: nowMs() - parallelFetchStart,
     meta: { wallets: wallets.length, startWeek, endWeek },
   });
 
-  // Fetch Control API rewards for all wallets (batch)
-  // We may need history earlier than `startWeek` to seed delegatedActive from the week
-  // delegations started (week 97), since recoveries can occur later.
-  const rewardsFetchStartWeek = Math.min(startWeek, DELEGATION_START_WEEK);
-  const walletRewardsMap = new Map<string, ControlApiFarmReward[]>();
-  const walletRewardsStart = nowMs();
-  let walletRewardsBatches = 0;
-  for (let i = 0; i < wallets.length; i += BATCH_SIZE) {
-    const batch = wallets.slice(i, i + BATCH_SIZE);
-    const batchStart = nowMs();
-    const batchMap = await fetchWalletRewardsHistoryBatch({
-      wallets: batch,
-      startWeek: rewardsFetchStartWeek,
-      endWeek,
-    });
-    walletRewardsBatches++;
-    recordTimingSafe(debug, {
-      label: "compute.walletRewards.batch",
-      ms: nowMs() - batchStart,
-      meta: {
-        batchSize: batch.length,
-        startWeek: rewardsFetchStartWeek,
-        endWeek,
-      },
-    });
-    for (const [wallet, rewards] of batchMap)
-      walletRewardsMap.set(wallet, rewards);
-  }
-  recordTimingSafe(debug, {
-    label: "compute.walletRewards.total",
-    ms: nowMs() - walletRewardsStart,
-    meta: { wallets: wallets.length, batches: walletRewardsBatches },
-  });
-
-  const streakSeedStartWeek = Math.max(startWeek - STREAK_BONUS_CAP_WEEKS, 0);
   const miningPurchaseWeeksByWallet = new Map<string, Set<number>>();
-
-  // Mining-center purchases affect the cash-miner multiplier + streak eligibility (not vault ownership).
-  // PD splits for mining center are always zero.
-  const miningStartTimestamp = GENESIS_TIMESTAMP + streakSeedStartWeek * 604800;
-  const miningEndTimestamp = GENESIS_TIMESTAMP + (endWeek + 1) * 604800 - 1;
-  const miningQueryStart = nowMs();
-  const miningRows = await db
-    .select({
-      buyer: fractionSplits.buyer,
-      timestamp: fractionSplits.timestamp,
-    })
-    .from(fractionSplits)
-    .innerJoin(fractions, eq(fractionSplits.fractionId, fractions.id))
-    .where(
-      and(
-        inArray(fractionSplits.buyer, wallets),
-        eq(fractions.type, "mining-center"),
-        gte(fractionSplits.timestamp, miningStartTimestamp),
-        lte(fractionSplits.timestamp, miningEndTimestamp)
-      )
-    );
-  recordTimingSafe(debug, {
-    label: "compute.db.miningRows",
-    ms: nowMs() - miningQueryStart,
-    meta: { rows: miningRows.length, wallets: wallets.length },
-  });
-
   for (const row of miningRows) {
     const wallet = row.buyer.toLowerCase();
     const week = getCurrentEpoch(row.timestamp);
@@ -1033,42 +1016,6 @@ export async function computeGlowImpactScores(params: {
       miningPurchaseWeeksByWallet.set(wallet, new Set());
     miningPurchaseWeeksByWallet.get(wallet)!.add(week);
   }
-
-  // Vault model inputs:
-  // - deposit split ownership history (raw 6-decimal ints) from Control API
-  // - farm principal (GLW-paid applications) from DB
-  // - farm weekly distributed PD amounts from Control API (to compute remaining principal)
-  const depositSplitHistoryByWallet = new Map<
-    string,
-    ControlApiDepositSplitHistorySegment[]
-  >();
-  const depositSplitsStart = nowMs();
-  let depositSplitBatches = 0;
-  for (const batch of chunkArray(wallets, 1000)) {
-    const batchStart = nowMs();
-    const m = await fetchDepositSplitsHistoryBatch({
-      wallets: batch,
-      startWeek: DELEGATION_START_WEEK,
-      endWeek,
-    });
-    depositSplitBatches++;
-    recordTimingSafe(debug, {
-      label: "compute.depositSplits.batch",
-      ms: nowMs() - batchStart,
-      meta: {
-        batchSize: batch.length,
-        startWeek: DELEGATION_START_WEEK,
-        endWeek,
-      },
-    });
-    for (const [wallet, segs] of m)
-      depositSplitHistoryByWallet.set(wallet, segs);
-  }
-  recordTimingSafe(debug, {
-    label: "compute.depositSplits.total",
-    ms: nowMs() - depositSplitsStart,
-    meta: { wallets: wallets.length, batches: depositSplitBatches },
-  });
 
   const farmIdsSet = new Set<string>();
   for (const segs of depositSplitHistoryByWallet.values()) {
@@ -1525,6 +1472,7 @@ export async function computeGlowImpactScores(params: {
     number,
     { totalGlw: bigint; byRegion: Map<number, bigint> }
   >();
+  const regionRewardsStart = nowMs();
   for (let w = startWeek; w <= endWeek; w++) {
     try {
       const rr = await getRegionRewardsAtEpoch({ epoch: w });
@@ -1628,6 +1576,8 @@ export async function computeGlowImpactScores(params: {
     let vaultBonusPointsScaled6 = BigInt(0);
     let totalInflationGlwWei = BigInt(0);
     let totalSteeringGlwWei = BigInt(0);
+    let totalBasePointsPreMultiplierScaled6 = BigInt(0);
+    let basePointsPreMultiplierThisWeekScaled6 = BigInt(0);
 
     let lastWeekPointsScaled6 = BigInt(0);
     const lastWeek = endWeek - 1;
@@ -1763,6 +1713,8 @@ export async function computeGlowImpactScores(params: {
         steeringPts,
         vaultPts,
       ]);
+      totalBasePointsPreMultiplierScaled6 += rolloverPre;
+
       const hasCashMinerBonus = cashMinerWeeks.has(week);
       const baseMultiplierScaled6 = hasCashMinerBonus
         ? BASE_CASH_MINER_MULTIPLIER_SCALED6
@@ -1786,10 +1738,9 @@ export async function computeGlowImpactScores(params: {
         multiplierScaled6: totalMultiplierScaled6,
       });
 
-      // Prefer end-of-week snapshot (accurate) > TWAB (averaged) > current balance (fallback)
+      // Prefer end-of-week snapshot (accurate) > current balance (fallback)
       const snapshotBalance = liquidSnapshotByWalletWeek.get(wallet)?.get(week);
-      const twabBalance = liquidTwabByWalletWeek.get(wallet)?.get(week);
-      const liquidTwabWeekWei = snapshotBalance ?? twabBalance ?? liquidGlwWei;
+      const liquidWeekWei = snapshotBalance ?? liquidGlwWei;
 
       // Calculate Historical Unclaimed for this specific week
       const weekEndTimestamp = GENESIS_TIMESTAMP + (week + 1) * 604800;
@@ -1872,12 +1823,15 @@ export async function computeGlowImpactScores(params: {
 
       // GlowWorth = liquidGLW + delegatedActive + unclaimed, earns 0.001/GLW continuous points.
       // These points are distributed by emission share across all regions in glowWorthPoints.
-      const glowWorthWeekWei =
-        liquidTwabWeekWei + delegatedActive + historicalUnclaimedWei;
+      const glowWorthWeekWei = liquidWeekWei + delegatedActive + historicalUnclaimedWei;
       const continuousPts = glwWeiToPointsScaled6(
         glowWorthWeekWei,
         GLOW_WORTH_POINTS_PER_GLW_SCALED6
       );
+      totalBasePointsPreMultiplierScaled6 += continuousPts;
+      if (week === endWeek) {
+        basePointsPreMultiplierThisWeekScaled6 = rolloverPre + continuousPts;
+      }
       const continuousPtsMultiplied = applyMultiplierScaled6({
         pointsScaled6: continuousPts,
         multiplierScaled6: totalMultiplierScaled6,
@@ -1976,7 +1930,7 @@ export async function computeGlowImpactScores(params: {
           protocolDepositRecoveredGlwWei: (
             protocolRecoveredByWeek.get(week) || BigInt(0)
           ).toString(),
-          liquidGlwWei: liquidTwabWeekWei.toString(),
+          liquidGlwWei: liquidWeekWei.toString(),
           unclaimedGlwWei: historicalUnclaimedWei.toString(),
           inflationPoints: formatPointsScaled6(inflationPts),
           steeringPoints: formatPointsScaled6(steeringPts),
@@ -2059,6 +2013,12 @@ export async function computeGlowImpactScores(params: {
         steeringPoints: formatPointsScaled6(steeringPointsScaled6),
         vaultBonusPoints: formatPointsScaled6(vaultBonusPointsScaled6),
         worthPoints: formatPointsScaled6(continuousPointsScaled6),
+        basePointsPreMultiplierScaled6: formatPointsScaled6(
+          totalBasePointsPreMultiplierScaled6
+        ),
+        basePointsPreMultiplierScaled6ThisWeek: formatPointsScaled6(
+          basePointsPreMultiplierThisWeekScaled6
+        ),
         totalInflationGlwWei: totalInflationGlwWei.toString(),
         totalSteeringGlwWei: totalSteeringGlwWei.toString(),
       },
@@ -2466,6 +2426,7 @@ export async function getCurrentWeekProjection(
   const weekNumber = getCurrentEpoch(Math.floor(Date.now() / 1000));
   const wallet = walletAddress.toLowerCase();
 
+  // Run all 3 fetches in parallel
   const [
     { steeredGlwWeiPerWeek, hasSteeringStake },
     {
@@ -2478,28 +2439,25 @@ export async function getCurrentWeekProjection(
       totalMultiplierScaled6,
       totalMultiplier,
     },
+    rewardsResult,
   ] = await Promise.all([
     getSteeringSnapshot(wallet, weekNumber),
     getImpactStreakSnapshot({ walletAddress: wallet, weekNumber }),
+    fetchWalletRewardsHistoryBatch({
+      wallets: [wallet],
+      startWeek: weekNumber,
+      endWeek: weekNumber,
+    }).catch(() => new Map<string, ControlApiFarmReward[]>()),
   ]);
 
   const delegatedGlwWei = BigInt(glowWorth?.delegatedActiveGlwWei || "0");
   const glowWorthWei = BigInt(glowWorth?.glowWorthWei || "0");
 
-  // Best-effort: if Control API exposes partial week accounting, use it; otherwise 0.
+  // Extract inflation from rewards result
   let inflationGlwWei = BigInt(0);
-  try {
-    const rewardsMap = await fetchWalletRewardsHistoryBatch({
-      wallets: [wallet],
-      startWeek: weekNumber,
-      endWeek: weekNumber,
-    });
-    const rewards = rewardsMap.get(wallet) || [];
-    for (const r of rewards) {
-      inflationGlwWei += BigInt(r.walletTotalGlowInflationReward || "0");
-    }
-  } catch {
-    inflationGlwWei = BigInt(0);
+  const rewards = rewardsResult.get(wallet) || [];
+  for (const r of rewards) {
+    inflationGlwWei += BigInt(r.walletTotalGlowInflationReward || "0");
   }
 
   const inflationPts = glwWeiToPointsScaled6(
@@ -2523,6 +2481,7 @@ export async function getCurrentWeekProjection(
     glowWorthWei,
     GLOW_WORTH_POINTS_PER_GLW_SCALED6
   );
+  const basePointsPreMultiplierScaled6 = rolloverPre + continuousPts;
   const continuousPtsMultiplied = applyMultiplierScaled6({
     pointsScaled6: continuousPts,
     multiplierScaled6: totalMultiplierScaled6,
@@ -2544,6 +2503,9 @@ export async function getCurrentWeekProjection(
       inflationGlwWei: inflationGlwWei.toString(),
       delegatedGlwWei: delegatedGlwWei.toString(),
       glowWorthWei: glowWorthWei.toString(),
+      basePointsPreMultiplierScaled6: formatPointsScaled6(
+        basePointsPreMultiplierScaled6
+      ),
       totalProjectedScore: formatPointsScaled6(totalProjectedScore),
     },
   };
