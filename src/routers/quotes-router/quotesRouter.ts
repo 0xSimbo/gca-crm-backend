@@ -65,7 +65,7 @@ const WEEKS_PER_YEAR = 52.18; // 365.25 / 7 (must match computeProjectQuote conv
 const LEBANON_ELECTRICITY_PRICE_PER_KWH = 0.3474;
 const LEBANON_REGION_CODE = "LB";
 const LEBANON_UTILITY_BILL_URL_SENTINEL = "lebanon-fixed-rate";
-const LEBANON_ESCALATOR_RATE = 0.0331;
+const LEBANON_ESCALATOR_RATE = 0.05;
 const LEBANON_DISCOUNT_RATE = protocolFeeAssumptions.lebanonDiscountRate;
 const LEBANON_RATE_LIMIT_PER_HOUR = 500;
 
