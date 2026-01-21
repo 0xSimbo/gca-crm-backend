@@ -25,6 +25,10 @@ import { countProjectQuoteBatchItemsInLastHour } from "../../db/queries/project-
 import { createQuoteApiKey } from "../../db/mutations/quote-api-keys/createQuoteApiKey";
 import { findQuoteApiKeyByOrgName } from "../../db/queries/quote-api-keys/findQuoteApiKeyByOrgName";
 import { findQuoteApiKeyByHash } from "../../db/queries/quote-api-keys/findQuoteApiKeyByHash";
+import { findActiveQuoteApiKeys } from "../../db/queries/quote-api-keys/findActiveQuoteApiKeys";
+import { db } from "../../db/db";
+import { users } from "../../db/schema";
+import { inArray, sql } from "drizzle-orm";
 import { createHash, randomBytes } from "crypto";
 import { sendQuoteBatchSummaryToSlack } from "../../slack/quote-notifications";
 import { protocolFeeAssumptions } from "../../constants/protocol-fee-assumptions";
@@ -61,9 +65,31 @@ const WEEKS_PER_YEAR = 52.18; // 365.25 / 7 (must match computeProjectQuote conv
 const LEBANON_ELECTRICITY_PRICE_PER_KWH = 0.3474;
 const LEBANON_REGION_CODE = "LB";
 const LEBANON_UTILITY_BILL_URL_SENTINEL = "lebanon-fixed-rate";
-const LEBANON_ESCALATOR_RATE = 0.0331;
+const LEBANON_ESCALATOR_RATE = 0.05;
 const LEBANON_DISCOUNT_RATE = protocolFeeAssumptions.lebanonDiscountRate;
 const LEBANON_RATE_LIMIT_PER_HOUR = 500;
+
+const TEAM_QUOTES_RATE_LIMIT_WINDOW_MS = 60_000;
+const TEAM_QUOTES_RATE_LIMIT_MAX = 10;
+const TEAM_QUOTES_RATE_LIMIT_DELAY_MS = 400;
+const teamQuotesAttempts = new Map<string, number[]>();
+
+function getTeamQuotesClientIp(headers: Record<string, string | undefined>) {
+  const forwardedFor = headers["x-forwarded-for"] ?? headers["x-real-ip"];
+  if (typeof forwardedFor === "string" && forwardedFor.trim()) {
+    return forwardedFor.split(",")[0]?.trim() || "unknown";
+  }
+  return "unknown";
+}
+
+function recordTeamQuotesAttempt(ip: string) {
+  const now = Date.now();
+  const cutoff = now - TEAM_QUOTES_RATE_LIMIT_WINDOW_MS;
+  const attempts = teamQuotesAttempts.get(ip)?.filter((ts) => ts > cutoff) ?? [];
+  attempts.push(now);
+  teamQuotesAttempts.set(ip, attempts);
+  return attempts.length;
+}
 
 const quoteProjectRequestSchema = t.Object({
   annualConsumptionMWh: t.String({
@@ -815,6 +841,106 @@ export const quotesRouter = new Elysia({ prefix: "/quotes" })
         summary: "Get all project quotes for the current API key",
         description:
           "Returns all project quotes associated with the API key (using the admin-configured walletAddress if set, otherwise the pseudo wallet derived from the apiKey hash). Requires x-api-key header.",
+        tags: [TAG.APPLICATIONS],
+      },
+    }
+  )
+  .post(
+    "/project-quotes/team",
+    async ({ headers, set }) => {
+      try {
+        const attemptCount = recordTeamQuotesAttempt(
+          getTeamQuotesClientIp(headers)
+        );
+        if (attemptCount > TEAM_QUOTES_RATE_LIMIT_MAX) {
+          set.status = 429;
+          return { error: "Too many attempts. Try again later." };
+        }
+
+        const expectedPassword = process.env.TEAM_QUOTES_PASSWORD;
+        if (!expectedPassword) {
+          set.status = 500;
+          return { error: "TEAM_QUOTES_PASSWORD is not configured" };
+        }
+
+        const providedPassword = String(
+          headers["x-team-password"] ?? ""
+        ).trim();
+
+        if (!providedPassword || providedPassword !== expectedPassword) {
+          await new Promise((resolve) =>
+            setTimeout(resolve, TEAM_QUOTES_RATE_LIMIT_DELAY_MS)
+          );
+          set.status = 401;
+          return { error: "Unauthorized" };
+        }
+
+        function pseudoWalletAddressFromApiKeyHash(apiKeyHash: string) {
+          if (!/^[a-f0-9]{64}$/i.test(apiKeyHash)) return null;
+          return `0x${apiKeyHash.slice(0, 40).toLowerCase()}`;
+        }
+
+        const allQuotes = await db.query.ProjectQuotes.findMany({
+          orderBy: (quotes, { desc }) => [desc(quotes.createdAt)],
+        });
+
+        const activeKeys = await findActiveQuoteApiKeys();
+        const walletToOrgName = new Map<string, string>();
+        for (const key of activeKeys) {
+          const configured = key.walletAddress?.trim();
+          if (configured && /^0x[a-fA-F0-9]{40}$/.test(configured)) {
+            walletToOrgName.set(configured.toLowerCase(), key.orgName);
+          }
+          const pseudo = pseudoWalletAddressFromApiKeyHash(key.apiKeyHash);
+          if (pseudo) walletToOrgName.set(pseudo.toLowerCase(), key.orgName);
+        }
+
+        const uniqueWalletsLower = Array.from(
+          new Set(allQuotes.map((q) => q.walletAddress.toLowerCase()))
+        );
+        const usersForQuotes = uniqueWalletsLower.length
+          ? await db.query.users.findMany({
+              columns: {
+                id: true,
+                companyName: true,
+              },
+              where: inArray(sql`LOWER(${users.id})`, uniqueWalletsLower),
+            })
+          : [];
+        const walletToCompanyName = new Map<string, string | null>();
+        for (const user of usersForQuotes) {
+          walletToCompanyName.set(
+            user.id.toLowerCase(),
+            user.companyName ?? null
+          );
+        }
+
+        const quotes = allQuotes.map((quote) => ({
+          ...quote,
+          companyAddress: quote.walletAddress,
+          orgName:
+            walletToOrgName.get(quote.walletAddress.toLowerCase()) ?? null,
+          companyName:
+            walletToCompanyName.get(quote.walletAddress.toLowerCase()) ?? null,
+        }));
+
+        return { quotes };
+      } catch (e) {
+        if (e instanceof Error) {
+          console.error("[quotesRouter] /project-quotes/team error:", e);
+          set.status = 400;
+          return { error: e.message };
+        }
+        console.error("[quotesRouter] /project-quotes/team unknown error:", e);
+        set.status = 500;
+        return { error: "Internal server error" };
+      }
+    },
+    {
+      detail: {
+        summary: "Get all project quotes (team password)",
+        description:
+          "Returns all project quotes when the correct team password is provided via x-team-password header.",
         tags: [TAG.APPLICATIONS],
       },
     }
