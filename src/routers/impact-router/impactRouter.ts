@@ -1,7 +1,7 @@
 import { Elysia, t } from "elysia";
-import { desc, asc, sql, and, eq } from "drizzle-orm";
+import { desc, asc, sql, and, eq, inArray } from "drizzle-orm";
 import { db } from "../../db/db";
-import { impactLeaderboardCache } from "../../db/schema";
+import { impactLeaderboardCache, referralPointsWeekly } from "../../db/schema";
 import { TAG } from "../../constants";
 import { excludedLeaderboardWalletsSet } from "../../constants/excluded-wallets";
 import { getWeekRangeForImpact } from "../fractions-router/helpers/apy-helpers";
@@ -13,6 +13,7 @@ import {
   getImpactLeaderboardWalletUniverse,
 } from "./helpers/impact-score";
 import { populateReferralData } from "./helpers/referral-points";
+import { formatPointsScaled6 } from "./helpers/points";
 
 function parseOptionalInt(value: string | undefined): number | undefined {
   if (!value) return undefined;
@@ -491,6 +492,70 @@ export const impactRouter = new Elysia({ prefix: "/impact" })
             return BigInt(value);
           } catch {
             return 0n;
+          }
+        }
+
+        const referralPointsByWallet = new Map<string, string>();
+        const referralBonusByWallet = new Map<string, string>();
+        if (results.length > 0) {
+          const walletList = results.map((r) => r.walletAddress.toLowerCase());
+          const [referrerRows, refereeRows] = await Promise.all([
+            db
+              .select({
+                wallet: referralPointsWeekly.referrerWallet,
+                totalPoints: sql<string>`coalesce(sum(${referralPointsWeekly.referrerEarnedPointsScaled6}), '0.000000')`,
+              })
+              .from(referralPointsWeekly)
+              .where(inArray(referralPointsWeekly.referrerWallet, walletList))
+              .groupBy(referralPointsWeekly.referrerWallet),
+            db
+              .select({
+                wallet: referralPointsWeekly.refereeWallet,
+                referralBonusTotal: sql<string>`coalesce(sum(${referralPointsWeekly.refereeBonusPointsScaled6}), '0.000000')`,
+                activationBonusTotal: sql<string>`coalesce(sum(${referralPointsWeekly.activationBonusPointsScaled6}), '0.000000')`,
+              })
+              .from(referralPointsWeekly)
+              .where(inArray(referralPointsWeekly.refereeWallet, walletList))
+              .groupBy(referralPointsWeekly.refereeWallet),
+          ]);
+
+          for (const row of referrerRows) {
+            referralPointsByWallet.set(
+              row.wallet.toLowerCase(),
+              row.totalPoints
+            );
+          }
+
+          for (const row of refereeRows) {
+            const bonusTotal =
+              safePointsScaled6(row.referralBonusTotal) +
+              safePointsScaled6(row.activationBonusTotal);
+            referralBonusByWallet.set(
+              row.wallet.toLowerCase(),
+              formatPointsScaled6(bonusTotal)
+            );
+          }
+
+          for (const r of results) {
+            const wallet = r.walletAddress.toLowerCase();
+            const referralPointsScaled6 = safePointsScaled6(
+              referralPointsByWallet.get(wallet)
+            );
+            const referralBonusPointsScaled6 = safePointsScaled6(
+              referralBonusByWallet.get(wallet)
+            );
+            if (referralPointsScaled6 > 0n || referralBonusPointsScaled6 > 0n) {
+              const baseTotal = safePointsScaled6(r.totals.totalPoints);
+              r.totals.totalPoints = formatPointsScaled6(
+                baseTotal + referralPointsScaled6 + referralBonusPointsScaled6
+              );
+            }
+            r.composition.referralPoints = formatPointsScaled6(
+              referralPointsScaled6
+            );
+            r.composition.referralBonusPoints = formatPointsScaled6(
+              referralBonusPointsScaled6
+            );
           }
         }
 

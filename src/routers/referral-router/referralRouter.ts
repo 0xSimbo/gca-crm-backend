@@ -458,6 +458,7 @@ export const referralRouter = new Elysia({ prefix: "/referral" })
             totalReferees,
             activeReferees,
             pendingReferees,
+            activationPendingReferees: projectedActivationCount,
             totalPointsEarnedScaled6: stats.totalPointsEarnedScaled6,
             thisWeekPointsScaled6: useProjectedThisWeek
               ? formatPointsScaled6(projectedTotalPoints)
