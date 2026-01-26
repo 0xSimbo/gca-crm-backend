@@ -9,7 +9,7 @@ This is a **status-only leaderboard** (no monetary rewards are paid out by this 
 ### Glow Worth
 
 \[
-\\text{GlowWorth} = \\text{LiquidGLW} + \\text{DelegatedActiveGLW} + \\text{UnclaimedGLWRewards}
+\\text{GlowWorth} = \\text{LiquidGLW} + \\text{DelegatedActiveGLW} + \\text{PendingDelegatedGLW} + \\text{UnclaimedGLWRewards}
 \]
 
 - `LiquidGLW`: on-chain ERC20 GLW `balanceOf(wallet)` (18 decimals / wei)
@@ -23,6 +23,7 @@ This is a **status-only leaderboard** (no monetary rewards are paid out by this 
   - Then: `DelegatedActiveGLW(week) = sum_farms walletShareRemainingGlwWei(f, week)`
   - Accounting starts at **week 97** (first week vault ownership exists). Even if you query `startWeek > 97`, we compute ownership from week 97 so farm distributions earlier in the range don’t distort `remainingGlwWei`.
   - **Miners** do not participate in protocol-deposit vaults; mining-center `depositSplitPercent6Decimals` is always `0`.
+- `PendingDelegatedGLW`: GLW launchpad purchases recorded in `fraction_splits` that are **not yet reflected** in Control API split history for the wallet. This prevents temporary Glow Worth dips when GLW moves from the wallet into the vault before the split history is updated.
 - `UnclaimedGLWRewards`: claimable rewards minus claims (see details below)
 
 ### Glow Impact Score
@@ -177,11 +178,13 @@ interface GlowWorthResponse {
   walletAddress: string;
   liquidGlwWei: string;
   delegatedActiveGlwWei: string;
+  pendingDelegatedGlwWei: string;
   unclaimedGlwRewardsWei: string;
   glowWorthWei: string;
   dataSources: {
     liquidGlw: string;
     delegatedActiveGlw: string;
+    pendingDelegatedGlw: string;
     unclaimedGlwRewards: string;
   };
 }
@@ -458,7 +461,7 @@ bun run scripts/check-impact-cache-state.ts
 
 Computes the wallet's GLW-denominated position:
 
-- `GlowWorth = LiquidGLW + DelegatedActiveGLW + UnclaimedGLWRewards`
+- `GlowWorth = LiquidGLW + DelegatedActiveGLW + PendingDelegatedGLW + UnclaimedGLWRewards`
 - `LiquidGLW`: onchain ERC20 GLW `balanceOf` via `viem`
 - `DelegatedActiveGLW`: launchpad GLW delegated minus protocol-deposit rewards received (converted to GLW using current spot price)
 - `UnclaimedGLWRewards`: computed as:

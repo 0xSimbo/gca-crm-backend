@@ -1,4 +1,4 @@
-import { and, eq, inArray, gte, lte } from "drizzle-orm";
+import { and, eq, inArray, gte, lte, or, isNull, sql } from "drizzle-orm";
 
 import { db } from "../../../db/db";
 import { addresses } from "../../../constants/addresses";
@@ -251,11 +251,13 @@ export interface GlowWorthResult {
   walletAddress: string;
   liquidGlwWei: string;
   delegatedActiveGlwWei: string;
+  pendingDelegatedGlwWei: string;
   unclaimedGlwRewardsWei: string;
   glowWorthWei: string;
   dataSources: {
     liquidGlw: "onchain";
     delegatedActiveGlw: "db+control-api";
+    pendingDelegatedGlw: "db";
     unclaimedGlwRewards: "claims-api+control-api";
   };
 }
@@ -961,11 +963,14 @@ export async function computeGlowImpactScores(params: {
 
   // Run independent fetches in parallel
   const parallelFetchStart = nowMs();
+  const glwToken = addresses.glow.toLowerCase();
   const [
     liquidSnapshotResult,
     walletRewardsResult,
     miningRowsResult,
     depositSplitsResult,
+    glwSplitRowsResult,
+    glwRefundRowsResult,
   ] = await Promise.all([
     // 1. Liquid GLW balance snapshots
     fetchGlwBalanceSnapshotByWeekMany({ wallets, startWeek, endWeek })
@@ -992,7 +997,47 @@ export async function computeGlowImpactScores(params: {
         )
       ),
     // 4. Deposit splits history
-    fetchDepositSplitsHistoryBatch({ wallets, startWeek: DELEGATION_START_WEEK, endWeek }),
+    fetchDepositSplitsHistoryBatch({
+      wallets,
+      startWeek: DELEGATION_START_WEEK,
+      endWeek,
+    }),
+    // 5. Launchpad GLW purchases (fraction splits)
+    db
+      .select({
+        buyer: fractionSplits.buyer,
+        amount: fractionSplits.amount,
+      })
+      .from(fractionSplits)
+      .innerJoin(fractions, eq(fractionSplits.fractionId, fractions.id))
+      .where(
+        and(
+          inArray(fractionSplits.buyer, wallets),
+          eq(fractions.type, "launchpad"),
+          or(
+            isNull(fractions.token),
+            eq(sql`lower(${fractions.token})`, glwToken)
+          )
+        )
+      ),
+    // 6. Launchpad GLW refunds
+    db
+      .select({
+        refundTo: fractionRefunds.refundTo,
+        amount: fractionRefunds.amount,
+      })
+      .from(fractionRefunds)
+      .innerJoin(fractions, eq(fractionRefunds.fractionId, fractions.id))
+      .where(
+        and(
+          inArray(fractionRefunds.refundTo, wallets),
+          eq(fractions.type, "launchpad"),
+          or(
+            isNull(fractions.token),
+            eq(sql`lower(${fractions.token})`, glwToken)
+          )
+        )
+      ),
   ]);
 
   // Process results
@@ -1000,6 +1045,8 @@ export async function computeGlowImpactScores(params: {
   const walletRewardsMap = walletRewardsResult;
   const miningRows = miningRowsResult;
   const depositSplitHistoryByWallet = depositSplitsResult;
+  const glwSplitRows = glwSplitRowsResult;
+  const glwRefundRows = glwRefundRowsResult;
 
   recordTimingSafe(debug, {
     label: "compute.parallelFetches",
@@ -1015,6 +1062,28 @@ export async function computeGlowImpactScores(params: {
     if (!miningPurchaseWeeksByWallet.has(wallet))
       miningPurchaseWeeksByWallet.set(wallet, new Set());
     miningPurchaseWeeksByWallet.get(wallet)!.add(week);
+  }
+
+  const glwPurchasesByWallet = new Map<string, bigint>();
+  for (const row of glwSplitRows) {
+    const wallet = row.buyer.toLowerCase();
+    const amountWei = safeBigInt(row.amount);
+    if (amountWei <= 0n) continue;
+    glwPurchasesByWallet.set(
+      wallet,
+      (glwPurchasesByWallet.get(wallet) || 0n) + amountWei
+    );
+  }
+
+  const glwRefundsByWallet = new Map<string, bigint>();
+  for (const row of glwRefundRows) {
+    const wallet = row.refundTo.toLowerCase();
+    const amountWei = safeBigInt(row.amount);
+    if (amountWei <= 0n) continue;
+    glwRefundsByWallet.set(
+      wallet,
+      (glwRefundsByWallet.get(wallet) || 0n) + amountWei
+    );
   }
 
   const farmIdsSet = new Set<string>();
@@ -1568,6 +1637,25 @@ export async function computeGlowImpactScores(params: {
 
     farmStatesByWallet.set(wallet, farmStates);
 
+    let grossShareAtEndWeek = BigInt(0);
+    for (const farm of farmStates.values()) {
+      const splitScaled6 = getSplitScaled6AtWeek(farm.split, endWeek);
+      if (splitScaled6 <= BigInt(0)) continue;
+      grossShareAtEndWeek +=
+        (farm.principalWei * splitScaled6) / SPLIT_SCALE_SCALED6;
+    }
+
+    const purchasedGlwWei = glwPurchasesByWallet.get(wallet) || BigInt(0);
+    const refundedGlwWei = glwRefundsByWallet.get(wallet) || BigInt(0);
+    const netPurchasedGlwWei =
+      purchasedGlwWei > refundedGlwWei
+        ? purchasedGlwWei - refundedGlwWei
+        : BigInt(0);
+    const pendingDelegatedGlwWei =
+      netPurchasedGlwWei > grossShareAtEndWeek
+        ? netPurchasedGlwWei - grossShareAtEndWeek
+        : BigInt(0);
+
     let totalPointsScaled6 = BigInt(0);
     let rolloverPointsScaled6 = BigInt(0);
     let continuousPointsScaled6 = BigInt(0);
@@ -1821,7 +1909,7 @@ export async function computeGlowImpactScores(params: {
         );
       }
 
-      // GlowWorth = liquidGLW + delegatedActive + unclaimed, earns 0.001/GLW continuous points.
+      // Weekly GlowWorth = liquid snapshot + delegatedActive + unclaimed (pending delegation is applied to current GlowWorth only).
       // These points are distributed by emission share across all regions in glowWorthPoints.
       const glowWorthWeekWei = liquidWeekWei + delegatedActive + historicalUnclaimedWei;
       const continuousPts = glwWeiToPointsScaled6(
@@ -1951,7 +2039,10 @@ export async function computeGlowImpactScores(params: {
     }
 
     const glowWorthNowWei =
-      liquidGlwWei + delegatedActiveNow + unclaimed.amountWei;
+      liquidGlwWei +
+      delegatedActiveNow +
+      pendingDelegatedGlwWei +
+      unclaimed.amountWei;
 
     const effectiveLastWeekPoints =
       lastWeek >= startWeek ? lastWeekPointsScaled6 : BigInt(0);
@@ -1970,11 +2061,13 @@ export async function computeGlowImpactScores(params: {
         walletAddress: wallet,
         liquidGlwWei: liquidGlwWei.toString(),
         delegatedActiveGlwWei: delegatedActiveNow.toString(),
+        pendingDelegatedGlwWei: pendingDelegatedGlwWei.toString(),
         unclaimedGlwRewardsWei: unclaimed.amountWei.toString(),
         glowWorthWei: glowWorthNowWei.toString(),
         dataSources: {
           liquidGlw: "onchain",
           delegatedActiveGlw: "db+control-api",
+          pendingDelegatedGlw: "db",
           unclaimedGlwRewards: unclaimed.dataSource,
         },
       },
