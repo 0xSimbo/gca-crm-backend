@@ -1,1 +1,10 @@
-bun test
+#!/usr/bin/env sh
+. "$(dirname -- "$0")/_/husky.sh"
+
+set -e
+
+# Run all tests except referral-router (too slow for every commit).
+TEST_FILES=$(find tests -name "*.test.ts" -not -path "tests/referral-router/*")
+if [ -n "$TEST_FILES" ]; then
+  bun test $TEST_FILES
+fi
