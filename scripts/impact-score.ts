@@ -92,11 +92,6 @@ async function main() {
     )} (${result.glowWorth.delegatedActiveGlwWei} wei)`
   );
   console.log(
-    `Pending Delegated GLW: ${formatGlwWei(
-      result.glowWorth.pendingDelegatedGlwWei
-    )} (${result.glowWorth.pendingDelegatedGlwWei} wei)`
-  );
-  console.log(
     `Unclaimed GLW rewards: ${formatGlwWei(
       result.glowWorth.unclaimedGlwRewardsWei
     )} (${result.glowWorth.unclaimedGlwRewardsWei} wei)`

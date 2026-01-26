@@ -184,7 +184,7 @@ export const impactRouter = new Elysia({ prefix: "/impact" })
       detail: {
         summary: "Get Glow Worth (GLW-denominated position)",
         description:
-          "GlowWorth = LiquidGLW + DelegatedActiveGLW + PendingDelegatedGLW + UnclaimedGLWRewards. LiquidGLW is the current on-chain ERC20 balanceOf(wallet). DelegatedActiveGLW is the wallet’s share of remaining GLW protocol-deposit principal (vault ownership) computed from GLW-paid applications (principal) minus farm-level protocol-deposit rewards distributed (recovered), multiplied by the wallet’s depositSplitPercent6Decimals ownership. PendingDelegatedGLW accounts for GLW launchpad purchases not yet reflected in Control API split history (prevents temporary dips when GLW moves into the vault). Unclaimed rewards are derived from Control API weekly rewards minus claim events from the claims API.",
+          "GlowWorth = LiquidGLW + DelegatedActiveGLW + UnclaimedGLWRewards. LiquidGLW is the current on-chain ERC20 balanceOf(wallet). DelegatedActiveGLW is the wallet’s share of remaining GLW protocol-deposit principal (vault ownership) computed from GLW-paid applications (principal) minus farm-level protocol-deposit rewards distributed (recovered), multiplied by the wallet’s depositSplitPercent6Decimals ownership. DelegatedActiveGLW also includes GLW launchpad purchases not yet reflected in Control API split history (prevents temporary dips when GLW moves into the vault). Unclaimed rewards are derived from Control API weekly rewards minus claim events from the claims API.",
         tags: [TAG.REWARDS],
       },
     }

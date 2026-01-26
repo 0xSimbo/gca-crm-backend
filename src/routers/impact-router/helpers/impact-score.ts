@@ -251,13 +251,11 @@ export interface GlowWorthResult {
   walletAddress: string;
   liquidGlwWei: string;
   delegatedActiveGlwWei: string;
-  pendingDelegatedGlwWei: string;
   unclaimedGlwRewardsWei: string;
   glowWorthWei: string;
   dataSources: {
     liquidGlw: "onchain";
     delegatedActiveGlw: "db+control-api";
-    pendingDelegatedGlw: "db";
     unclaimedGlwRewards: "claims-api+control-api";
   };
 }
@@ -1007,6 +1005,7 @@ export async function computeGlowImpactScores(params: {
       .select({
         buyer: fractionSplits.buyer,
         amount: fractionSplits.amount,
+        timestamp: fractionSplits.timestamp,
       })
       .from(fractionSplits)
       .innerJoin(fractions, eq(fractionSplits.fractionId, fractions.id))
@@ -1025,6 +1024,7 @@ export async function computeGlowImpactScores(params: {
       .select({
         refundTo: fractionRefunds.refundTo,
         amount: fractionRefunds.amount,
+        timestamp: fractionRefunds.timestamp,
       })
       .from(fractionRefunds)
       .innerJoin(fractions, eq(fractionRefunds.fractionId, fractions.id))
@@ -1065,6 +1065,18 @@ export async function computeGlowImpactScores(params: {
   }
 
   const glwPurchasesByWallet = new Map<string, bigint>();
+  const glwNetPurchasesByWalletWeek = new Map<string, Map<number, bigint>>();
+  const addNetPurchaseByWeek = (
+    wallet: string,
+    week: number,
+    amountWei: bigint
+  ) => {
+    if (!Number.isFinite(week)) return;
+    if (!glwNetPurchasesByWalletWeek.has(wallet))
+      glwNetPurchasesByWalletWeek.set(wallet, new Map());
+    const byWeek = glwNetPurchasesByWalletWeek.get(wallet)!;
+    byWeek.set(week, (byWeek.get(week) || 0n) + amountWei);
+  };
   for (const row of glwSplitRows) {
     const wallet = row.buyer.toLowerCase();
     const amountWei = safeBigInt(row.amount);
@@ -1073,6 +1085,8 @@ export async function computeGlowImpactScores(params: {
       wallet,
       (glwPurchasesByWallet.get(wallet) || 0n) + amountWei
     );
+    const week = getCurrentEpoch(row.timestamp);
+    addNetPurchaseByWeek(wallet, week, amountWei);
   }
 
   const glwRefundsByWallet = new Map<string, bigint>();
@@ -1084,6 +1098,8 @@ export async function computeGlowImpactScores(params: {
       wallet,
       (glwRefundsByWallet.get(wallet) || 0n) + amountWei
     );
+    const week = getCurrentEpoch(row.timestamp);
+    addNetPurchaseByWeek(wallet, week, -amountWei);
   }
 
   const farmIdsSet = new Set<string>();
@@ -1656,6 +1672,15 @@ export async function computeGlowImpactScores(params: {
         ? netPurchasedGlwWei - grossShareAtEndWeek
         : BigInt(0);
 
+    const netPurchasesByWeek = glwNetPurchasesByWalletWeek.get(wallet);
+    let cumulativeNetPurchasesWei = BigInt(0);
+    if (netPurchasesByWeek) {
+      for (const [week, amountWei] of netPurchasesByWeek) {
+        if (week < startWeek) cumulativeNetPurchasesWei += amountWei;
+      }
+      if (cumulativeNetPurchasesWei < 0n) cumulativeNetPurchasesWei = 0n;
+    }
+
     let totalPointsScaled6 = BigInt(0);
     let rolloverPointsScaled6 = BigInt(0);
     let continuousPointsScaled6 = BigInt(0);
@@ -1738,6 +1763,16 @@ export async function computeGlowImpactScores(params: {
         );
         addToRegion(farm.regionId, vaultPts);
       }
+      if (netPurchasesByWeek) {
+        cumulativeNetPurchasesWei += netPurchasesByWeek.get(week) || 0n;
+        if (cumulativeNetPurchasesWei < 0n) cumulativeNetPurchasesWei = 0n;
+      }
+      const pendingForWeek =
+        cumulativeNetPurchasesWei > grossShareWei
+          ? cumulativeNetPurchasesWei - grossShareWei
+          : BigInt(0);
+      const delegatedActiveForDisplay = delegatedActive + pendingForWeek;
+
       if (week === endWeek) delegatedActiveNow = delegatedActive;
       const inflationGlwWei = inflationByWeek.get(week) || BigInt(0);
       const steeringGlwWei = steering.byWeek.get(week) || BigInt(0);
@@ -1912,6 +1947,7 @@ export async function computeGlowImpactScores(params: {
       // Weekly GlowWorth = liquid snapshot + delegatedActive + unclaimed (pending delegation is applied to current GlowWorth only).
       // These points are distributed by emission share across all regions in glowWorthPoints.
       const glowWorthWeekWei = liquidWeekWei + delegatedActive + historicalUnclaimedWei;
+      const glowWorthWeekWeiDisplay = glowWorthWeekWei + pendingForWeek;
       const continuousPts = glwWeiToPointsScaled6(
         glowWorthWeekWei,
         GLOW_WORTH_POINTS_PER_GLW_SCALED6
@@ -2014,7 +2050,7 @@ export async function computeGlowImpactScores(params: {
           weekNumber: week,
           inflationGlwWei: inflationGlwWei.toString(),
           steeringGlwWei: steeringGlwWei.toString(),
-          delegatedActiveGlwWei: delegatedActive.toString(),
+          delegatedActiveGlwWei: delegatedActiveForDisplay.toString(),
           protocolDepositRecoveredGlwWei: (
             protocolRecoveredByWeek.get(week) || BigInt(0)
           ).toString(),
@@ -2026,7 +2062,7 @@ export async function computeGlowImpactScores(params: {
           rolloverPointsPreMultiplier: formatPointsScaled6(rolloverPre),
           rolloverMultiplier,
           rolloverPoints: formatPointsScaled6(rollover),
-          glowWorthGlwWei: glowWorthWeekWei.toString(),
+          glowWorthGlwWei: glowWorthWeekWeiDisplay.toString(),
           continuousPoints: formatPointsScaled6(continuousPtsMultiplied),
           totalPoints: formatPointsScaled6(totalWeekPts),
           hasCashMinerBonus,
@@ -2038,11 +2074,11 @@ export async function computeGlowImpactScores(params: {
       }
     }
 
+    const delegatedActiveEffectiveWei =
+      delegatedActiveNow + pendingDelegatedGlwWei;
+
     const glowWorthNowWei =
-      liquidGlwWei +
-      delegatedActiveNow +
-      pendingDelegatedGlwWei +
-      unclaimed.amountWei;
+      liquidGlwWei + delegatedActiveEffectiveWei + unclaimed.amountWei;
 
     const effectiveLastWeekPoints =
       lastWeek >= startWeek ? lastWeekPointsScaled6 : BigInt(0);
@@ -2060,14 +2096,12 @@ export async function computeGlowImpactScores(params: {
       glowWorth: {
         walletAddress: wallet,
         liquidGlwWei: liquidGlwWei.toString(),
-        delegatedActiveGlwWei: delegatedActiveNow.toString(),
-        pendingDelegatedGlwWei: pendingDelegatedGlwWei.toString(),
+        delegatedActiveGlwWei: delegatedActiveEffectiveWei.toString(),
         unclaimedGlwRewardsWei: unclaimed.amountWei.toString(),
         glowWorthWei: glowWorthNowWei.toString(),
         dataSources: {
           liquidGlw: "onchain",
           delegatedActiveGlw: "db+control-api",
-          pendingDelegatedGlw: "db",
           unclaimedGlwRewards: unclaimed.dataSource,
         },
       },
