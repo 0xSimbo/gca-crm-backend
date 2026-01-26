@@ -37,18 +37,25 @@ export async function incrementReferralNonce(walletAddress: string) {
     });
 }
 
-const DEFAULT_REFERRAL_FEATURE_LAUNCH_DATE = new Date("2025-01-21T00:00:00Z");
-const EXISTING_USER_GRACE_PERIOD_DAYS = 30;
+const PROD_REFERRAL_FEATURE_LAUNCH_DATE = new Date("2026-01-27T00:00:00Z");
+const STAGING_REFERRAL_FEATURE_LAUNCH_DATE = new Date("2026-01-12T00:00:00Z");
+const EXISTING_USER_GRACE_PERIOD_DAYS = 14;
 
 function getReferralFeatureLaunchDate(): Date {
   const raw = process.env.REFERRAL_FEATURE_LAUNCH_DATE?.trim();
-  if (!raw) return DEFAULT_REFERRAL_FEATURE_LAUNCH_DATE;
+  if (!raw) {
+    return process.env.NODE_ENV === "production"
+      ? PROD_REFERRAL_FEATURE_LAUNCH_DATE
+      : STAGING_REFERRAL_FEATURE_LAUNCH_DATE;
+  }
   if (raw.toLowerCase() === "now") {
     return new Date();
   }
   const parsed = new Date(raw);
   if (Number.isNaN(parsed.getTime())) {
-    return DEFAULT_REFERRAL_FEATURE_LAUNCH_DATE;
+    return process.env.NODE_ENV === "production"
+      ? PROD_REFERRAL_FEATURE_LAUNCH_DATE
+      : STAGING_REFERRAL_FEATURE_LAUNCH_DATE;
   }
   return parsed;
 }

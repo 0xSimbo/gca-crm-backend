@@ -9,7 +9,7 @@ The referral system enables:
 - **Referrer earns 5-20%** of referee's base Impact Points (tiered by network size)
   - Seed (1 ref): 5% | Grow (2-3): 10% | Scale (4-6): 15% | Legend (7+): 20%
 - **Referee earns 10% bonus** on their own Impact Points for 12 weeks
-- **Referee earns 100pt one-time bonus** when they reach 100 points (activation milestone)
+- **Referee earns 100pt one-time bonus** when you reach 100 points (activation milestone)
 - **7-day grace period** to change referrer, then permanent
 - **Points calculated weekly** alongside existing Impact Score rollover
 
@@ -164,39 +164,39 @@ Get referrer's network (list of referees).
 
 ### Key Constraints
 
-| Table           | Constraint                            | Purpose                                    |
-| --------------- | ------------------------------------- | ------------------------------------------ |
-| `referrals`     | `referee_wallet` UNIQUE               | One referrer per wallet                    |
-| `referrals`     | `referral_code` INDEX (non-unique)    | Multiple referees can use the same code    |
-| `referral_codes`| `wallet_address` UNIQUE               | One code per wallet                        |
-| `referral_codes`| `code` UNIQUE                         | Each code must be globally unique          |
+| Table            | Constraint                         | Purpose                                 |
+| ---------------- | ---------------------------------- | --------------------------------------- |
+| `referrals`      | `referee_wallet` UNIQUE            | One referrer per wallet                 |
+| `referrals`      | `referral_code` INDEX (non-unique) | Multiple referees can use the same code |
+| `referral_codes` | `wallet_address` UNIQUE            | One code per wallet                     |
+| `referral_codes` | `code` UNIQUE                      | Each code must be globally unique       |
 
 ## Helper Functions
 
 ### `referral-code.ts`
 
-| Function                 | Description                                      |
-| ------------------------ | ------------------------------------------------ |
-| `getOrCreateReferralCode`| Creates or retrieves a wallet's referral code    |
-| `generateCodeFromWallet` | Generates code from ENS name or wallet address   |
+| Function                  | Description                                    |
+| ------------------------- | ---------------------------------------------- |
+| `getOrCreateReferralCode` | Creates or retrieves a wallet's referral code  |
+| `generateCodeFromWallet`  | Generates code from ENS name or wallet address |
 
 ### `referral-linking.ts`
 
-| Function        | Description                                    |
-| --------------- | ---------------------------------------------- |
-| `linkReferrer`  | Creates a new referral link with validation    |
-| `changeReferrer`| Changes referrer within grace period           |
+| Function         | Description                                 |
+| ---------------- | ------------------------------------------- |
+| `linkReferrer`   | Creates a new referral link with validation |
+| `changeReferrer` | Changes referrer within grace period        |
 
 ### `referral-validation.ts`
 
-| Function              | Description                                        |
-| --------------------- | -------------------------------------------------- |
-| `validateReferralLink`| Validates code ownership, self-referral prevention |
-| `isValidReferralCode` | Validates code format (3-32 alphanumeric + dots)   |
-| `getNonceForWallet`   | Gets current nonce for wallet                      |
-| `incrementNonce`      | Increments nonce after successful action           |
-| `canClaimReferrer`    | Checks if wallet can claim/change referrer         |
-| `canChangeReferrer`   | Alias for `canClaimReferrer`                       |
+| Function               | Description                                        |
+| ---------------------- | -------------------------------------------------- |
+| `validateReferralLink` | Validates code ownership, self-referral prevention |
+| `isValidReferralCode`  | Validates code format (3-32 alphanumeric + dots)   |
+| `getNonceForWallet`    | Gets current nonce for wallet                      |
+| `incrementNonce`       | Increments nonce after successful action           |
+| `canClaimReferrer`     | Checks if wallet can claim/change referrer         |
+| `canChangeReferrer`    | Alias for `canClaimReferrer`                       |
 
 ## Business Rules
 
