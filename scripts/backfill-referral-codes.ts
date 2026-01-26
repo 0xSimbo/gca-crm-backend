@@ -1,14 +1,30 @@
 import { db } from "../src/db/db";
 import { wallets, referralCodes } from "../src/db/schema";
 import { getOrCreateReferralCode } from "../src/routers/referral-router/helpers/referral-code";
-import { sql } from "drizzle-orm";
+import { getImpactLeaderboardWalletUniverse } from "../src/routers/impact-router/helpers/impact-score";
 
 async function main() {
   const isDryRun = process.argv.includes("--dry-run");
   console.log(`🚀 Starting referral codes backfill (Dry Run: ${isDryRun})`);
 
-  const allWallets = await db.select({ id: wallets.id }).from(wallets);
-  console.log(`📊 Found ${allWallets.length} wallets to process`);
+  // Get wallets from multiple sources
+  console.log("📡 Fetching wallet universe...");
+
+  const [dbWallets, impactUniverse] = await Promise.all([
+    db.select({ id: wallets.id }).from(wallets),
+    getImpactLeaderboardWalletUniverse({ limit: 10000 }),
+  ]);
+
+  // Combine and dedupe (normalize to lowercase)
+  const walletSet = new Set<string>();
+  for (const w of dbWallets) walletSet.add(w.id.toLowerCase());
+  for (const w of impactUniverse.eligibleWallets) walletSet.add(w.toLowerCase());
+
+  const allWallets = Array.from(walletSet).map((id) => ({ id }));
+
+  console.log(`📊 Found ${allWallets.length} unique wallets to process`);
+  console.log(`   - DB wallets table: ${dbWallets.length}`);
+  console.log(`   - Impact universe: ${impactUniverse.eligibleWallets.length}`);
 
   let created = 0;
   let skipped = 0;
