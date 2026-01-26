@@ -151,16 +151,66 @@ Get referrer's network (list of referees).
 }
 ```
 
+### `POST /referral/change`
+
+Change referrer within 7-day grace period. Requires EIP-712 signature.
+
+**Body:**
+
+```json
+{
+  "wallet": "0x...",
+  "signature": "0x...",
+  "nonce": "1",
+  "newReferralCode": "bob.eth",
+  "deadline": "1738000000"
+}
+```
+
+### `POST /referral/feature-launch-seen`
+
+Mark the feature launch modal as permanently dismissed.
+
+**Body:**
+
+```json
+{
+  "walletAddress": "0x..."
+}
+```
+
+### `POST /referral/activation-seen`
+
+Mark the activation celebration modal as seen.
+
+**Body:**
+
+```json
+{
+  "walletAddress": "0x..."
+}
+```
+
+### `GET /referral/leaderboard`
+
+Get referral leaderboard (for giveaway events).
+
+**Query params:**
+
+- `limit` (optional, default: 10)
+- `sortBy` (optional: `points`, `network`, `hybrid`)
+
 ## Database Schema
 
 ### Core Tables
 
-| Table                    | Purpose                                       |
-| ------------------------ | --------------------------------------------- |
-| `referrals`              | Tracks referrer-referee relationships         |
-| `referral_codes`         | Stores unique codes for each referrer wallet  |
-| `referral_nonces`        | Nonce management for EIP-712 signature replay |
-| `referral_points_weekly` | Weekly referral point calculations            |
+| Table                         | Purpose                                         |
+| ----------------------------- | ----------------------------------------------- |
+| `referrals`                   | Tracks referrer-referee relationships           |
+| `referral_codes`              | Stores unique codes for each referrer wallet    |
+| `referral_nonces`             | Nonce management for EIP-712 signature replay   |
+| `referral_points_weekly`      | Weekly referral point calculations              |
+| `referral_feature_launch_seen`| Tracks feature launch modal dismissal for users |
 
 ### Key Constraints
 
@@ -175,28 +225,26 @@ Get referrer's network (list of referees).
 
 ### `referral-code.ts`
 
-| Function                  | Description                                    |
-| ------------------------- | ---------------------------------------------- |
-| `getOrCreateReferralCode` | Creates or retrieves a wallet's referral code  |
-| `generateCodeFromWallet`  | Generates code from ENS name or wallet address |
+| Function                  | Description                                   |
+| ------------------------- | --------------------------------------------- |
+| `getOrCreateReferralCode` | Creates or retrieves a wallet's referral code |
 
 ### `referral-linking.ts`
 
-| Function         | Description                                 |
-| ---------------- | ------------------------------------------- |
-| `linkReferrer`   | Creates a new referral link with validation |
-| `changeReferrer` | Changes referrer within grace period        |
+| Function       | Description                                                              |
+| -------------- | ------------------------------------------------------------------------ |
+| `linkReferrer` | Creates or updates referral link (use `requireExisting: true` to change) |
 
 ### `referral-validation.ts`
 
-| Function               | Description                                        |
-| ---------------------- | -------------------------------------------------- |
-| `validateReferralLink` | Validates code ownership, self-referral prevention |
-| `isValidReferralCode`  | Validates code format (3-32 alphanumeric + dots)   |
-| `getNonceForWallet`    | Gets current nonce for wallet                      |
-| `incrementNonce`       | Increments nonce after successful action           |
-| `canClaimReferrer`     | Checks if wallet can claim/change referrer         |
-| `canChangeReferrer`    | Alias for `canClaimReferrer`                       |
+| Function                 | Description                                        |
+| ------------------------ | -------------------------------------------------- |
+| `validateReferralLink`   | Validates code ownership, self-referral prevention |
+| `isValidReferralCode`    | Validates code format (3-32 alphanumeric + dots)   |
+| `getReferralNonce`       | Gets current nonce for wallet                      |
+| `incrementReferralNonce` | Increments nonce after successful action           |
+| `canClaimReferrer`       | Checks if wallet can claim/change referrer         |
+| `canChangeReferrer`      | Alias for `canClaimReferrer`                       |
 
 ## Business Rules
 
@@ -221,10 +269,10 @@ Get referrer's network (list of referees).
 
 ### Activation
 
-- Referee must earn ≥100 total points
+- Referee must earn ≥100 base points **after linking** (pre-link points don't count)
 - Status changes from "pending" to "active"
 - Referrer starts earning share only after activation
-- One-time 100pt bonus awarded at activation
+- One-time 100pt bonus awarded to referee at activation
 
 ### Point Calculation
 

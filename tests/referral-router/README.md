@@ -101,8 +101,10 @@ referral records.
 | Validation         | 16    | Self-referral blocked, code format, nonce safety  |
 | Linking            | 11    | Grace/bonus periods, referrer changes, multi-use  |
 | Code Generation    | 8     | Idempotency, uniqueness, format                   |
-| Point Calculation  | 5     | Tiered shares, bonus math, activation             |
-| **Total**          | **40**|                                                   |
+| Point Calculation  | 8     | Tiered shares, bonus math, activation, proration  |
+| Cron Helpers       | 3     | Activation candidates, tier stabilization         |
+| Feature Launch     | 2     | Modal tracking with/without referral records      |
+| **Total**          | **52**|                                                   |
 
 ## Key Invariants Tested
 
