@@ -11,7 +11,8 @@
     "build:esm": "tsc  --module es2015 --outDir ./lib/esm   && node postbuild-esm.mjs",
     "db:push": "bun test && drizzle-kit push",
     "db:generate": "bun test && drizzle-kit generate",
-    "studio": "drizzle-kit studio"
+    "studio": "drizzle-kit studio",
+    "prepare": "husky"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.583.0",
@@ -50,7 +51,8 @@
     "@types/bun": "^1.1.1",
     "@types/jsonwebtoken": "^9.0.6",
     "bun-types": "latest",
-    "drizzle-kit": "^0.21.1"
+    "drizzle-kit": "^0.21.1",
+    "husky": "^9.1.7"
   },
   "peerDependencies": {
     "@elysiajs/eden": "1.1.2",
