@@ -125,7 +125,7 @@ This matches the totals formula where delegated GLW earns both vault bonus AND c
 
 If you **buy/receive GLW now**, the score can change, but it no longer “backfills” the entire history range for liquid balance. The scoring model now uses **end-of-week balance snapshots** for `LiquidGLW`, so a brief spike in balance only affects the weeks where you actually held it.
 
-- `GET /impact/glow-worth` uses on-chain `balanceOf(wallet)` for **current** `LiquidGLW`, **except** when the requested range includes unfinalized weeks; in that case it freezes liquid GLW at the last finalized snapshot (same rule as weekly Glow Worth).
+- `GET /impact/glow-worth` uses on-chain `balanceOf(wallet)` for **current** `LiquidGLW`. Weekly history still applies the finalized-week freeze rule described above.
 - The score includes **continuous points** based on `GlowWorth` for each week in the requested range. For those computations, `LiquidGLW` uses **weekly end-of-week balance snapshots** (ponder-indexed) rather than the current `balanceOf` snapshot.
   - This still includes **swaps**, since swaps move GLW via standard ERC20 `Transfer` events and are reflected in snapshots.
 
