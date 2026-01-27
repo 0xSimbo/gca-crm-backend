@@ -1760,6 +1760,14 @@ export async function computeGlowImpactScores(params: {
     const totalDirectPointsPerRegionScaled6 = new Map<string, bigint>();
 
     const walletSnapshots = liquidSnapshotByWalletWeek.get(wallet);
+    const rewardTimeline = rewardsTimelineByWallet.get(wallet);
+    const pdByWeek = rewardTimeline?.pd ?? new Map<number, bigint>();
+    const pdCumulativeByWeek = new Map<number, bigint>();
+    let pdRunning = 0n;
+    for (let w = startWeek; w <= endWeek; w++) {
+      pdRunning += pdByWeek.get(w) || 0n;
+      pdCumulativeByWeek.set(w, pdRunning);
+    }
 
     for (let week = startWeek; week <= endWeek; week++) {
       let delegatedActive = BigInt(0);
@@ -1911,14 +1919,13 @@ export async function computeGlowImpactScores(params: {
 
       // Calculate Historical Unclaimed for this specific week
       const weekEndTimestamp = GENESIS_TIMESTAMP + (week + 1) * 604800;
-      const rewardTimeline = rewardsTimelineByWallet.get(wallet);
+      const pdClaimableUpToWeek = week - 4;
       const claimPdData = claimedPdWeeksByWalletState.get(wallet);
       const claimInflationData = claimedInflationWeeksByWalletState.get(wallet);
       let historicalUnclaimedWei = 0n;
 
       if (rewardTimeline) {
         const inflationClaimableUpToWeek = week - 3;
-        const pdClaimableUpToWeek = week - 4;
 
         if (rewardTimeline.detailed) {
           const detailed = rewardTimeline.detailed;
@@ -1988,9 +1995,24 @@ export async function computeGlowImpactScores(params: {
         );
       }
 
-      // Weekly GlowWorth = liquid snapshot + delegatedActive + unclaimed (pending delegation is applied to current GlowWorth only).
+      const pdCumulative = pdCumulativeByWeek.get(week) || 0n;
+      let pdClaimableCumulative = 0n;
+      if (pdClaimableUpToWeek >= startWeek) {
+        const claimWeek = Math.min(pdClaimableUpToWeek, endWeek);
+        pdClaimableCumulative = pdCumulativeByWeek.get(claimWeek) || 0n;
+      }
+      const pendingRecoveredWei =
+        pdCumulative > pdClaimableCumulative
+          ? pdCumulative - pdClaimableCumulative
+          : 0n;
+
+      // Weekly GlowWorth = liquid snapshot + delegatedActive + unclaimed + recovered-but-not-claimable.
       // These points are distributed by emission share across all regions in glowWorthPoints.
-      const glowWorthWeekWei = liquidWeekWei + delegatedActive + historicalUnclaimedWei;
+      const glowWorthWeekWei =
+        liquidWeekWei +
+        delegatedActive +
+        historicalUnclaimedWei +
+        pendingRecoveredWei;
       const glowWorthWeekWeiDisplay = glowWorthWeekWei + pendingForWeek;
       const continuousPts = glwWeiToPointsScaled6(
         glowWorthWeekWei,
@@ -2125,8 +2147,22 @@ export async function computeGlowImpactScores(params: {
 
     // Current glow-worth uses the live on-chain balance (not frozen), while
     // weekly history uses the finalized-week freeze logic.
+    const totalPdCumulative = pdCumulativeByWeek.get(endWeek) || 0n;
+    let claimablePdCumulative = 0n;
+    if (claimableEndWeek >= startWeek) {
+      const claimWeek = Math.min(claimableEndWeek, endWeek);
+      claimablePdCumulative = pdCumulativeByWeek.get(claimWeek) || 0n;
+    }
+    const pendingRecoveredCurrentWei =
+      totalPdCumulative > claimablePdCumulative
+        ? totalPdCumulative - claimablePdCumulative
+        : 0n;
+
     const glowWorthNowWei =
-      liquidGlwWei + delegatedActiveEffectiveWei + unclaimed.amountWei;
+      liquidGlwWei +
+      delegatedActiveEffectiveWei +
+      unclaimed.amountWei +
+      pendingRecoveredCurrentWei;
 
     const effectiveLastWeekPoints =
       lastWeek >= startWeek ? lastWeekPointsScaled6 : BigInt(0);

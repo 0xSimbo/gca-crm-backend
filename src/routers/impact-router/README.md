@@ -9,7 +9,7 @@ This is a **status-only leaderboard** (no monetary rewards are paid out by this 
 ### Glow Worth
 
 \[
-\\text{GlowWorth} = \\text{LiquidGLW} + \\text{DelegatedActiveGLW} + \\text{UnclaimedGLWRewards}
+\\text{GlowWorth} = \\text{LiquidGLW} + \\text{DelegatedActiveGLW} + \\text{UnclaimedGLWRewards} + \\text{RecoveredButNotClaimable}
 \]
 
 - `LiquidGLW`: on-chain ERC20 GLW `balanceOf(wallet)` (18 decimals / wei)
@@ -31,6 +31,7 @@ This is a **status-only leaderboard** (no monetary rewards are paid out by this 
     - **Liquid GLW uses live on-chain balance** if the weekly snapshot is not available (forward-filled/current), to avoid mixing stale snapshots with updated delegation splits.
   - Once the week finalizes, both recovery and liquid snapshots are allowed to update normally.
 - `UnclaimedGLWRewards`: claimable rewards minus claims (see details below)
+- `RecoveredButNotClaimable`: protocol-deposit recovery already earned at the farm level but still within the 4-week claim delay (so it has not moved into `UnclaimedGLWRewards` yet). This prevents temporary dips when principal recovery is recognized before it becomes claimable.
 
 ### Glow Impact Score
 
