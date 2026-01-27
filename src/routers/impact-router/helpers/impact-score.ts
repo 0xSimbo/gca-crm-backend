@@ -382,6 +382,7 @@ export interface GlowImpactScoreResult {
       bonusEndsAt?: string;
       bonusWeeksRemaining?: number;
       bonusPointsThisWeekScaled6: string;
+      bonusPointsProjectedScaled6?: string;
       lifetimeBonusPointsScaled6: string;
       activationBonus: {
         awarded: boolean;

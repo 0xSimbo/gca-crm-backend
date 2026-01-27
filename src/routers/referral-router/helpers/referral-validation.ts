@@ -37,7 +37,7 @@ export async function incrementReferralNonce(walletAddress: string) {
     });
 }
 
-const PROD_REFERRAL_FEATURE_LAUNCH_DATE = new Date("2026-01-27T00:00:00Z");
+const PROD_REFERRAL_FEATURE_LAUNCH_DATE = new Date("2026-01-27T15:00:00Z");
 const STAGING_REFERRAL_FEATURE_LAUNCH_DATE = new Date("2026-01-12T00:00:00Z");
 const EXISTING_USER_GRACE_PERIOD_DAYS = 14;
 

@@ -293,6 +293,10 @@ export async function populateReferralData(
         !referral.activationBonusAwarded &&
         includeProjected &&
         postLinkBasePointsScaled6 >= ACTIVATION_THRESHOLD_SCALED6;
+      const projectedBonusPointsScaled6 =
+        includeProjected && now < referral.refereeBonusEndsAt
+          ? calculateRefereeBonus(projectedBasePointsScaled6)
+          : 0n;
 
       const lifetimeBonusPointsScaled6 = combineRefereeBonusPointsScaled6({
         referralBonusPointsScaled6: lifetimeBonusRes[0]?.referralBonusTotal,
@@ -310,6 +314,7 @@ export async function populateReferralData(
           Math.ceil((referral.refereeBonusEndsAt.getTime() - now.getTime()) / (7 * 24 * 60 * 60 * 1000))
         ),
         bonusPointsThisWeekScaled6: thisWeekRefRecord?.refereeBonusPointsScaled6 || "0.000000",
+        bonusPointsProjectedScaled6: formatPointsScaled6(projectedBonusPointsScaled6),
         lifetimeBonusPointsScaled6: lifetimeBonusPointsScaled6,
         activationBonus: {
           awarded: referral.activationBonusAwarded,

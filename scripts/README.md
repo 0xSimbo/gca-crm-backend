@@ -468,6 +468,56 @@ bun run scripts/backfill-referral-codes.ts
 
 ---
 
+### `debug-referral-pending.ts` - Pending Points Projection Debug
+
+Explains why a pending referral shows `0` projected points (tier gating, projection base points, proration, activation threshold).
+
+**Usage:**
+
+```bash
+bun run scripts/debug-referral-pending.ts --referee 0x5e230fed487c86b90f6508104149f087d9b1b0a7
+
+# Optional: override referrer wallet
+bun run scripts/debug-referral-pending.ts --referee 0x... --referrer 0x...
+```
+
+**Output includes:**
+
+- Referrer base points (for tier gating)
+- Active referee count + tier percent used
+- Referee projected base points (raw + prorated)
+- Post-link base points vs activation threshold
+- Pending share (active-only vs including pending vs if activation happens this week)
+
+---
+
+### `debug-referral-new-users.ts` - New Referral Users With Points
+
+Finds referees who had **0 base points last completed week** but have **non-zero points this week**, and prints the projected point source breakdown (inflation / steering / vault / worth).
+
+**Usage:**
+
+```bash
+# Basic
+bun run scripts/debug-referral-new-users.ts
+
+# Limit output rows + control concurrency
+bun run scripts/debug-referral-new-users.ts --limit 25 --concurrency 4
+
+# Only include referees with >1.0 projected points (scaled6)
+bun run scripts/debug-referral-new-users.ts --minPoints 1.000000
+```
+
+**Output includes:**
+
+- Referee + referrer wallet
+- Linked timestamp
+- Last week base points
+- Current week projected base points
+- Points breakdown by source
+
+---
+
 ## Solar Collector Debugging & Diagnostics
 
 ### `debug-solar-collector.ts` - Solar Collector Stats Investigation

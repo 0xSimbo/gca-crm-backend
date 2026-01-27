@@ -25,6 +25,9 @@ bun test tests/referral-router/referral-code.test.ts
 # Feature launch modal tests
 bun test tests/referral-router/referral-feature-launch.test.ts
 
+# Referral status projection tests
+bun test tests/referral-router/referral-status-projection.test.ts
+
 # Point calculation tests
 bun test tests/referral-router/referral-points.test.ts
 ```
@@ -94,6 +97,10 @@ Tests for point calculation logic.
 Tests for feature-launch modal tracking when users have or don't have
 referral records.
 
+### `referral-status-projection.test.ts`
+
+Tests for `/referral/status` when `includeProjection=1` is provided.
+
 ## Test Coverage Summary
 
 | Category           | Tests | Key Invariants                                    |
@@ -104,7 +111,8 @@ referral records.
 | Point Calculation  | 8     | Tiered shares, bonus math, activation, proration  |
 | Cron Helpers       | 3     | Activation candidates, tier stabilization         |
 | Feature Launch     | 2     | Modal tracking with/without referral records      |
-| **Total**          | **52**|                                                   |
+| Status Projection  | 1     | Projected referee bonus points returned           |
+| **Total**          | **54**|                                                   |
 
 ## Key Invariants Tested
 

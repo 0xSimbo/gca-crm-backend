@@ -70,7 +70,9 @@ Internal dashboard stats for team tracking. Returns aggregated referral metrics.
       "linkedAt": "2026-01-26T00:00:00Z",
       "gracePeriodEndsAt": "2026-02-02T00:00:00Z",
       "referralCode": "alice.eth",
-      "isInGracePeriod": true
+      "isInGracePeriod": true,
+      "referrerPendingPointsScaled6": "0.625000",
+      "refereePendingPointsScaled6": "12.500000"
     }
   ],
   "weeklyStats": [
@@ -87,6 +89,23 @@ Internal dashboard stats for team tracking. Returns aggregated referral metrics.
     "referrerPoints": "50000.000000",
     "refereeBonusPoints": "25000.000000",
     "activationBonusPoints": "8500.000000"
+  },
+  "newRefereeActivations": {
+    "total": 12,
+    "truncated": false,
+    "rows": [
+      {
+        "refereeWallet": "0x...",
+        "referrerWallet": "0x...",
+        "linkedAt": "2026-01-27T12:12:00Z",
+        "lastWeekBasePointsScaled6": "0.000000",
+        "projectedBasePointsScaled6": "12.500000",
+        "inflationPointsScaled6": "0.000000",
+        "steeringPointsScaled6": "10.500000",
+        "vaultPointsScaled6": "1.500000",
+        "worthPointsScaled6": "0.500000"
+      }
+    ]
   },
   "currentWeek": 114
 }
@@ -175,7 +194,8 @@ Get referee's referral status (who referred them).
     "isActive": true,
     "endsAt": "2026-04-09T00:00:00Z",
     "weeksRemaining": 12,
-    "bonusPercent": 10
+    "bonusPercent": 10,
+    "bonusProjectedPointsScaled6": "7.320000"
   }
 }
 ```
