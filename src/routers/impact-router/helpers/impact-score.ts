@@ -264,11 +264,13 @@ export interface GlowWorthResult {
   walletAddress: string;
   liquidGlwWei: string;
   delegatedActiveGlwWei: string;
+  pendingRecoveredGlwWei: string;
   unclaimedGlwRewardsWei: string;
   glowWorthWei: string;
   dataSources: {
     liquidGlw: "onchain";
     delegatedActiveGlw: "db+control-api";
+    pendingRecoveredGlw: "control-api";
     unclaimedGlwRewards: "claims-api+control-api";
   };
 }
@@ -2181,11 +2183,13 @@ export async function computeGlowImpactScores(params: {
         walletAddress: wallet,
         liquidGlwWei: liquidGlwWei.toString(),
         delegatedActiveGlwWei: delegatedActiveEffectiveWei.toString(),
+        pendingRecoveredGlwWei: pendingRecoveredCurrentWei.toString(),
         unclaimedGlwRewardsWei: unclaimed.amountWei.toString(),
         glowWorthWei: glowWorthNowWei.toString(),
         dataSources: {
           liquidGlw: "onchain",
           delegatedActiveGlw: "db+control-api",
+          pendingRecoveredGlw: "control-api",
           unclaimedGlwRewards: unclaimed.dataSource,
         },
       },

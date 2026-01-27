@@ -466,9 +466,10 @@ bun run scripts/check-impact-cache-state.ts
 
 Computes the wallet's GLW-denominated position:
 
-- `GlowWorth = LiquidGLW + DelegatedActiveGLW + UnclaimedGLWRewards`
+- `GlowWorth = LiquidGLW + DelegatedActiveGLW + PendingRecoveredGLW + UnclaimedGLWRewards`
 - `LiquidGLW`: onchain ERC20 GLW `balanceOf` via `viem`
 - `DelegatedActiveGLW`: launchpad GLW delegated minus protocol-deposit rewards received (converted to GLW using current spot price)
+- `PendingRecoveredGLW`: protocol-deposit rewards earned but not yet claimable (included in Glow Worth so totals don't dip before finalization)
 - `UnclaimedGLWRewards`: computed as:
   - **Claimable GLW** from Control API weekly rewards (`/wallets/address/:wallet/weekly-rewards?paymentCurrency=GLW&limit=520`)
     - When `paymentCurrency=GLW`, both:
