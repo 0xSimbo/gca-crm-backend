@@ -26,6 +26,7 @@ import {
   getSteeringSnapshot,
   getUnclaimedGlwRewardsWei,
   getRegionRewardsAtEpoch,
+  type GlwBalanceSnapshotSource,
   type ControlApiFarmReward,
   type ControlApiDepositSplitHistorySegment,
   type ControlApiFarmRewardsHistoryRewardRow,
@@ -170,22 +171,6 @@ function getFinalizedRewardsWeek(startWeek: number, endWeek: number): number {
   return Math.min(endWeek, finalizedWeek);
 }
 
-function getLatestSnapshotAtOrBefore(
-  snapshots: Map<number, bigint> | undefined,
-  week: number
-): bigint | null {
-  if (!snapshots || snapshots.size === 0) return null;
-  let bestWeek = -1;
-  let bestValue: bigint | null = null;
-  for (const [w, value] of snapshots.entries()) {
-    if (!Number.isFinite(w) || w > week) continue;
-    if (w > bestWeek) {
-      bestWeek = w;
-      bestValue = value;
-    }
-  }
-  return bestValue;
-}
 
 interface FarmDistributionTimelinePoint {
   week: number;
@@ -1019,7 +1004,10 @@ export async function computeGlowImpactScores(params: {
           `[impact-score] Balance snapshot fetch failed (wallets=${wallets.length}, startWeek=${startWeek}, endWeek=${endWeek})`,
           error
         );
-        return new Map<string, Map<number, bigint>>();
+        return new Map<
+          string,
+          Map<number, { balanceWei: bigint; source: GlwBalanceSnapshotSource }>
+        >();
       }),
     // 2. Wallet rewards history
     fetchWalletRewardsHistoryBatch({ wallets, startWeek: rewardsFetchStartWeek, endWeek }),
@@ -1772,13 +1760,6 @@ export async function computeGlowImpactScores(params: {
     const totalDirectPointsPerRegionScaled6 = new Map<string, bigint>();
 
     const walletSnapshots = liquidSnapshotByWalletWeek.get(wallet);
-    // For unfinalized weeks we freeze liquid GLW at the last finalized snapshot.
-    // This avoids showing temporary dips when on-chain transfers happen before the
-    // weekly rewards snapshot is finalized.
-    const finalizedLiquidSnapshot = getLatestSnapshotAtOrBefore(
-      walletSnapshots,
-      finalizedWeek
-    );
 
     for (let week = startWeek; week <= endWeek; week++) {
       let delegatedActive = BigInt(0);
@@ -1918,12 +1899,15 @@ export async function computeGlowImpactScores(params: {
         multiplierScaled6: totalMultiplierScaled6,
       });
 
-      // Prefer end-of-week snapshot (accurate) > current balance (fallback)
-      const snapshotBalance = walletSnapshots?.get(week);
-      let liquidWeekWei = snapshotBalance ?? liquidGlwWei;
-      if (week > finalizedWeek && finalizedLiquidSnapshot != null) {
-        liquidWeekWei = finalizedLiquidSnapshot;
-      }
+      // Prefer end-of-week snapshot when it's real; fall back to live balance
+      // when the snapshot is forward-filled or missing.
+      const snapshotEntry = walletSnapshots?.get(week);
+      const snapshotBalance = snapshotEntry?.balanceWei;
+      const snapshotSource = snapshotEntry?.source;
+      let liquidWeekWei =
+        snapshotSource === "snapshot" && snapshotBalance != null
+          ? snapshotBalance
+          : liquidGlwWei;
 
       // Calculate Historical Unclaimed for this specific week
       const weekEndTimestamp = GENESIS_TIMESTAMP + (week + 1) * 604800;

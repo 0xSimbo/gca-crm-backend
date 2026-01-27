@@ -28,7 +28,7 @@ This is a **status-only leaderboard** (no monetary rewards are paid out by this 
   - We treat the **last finalized week** as the latest week with complete Control API rewards (per Thursday 00:00 UTC schedule).
   - For any week **after** the finalized week:
     - **Protocol-deposit recovery is not applied yet** (so delegatedActive is not reduced).
-    - **Liquid GLW is frozen** at the last finalized snapshot to avoid dips from transfers that occur before rewards finalize.
+    - **Liquid GLW uses live on-chain balance** if the weekly snapshot is not available (forward-filled/current), to avoid mixing stale snapshots with updated delegation splits.
   - Once the week finalizes, both recovery and liquid snapshots are allowed to update normally.
 - `UnclaimedGLWRewards`: claimable rewards minus claims (see details below)
 

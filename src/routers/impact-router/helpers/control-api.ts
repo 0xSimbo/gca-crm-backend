@@ -306,17 +306,21 @@ export async function fetchGctlStakersFromControlApi(params?: {
   return data;
 }
 
+export type GlwBalanceSnapshotSource = "snapshot" | "current" | "forward_fill";
+
+export interface GlwBalanceSnapshotWeekRow {
+  weekNumber: number;
+  balanceWei: string;
+  balanceGlw: string;
+  source: GlwBalanceSnapshotSource;
+}
+
 interface GlwBalanceSnapshotByWeekResponse {
   indexingComplete?: boolean;
   weekRange?: { startWeek: number; endWeek: number };
   results?: Array<{
     wallet: string;
-    weeks: Array<{
-      weekNumber: number;
-      balanceWei: string;
-      balanceGlw: string;
-      source: "snapshot" | "current" | "forward_fill";
-    }>;
+    weeks: GlwBalanceSnapshotWeekRow[];
   }>;
   error?: string;
 }
@@ -325,7 +329,7 @@ export async function fetchGlwBalanceSnapshotByWeekBatch(params: {
   wallets: string[];
   startWeek: number;
   endWeek: number;
-}): Promise<Map<string, Map<number, bigint>>> {
+}): Promise<Map<string, Map<number, { balanceWei: bigint; source: GlwBalanceSnapshotSource }>>> {
   const baseUrl = getPonderListenerBaseUrl();
   const wallets = params.wallets.map((w) => w.toLowerCase());
 
@@ -361,7 +365,10 @@ export async function fetchGlwBalanceSnapshotByWeekBatch(params: {
     throw new Error(data.error || "Ponder listener is still indexing");
   }
 
-  const result = new Map<string, Map<number, bigint>>();
+  const result = new Map<
+    string,
+    Map<number, { balanceWei: bigint; source: GlwBalanceSnapshotSource }>
+  >();
   for (const row of data.results || []) {
     const wallet = (row.wallet || "").toLowerCase();
     if (!wallet) continue;
@@ -371,9 +378,12 @@ export async function fetchGlwBalanceSnapshotByWeekBatch(params: {
       const weekNumber = Number(w.weekNumber);
       if (!Number.isFinite(weekNumber)) continue;
       try {
-        byWeek.set(weekNumber, BigInt(w.balanceWei || "0"));
+        byWeek.set(weekNumber, {
+          balanceWei: BigInt(w.balanceWei || "0"),
+          source: w.source,
+        });
       } catch {
-        byWeek.set(weekNumber, BigInt(0));
+        byWeek.set(weekNumber, { balanceWei: BigInt(0), source: w.source });
       }
     }
   }
@@ -386,7 +396,9 @@ export async function fetchGlwBalanceSnapshotByWeekMany(params: {
   endWeek: number;
   batchSize?: number;
   concurrentBatches?: number;
-}): Promise<Map<string, Map<number, bigint>>> {
+}): Promise<
+  Map<string, Map<number, { balanceWei: bigint; source: GlwBalanceSnapshotSource }>>
+> {
   const {
     wallets,
     startWeek,
@@ -394,7 +406,10 @@ export async function fetchGlwBalanceSnapshotByWeekMany(params: {
     batchSize = 500,
     concurrentBatches = 3,
   } = params;
-  const result = new Map<string, Map<number, bigint>>();
+  const result = new Map<
+    string,
+    Map<number, { balanceWei: bigint; source: GlwBalanceSnapshotSource }>
+  >();
   if (wallets.length === 0) return result;
 
   const normalizedWallets = Array.from(
@@ -414,7 +429,11 @@ export async function fetchGlwBalanceSnapshotByWeekMany(params: {
     i < normalizedWallets.length;
     i += batchSize * concurrentBatches
   ) {
-    const batchPromises: Array<Promise<Map<string, Map<number, bigint>>>> = [];
+    const batchPromises: Array<
+      Promise<
+        Map<string, Map<number, { balanceWei: bigint; source: GlwBalanceSnapshotSource }>>
+      >
+    > = [];
 
     for (
       let j = 0;
@@ -439,7 +458,7 @@ export async function fetchGlwBalanceSnapshotByWeekMany(params: {
       for (const [wallet, byWeek] of batchMap) {
         if (!result.has(wallet)) result.set(wallet, new Map());
         const acc = result.get(wallet)!;
-        for (const [week, balanceWei] of byWeek) acc.set(week, balanceWei);
+        for (const [week, entry] of byWeek) acc.set(week, entry);
       }
     }
   }
