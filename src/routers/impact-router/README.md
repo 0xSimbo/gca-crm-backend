@@ -24,6 +24,12 @@ This is a **status-only leaderboard** (no monetary rewards are paid out by this 
   - Accounting starts at **week 97** (first week vault ownership exists). Even if you query `startWeek > 97`, we compute ownership from week 97 so farm distributions earlier in the range don’t distort `remainingGlwWei`.
   - **Miners** do not participate in protocol-deposit vaults; mining-center `depositSplitPercent6Decimals` is always `0`.
 - `DelegatedActiveGLW` **includes** GLW launchpad purchases recorded in `fraction_splits` that are **not yet reflected** in Control API split history for the wallet. This prevents temporary Glow Worth dips when GLW moves from the wallet into the vault before the split history is updated.
+- **Unfinalized week handling (report lag):**
+  - We treat the **last finalized week** as the latest week with complete Control API rewards (per Thursday 00:00 UTC schedule).
+  - For any week **after** the finalized week:
+    - **Protocol-deposit recovery is not applied yet** (so delegatedActive is not reduced).
+    - **Liquid GLW is frozen** at the last finalized snapshot to avoid dips from transfers that occur before rewards finalize.
+  - Once the week finalizes, both recovery and liquid snapshots are allowed to update normally.
 - `UnclaimedGLWRewards`: claimable rewards minus claims (see details below)
 
 ### Glow Impact Score

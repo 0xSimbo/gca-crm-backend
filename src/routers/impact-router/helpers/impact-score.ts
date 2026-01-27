@@ -11,6 +11,7 @@ import {
 } from "../../../db/schema";
 import { GENESIS_TIMESTAMP } from "../../../constants/genesis-timestamp";
 import { getCurrentEpoch } from "../../../utils/getProtocolWeek";
+import { getWeekRange } from "../../fractions-router/helpers/apy-helpers";
 import { getLiquidGlwBalanceWei } from "./glw-balance";
 import {
   fetchDepositSplitsHistoryBatch,
@@ -157,6 +158,33 @@ function chunkArray<T>(items: T[], size: number): T[][] {
   for (let i = 0; i < items.length; i += size)
     out.push(items.slice(i, i + size));
   return out;
+}
+
+function getFinalizedRewardsWeek(startWeek: number, endWeek: number): number {
+  // Finalized week = last completed week per Thursday 00:00 UTC reporting cadence.
+  // We use this to avoid reducing delegatedActive or liquid GLW on weeks whose
+  // rewards have not finalized yet.
+  const finalizedWeek = getWeekRange().endWeek;
+  if (!Number.isFinite(finalizedWeek)) return endWeek;
+  if (finalizedWeek < startWeek) return startWeek - 1;
+  return Math.min(endWeek, finalizedWeek);
+}
+
+function getLatestSnapshotAtOrBefore(
+  snapshots: Map<number, bigint> | undefined,
+  week: number
+): bigint | null {
+  if (!snapshots || snapshots.size === 0) return null;
+  let bestWeek = -1;
+  let bestValue: bigint | null = null;
+  for (const [w, value] of snapshots.entries()) {
+    if (!Number.isFinite(w) || w > week) continue;
+    if (w > bestWeek) {
+      bestWeek = w;
+      bestValue = value;
+    }
+  }
+  return bestValue;
 }
 
 interface FarmDistributionTimelinePoint {
@@ -543,6 +571,7 @@ export async function computeDelegatorsLeaderboard(params: {
   const endWeek = Math.max(startWeek, Math.trunc(params.endWeek));
   const limit = Math.max(1, Math.trunc(params.limit));
   const excludeWallets = params.excludeWallets;
+  const finalizedWeek = getFinalizedRewardsWeek(startWeek, endWeek);
 
   const universeStart = nowMs();
   let wallets = await getAllDelegatorWallets();
@@ -602,7 +631,12 @@ export async function computeDelegatorsLeaderboard(params: {
   recordTimingSafe(debug, {
     label: "delegators.actualMaxWeekInRewards",
     ms: 0,
-    meta: { endWeek, actualMaxWeekInRewards, glwPerWeekTargetWeek },
+    meta: {
+      endWeek,
+      actualMaxWeekInRewards,
+      glwPerWeekTargetWeek,
+      finalizedWeek,
+    },
   });
 
   // 2) Vault model inputs: deposit split history + farm principal + farm cumulative distributions.
@@ -774,9 +808,11 @@ export async function computeDelegatorsLeaderboard(params: {
 
       const splitScaled6 = getSplitScaled6AtWeek(splitState, endWeek);
       if (splitScaled6 <= 0n) continue;
+      // Use last finalized week for recovery when the requested week isn't finalized yet.
+      const recoveryWeek = endWeek <= finalizedWeek ? endWeek : finalizedWeek;
       const cumulativeDistributed = getCumulativeDistributedGlwWeiAtWeek(
         distState,
-        endWeek
+        recoveryWeek
       );
       const remaining = clampToZero(farm.principalWei - cumulativeDistributed);
       activelyDelegatedGlwWei +=
@@ -790,15 +826,20 @@ export async function computeDelegatorsLeaderboard(params: {
       const distState = makeTimelineState(farm.distributedTimeline);
       // Seed the "previous week" cumulative so the first delta is scoped to `startWeek`,
       // not the entire farm history prior to `startWeek`.
+      // Seed recovery at the latest finalized week if we're still ahead of reports.
+      const recoverySeedWeek =
+        finalizedWeek < startWeek ? finalizedWeek : startWeek - 1;
       let prevCumulativeDistributed =
         startWeek > 0
-          ? getCumulativeDistributedGlwWeiAtWeek(distState, startWeek - 1)
+          ? getCumulativeDistributedGlwWeiAtWeek(distState, recoverySeedWeek)
           : 0n;
 
       for (let week = startWeek; week <= endWeek; week++) {
+        // Clamp recovery to the finalized week so unfinalized weeks don't reduce principal.
+        const recoveryWeek = week <= finalizedWeek ? week : finalizedWeek;
         const cumulative = getCumulativeDistributedGlwWeiAtWeek(
           distState,
-          week
+          recoveryWeek
         );
         const delta = cumulative - prevCumulativeDistributed;
         // Always advance `prevCumulativeDistributed`, even if we end up skipping this
@@ -929,6 +970,7 @@ export async function computeGlowImpactScores(params: {
     debug,
   } = params;
   const overallStart = nowMs();
+  const finalizedWeek = getFinalizedRewardsWeek(startWeek, endWeek);
 
   const wallets = walletAddresses
     .map((w) => w.toLowerCase())
@@ -1607,15 +1649,18 @@ export async function computeGlowImpactScores(params: {
         (inflationByWeek.get(week) || BigInt(0)) + inflation
       );
 
-      const pdRaw = BigInt(r.walletProtocolDepositFromLaunchpad || "0");
-      const recoveredGlw = protocolDepositReceivedGlwWei({
-        amountRaw: pdRaw,
-        asset: r.asset,
-      });
-      protocolRecoveredByWeek.set(
-        week,
-        (protocolRecoveredByWeek.get(week) || BigInt(0)) + recoveredGlw
-      );
+      // Only count protocol-deposit recovery once the week is finalized.
+      if (week <= finalizedWeek) {
+        const pdRaw = BigInt(r.walletProtocolDepositFromLaunchpad || "0");
+        const recoveredGlw = protocolDepositReceivedGlwWei({
+          amountRaw: pdRaw,
+          asset: r.asset,
+        });
+        protocolRecoveredByWeek.set(
+          week,
+          (protocolRecoveredByWeek.get(week) || BigInt(0)) + recoveredGlw
+        );
+      }
     }
 
     const cashMinerWeeks = miningPurchaseWeeksByWallet.get(wallet) || new Set();
@@ -1726,6 +1771,15 @@ export async function computeGlowImpactScores(params: {
     const totalWorthPointsPerRegionScaled6 = new Map<string, bigint>();
     const totalDirectPointsPerRegionScaled6 = new Map<string, bigint>();
 
+    const walletSnapshots = liquidSnapshotByWalletWeek.get(wallet);
+    // For unfinalized weeks we freeze liquid GLW at the last finalized snapshot.
+    // This avoids showing temporary dips when on-chain transfers happen before the
+    // weekly rewards snapshot is finalized.
+    const finalizedLiquidSnapshot = getLatestSnapshotAtOrBefore(
+      walletSnapshots,
+      finalizedWeek
+    );
+
     for (let week = startWeek; week <= endWeek; week++) {
       let delegatedActive = BigInt(0);
       let grossShareWei = BigInt(0);
@@ -1743,9 +1797,12 @@ export async function computeGlowImpactScores(params: {
         grossShareWei +=
           (farm.principalWei * splitScaled6) / SPLIT_SCALE_SCALED6;
 
+        // Freeze recovery for unfinalized weeks to avoid reducing delegatedActive
+        // before rewards are finalized.
+        const recoveryWeek = week <= finalizedWeek ? week : finalizedWeek;
         const cumulativeDistributed = getCumulativeDistributedGlwWeiAtWeek(
           farm.dist,
-          week
+          recoveryWeek
         );
         const remaining = clampToZero(
           farm.principalWei - cumulativeDistributed
@@ -1862,8 +1919,11 @@ export async function computeGlowImpactScores(params: {
       });
 
       // Prefer end-of-week snapshot (accurate) > current balance (fallback)
-      const snapshotBalance = liquidSnapshotByWalletWeek.get(wallet)?.get(week);
-      const liquidWeekWei = snapshotBalance ?? liquidGlwWei;
+      const snapshotBalance = walletSnapshots?.get(week);
+      let liquidWeekWei = snapshotBalance ?? liquidGlwWei;
+      if (week > finalizedWeek && finalizedLiquidSnapshot != null) {
+        liquidWeekWei = finalizedLiquidSnapshot;
+      }
 
       // Calculate Historical Unclaimed for this specific week
       const weekEndTimestamp = GENESIS_TIMESTAMP + (week + 1) * 604800;
@@ -2052,7 +2112,9 @@ export async function computeGlowImpactScores(params: {
           steeringGlwWei: steeringGlwWei.toString(),
           delegatedActiveGlwWei: delegatedActiveForDisplay.toString(),
           protocolDepositRecoveredGlwWei: (
-            protocolRecoveredByWeek.get(week) || BigInt(0)
+            week <= finalizedWeek
+              ? protocolRecoveredByWeek.get(week) || BigInt(0)
+              : BigInt(0)
           ).toString(),
           liquidGlwWei: liquidWeekWei.toString(),
           unclaimedGlwWei: historicalUnclaimedWei.toString(),
@@ -2243,9 +2305,10 @@ export async function computeGlowImpactScores(params: {
             const splitScaled6 = getSplitScaled6AtWeek(farm.split, week);
             if (splitScaled6 <= BigInt(0)) continue;
 
+            const recoveryWeek = week <= finalizedWeek ? week : finalizedWeek;
             const cumulativeDistributed = getCumulativeDistributedGlwWeiAtWeek(
               farm.dist,
-              week
+              recoveryWeek
             );
             const remaining = clampToZero(
               farm.principalWei - cumulativeDistributed
