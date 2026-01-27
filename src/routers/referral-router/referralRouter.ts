@@ -35,6 +35,181 @@ import pLimit from "p-limit";
 
 export const referralRouter = new Elysia({ prefix: "/referral" })
   .get(
+    "/internal/dashboard",
+    async ({ set }) => {
+      try {
+        const currentWeek = getProtocolWeek();
+
+        // Get aggregate referral stats
+        const [
+          totalsRes,
+          tierDistribution,
+          topReferrers,
+          recentReferrals,
+          weeklyPointsRes,
+          totalCodesRes,
+        ] = await Promise.all([
+          // Total referral counts by status
+          db
+            .select({
+              totalReferrals: sql<number>`count(*)::int`,
+              activeReferrals: sql<number>`count(*) filter (where ${referrals.status} = 'active')::int`,
+              pendingReferrals: sql<number>`count(*) filter (where ${referrals.status} = 'pending')::int`,
+              inGracePeriod: sql<number>`count(*) filter (where ${referrals.gracePeriodEndsAt} > now())::int`,
+              inBonusPeriod: sql<number>`count(*) filter (where ${referrals.refereeBonusEndsAt} > now())::int`,
+              activationBonusesAwarded: sql<number>`count(*) filter (where ${referrals.activationBonusAwarded} = true)::int`,
+            })
+            .from(referrals),
+
+          // Tier distribution (by active referees count)
+          db
+            .select({
+              referrerWallet: referrals.referrerWallet,
+              activeCount: sql<number>`count(*)::int`,
+            })
+            .from(referrals)
+            .where(eq(referrals.status, "active"))
+            .groupBy(referrals.referrerWallet),
+
+          // Top referrers by active referees
+          db
+            .select({
+              referrerWallet: referrals.referrerWallet,
+              activeReferees: sql<number>`count(*) filter (where ${referrals.status} = 'active')::int`,
+              totalReferees: sql<number>`count(*)::int`,
+              pendingReferees: sql<number>`count(*) filter (where ${referrals.status} = 'pending')::int`,
+            })
+            .from(referrals)
+            .groupBy(referrals.referrerWallet)
+            .orderBy(desc(sql`count(*) filter (where ${referrals.status} = 'active')`))
+            .limit(20),
+
+          // Recent referrals (last 20)
+          db
+            .select({
+              referrerWallet: referrals.referrerWallet,
+              refereeWallet: referrals.refereeWallet,
+              status: referrals.status,
+              linkedAt: referrals.linkedAt,
+              activatedAt: referrals.activatedAt,
+              gracePeriodEndsAt: referrals.gracePeriodEndsAt,
+              referralCode: referrals.referralCode,
+            })
+            .from(referrals)
+            .orderBy(desc(referrals.linkedAt))
+            .limit(20),
+
+          // Weekly points totals (last 12 weeks)
+          db
+            .select({
+              weekNumber: referralPointsWeekly.weekNumber,
+              totalReferrerPoints: sql<string>`coalesce(sum(${referralPointsWeekly.referrerEarnedPointsScaled6}), '0.000000')`,
+              totalRefereeBonusPoints: sql<string>`coalesce(sum(${referralPointsWeekly.refereeBonusPointsScaled6}), '0.000000')`,
+              totalActivationBonusPoints: sql<string>`coalesce(sum(${referralPointsWeekly.activationBonusPointsScaled6}), '0.000000')`,
+              uniqueReferrers: sql<number>`count(distinct ${referralPointsWeekly.referrerWallet})::int`,
+              uniqueReferees: sql<number>`count(distinct ${referralPointsWeekly.refereeWallet})::int`,
+            })
+            .from(referralPointsWeekly)
+            .where(sql`${referralPointsWeekly.weekNumber} >= ${currentWeek - 12}`)
+            .groupBy(referralPointsWeekly.weekNumber)
+            .orderBy(desc(referralPointsWeekly.weekNumber)),
+
+          // Total referral codes generated
+          db
+            .select({
+              totalCodes: sql<number>`count(*)::int`,
+            })
+            .from(referralCodes),
+        ]);
+
+        // Calculate tier distribution
+        const tiers = { seed: 0, grow: 0, scale: 0, legend: 0 };
+        for (const row of tierDistribution) {
+          const count = row.activeCount;
+          if (count >= 7) tiers.legend++;
+          else if (count >= 4) tiers.scale++;
+          else if (count >= 2) tiers.grow++;
+          else if (count >= 1) tiers.seed++;
+        }
+
+        // Get total points earned all-time
+        const totalPointsRes = await db
+          .select({
+            totalReferrerPoints: sql<string>`coalesce(sum(${referralPointsWeekly.referrerEarnedPointsScaled6}), '0.000000')`,
+            totalRefereeBonusPoints: sql<string>`coalesce(sum(${referralPointsWeekly.refereeBonusPointsScaled6}), '0.000000')`,
+            totalActivationBonusPoints: sql<string>`coalesce(sum(${referralPointsWeekly.activationBonusPointsScaled6}), '0.000000')`,
+          })
+          .from(referralPointsWeekly);
+
+        // Resolve ENS names for top referrers
+        const topReferrersWithEns = await Promise.all(
+          topReferrers.map(async (referrer) => {
+            let ensName: string | undefined;
+            try {
+              ensName =
+                (await viemClient.getEnsName({
+                  address: referrer.referrerWallet as `0x${string}`,
+                })) || undefined;
+            } catch {}
+            const tier = getReferrerTier(referrer.activeReferees);
+            return {
+              ...referrer,
+              ensName,
+              tier: tier.name,
+              tierPercent: Number(tier.percent),
+            };
+          })
+        );
+
+        return {
+          overview: {
+            totalReferrals: totalsRes[0]?.totalReferrals || 0,
+            activeReferrals: totalsRes[0]?.activeReferrals || 0,
+            pendingReferrals: totalsRes[0]?.pendingReferrals || 0,
+            inGracePeriod: totalsRes[0]?.inGracePeriod || 0,
+            inBonusPeriod: totalsRes[0]?.inBonusPeriod || 0,
+            activationBonusesAwarded: totalsRes[0]?.activationBonusesAwarded || 0,
+            totalCodesGenerated: totalCodesRes[0]?.totalCodes || 0,
+            uniqueReferrers: tierDistribution.length,
+          },
+          tierDistribution: tiers,
+          topReferrers: topReferrersWithEns,
+          recentReferrals: recentReferrals.map((r) => ({
+            ...r,
+            linkedAt: r.linkedAt.toISOString(),
+            activatedAt: r.activatedAt?.toISOString(),
+            gracePeriodEndsAt: r.gracePeriodEndsAt.toISOString(),
+            isInGracePeriod: new Date() < r.gracePeriodEndsAt,
+          })),
+          weeklyStats: weeklyPointsRes.map((w) => ({
+            weekNumber: w.weekNumber,
+            totalReferrerPoints: w.totalReferrerPoints,
+            totalRefereeBonusPoints: w.totalRefereeBonusPoints,
+            totalActivationBonusPoints: w.totalActivationBonusPoints,
+            uniqueReferrers: w.uniqueReferrers,
+            uniqueReferees: w.uniqueReferees,
+          })),
+          totalPointsAllTime: {
+            referrerPoints: totalPointsRes[0]?.totalReferrerPoints || "0.000000",
+            refereeBonusPoints: totalPointsRes[0]?.totalRefereeBonusPoints || "0.000000",
+            activationBonusPoints: totalPointsRes[0]?.totalActivationBonusPoints || "0.000000",
+          },
+          currentWeek,
+        };
+      } catch (e) {
+        console.error("[Referral Dashboard] Error:", e);
+        set.status = 500;
+        return e instanceof Error ? e.message : "Error Occurred";
+      }
+    },
+    {
+      detail: {
+        summary: "Internal referral dashboard stats",
+        tags: [TAG.REFERRALS],
+      },
+    }
+  )
+  .get(
     "/code",
     async ({ query: { walletAddress }, set }) => {
       try {

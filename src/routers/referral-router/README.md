@@ -27,6 +27,71 @@ src/routers/referral-router/
 
 ## Endpoints
 
+### `GET /referral/internal/dashboard`
+
+Internal dashboard stats for team tracking. Returns aggregated referral metrics.
+
+**Response:**
+
+```json
+{
+  "overview": {
+    "totalReferrals": 150,
+    "activeReferrals": 85,
+    "pendingReferrals": 65,
+    "inGracePeriod": 12,
+    "inBonusPeriod": 45,
+    "activationBonusesAwarded": 85,
+    "totalCodesGenerated": 500,
+    "uniqueReferrers": 120
+  },
+  "tierDistribution": {
+    "seed": 80,
+    "grow": 25,
+    "scale": 10,
+    "legend": 5
+  },
+  "topReferrers": [
+    {
+      "referrerWallet": "0x...",
+      "activeReferees": 12,
+      "totalReferees": 15,
+      "pendingReferees": 3,
+      "ensName": "alice.eth",
+      "tier": "Legend",
+      "tierPercent": 20
+    }
+  ],
+  "recentReferrals": [
+    {
+      "referrerWallet": "0x...",
+      "refereeWallet": "0x...",
+      "status": "pending",
+      "linkedAt": "2026-01-26T00:00:00Z",
+      "gracePeriodEndsAt": "2026-02-02T00:00:00Z",
+      "referralCode": "alice.eth",
+      "isInGracePeriod": true
+    }
+  ],
+  "weeklyStats": [
+    {
+      "weekNumber": 114,
+      "totalReferrerPoints": "1234.000000",
+      "totalRefereeBonusPoints": "567.000000",
+      "totalActivationBonusPoints": "500.000000",
+      "uniqueReferrers": 25,
+      "uniqueReferees": 40
+    }
+  ],
+  "totalPointsAllTime": {
+    "referrerPoints": "50000.000000",
+    "refereeBonusPoints": "25000.000000",
+    "activationBonusPoints": "8500.000000"
+  },
+  "currentWeek": 114
+}
+```
+
 ### `GET /referral/code`
 
 Get or generate referral code for connected wallet.
