@@ -2139,8 +2139,16 @@ export async function computeGlowImpactScores(params: {
     const delegatedActiveEffectiveWei =
       delegatedActiveNow + pendingDelegatedGlwWei;
 
+    // Freeze current liquid GLW at the last finalized snapshot when the
+    // requested range includes unfinalized weeks. This mirrors weekly
+    // handling to avoid temporary dips from on-chain transfers.
+    const liquidGlwEffectiveWei =
+      endWeek > finalizedWeek && finalizedLiquidSnapshot != null
+        ? finalizedLiquidSnapshot
+        : liquidGlwWei;
+
     const glowWorthNowWei =
-      liquidGlwWei + delegatedActiveEffectiveWei + unclaimed.amountWei;
+      liquidGlwEffectiveWei + delegatedActiveEffectiveWei + unclaimed.amountWei;
 
     const effectiveLastWeekPoints =
       lastWeek >= startWeek ? lastWeekPointsScaled6 : BigInt(0);
@@ -2157,7 +2165,7 @@ export async function computeGlowImpactScores(params: {
       weekRange: { startWeek, endWeek },
       glowWorth: {
         walletAddress: wallet,
-        liquidGlwWei: liquidGlwWei.toString(),
+        liquidGlwWei: liquidGlwEffectiveWei.toString(),
         delegatedActiveGlwWei: delegatedActiveEffectiveWei.toString(),
         unclaimedGlwRewardsWei: unclaimed.amountWei.toString(),
         glowWorthWei: glowWorthNowWei.toString(),
