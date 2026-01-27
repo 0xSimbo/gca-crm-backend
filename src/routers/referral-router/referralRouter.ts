@@ -31,7 +31,29 @@ import { formatPointsScaled6 } from "../impact-router/helpers/points";
 import { viemClient } from "../../lib/web3-providers/viem-client";
 import { getReferralNonce, canClaimReferrer } from "./helpers/referral-validation";
 import { dateToEpoch, getCurrentEpoch, getProtocolWeek } from "../../utils/getProtocolWeek";
+import { getWeekRangeForImpact } from "../fractions-router/helpers/apy-helpers";
 import pLimit from "p-limit";
+
+const parseScaled6 = (val: string | undefined) => {
+  if (!val) return 0n;
+  const raw = val.trim();
+  if (!raw) return 0n;
+  const isNeg = raw.startsWith("-");
+  const abs = isNeg ? raw.slice(1) : raw;
+  const parts = abs.split(".");
+  if (parts.length > 2) return 0n;
+  const intPartRaw = parts[0] ?? "";
+  const fracRaw = parts[1] ?? "";
+
+  const intPart = intPartRaw === "" ? "0" : intPartRaw;
+  if (!/^\d+$/.test(intPart)) return 0n;
+  if (fracRaw !== "" && !/^\d+$/.test(fracRaw)) return 0n;
+
+  const frac = (fracRaw + "000000").slice(0, 6);
+  let out = BigInt(intPart) * 1_000_000n + BigInt(frac);
+  if (isNeg) out = -out;
+  return out;
+};
 
 export const referralRouter = new Elysia({ prefix: "/referral" })
   .get(
@@ -122,10 +144,33 @@ export const referralRouter = new Elysia({ prefix: "/referral" })
             .from(referralCodes),
         ]);
 
-        // Calculate tier distribution
+        const { startWeek, endWeek } = getWeekRangeForImpact();
+        const referrerBasePointsByWallet = new Map<string, bigint>();
+        const tierWallets = Array.from(
+          new Set(tierDistribution.map((row) => row.referrerWallet))
+        );
+        if (tierWallets.length > 0) {
+          const scores = await computeGlowImpactScores({
+            walletAddresses: tierWallets,
+            startWeek,
+            endWeek,
+            includeWeeklyBreakdown: false,
+          });
+          for (const score of scores) {
+            referrerBasePointsByWallet.set(
+              score.walletAddress.toLowerCase(),
+              parseScaled6(score.totals.basePointsPreMultiplierScaled6)
+            );
+          }
+        }
+
+        // Calculate tier distribution (only referrers with >0 base points can advance)
         const tiers = { seed: 0, grow: 0, scale: 0, legend: 0 };
         for (const row of tierDistribution) {
-          const count = row.activeCount;
+          const basePoints =
+            referrerBasePointsByWallet.get(row.referrerWallet.toLowerCase()) ||
+            0n;
+          const count = basePoints > 0n ? row.activeCount : 0;
           if (count >= 7) tiers.legend++;
           else if (count >= 4) tiers.scale++;
           else if (count >= 2) tiers.grow++;
@@ -151,7 +196,11 @@ export const referralRouter = new Elysia({ prefix: "/referral" })
                   address: referrer.referrerWallet as `0x${string}`,
                 })) || undefined;
             } catch {}
-            const tier = getReferrerTier(referrer.activeReferees);
+            const basePoints =
+              referrerBasePointsByWallet.get(
+                referrer.referrerWallet.toLowerCase()
+              ) || 0n;
+            const tier = getReferrerTier(referrer.activeReferees, basePoints);
             return {
               ...referrer,
               ensName,
@@ -352,27 +401,6 @@ export const referralRouter = new Elysia({ prefix: "/referral" })
         const ACTIVATION_THRESHOLD_SCALED6 = 100_000_000n;
         const currentWeek = getCurrentEpoch(Math.floor(Date.now() / 1000));
 
-        const parseScaled6 = (val: string | undefined) => {
-          if (!val) return 0n;
-          const raw = val.trim();
-          if (!raw) return 0n;
-          const isNeg = raw.startsWith("-");
-          const abs = isNeg ? raw.slice(1) : raw;
-          const parts = abs.split(".");
-          if (parts.length > 2) return 0n;
-          const intPartRaw = parts[0] ?? "";
-          const fracRaw = parts[1] ?? "";
-
-          const intPart = intPartRaw === "" ? "0" : intPartRaw;
-          if (!/^\d+$/.test(intPart)) return 0n;
-          if (fracRaw !== "" && !/^\d+$/.test(fracRaw)) return 0n;
-
-          const frac = (fracRaw + "000000").slice(0, 6);
-          let out = BigInt(intPart) * 1_000_000n + BigInt(frac);
-          if (isNeg) out = -out;
-          return out;
-        };
-
         const codeRecord = await getOrCreateReferralCode(normalizedWallet);
         const maxWeekRes = await db
           .select({
@@ -382,6 +410,21 @@ export const referralRouter = new Elysia({ prefix: "/referral" })
         const maxWeek = maxWeekRes[0]?.maxWeek;
 
         const stats = await getReferrerStats(normalizedWallet, maxWeek);
+        const { startWeek, endWeek } = getWeekRangeForImpact();
+        let referrerBasePointsScaled6 = 0n;
+        try {
+          const referrerScore = await computeGlowImpactScores({
+            walletAddresses: [normalizedWallet],
+            startWeek,
+            endWeek,
+            includeWeeklyBreakdown: false,
+          });
+          referrerBasePointsScaled6 = parseScaled6(
+            referrerScore[0]?.totals.basePointsPreMultiplierScaled6
+          );
+        } catch {
+          referrerBasePointsScaled6 = 0n;
+        }
         const totalsRes = await db
           .select({
             totalReferees: sql<number>`count(*)::int`,
@@ -394,7 +437,7 @@ export const referralRouter = new Elysia({ prefix: "/referral" })
         const totalReferees = totalsRes[0]?.totalReferees || 0;
         const activeReferees = totalsRes[0]?.activeReferees || 0;
         const pendingReferees = totalsRes[0]?.pendingReferees || 0;
-        const tier = getReferrerTier(activeReferees);
+        const tier = getReferrerTier(activeReferees, referrerBasePointsScaled6);
 
         const allReferees = await db
           .select({
@@ -577,7 +620,8 @@ export const referralRouter = new Elysia({ prefix: "/referral" })
             willEarn && projectedBasePoints > 0n
               ? calculateReferrerShare(
                   projectedBasePoints,
-                  projectedActiveCount
+                  projectedActiveCount,
+                  referrerBasePointsScaled6
                 )
               : 0n;
           projectedShareByReferee.set(refereeWallet, projectedShare);
@@ -967,6 +1011,22 @@ export const referralRouter = new Elysia({ prefix: "/referral" })
         });
 
         const limitedEntries = entries.slice(0, parsedLimit);
+        const { startWeek, endWeek } = getWeekRangeForImpact();
+        const basePointsByWallet = new Map<string, bigint>();
+        if (limitedEntries.length > 0) {
+          const scores = await computeGlowImpactScores({
+            walletAddresses: limitedEntries.map((entry) => entry.wallet),
+            startWeek,
+            endWeek,
+            includeWeeklyBreakdown: false,
+          });
+          for (const score of scores) {
+            basePointsByWallet.set(
+              score.walletAddress.toLowerCase(),
+              parseScaled6(score.totals.basePointsPreMultiplierScaled6)
+            );
+          }
+        }
         const leaderboard = await Promise.all(
           limitedEntries.map(async (entry, idx) => {
             let displayName: string | undefined;
@@ -977,7 +1037,9 @@ export const referralRouter = new Elysia({ prefix: "/referral" })
                 })) || undefined;
             } catch {}
 
-            const tier = getReferrerTier(entry.activeReferralCount);
+            const basePoints =
+              basePointsByWallet.get(entry.wallet.toLowerCase()) || 0n;
+            const tier = getReferrerTier(entry.activeReferralCount, basePoints);
 
             return {
               rank: idx + 1,

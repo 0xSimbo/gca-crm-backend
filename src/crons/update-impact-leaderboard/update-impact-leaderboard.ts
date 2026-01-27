@@ -201,13 +201,22 @@ export async function updateImpactLeaderboard() {
 
     const basePointsScaled6 =
       basePointsThisWeekByReferee.get(refereeWallet) || 0n;
+    const referrerWallet = ref.referrerWallet.toLowerCase();
+    const referrerResult = resultsByWallet.get(referrerWallet);
+    const referrerBasePointsScaled6 = parseScaled6(
+      referrerResult?.totals.basePointsPreMultiplierScaled6
+    );
 
     let share = 0n;
     if (ref.status === "active" && basePointsScaled6 > 0n) {
       const activeCount =
-        activeReferralCountMap.get(ref.referrerWallet.toLowerCase()) || 0;
-      share = calculateReferrerShare(basePointsScaled6, activeCount);
-      const rw = ref.referrerWallet.toLowerCase();
+        activeReferralCountMap.get(referrerWallet) || 0;
+      share = calculateReferrerShare(
+        basePointsScaled6,
+        activeCount,
+        referrerBasePointsScaled6
+      );
+      const rw = referrerWallet;
       referralPointsByWallet.set(
         rw,
         (referralPointsByWallet.get(rw) || 0n) + share

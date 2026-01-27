@@ -13,24 +13,51 @@ import { GENESIS_TIMESTAMP } from "../../src/constants/genesis-timestamp";
 describe("Referral Point Calculation", () => {
   it("calculates tiered referrer share based on active referral count", () => {
     const refereeBasePoints = 1000_000000n; // 1000 points scaled6
+    const referrerBasePoints = 1_000000n; // Any positive base points
 
     // None (0 refs): 0%
-    expect(calculateReferrerShare(refereeBasePoints, 0)).toBe(0n);
+    expect(
+      calculateReferrerShare(refereeBasePoints, 0, referrerBasePoints)
+    ).toBe(0n);
 
     // Seed tier (1 ref): 5%
-    expect(calculateReferrerShare(refereeBasePoints, 1)).toBe(50_000000n);
+    expect(
+      calculateReferrerShare(refereeBasePoints, 1, referrerBasePoints)
+    ).toBe(50_000000n);
 
     // Grow tier (2-3 refs): 10%
-    expect(calculateReferrerShare(refereeBasePoints, 2)).toBe(100_000000n);
-    expect(calculateReferrerShare(refereeBasePoints, 3)).toBe(100_000000n);
+    expect(
+      calculateReferrerShare(refereeBasePoints, 2, referrerBasePoints)
+    ).toBe(100_000000n);
+    expect(
+      calculateReferrerShare(refereeBasePoints, 3, referrerBasePoints)
+    ).toBe(100_000000n);
 
     // Scale tier (4-6 refs): 15%
-    expect(calculateReferrerShare(refereeBasePoints, 4)).toBe(150_000000n);
-    expect(calculateReferrerShare(refereeBasePoints, 6)).toBe(150_000000n);
+    expect(
+      calculateReferrerShare(refereeBasePoints, 4, referrerBasePoints)
+    ).toBe(150_000000n);
+    expect(
+      calculateReferrerShare(refereeBasePoints, 6, referrerBasePoints)
+    ).toBe(150_000000n);
 
     // Legend tier (7+ refs): 20%
-    expect(calculateReferrerShare(refereeBasePoints, 7)).toBe(200_000000n);
-    expect(calculateReferrerShare(refereeBasePoints, 15)).toBe(200_000000n);
+    expect(
+      calculateReferrerShare(refereeBasePoints, 7, referrerBasePoints)
+    ).toBe(200_000000n);
+    expect(
+      calculateReferrerShare(refereeBasePoints, 15, referrerBasePoints)
+    ).toBe(200_000000n);
+  });
+
+  it("does not increase tier when referrer has zero base points", () => {
+    const refereeBasePoints = 1000_000000n;
+
+    expect(calculateReferrerShare(refereeBasePoints, 7, 0n)).toBe(0n);
+
+    const tier = getReferrerTier(7, 0n);
+    expect(tier.name).toBe("Seed");
+    expect(tier.percent).toBe(0);
   });
 
   it("calculates 10% bonus for referee", () => {
@@ -53,25 +80,25 @@ describe("Referral Point Calculation", () => {
   });
 
   it("identifies correct tier info", () => {
-    const tier0 = getReferrerTier(0);
+    const tier0 = getReferrerTier(0, 1_000000n);
     expect(tier0.name).toBe("Seed");
     expect(tier0.percent).toBe(0);
     expect(tier0.nextTier?.name).toBe("Grow");
     expect(tier0.nextTier?.referralsNeeded).toBe(2);
 
-    const tier1 = getReferrerTier(1);
+    const tier1 = getReferrerTier(1, 1_000000n);
     expect(tier1.name).toBe("Seed");
     expect(tier1.percent).toBe(5);
     expect(tier1.nextTier?.name).toBe("Grow");
     expect(tier1.nextTier?.referralsNeeded).toBe(1);
 
-    const tier3 = getReferrerTier(3);
+    const tier3 = getReferrerTier(3, 1_000000n);
     expect(tier3.name).toBe("Grow");
     expect(tier3.percent).toBe(10);
     expect(tier3.nextTier?.name).toBe("Scale");
     expect(tier3.nextTier?.referralsNeeded).toBe(1);
 
-    const tier7 = getReferrerTier(7);
+    const tier7 = getReferrerTier(7, 1_000000n);
     expect(tier7.name).toBe("Legend");
     expect(tier7.percent).toBe(20);
     expect(tier7.nextTier).toBeUndefined();

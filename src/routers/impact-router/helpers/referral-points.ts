@@ -58,9 +58,16 @@ function parseScaled6(val: string | undefined): bigint {
   return out;
 }
 
-export function getReferrerTier(activeReferralCount: number) {
+export function getReferrerTier(
+  activeReferralCount: number,
+  referrerBasePointsScaled6?: bigint
+) {
+  const eligible =
+    referrerBasePointsScaled6 == null || referrerBasePointsScaled6 > 0n;
+  const effectiveCount = eligible ? activeReferralCount : 0;
+
   for (const tier of REFERRER_TIERS) {
-    if (activeReferralCount >= tier.minReferrals) {
+    if (effectiveCount >= tier.minReferrals) {
       const nextTierIndex = REFERRER_TIERS.indexOf(tier) - 1;
       const nextTier =
         nextTierIndex >= 0 ? REFERRER_TIERS[nextTierIndex] : undefined;
@@ -70,7 +77,7 @@ export function getReferrerTier(activeReferralCount: number) {
         nextTier: nextTier
           ? {
               name: nextTier.name,
-              referralsNeeded: nextTier.minReferrals - activeReferralCount,
+              referralsNeeded: nextTier.minReferrals - effectiveCount,
               percent: Number(nextTier.percent),
             }
           : undefined,
@@ -82,7 +89,7 @@ export function getReferrerTier(activeReferralCount: number) {
     name: "Seed" as any, // Start with Seed tier even if 0
     nextTier: {
       name: "Grow",
-      referralsNeeded: 2 - activeReferralCount,
+      referralsNeeded: 2 - effectiveCount,
       percent: 10,
     },
   };
@@ -90,9 +97,13 @@ export function getReferrerTier(activeReferralCount: number) {
 
 export function calculateReferrerShare(
   refereeBasePointsScaled6: bigint,
-  activeReferralCount: number
+  activeReferralCount: number,
+  referrerBasePointsScaled6?: bigint
 ): bigint {
-  const { percent } = getReferrerTier(activeReferralCount);
+  const { percent } = getReferrerTier(
+    activeReferralCount,
+    referrerBasePointsScaled6
+  );
   return (refereeBasePointsScaled6 * BigInt(percent)) / 100n;
 }
 
@@ -205,7 +216,13 @@ export async function populateReferralData(
       }),
     ]);
 
-    const tier = getReferrerTier(stats.activeRefereeCount);
+    const referrerBasePointsScaled6 = parseScaled6(
+      r.totals.basePointsPreMultiplierScaled6
+    );
+    const tier = getReferrerTier(
+      stats.activeRefereeCount,
+      referrerBasePointsScaled6
+    );
 
     r.referral = {
       asReferrer: {

@@ -339,6 +339,16 @@ Get referral leaderboard (for giveaway events).
 - Referrer starts earning share only after activation
 - One-time 100pt bonus awarded to referee at activation
 
+### Abuse Guardrails (Enforced)
+
+To prevent "empty" wallets from inflating referral tiers:
+
+- **Tiering counts only active referees** (i.e., those who met activation).
+- **Pending referees do not affect tier %**.
+- **Referrers with 0 base points stay at Seed (0%)**, even if they have active referees.
+
+This preserves onboarding (new users can link immediately) while blocking tier inflation from zero-activity wallets.
+
 ### Point Calculation
 
 Referral points are calculated during the weekly Impact Score cron:
