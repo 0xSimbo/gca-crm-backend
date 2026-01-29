@@ -101,6 +101,7 @@ export const referralRouter = new Elysia({ prefix: "/referral" })
               inGracePeriod: sql<number>`count(*) filter (where ${referrals.gracePeriodEndsAt} > now())::int`,
               inBonusPeriod: sql<number>`count(*) filter (where ${referrals.refereeBonusEndsAt} > now())::int`,
               activationBonusesAwarded: sql<number>`count(*) filter (where ${referrals.activationBonusAwarded} = true)::int`,
+              uniqueReferrers: sql<number>`count(distinct ${referrals.referrerWallet})::int`,
             })
             .from(referrals),
           db
@@ -149,7 +150,7 @@ export const referralRouter = new Elysia({ prefix: "/referral" })
             inBonusPeriod: totalsRes[0]?.inBonusPeriod || 0,
             activationBonusesAwarded: totalsRes[0]?.activationBonusesAwarded || 0,
             totalCodesGenerated: totalCodesRes[0]?.totalCodes || 0,
-            uniqueReferrers: tierDistribution.length,
+            uniqueReferrers: totalsRes[0]?.uniqueReferrers || 0,
           },
           tierDistribution: tiers,
           currentWeek,
@@ -649,6 +650,7 @@ export const referralRouter = new Elysia({ prefix: "/referral" })
               inGracePeriod: sql<number>`count(*) filter (where ${referrals.gracePeriodEndsAt} > now())::int`,
               inBonusPeriod: sql<number>`count(*) filter (where ${referrals.refereeBonusEndsAt} > now())::int`,
               activationBonusesAwarded: sql<number>`count(*) filter (where ${referrals.activationBonusAwarded} = true)::int`,
+              uniqueReferrers: sql<number>`count(distinct ${referrals.referrerWallet})::int`,
             })
             .from(referrals),
 
@@ -1047,7 +1049,7 @@ export const referralRouter = new Elysia({ prefix: "/referral" })
             inBonusPeriod: totalsRes[0]?.inBonusPeriod || 0,
             activationBonusesAwarded: totalsRes[0]?.activationBonusesAwarded || 0,
             totalCodesGenerated: totalCodesRes[0]?.totalCodes || 0,
-            uniqueReferrers: tierDistribution.length,
+            uniqueReferrers: totalsRes[0]?.uniqueReferrers || 0,
           },
           tierDistribution: tiers,
           topReferrers: topReferrersWithEns,
