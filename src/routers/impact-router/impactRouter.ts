@@ -1,10 +1,16 @@
 import { Elysia, t } from "elysia";
 import { desc, asc, sql, and, eq, inArray } from "drizzle-orm";
 import { db } from "../../db/db";
-import { impactLeaderboardCache, referralPointsWeekly } from "../../db/schema";
+import {
+  impactLeaderboardCache,
+  referralPointsWeekly,
+  fractionSplits,
+  RewardsSplitsHistory,
+} from "../../db/schema";
 import { TAG } from "../../constants";
 import { excludedLeaderboardWalletsSet } from "../../constants/excluded-wallets";
 import { getWeekRangeForImpact } from "../fractions-router/helpers/apy-helpers";
+import { dateToEpoch, getCurrentEpoch } from "../../utils/getProtocolWeek";
 import {
   computeDelegatorsLeaderboard,
   computeGlowImpactScores,
@@ -14,6 +20,14 @@ import {
 } from "./helpers/impact-score";
 import { populateReferralData } from "./helpers/referral-points";
 import { formatPointsScaled6 } from "./helpers/points";
+import {
+  fetchDepositSplitsHistoryBatch,
+  fetchGlwBalanceSnapshotByWeekMany,
+  fetchNewGlwHoldersByWeek,
+  fetchGctlStakersFromControlApi,
+  fetchWalletStakeByEpochRange,
+} from "./helpers/control-api";
+import { getWalletPurchaseTypesByFarmUpToWeek } from "../fractions-router/helpers/per-piece-helpers";
 
 function parseOptionalInt(value: string | undefined): number | undefined {
   if (!value) return undefined;
@@ -73,6 +87,8 @@ const delegatorsLeaderboardCache = new Map<
   { expiresAtMs: number; data: unknown }
 >();
 
+const MIN_POINTS_THRESHOLD = 0.01;
+
 function filterLeaderboardWallets(wallets: string[]): string[] {
   return wallets.filter((w) => !excludedLeaderboardWalletsSet.has(w));
 }
@@ -115,6 +131,92 @@ function readCachedDelegatorsLeaderboard(key: string): unknown | null {
     return null;
   }
   return cached.data;
+}
+
+async function getLeaderboardWalletsForRange(params: {
+  startWeek: number;
+  endWeek: number;
+}): Promise<string[]> {
+  const rows = await db
+    .select({
+      wallet: impactLeaderboardCache.walletAddress,
+      totalPoints: impactLeaderboardCache.totalPoints,
+    })
+    .from(impactLeaderboardCache)
+    .where(
+      and(
+        eq(impactLeaderboardCache.startWeek, params.startWeek),
+        eq(impactLeaderboardCache.endWeek, params.endWeek)
+      )
+    );
+
+  return rows
+    .map((row) => ({
+      wallet: (row.wallet || "").toLowerCase(),
+      points: Number(row.totalPoints),
+    }))
+    .filter(
+      (row) =>
+        row.wallet &&
+        Number.isFinite(row.points) &&
+        row.points >= MIN_POINTS_THRESHOLD &&
+        !excludedLeaderboardWalletsSet.has(row.wallet)
+    )
+    .map((row) => row.wallet);
+}
+
+function updateEarliestWeek(
+  map: Map<string, number>,
+  wallet: string,
+  week: number
+) {
+  if (!Number.isFinite(week)) return;
+  const w = wallet.toLowerCase();
+  if (!w) return;
+  const prev = map.get(w);
+  if (prev == null || week < prev) map.set(w, week);
+}
+
+async function getFirstStakeWeekByWallet(params: {
+  wallets: string[];
+  startWeek: number;
+  endWeek: number;
+  concurrency?: number;
+}): Promise<Map<string, number>> {
+  const { wallets, startWeek, endWeek, concurrency = 6 } = params;
+  const results = new Map<string, number>();
+  const queue = wallets.slice();
+
+  const worker = async () => {
+    while (queue.length > 0) {
+      const wallet = queue.shift();
+      if (!wallet) continue;
+      try {
+        const stakeMap = await fetchWalletStakeByEpochRange({
+          walletAddress: wallet,
+          startWeek,
+          endWeek,
+        });
+        let firstWeek: number | null = null;
+        for (const [week, regions] of stakeMap) {
+          if (!Number.isFinite(week)) continue;
+          const hasStake = regions.some((r) => r.totalStakedWei > 0n);
+          if (!hasStake) continue;
+          if (firstWeek == null || week < firstWeek) firstWeek = week;
+        }
+        if (firstWeek != null) results.set(wallet.toLowerCase(), firstWeek);
+      } catch {
+        // ignore stake failures for individual wallets
+      }
+    }
+  };
+
+  const workers = Array.from(
+    { length: Math.max(1, concurrency) },
+    () => worker()
+  );
+  await Promise.all(workers);
+  return results;
 }
 
 export const impactRouter = new Elysia({ prefix: "/impact" })
@@ -249,6 +351,304 @@ export const impactRouter = new Elysia({ prefix: "/impact" })
         summary: "Get Delegators Leaderboard",
         description:
           "Returns a delegators-only leaderboard using the vault (protocol-deposit principal recovery) model. Net rewards are computed as gross rewards earned (launchpad inflation + GLW protocol-deposit received) minus the wallet’s allocated principal released over the requested week range.",
+        tags: [TAG.REWARDS],
+      },
+    }
+  )
+  .get(
+    "/wallet-stats",
+    async ({ set }) => {
+      try {
+        const leaderboardRange = getWeekRangeForImpact();
+        const wallets = await getLeaderboardWalletsForRange({
+          startWeek: leaderboardRange.startWeek,
+          endWeek: leaderboardRange.endWeek,
+        });
+        const totalWallets = wallets.length;
+
+        const currentWeek = getCurrentEpoch();
+        let delegators = 0;
+        let miners = 0;
+
+        if (wallets.length > 0) {
+          const splitMap = await fetchDepositSplitsHistoryBatch({
+            wallets,
+            startWeek: leaderboardRange.startWeek,
+            endWeek: currentWeek,
+          });
+
+          for (const [wallet, segments] of splitMap) {
+            if (!wallet) continue;
+            if (excludedLeaderboardWalletsSet.has(wallet.toLowerCase()))
+              continue;
+            const hasActiveShare = segments.some((seg) => {
+              const splitScaled6 = BigInt(seg.depositSplitPercent6Decimals || "0");
+              return (
+                splitScaled6 > 0n &&
+                currentWeek >= seg.startWeek &&
+                currentWeek <= seg.endWeek
+              );
+            });
+            if (hasActiveShare) delegators++;
+          }
+
+          const { walletToFarmTypes } =
+            await getWalletPurchaseTypesByFarmUpToWeek({
+              endWeek: currentWeek,
+            });
+
+          for (const wallet of wallets) {
+            if (!wallet) continue;
+            const farmTypes = walletToFarmTypes.get(wallet);
+            if (!farmTypes) continue;
+            let hasMiner = false;
+            for (const types of farmTypes.values()) {
+              if (types.has("mining-center")) {
+                hasMiner = true;
+                break;
+              }
+            }
+            if (hasMiner) miners++;
+          }
+        }
+
+        return {
+          weekRange: {
+            startWeek: leaderboardRange.startWeek,
+            endWeek: leaderboardRange.endWeek,
+          },
+          totalWallets,
+          delegators,
+          miners,
+          delegationWeek: currentWeek,
+        };
+      } catch (e) {
+        if (e instanceof Error) {
+          set.status = 400;
+          return e.message;
+        }
+        set.status = 500;
+        return "Error Occurred";
+      }
+    },
+    {
+      detail: {
+        summary: "Get wallet stats for the impact leaderboard",
+        description:
+          "Returns the current leaderboard wallet count (>= 0.01 points, excluding internal wallets) and the number of wallets with active vault ownership shares at the current protocol week.",
+        tags: [TAG.REWARDS],
+      },
+    }
+  )
+  .get(
+    "/new-wallets-by-week",
+    async ({ query: { startWeek, endWeek, includeWallets }, set }) => {
+      try {
+        const activityStartWeek = getWeekRangeForImpact().startWeek;
+        const actualStartWeek =
+          parseOptionalInt(startWeek) ?? activityStartWeek;
+        const actualEndWeek = parseOptionalInt(endWeek) ?? getCurrentEpoch() - 1;
+        const shouldIncludeWallets = parseOptionalBool(includeWallets);
+
+        if (actualEndWeek < actualStartWeek) {
+          set.status = 400;
+          return "endWeek must be >= startWeek";
+        }
+
+        const firstWeekByWallet = new Map<string, number>();
+
+        const splitRows = await db
+          .select({
+            wallet: fractionSplits.buyer,
+            firstTimestamp: sql<number>`min(${fractionSplits.timestamp})`,
+          })
+          .from(fractionSplits)
+          .groupBy(fractionSplits.buyer);
+
+        for (const row of splitRows) {
+          const wallet = (row.wallet || "").toLowerCase();
+          if (excludedLeaderboardWalletsSet.has(wallet)) continue;
+          const ts = Number(row.firstTimestamp);
+          if (!Number.isFinite(ts) || ts <= 0) continue;
+          updateEarliestWeek(firstWeekByWallet, wallet, getCurrentEpoch(ts));
+        }
+
+        const rewardsHistoryRows = await db
+          .select({
+            createdAt: RewardsSplitsHistory.createdAt,
+            rewardsSplits: RewardsSplitsHistory.rewardsSplits,
+          })
+          .from(RewardsSplitsHistory);
+
+        for (const row of rewardsHistoryRows) {
+          if (!row.createdAt) continue;
+          const week = dateToEpoch(row.createdAt);
+          let splits: Array<{ walletAddress?: string }> = [];
+          if (Array.isArray(row.rewardsSplits)) {
+            splits = row.rewardsSplits as Array<{ walletAddress?: string }>;
+          } else if (typeof row.rewardsSplits === "string") {
+            try {
+              const parsed = JSON.parse(row.rewardsSplits) as Array<{
+                walletAddress?: string;
+              }>;
+              if (Array.isArray(parsed)) splits = parsed;
+            } catch {
+              // ignore malformed JSON
+            }
+          }
+
+          for (const split of splits) {
+            const wallet = (split.walletAddress || "").toLowerCase();
+            if (!wallet) continue;
+            if (excludedLeaderboardWalletsSet.has(wallet)) continue;
+            updateEarliestWeek(firstWeekByWallet, wallet, week);
+          }
+        }
+
+        try {
+          const glwHolders = await fetchNewGlwHoldersByWeek({
+            startWeek: activityStartWeek,
+            endWeek: actualEndWeek,
+            minBalanceGlw: "0.01",
+            includeWallets: true,
+          });
+          const holderWalletsByWeek = glwHolders.walletsByWeek || {};
+          for (const [weekStr, wallets] of Object.entries(
+            holderWalletsByWeek
+          )) {
+            const week = Number(weekStr);
+            if (!Number.isFinite(week)) continue;
+            for (const wallet of wallets) {
+              const w = (wallet || "").toLowerCase();
+              if (!w) continue;
+              if (excludedLeaderboardWalletsSet.has(w)) continue;
+              updateEarliestWeek(firstWeekByWallet, w, week);
+            }
+          }
+        } catch {
+          // skip GLW holders if ponder is unavailable
+        }
+
+        try {
+          const gctlStakers = await fetchGctlStakersFromControlApi();
+          const stakeCandidates = gctlStakers.stakers
+            .map((w) => w.toLowerCase())
+            .filter((w) => !excludedLeaderboardWalletsSet.has(w))
+            .filter((w) => {
+              const existing = firstWeekByWallet.get(w);
+              return existing == null || existing > activityStartWeek;
+            });
+
+          if (stakeCandidates.length > 0) {
+            const stakeMap = await getFirstStakeWeekByWallet({
+              wallets: stakeCandidates,
+              startWeek: activityStartWeek,
+              endWeek: actualEndWeek,
+              concurrency: 4,
+            });
+            for (const [wallet, week] of stakeMap) {
+              if (excludedLeaderboardWalletsSet.has(wallet)) continue;
+              updateEarliestWeek(firstWeekByWallet, wallet, week);
+            }
+          }
+        } catch {
+          // skip GCTL stake if Control API is unavailable
+        }
+
+        const byWeek: Record<number, number> = {};
+        const walletsByWeek: Record<number, string[]> = {};
+        for (let w = actualStartWeek; w <= actualEndWeek; w++) byWeek[w] = 0;
+
+        for (const [wallet, week] of firstWeekByWallet) {
+          if (week < actualStartWeek || week > actualEndWeek) continue;
+          if (excludedLeaderboardWalletsSet.has(wallet)) continue;
+          byWeek[week] = (byWeek[week] || 0) + 1;
+          if (shouldIncludeWallets) {
+            if (!walletsByWeek[week]) walletsByWeek[week] = [];
+            walletsByWeek[week].push(wallet);
+          }
+        }
+
+        return {
+          weekRange: { startWeek: actualStartWeek, endWeek: actualEndWeek },
+          byWeek,
+          ...(shouldIncludeWallets
+            ? {
+                walletsByWeek: Object.fromEntries(
+                  Object.entries(walletsByWeek).map(([week, list]) => [
+                    week,
+                    list.slice().sort(),
+                  ])
+                ),
+              }
+            : {}),
+        };
+      } catch (e) {
+        if (e instanceof Error) {
+          set.status = 400;
+          return e.message;
+        }
+        set.status = 500;
+        return "Error Occurred";
+      }
+    },
+    {
+      query: t.Object({
+        startWeek: t.Optional(t.String()),
+        endWeek: t.Optional(t.String()),
+        includeWallets: t.Optional(t.String()),
+      }),
+      detail: {
+        summary: "Get new wallets per week",
+        description:
+          "Returns a time series of the first protocol week a leaderboard-eligible wallet shows any protocol activity (fraction purchase, reward split, GCTL stake, or GLW balance). Uses protocol weeks and excludes internal/team wallets and sub-0.01 point wallets.",
+        tags: [TAG.REWARDS],
+      },
+    }
+  )
+  .get(
+    "/new-glw-holders-by-week",
+    async ({ query: { startWeek, endWeek, includeWallets, minBalanceGlw }, set }) => {
+      try {
+        const activityStartWeek = getWeekRangeForImpact().startWeek;
+        const actualStartWeek =
+          parseOptionalInt(startWeek) ?? activityStartWeek;
+        const actualEndWeek = parseOptionalInt(endWeek) ?? getCurrentEpoch() - 1;
+        const shouldIncludeWallets = parseOptionalBool(includeWallets);
+
+        if (actualEndWeek < actualStartWeek) {
+          set.status = 400;
+          return "endWeek must be >= startWeek";
+        }
+
+        const data = await fetchNewGlwHoldersByWeek({
+          startWeek: actualStartWeek,
+          endWeek: actualEndWeek,
+          minBalanceGlw: minBalanceGlw ?? "0.01",
+          includeWallets: shouldIncludeWallets,
+        });
+
+        return data;
+      } catch (e) {
+        if (e instanceof Error) {
+          set.status = 400;
+          return e.message;
+        }
+        set.status = 500;
+        return "Error Occurred";
+      }
+    },
+    {
+      query: t.Object({
+        startWeek: t.Optional(t.String()),
+        endWeek: t.Optional(t.String()),
+        includeWallets: t.Optional(t.String()),
+        minBalanceGlw: t.Optional(t.String()),
+      }),
+      detail: {
+        summary: "Get new GLW holders per week",
+        description:
+          "Returns a time series of the first protocol week a leaderboard-eligible wallet has a non-zero end-of-week GLW balance snapshot. Uses protocol weeks and excludes internal/team wallets and sub-0.01 point wallets.",
         tags: [TAG.REWARDS],
       },
     }
@@ -637,14 +1037,6 @@ export const impactRouter = new Elysia({ prefix: "/impact" })
             };
           }),
         };
-
-        // Filter out wallets with insignificant points (dust/rounding errors or no historical contribution)
-        // Threshold: 0.01 points (prevents cluttering leaderboard with dust wallets)
-        const MIN_POINTS_THRESHOLD_SCALED6 = BigInt(10_000); // 0.01 points
-        payload.wallets = payload.wallets.filter((w) => {
-          const points = safePointsScaled6(w.totalPoints);
-          return points >= MIN_POINTS_THRESHOLD_SCALED6;
-        });
 
         // globalRank is always defined as totalPoints-desc rank (stable across sorts).
         const globalRankByWallet = new Map<string, number>();

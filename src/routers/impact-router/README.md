@@ -560,6 +560,101 @@ curl http://localhost:3005/trigger-impact-leaderboard-cron
 # Returns: {"message":"success"}
 ```
 
+---
+
+## `GET /impact/wallet-stats`
+
+Returns the headline wallet counts used in “Wallet Stats”.
+
+- **Total wallets**: matches the current leaderboard count (>= 0.01 points, excludes internal/team wallets).
+- **Delegators**: wallets with active vault ownership shares at the **current protocol week**.
+- **Miners**: wallets with any **mining-center** fraction purchase (filled or expired) up to the current protocol week.
+
+**Response**
+
+```typescript
+{
+  weekRange: { startWeek: number; endWeek: number }; // leaderboard week range (last completed protocol week)
+  totalWallets: number; // current leaderboard size (>= 0.01 points)
+  delegators: number; // wallets with active vault ownership shares
+  miners: number; // wallets with any mining-center purchase
+  delegationWeek: number; // protocol week used for vault-share check
+}
+```
+
+**Example**
+
+```bash
+curl -s "http://localhost:3005/impact/wallet-stats"
+```
+
+---
+
+## `GET /impact/new-wallets-by-week`
+
+Time series of **new wallets per protocol week**. A wallet is “new” in the **first week** it shows **any protocol activity**:
+
+- fraction purchase (fraction splits)
+- reward split inclusion (rewardsSplitsHistory)
+- GCTL stake (Control API stake-by-epoch)
+- GLW balance snapshot (Ponder, end-of-week snapshot, > 0.01 GLW)
+
+**Filters applied**
+
+- Excludes internal/team wallets (`EXCLUDED_LEADERBOARD_WALLETS`)
+
+**Query**
+
+- `startWeek` (optional, default `97`)
+- `endWeek` (optional, default current protocol week)
+- `includeWallets` (optional): include wallet lists per week (`true|1`)
+
+**Response**
+
+```typescript
+{
+  weekRange: { startWeek: number; endWeek: number };
+  byWeek: Record<number, number>; // weekNumber -> new wallet count
+  walletsByWeek?: Record<number, string[]>; // weekNumber -> wallet list (if includeWallets)
+}
+```
+
+**Example**
+
+```bash
+curl -s "http://localhost:3005/impact/new-wallets-by-week?startWeek=100&endWeek=114"
+```
+
+---
+
+## `GET /impact/new-glw-holders-by-week`
+
+Time series of **new GLW holders per protocol week**, based strictly on **end‑of‑week balance snapshots** (no TWAB).
+
+**Query**
+
+- `startWeek` (optional, default `97`)
+- `endWeek` (optional, default last completed protocol week)
+- `includeWallets` (optional): include wallet lists per week (`true|1`)
+- `minBalanceGlw` (optional, default `0.01`): minimum end-of-week GLW balance to qualify
+
+**Response**
+
+```typescript
+{
+  weekRange: { startWeek: number; endWeek: number };
+  minBalanceGlw: string;
+  byWeek: Record<number, number>; // weekNumber -> new GLW holder count
+  walletsByWeek?: Record<number, string[]>; // weekNumber -> wallet list (if includeWallets)
+}
+```
+
+**Example**
+
+```bash
+curl -s "http://localhost:3005/impact/new-glw-holders-by-week?startWeek=100&endWeek=114"
+```
+
 This endpoint triggers the same cron job that runs weekly on Sunday at 01:00 UTC. The update typically takes 20-30 seconds for ~1000 wallets.
 
 ### Cache Table Schema

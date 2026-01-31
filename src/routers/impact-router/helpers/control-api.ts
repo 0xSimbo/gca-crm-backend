@@ -466,6 +466,54 @@ export async function fetchGlwBalanceSnapshotByWeekMany(params: {
   return result;
 }
 
+export interface NewGlwHoldersByWeekResponse {
+  weekRange: { startWeek: number; endWeek: number };
+  minBalanceGlw: string;
+  byWeek: Record<number, number>;
+  walletsByWeek?: Record<number, string[]>;
+}
+
+export async function fetchNewGlwHoldersByWeek(params: {
+  startWeek: number;
+  endWeek: number;
+  minBalanceGlw?: string;
+  includeWallets?: boolean;
+}): Promise<NewGlwHoldersByWeekResponse> {
+  const baseUrl = getPonderListenerBaseUrl();
+  const payload = {
+    startWeek: params.startWeek,
+    endWeek: params.endWeek,
+    minBalanceGlw: params.minBalanceGlw ?? "0.01",
+    includeWallets: params.includeWallets ?? false,
+  };
+
+  const response = await fetch(`${baseUrl}/glow/new-holders-by-week`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  const text = await response.text().catch(() => "");
+  if (!response.ok) {
+    throw new Error(
+      `Ponder new holders by week failed (${response.status}): ${
+        text || "<empty>"
+      }`
+    );
+  }
+
+  let data: NewGlwHoldersByWeekResponse;
+  try {
+    data = JSON.parse(text) as NewGlwHoldersByWeekResponse;
+  } catch {
+    throw new Error(
+      `Ponder new holders by week returned invalid JSON: ${text}`
+    );
+  }
+
+  return data;
+}
+
 interface RegionRewardsResponse {
   totalGctlStaked: string;
   totalGlwRewards: string;
@@ -772,6 +820,14 @@ async function getWalletStakeByEpoch(params: {
     map.set(row.epoch, regions);
   }
   return map;
+}
+
+export async function fetchWalletStakeByEpochRange(params: {
+  walletAddress: string;
+  startWeek: number;
+  endWeek: number;
+}): Promise<Map<number, Array<{ regionId: number; totalStakedWei: bigint }>>> {
+  return await getWalletStakeByEpoch(params);
 }
 
 export async function getUnclaimedGlwRewardsWei(
