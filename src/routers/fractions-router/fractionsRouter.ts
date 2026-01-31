@@ -91,6 +91,204 @@ function createRequestId(): string {
   }
 }
 
+type AverageApyResult = {
+  startWeek: number;
+  endWeek: number;
+  walletAddress?: string;
+  farmId?: string;
+  totals: {
+    totalGlwDelegated: string;
+    totalUsdcSpentByMiners: string;
+  };
+  averageDelegatorApy: string;
+  averageMinerApyPercent: string;
+  debug?: {
+    dataSource: string;
+    walletsProcessed: number;
+    totalWallets: number;
+  };
+};
+
+async function computeAverageApy(params: {
+  walletAddress?: string;
+  farmId?: string;
+  includeDebug?: boolean;
+}): Promise<AverageApyResult> {
+  const { walletAddress, farmId, includeDebug } = params;
+
+  if (!process.env.CONTROL_API_URL) {
+    throw new Error("CONTROL_API_URL not configured");
+  }
+
+  if (walletAddress && farmId) {
+    throw new Error("Cannot filter by both walletAddress and farmId");
+  }
+
+  if (walletAddress && !/^0x[a-fA-F0-9]{40}$/.test(walletAddress)) {
+    throw new Error("Invalid wallet address format");
+  }
+
+  const { startWeek, endWeek } = getWeekRange();
+  const glwSpotPrice = await getCachedGlwSpotPriceNumber();
+
+  const walletFarmMap = await buildWalletFarmMap();
+
+  let walletsToProcess: string[] = [];
+  if (walletAddress) {
+    const walletLower = walletAddress.toLowerCase();
+    if (!walletFarmMap.has(walletLower)) {
+      throw new Error("Wallet not found or has no associated farms");
+    }
+    walletsToProcess = [walletLower];
+  } else if (farmId) {
+    for (const [wallet, farms] of walletFarmMap) {
+      if (farms.some((f) => f.farmId === farmId)) {
+        walletsToProcess.push(wallet);
+      }
+    }
+    if (walletsToProcess.length === 0) {
+      throw new Error("Farm not found or has no associated wallets");
+    }
+  } else {
+    walletsToProcess = Array.from(walletFarmMap.keys());
+  }
+
+  const batchSize = 500;
+  const allBatchRewards = new Map<string, any[]>();
+  const allBatchPurchases = await getBatchWalletFarmPurchases(
+    walletsToProcess
+  );
+
+  for (let i = 0; i < walletsToProcess.length; i += batchSize) {
+    const batch = walletsToProcess.slice(i, i + batchSize);
+
+    try {
+      const response = await fetch(
+        `${process.env.CONTROL_API_URL}/farms/by-wallet/farm-rewards-history/batch`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            wallets: batch,
+            startWeek,
+            endWeek,
+          }),
+        }
+      );
+
+      if (response.ok) {
+        const data: any = await response.json();
+        for (const wallet of batch) {
+          const walletData = data.results?.[wallet];
+          if (walletData?.farmRewards) {
+            allBatchRewards.set(wallet, walletData.farmRewards);
+          }
+        }
+      }
+    } catch (error) {
+      console.error("Failed to fetch batch rewards:", error);
+    }
+  }
+
+  const walletAPYResults: Array<{
+    wallet: string;
+    delegatorAPY: number;
+    minerAPY: number;
+    delegatorInvestment: bigint;
+    minerInvestment: bigint;
+  }> = [];
+
+  for (const wallet of walletsToProcess) {
+    const farmPurchases = allBatchPurchases.get(wallet) || [];
+    const farmRewards = allBatchRewards.get(wallet) || [];
+
+    if (farmPurchases.length === 0) {
+      continue;
+    }
+
+    const apyData = await calculateAccurateWalletAPY(
+      wallet,
+      startWeek,
+      endWeek,
+      glwSpotPrice,
+      farmRewards,
+      farmPurchases
+    );
+
+    const delegatorInvestment = apyData.farmBreakdowns
+      .filter((f) => f.type === "launchpad")
+      .reduce((sum, f) => sum + f.amountInvested, BigInt(0));
+
+    const minerInvestment = apyData.farmBreakdowns
+      .filter((f) => f.type === "mining-center")
+      .reduce((sum, f) => sum + f.amountInvested, BigInt(0));
+
+    walletAPYResults.push({
+      wallet,
+      delegatorAPY: apyData.delegatorAPY,
+      minerAPY: apyData.minerAPY,
+      delegatorInvestment,
+      minerInvestment,
+    });
+  }
+
+  let totalDelegatorInvestment = BigInt(0);
+  let totalMinerInvestment = BigInt(0);
+  let weightedDelegatorAPY = 0;
+  let weightedMinerAPY = 0;
+
+  for (const result of walletAPYResults) {
+    totalDelegatorInvestment += result.delegatorInvestment;
+    totalMinerInvestment += result.minerInvestment;
+
+    if (result.delegatorInvestment > BigInt(0)) {
+      const weight =
+        Number(result.delegatorInvestment) /
+        Number(
+          walletAPYResults.reduce(
+            (sum, r) => sum + r.delegatorInvestment,
+            BigInt(0)
+          )
+        );
+      weightedDelegatorAPY += result.delegatorAPY * weight;
+    }
+
+    if (result.minerInvestment > BigInt(0)) {
+      const weight =
+        Number(result.minerInvestment) /
+        Number(
+          walletAPYResults.reduce(
+            (sum, r) => sum + r.minerInvestment,
+            BigInt(0)
+          )
+        );
+      weightedMinerAPY += result.minerAPY * weight;
+    }
+  }
+
+  return {
+    startWeek,
+    endWeek,
+    ...(walletAddress ? { walletAddress: walletAddress.toLowerCase() } : {}),
+    ...(farmId ? { farmId } : {}),
+    totals: {
+      totalGlwDelegated: totalDelegatorInvestment.toString(),
+      totalUsdcSpentByMiners: totalMinerInvestment.toString(),
+    },
+    averageDelegatorApy: weightedDelegatorAPY.toFixed(4),
+    averageMinerApyPercent: weightedMinerAPY.toFixed(4),
+    ...(includeDebug
+      ? {
+          debug: {
+            dataSource: "accurate-wallet-apy-aggregation",
+            walletsProcessed: walletAPYResults.length,
+            totalWallets: walletsToProcess.length,
+          },
+        }
+      : {}),
+  };
+}
+
 export const fractionsRouter = new Elysia({ prefix: "/fractions" })
   .get(
     "/summary",
@@ -491,186 +689,12 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
     "/average-apy",
     async ({ query: { debug, walletAddress, farmId }, set }) => {
       try {
-        if (!process.env.CONTROL_API_URL) {
-          set.status = 500;
-          return "CONTROL_API_URL not configured";
-        }
-
-        if (walletAddress && farmId) {
-          set.status = 400;
-          return "Cannot filter by both walletAddress and farmId";
-        }
-
-        if (walletAddress && !/^0x[a-fA-F0-9]{40}$/.test(walletAddress)) {
-          set.status = 400;
-          return "Invalid wallet address format";
-        }
-
-        const { startWeek, endWeek } = getWeekRange();
-        const glwSpotPrice = await getCachedGlwSpotPriceNumber();
-
-        const walletFarmMap = await buildWalletFarmMap();
-
-        let walletsToProcess: string[] = [];
-        if (walletAddress) {
-          const walletLower = walletAddress.toLowerCase();
-          if (!walletFarmMap.has(walletLower)) {
-            set.status = 404;
-            return "Wallet not found or has no associated farms";
-          }
-          walletsToProcess = [walletLower];
-        } else if (farmId) {
-          for (const [wallet, farms] of walletFarmMap) {
-            if (farms.some((f) => f.farmId === farmId)) {
-              walletsToProcess.push(wallet);
-            }
-          }
-          if (walletsToProcess.length === 0) {
-            set.status = 404;
-            return "Farm not found or has no associated wallets";
-          }
-        } else {
-          walletsToProcess = Array.from(walletFarmMap.keys());
-        }
-
-        const batchSize = 500;
-        const allBatchRewards = new Map<string, any[]>();
-        const allBatchPurchases = await getBatchWalletFarmPurchases(
-          walletsToProcess
-        );
-
-        for (let i = 0; i < walletsToProcess.length; i += batchSize) {
-          const batch = walletsToProcess.slice(i, i + batchSize);
-
-          try {
-            const response = await fetch(
-              `${process.env.CONTROL_API_URL}/farms/by-wallet/farm-rewards-history/batch`,
-              {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  wallets: batch,
-                  startWeek,
-                  endWeek,
-                }),
-              }
-            );
-
-            if (response.ok) {
-              const data: any = await response.json();
-              for (const wallet of batch) {
-                const walletData = data.results?.[wallet];
-                if (walletData?.farmRewards) {
-                  allBatchRewards.set(wallet, walletData.farmRewards);
-                }
-              }
-            }
-          } catch (error) {
-            console.error("Failed to fetch batch rewards:", error);
-          }
-        }
-
-        const walletAPYResults: Array<{
-          wallet: string;
-          delegatorAPY: number;
-          minerAPY: number;
-          delegatorInvestment: bigint;
-          minerInvestment: bigint;
-        }> = [];
-
-        for (const wallet of walletsToProcess) {
-          const farmPurchases = allBatchPurchases.get(wallet) || [];
-          const farmRewards = allBatchRewards.get(wallet) || [];
-
-          if (farmPurchases.length === 0) {
-            continue;
-          }
-
-          const apyData = await calculateAccurateWalletAPY(
-            wallet,
-            startWeek,
-            endWeek,
-            glwSpotPrice,
-            farmRewards,
-            farmPurchases
-          );
-
-          const delegatorInvestment = apyData.farmBreakdowns
-            .filter((f) => f.type === "launchpad")
-            .reduce((sum, f) => sum + f.amountInvested, BigInt(0));
-
-          const minerInvestment = apyData.farmBreakdowns
-            .filter((f) => f.type === "mining-center")
-            .reduce((sum, f) => sum + f.amountInvested, BigInt(0));
-
-          walletAPYResults.push({
-            wallet,
-            delegatorAPY: apyData.delegatorAPY,
-            minerAPY: apyData.minerAPY,
-            delegatorInvestment,
-            minerInvestment,
-          });
-        }
-
-        let totalDelegatorInvestment = BigInt(0);
-        let totalMinerInvestment = BigInt(0);
-        let weightedDelegatorAPY = 0;
-        let weightedMinerAPY = 0;
-
-        for (const result of walletAPYResults) {
-          totalDelegatorInvestment += result.delegatorInvestment;
-          totalMinerInvestment += result.minerInvestment;
-
-          if (result.delegatorInvestment > BigInt(0)) {
-            const weight =
-              Number(result.delegatorInvestment) /
-              Number(
-                walletAPYResults.reduce(
-                  (sum, r) => sum + r.delegatorInvestment,
-                  BigInt(0)
-                )
-              );
-            weightedDelegatorAPY += result.delegatorAPY * weight;
-          }
-
-          if (result.minerInvestment > BigInt(0)) {
-            const weight =
-              Number(result.minerInvestment) /
-              Number(
-                walletAPYResults.reduce(
-                  (sum, r) => sum + r.minerInvestment,
-                  BigInt(0)
-                )
-              );
-            weightedMinerAPY += result.minerAPY * weight;
-          }
-        }
-
         const includeDebug = debug === "true" || debug === "1";
-
-        return {
-          startWeek,
-          endWeek,
-          ...(walletAddress
-            ? { walletAddress: walletAddress.toLowerCase() }
-            : {}),
-          ...(farmId ? { farmId } : {}),
-          totals: {
-            totalGlwDelegated: totalDelegatorInvestment.toString(),
-            totalUsdcSpentByMiners: totalMinerInvestment.toString(),
-          },
-          averageDelegatorApy: weightedDelegatorAPY.toFixed(4),
-          averageMinerApyPercent: weightedMinerAPY.toFixed(4),
-          ...(includeDebug
-            ? {
-                debug: {
-                  dataSource: "accurate-wallet-apy-aggregation",
-                  walletsProcessed: walletAPYResults.length,
-                  totalWallets: walletsToProcess.length,
-                },
-              }
-            : {}),
-        };
+        return await computeAverageApy({
+          walletAddress,
+          farmId,
+          includeDebug,
+        });
       } catch (e) {
         if (e instanceof Error) {
           set.status = 400;
@@ -1586,10 +1610,11 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
   )
   .get(
     "/total-actively-delegated",
-    async ({ set }) => {
+    async ({ query: { includeApy }, set }) => {
       try {
         const DELEGATION_START_WEEK = 97;
         const endWeek = getCurrentEpoch();
+        const shouldIncludeApy = parseOptionalBool(includeApy);
 
         const allWallets = await getAllDelegatorWallets();
         const walletsToProcess = allWallets.filter(
@@ -1617,6 +1642,12 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
             },
             totalGlwDelegatedWei: "0",
             totalWallets: 0,
+            ...(shouldIncludeApy
+              ? {
+                  averageDelegatorApy: null,
+                  apyWeekRange: null,
+                }
+              : {}),
           };
         }
 
@@ -1735,6 +1766,22 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
           }
         }
 
+        let averageDelegatorApy: string | null = null;
+        let apyWeekRange: { startWeek: number; endWeek: number } | null = null;
+
+        if (shouldIncludeApy) {
+          try {
+            const apy = await computeAverageApy({ includeDebug: false });
+            averageDelegatorApy = apy.averageDelegatorApy;
+            apyWeekRange = { startWeek: apy.startWeek, endWeek: apy.endWeek };
+          } catch (error) {
+            console.warn(
+              "[fractionsRouter] /total-actively-delegated APY failed",
+              error
+            );
+          }
+        }
+
         return {
           weekRange: {
             startWeek: DELEGATION_START_WEEK,
@@ -1742,6 +1789,12 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
           },
           totalGlwDelegatedWei: totalGlwDelegatedWei.toString(),
           totalWallets: walletCount,
+          ...(shouldIncludeApy
+            ? {
+                averageDelegatorApy,
+                apyWeekRange,
+              }
+            : {}),
         };
       } catch (e) {
         if (e instanceof Error) {
@@ -1752,6 +1805,13 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
       }
     },
     {
+      query: t.Object({
+        includeApy: t.Optional(
+          t.String({
+            description: "Include average delegator APY (true|1)",
+          })
+        ),
+      }),
       detail: {
         summary: "Get total actively delegated GLW across all wallets",
         description:

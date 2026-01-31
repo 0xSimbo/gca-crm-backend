@@ -357,6 +357,8 @@ The router uses optimized data fetching strategies:
 ## `GET /fractions/total-actively-delegated`
 
 - Returns the total amount of GLW actively delegated across all wallets using the vault ownership model.
+- Optional query params:
+  - `includeApy` (`string`): Include weighted average delegator APY (`true` | `1`)
 - **Response**
   ```typescript
   {
@@ -366,6 +368,8 @@ The router uses optimized data fetching strategies:
     }
     totalGlwDelegatedWei: string; // Total GLW actively delegated (18 decimals)
     totalWallets: number; // Number of wallets with active vault ownership
+    averageDelegatorApy?: string | null; // Weighted average delegator APY (percent string)
+    apyWeekRange?: { startWeek: number; endWeek: number } | null; // Week range used for APY
   }
   ```
 - **Calculation Method**
@@ -390,6 +394,9 @@ The router uses optimized data fetching strategies:
   ```bash
   # Get total actively delegated GLW
   curl -s "http://localhost:3005/fractions/total-actively-delegated"
+
+  # Include weighted average delegator APY
+  curl -s "http://localhost:3005/fractions/total-actively-delegated?includeApy=true"
   ```
 
 ## `GET /fractions/actively-delegated-by-week`
