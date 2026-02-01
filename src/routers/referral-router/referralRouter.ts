@@ -1591,8 +1591,10 @@ export const referralRouter = new Elysia({ prefix: "/referral" })
         }
 
         const now = new Date();
+        const ACTIVATION_THRESHOLD_SCALED6 = 100_000_000n;
 
         let bonusProjectedPointsScaled6: string | undefined;
+        let activationPending = false;
         if (referral && includeProjection === "1") {
           try {
             const { startWeek, endWeek } = getWeekRangeForImpact();
@@ -1617,11 +1619,41 @@ export const referralRouter = new Elysia({ prefix: "/referral" })
                 ? calculateRefereeBonus(projectedBasePointsScaled6)
                 : 0n;
             bonusProjectedPointsScaled6 = formatPointsScaled6(bonusScaled6);
+
+            // Check if activation threshold is met (for pending referrals)
+            if (referral.status === "pending") {
+              const linkWeek = dateToEpoch(referral.linkedAt);
+              const historicalRows = await db
+                .select({
+                  basePoints: referralPointsWeekly.refereeBasePointsScaled6,
+                  weekNumber: referralPointsWeekly.weekNumber,
+                })
+                .from(referralPointsWeekly)
+                .where(
+                  and(
+                    eq(referralPointsWeekly.refereeWallet, normalizedWallet),
+                    sql`${referralPointsWeekly.weekNumber} >= ${linkWeek}`
+                  )
+                );
+              let historicalBasePoints = 0n;
+              for (const row of historicalRows) {
+                const bp = parseScaled6(row.basePoints);
+                if (bp > 0n) historicalBasePoints += bp;
+              }
+              const currentWeek = getCurrentEpoch(Math.floor(Date.now() / 1000));
+              const includeProjected = currentWeek >= linkWeek;
+              const postLinkBasePoints =
+                historicalBasePoints + (includeProjected ? projectedBasePointsScaled6 : 0n);
+              activationPending = postLinkBasePoints >= ACTIVATION_THRESHOLD_SCALED6;
+            }
           } catch (error) {
             console.error("[Referral Status] Projection fetch failed", error);
             bonusProjectedPointsScaled6 = "0.000000";
           }
         }
+
+        const isActivatedOrPending =
+          referral?.status === "active" || activationPending;
 
         return {
           nonce: nonce.toString(),
@@ -1634,12 +1666,12 @@ export const referralRouter = new Elysia({ prefix: "/referral" })
             linkedAt: referral.linkedAt.toISOString(),
             gracePeriodEndsAt: referral.gracePeriodEndsAt.toISOString(),
             isInGracePeriod: now < referral.gracePeriodEndsAt,
-            canChangeReferrer: now < referral.gracePeriodEndsAt,
+            canChangeReferrer: now < referral.gracePeriodEndsAt && !isActivatedOrPending,
           } : undefined,
           bonus: referral ? {
             isActive: now < referral.refereeBonusEndsAt,
             endsAt: referral.refereeBonusEndsAt.toISOString(),
-            weeksRemaining: Math.max(0, Math.ceil((referral.refereeBonusEndsAt.getTime() - now.getTime()) / (7 * 24 * 60 * 60 * 1000))),
+            weeksRemaining: Math.max(0, Math.floor((referral.refereeBonusEndsAt.getTime() - now.getTime()) / (7 * 24 * 60 * 60 * 1000))),
             bonusPercent: 10,
             bonusProjectedPointsScaled6,
           } : undefined,
