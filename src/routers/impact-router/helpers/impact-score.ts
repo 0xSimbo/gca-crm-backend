@@ -2,6 +2,7 @@ import { and, eq, inArray, gte, lte, or, isNull, sql } from "drizzle-orm";
 
 import { db } from "../../../db/db";
 import { addresses } from "../../../constants/addresses";
+import { excludedLeaderboardWalletsSet } from "../../../constants/excluded-wallets";
 import {
   fractionRefunds,
   fractionSplits,
@@ -42,6 +43,8 @@ import {
 
 const BATCH_SIZE = 500;
 const DELEGATION_START_WEEK = 97;
+const ZERO_POINTS_SCALED6 = formatPointsScaled6(0n);
+const ZERO_WEI_STRING = "0";
 
 export interface ImpactTimingEvent {
   label: string;
@@ -72,6 +75,61 @@ function recordTimingSafe(
   } catch {
     // swallow instrumentation errors
   }
+}
+
+function zeroOutImpactScoreResult(result: GlowImpactScoreResult): GlowImpactScoreResult {
+  result.pointsPerRegion = {};
+  if (result.regionBreakdown) result.regionBreakdown = [];
+  if (result.weeklyRegionBreakdown) result.weeklyRegionBreakdown = [];
+
+  result.totals = {
+    totalPoints: ZERO_POINTS_SCALED6,
+    rolloverPoints: ZERO_POINTS_SCALED6,
+    continuousPoints: ZERO_POINTS_SCALED6,
+    inflationPoints: ZERO_POINTS_SCALED6,
+    steeringPoints: ZERO_POINTS_SCALED6,
+    vaultBonusPoints: ZERO_POINTS_SCALED6,
+    worthPoints: ZERO_POINTS_SCALED6,
+    basePointsPreMultiplierScaled6: ZERO_POINTS_SCALED6,
+    basePointsPreMultiplierScaled6ThisWeek: ZERO_POINTS_SCALED6,
+    totalInflationGlwWei: ZERO_WEI_STRING,
+    totalSteeringGlwWei: ZERO_WEI_STRING,
+  };
+
+  result.composition = {
+    steeringPoints: ZERO_POINTS_SCALED6,
+    inflationPoints: ZERO_POINTS_SCALED6,
+    worthPoints: ZERO_POINTS_SCALED6,
+    vaultPoints: ZERO_POINTS_SCALED6,
+    referralPoints: ZERO_POINTS_SCALED6,
+    referralBonusPoints: ZERO_POINTS_SCALED6,
+  };
+
+  result.lastWeekPoints = ZERO_POINTS_SCALED6;
+  result.activeMultiplier = false;
+  result.hasMinerMultiplier = false;
+  result.endWeekMultiplier = 1;
+
+  if (result.weekly && result.weekly.length > 0) {
+    result.weekly = result.weekly.map((row) => ({
+      ...row,
+      inflationPoints: ZERO_POINTS_SCALED6,
+      steeringPoints: ZERO_POINTS_SCALED6,
+      vaultBonusPoints: ZERO_POINTS_SCALED6,
+      rolloverPointsPreMultiplier: ZERO_POINTS_SCALED6,
+      rolloverMultiplier: 1,
+      rolloverPoints: ZERO_POINTS_SCALED6,
+      continuousPoints: ZERO_POINTS_SCALED6,
+      totalPoints: ZERO_POINTS_SCALED6,
+      hasCashMinerBonus: false,
+      baseMultiplier: 1,
+      streakBonusMultiplier: 0,
+      impactStreakWeeks: 0,
+      pointsPerRegion: {},
+    }));
+  }
+
+  return result;
 }
 
 async function timePromise<T>(
@@ -2177,7 +2235,7 @@ export async function computeGlowImpactScores(params: {
       pointsPerRegionRecord[rid] = formatPointsScaled6(pts);
     }
 
-    results.push({
+    const scoreResult: GlowImpactScoreResult = {
       walletAddress: wallet,
       weekRange: { startWeek, endWeek },
       glowWorth: {
@@ -2249,7 +2307,13 @@ export async function computeGlowImpactScores(params: {
       hasMinerMultiplier,
       endWeekMultiplier,
       weekly,
-    });
+    };
+
+    results.push(
+      excludedLeaderboardWalletsSet.has(wallet)
+        ? zeroOutImpactScoreResult(scoreResult)
+        : scoreResult
+    );
   }
   recordTimingSafe(debug, {
     label: "compute.scoringLoop",
@@ -2268,6 +2332,10 @@ export async function computeGlowImpactScores(params: {
     for (let i = 0; i < results.length; i++) {
       const result = results[i]!;
       const wallet = result.walletAddress;
+      if (excludedLeaderboardWalletsSet.has(wallet.toLowerCase())) {
+        result.weeklyRegionBreakdown = [];
+        continue;
+      }
       const rewards = walletRewardsMap.get(wallet) || [];
       const steering = steeringByWallet.get(wallet);
       const weeklyRegionBreakdown: WeeklyRegionBreakdown[] = [];
@@ -2642,6 +2710,27 @@ export async function getCurrentWeekProjection(
 ): Promise<CurrentWeekProjection> {
   const weekNumber = getCurrentEpoch(Math.floor(Date.now() / 1000));
   const wallet = walletAddress.toLowerCase();
+  if (excludedLeaderboardWalletsSet.has(wallet)) {
+    return {
+      weekNumber,
+      hasMinerMultiplier: false,
+      hasSteeringStake: false,
+      impactStreakWeeks: 0,
+      streakAsOfPreviousWeek: 0,
+      hasImpactActionThisWeek: false,
+      baseMultiplier: 1,
+      streakBonusMultiplier: 0,
+      totalMultiplier: 1,
+      projectedPoints: {
+        steeringGlwWei: ZERO_WEI_STRING,
+        inflationGlwWei: ZERO_WEI_STRING,
+        delegatedGlwWei: ZERO_WEI_STRING,
+        glowWorthWei: ZERO_WEI_STRING,
+        basePointsPreMultiplierScaled6: ZERO_POINTS_SCALED6,
+        totalProjectedScore: ZERO_POINTS_SCALED6,
+      },
+    };
+  }
 
   // Run all 3 fetches in parallel
   const [

@@ -6,6 +6,7 @@ import { viemClient } from "../../../lib/web3-providers/viem-client";
 import { formatPointsScaled6 } from "./points";
 import { GENESIS_TIMESTAMP } from "../../../constants/genesis-timestamp";
 import { dateToEpoch } from "../../../utils/getProtocolWeek";
+import { excludedLeaderboardWalletsSet } from "../../../constants/excluded-wallets";
 
 /**
  * Tiered referrer share based on active referral count.
@@ -203,6 +204,24 @@ export async function populateReferralData(
 
   for (const r of results) {
     const wallet = r.walletAddress.toLowerCase();
+    if (excludedLeaderboardWalletsSet.has(wallet)) {
+      r.referral = {
+        asReferrer: {
+          totalPointsEarnedScaled6: "0.000000",
+          thisWeekPointsScaled6: "0.000000",
+          activeRefereeCount: 0,
+          pendingRefereeCount: 0,
+          currentTier: {
+            name: "Seed",
+            percent: 0,
+          },
+        },
+      };
+      r.composition.referralPoints = "0.000000";
+      r.composition.referralBonusPoints = "0.000000";
+      r.totals.totalPoints = formatPointsScaled6(0n);
+      continue;
+    }
 
     // 1. Run initial queries in parallel: referrer stats, pending count, and referral lookup
     const [stats, pendingCountRes, referral] = await Promise.all([

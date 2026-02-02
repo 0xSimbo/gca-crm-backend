@@ -1619,9 +1619,14 @@ export const referralRouter = new Elysia({ prefix: "/referral" })
                 ? calculateRefereeBonus(projectedBasePointsScaled6)
                 : 0n;
             bonusProjectedPointsScaled6 = formatPointsScaled6(bonusScaled6);
+          } catch (error) {
+            console.error("[Referral Status] Projection fetch failed", error);
+            bonusProjectedPointsScaled6 = "0.000000";
+          }
 
-            // Check if activation threshold is met (for pending referrals)
-            if (referral.status === "pending") {
+          // Check if activation threshold is met (for pending referrals)
+          if (referral.status === "pending") {
+            try {
               const linkWeek = dateToEpoch(referral.linkedAt);
               const historicalRows = await db
                 .select({
@@ -1645,10 +1650,13 @@ export const referralRouter = new Elysia({ prefix: "/referral" })
               const postLinkBasePoints =
                 historicalBasePoints + (includeProjected ? projectedBasePointsScaled6 : 0n);
               activationPending = postLinkBasePoints >= ACTIVATION_THRESHOLD_SCALED6;
+            } catch (error) {
+              console.error(
+                "[Referral Status] Activation projection failed",
+                error
+              );
+              activationPending = false;
             }
-          } catch (error) {
-            console.error("[Referral Status] Projection fetch failed", error);
-            bonusProjectedPointsScaled6 = "0.000000";
           }
         }
 
