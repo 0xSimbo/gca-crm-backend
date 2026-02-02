@@ -1595,6 +1595,7 @@ export const referralRouter = new Elysia({ prefix: "/referral" })
 
         let bonusProjectedPointsScaled6: string | undefined;
         let activationPending = false;
+        let projectedBasePointsScaled6 = 0n;
         if (referral && includeProjection === "1") {
           try {
             const { startWeek, endWeek } = getWeekRangeForImpact();
@@ -1609,7 +1610,7 @@ export const referralRouter = new Elysia({ prefix: "/referral" })
             const projectedBasePointsRaw = parseScaled6(
               projection.projectedPoints.basePointsPreMultiplierScaled6
             );
-            const projectedBasePointsScaled6 = applyPostLinkProration({
+            projectedBasePointsScaled6 = applyPostLinkProration({
               basePointsScaled6: projectedBasePointsRaw,
               linkedAt: referral.linkedAt,
               weekNumber: projection.weekNumber,
