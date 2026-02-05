@@ -42,6 +42,14 @@ For each week in the requested week range, we compute:
   - Steering (sGCTL): **+3.0** points per **GLW** steered by staking GCTL
   - Vault bonus (delegated GLW): **+0.005** points per week per **GLW** in `DelegatedActiveGLW`
   - GLW Worth: **+0.001** points per week per **GLW** of `GlowWorth` for that week
+
+**Steering boost for excluded wallets**: if any excluded wallet stakes GCTL, we apply a weekly steering points multiplier to all **non-excluded** wallets so user points match the “no excluded stake” baseline. The boost is:
+
+```
+steeringBoost = totalGctlStaked / (totalGctlStaked - excludedGctlStaked)
+```
+
+This boost is applied to **steering points only** (pre-streak/cash-miner multiplier).
 - **Weekly multiplier** (calculated and applied on week rollover):
   - Total multiplier = **Base multiplier + Streak bonus**
   - Base multiplier:
