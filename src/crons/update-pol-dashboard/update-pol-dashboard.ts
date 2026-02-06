@@ -1,4 +1,4 @@
-import { and, eq, gte, lt, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, lt, sql } from "drizzle-orm";
 import pLimit from "p-limit";
 import { db } from "../../db/db";
 import {
@@ -160,6 +160,48 @@ async function loadBountiesByApplicationId(): Promise<Map<string, bigint>> {
   return out;
 }
 
+async function computeRemainingBountyByApplicationId(params: {
+  applicationIds: string[];
+  bountiesByApplicationId: Map<string, bigint>;
+  startTs: number;
+}): Promise<Map<string, bigint>> {
+  const appIdsWithBounty = params.applicationIds.filter((id) => {
+    const b = params.bountiesByApplicationId.get(id) ?? 0n;
+    return b > 0n;
+  });
+  const out = new Map<string, bigint>();
+  if (appIdsWithBounty.length === 0) return out;
+
+  const before = await db
+    .select({
+      applicationId: fractions.applicationId,
+      totalBefore: sql<string>`coalesce(sum(${fractionSplits.amount}), 0)`,
+    })
+    .from(fractionSplits)
+    .innerJoin(fractions, eq(fractionSplits.fractionId, fractions.id))
+    .where(
+      and(
+        eq(fractions.type, "mining-center"),
+        inArray(fractions.applicationId, appIdsWithBounty),
+        lt(fractionSplits.timestamp, params.startTs)
+      )
+    )
+    .groupBy(fractions.applicationId);
+
+  const totalBeforeByApp = new Map<string, bigint>();
+  for (const r of before) {
+    totalBeforeByApp.set(r.applicationId, BigInt(r.totalBefore));
+  }
+
+  for (const appId of appIdsWithBounty) {
+    const bounty = params.bountiesByApplicationId.get(appId) ?? 0n;
+    const used = totalBeforeByApp.get(appId) ?? 0n;
+    out.set(appId, used >= bounty ? 0n : bounty - used);
+  }
+
+  return out;
+}
+
 async function upsertPolYieldSnapshot(params: {
   weekNumber: number;
 }): Promise<{ indexingComplete: boolean }> {
@@ -318,6 +360,12 @@ async function recomputeRevenueSnapshots(params: {
     arr.sort((a, b) => a.timestamp - b.timestamp);
   }
 
+  const remainingBountyByApp = await computeRemainingBountyByApplicationId({
+    applicationIds: Array.from(splitsByApplication.keys()),
+    bountiesByApplicationId: bounties,
+    startTs,
+  });
+
   const limit = pLimit(5);
   const spotPriceCache = new Map<number, string>();
   async function getSpotPriceAtTimestamp(ts: number): Promise<string> {
@@ -348,7 +396,7 @@ async function recomputeRevenueSnapshots(params: {
   // 1) Miner sales -> region (100%) -> farms by CC weights.
   const minerTasks: Promise<void>[] = [];
   for (const [applicationId, appSplits] of splitsByApplication) {
-    let remainingBounty = bounties.get(applicationId) ?? 0n;
+    let remainingBounty = remainingBountyByApp.get(applicationId) ?? 0n;
     for (const split of appSplits) {
       const amountUsd = parseNumericToBigInt(split.amountRaw);
       const netUsd = amountUsd > remainingBounty ? amountUsd - remainingBounty : 0n;
@@ -572,8 +620,14 @@ async function recomputeFmiWeeklyInputs(params: {
   for (const [, arr] of splitsByApplication) {
     arr.sort((a, b) => a.timestamp - b.timestamp);
   }
+
+  const remainingBountyByApp = await computeRemainingBountyByApplicationId({
+    applicationIds: Array.from(splitsByApplication.keys()),
+    bountiesByApplicationId: bounties,
+    startTs,
+  });
   for (const [applicationId, appSplits] of splitsByApplication) {
-    let remainingBounty = bounties.get(applicationId) ?? 0n;
+    let remainingBounty = remainingBountyByApp.get(applicationId) ?? 0n;
     for (const split of appSplits) {
       const amountUsd = parseNumericToBigInt(split.amountRaw);
       const netUsd = amountUsd > remainingBounty ? amountUsd - remainingBounty : 0n;
