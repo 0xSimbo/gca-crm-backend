@@ -2666,6 +2666,9 @@ export const polRevenueByRegionWeek = pgTable(
     gctlMintsLq: numeric("gctl_mints_lq", { precision: 78, scale: 0 })
       .notNull()
       .default(sql`'0'::numeric`),
+    polYieldLq: numeric("pol_yield_lq", { precision: 78, scale: 0 })
+      .notNull()
+      .default(sql`'0'::numeric`),
     computedAt: timestamp("computed_at").notNull().defaultNow(),
   },
   (t) => ({
@@ -2691,6 +2694,9 @@ export const polRevenueByFarmWeek = pgTable(
       .notNull()
       .default(sql`'0'::numeric`),
     gctlMintsLq: numeric("gctl_mints_lq", { precision: 78, scale: 0 })
+      .notNull()
+      .default(sql`'0'::numeric`),
+    polYieldLq: numeric("pol_yield_lq", { precision: 78, scale: 0 })
       .notNull()
       .default(sql`'0'::numeric`),
     computedAt: timestamp("computed_at").notNull().defaultNow(),

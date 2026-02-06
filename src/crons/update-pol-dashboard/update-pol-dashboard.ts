@@ -308,44 +308,46 @@ async function upsertPolYieldSnapshot(params: {
 }
 
 async function ingestControlMintEvents(): Promise<{ upserted: number }> {
-  const latest = await db
-    .select({ maxTs: sql<string>`max(${gctlMintEvents.ts})` })
-    .from(gctlMintEvents);
-  const latestTs = latest[0]?.maxTs ? new Date(latest[0].maxTs) : null;
-
   const LIMIT = 200;
   let page = 1;
   let upserted = 0;
+  let consecutiveNoInsertPages = 0;
+  const MAX_PAGES = 2000;
   while (true) {
     const res = await fetchControlMintedEvents({ page, limit: LIMIT });
     if (!res.events || res.events.length === 0) break;
 
-    let shouldStop = false;
-    for (const ev of res.events) {
-      const ts = new Date(ev.ts);
-      if (latestTs && ts <= latestTs) {
-        shouldStop = true;
-        continue;
-      }
-      await db
-        .insert(gctlMintEvents)
-        .values({
+    // Note: This assumes the Control API returns newest-first pages.
+    // We avoid timestamp-based early stops (can lose events), and instead stop only after
+    // a few consecutive pages with zero new inserts.
+    const inserted = await db
+      .insert(gctlMintEvents)
+      .values(
+        res.events.map((ev) => ({
           txId: ev.txId,
           wallet: ev.wallet,
           epoch: ev.epoch,
           currency: ev.currency,
           amountRaw: ev.amountRaw,
           gctlMintedRaw: ev.gctlMinted,
-          ts,
+          ts: new Date(ev.ts),
           createdAt: new Date(),
-        })
-        .onConflictDoNothing();
-      upserted++;
-    }
+        }))
+      )
+      .onConflictDoNothing()
+      .returning({ txId: gctlMintEvents.txId });
+    const insertedThisPage = inserted.length;
+    upserted += insertedThisPage;
 
-    if (shouldStop) break;
+    // If we are repeatedly seeing pages with no *new* inserts, stop early.
+    // To avoid data-loss (same timestamp ordering, etc.), we do not use timestamps as a watermark.
+    // Instead we rely on "eventually we hit already-indexed pages" in a newest-first API.
+    if (insertedThisPage === 0) consecutiveNoInsertPages++;
+    else consecutiveNoInsertPages = 0;
+    if (consecutiveNoInsertPages >= 3) break;
+
     page++;
-    if (page > 2000) break; // safety valve
+    if (page > MAX_PAGES) break; // safety valve
   }
 
   return { upserted };
@@ -389,7 +391,7 @@ async function recomputeRevenueSnapshots(params: {
   const startTs = getProtocolWeekStartTimestamp(earliestWeekNeeded);
   const endTs = getProtocolWeekEndTimestamp(params.endWeek);
 
-  const [{ farms: activeFarms, weightsByRegion }, bounties, splits, stakeRows, mints] =
+  const [{ farms: activeFarms, weightsByRegion }, bounties, splits, stakeRows, mints, yieldRows] =
     await Promise.all([
       loadActiveFarmWeights(),
       loadBountiesByApplicationId(),
@@ -410,6 +412,15 @@ async function recomputeRevenueSnapshots(params: {
           and(
             gte(gctlMintEvents.epoch, earliestWeekNeeded),
             lt(gctlMintEvents.epoch, params.endWeek + 1)
+          )
+        ),
+      db
+        .select()
+        .from(polYieldWeek)
+        .where(
+          and(
+            gte(polYieldWeek.weekNumber, earliestWeekNeeded),
+            lt(polYieldWeek.weekNumber, params.endWeek + 1)
           )
         ),
     ]);
@@ -459,8 +470,10 @@ async function recomputeRevenueSnapshots(params: {
   // Accumulators
   const regionWeekMiner = new Map<string, Map<number, bigint>>();
   const regionWeekMints = new Map<string, Map<number, bigint>>();
+  const regionWeekYield = new Map<string, Map<number, bigint>>();
   const farmWeekMiner = new Map<string, Map<number, bigint>>();
   const farmWeekMints = new Map<string, Map<number, bigint>>();
+  const farmWeekYield = new Map<string, Map<number, bigint>>();
 
   function addToNested(
     outer: Map<string, Map<number, bigint>>,
@@ -569,6 +582,48 @@ async function recomputeRevenueSnapshots(params: {
   }
   await Promise.all(mintTasks);
 
+  // 3) GCTL yield attribution (PoL yield) -> regions by staked share -> farms by CC weights.
+  const yieldByWeek = new Map<number, bigint>();
+  for (const y of yieldRows) {
+    yieldByWeek.set(y.weekNumber, parseNumericToBigInt(y.yieldPerWeekLq));
+  }
+  const fallbackYield = yieldByWeek.get(params.endWeek) ?? 0n;
+
+  for (let sourceWeek = earliestWeekNeeded; sourceWeek <= params.endWeek; sourceWeek++) {
+    const yieldLq = yieldByWeek.get(sourceWeek) ?? fallbackYield;
+    if (yieldLq === 0n) continue;
+
+    const buckets = bucketEvenlyAcrossWeeks({
+      amount: yieldLq,
+      startWeek: sourceWeek,
+      weeks: 10,
+    });
+
+    for (const b of buckets) {
+      if (b.week < params.startWeek || b.week > params.endWeek) continue;
+      const stakeWeights = stakeByWeek.get(b.week);
+      if (!stakeWeights || stakeWeights.size === 0) continue;
+
+      const regionAlloc = allocateAmountByWeights({
+        amount: b.amount,
+        weightsByKey: stakeWeights,
+      });
+      for (const [region, regionAmt] of regionAlloc.entries()) {
+        addToNested(regionWeekYield, region, b.week, regionAmt);
+
+        const farmWeights = weightsByRegion.get(region);
+        if (!farmWeights || farmWeights.size === 0) continue;
+        const farmAlloc = allocateAmountByWeights({
+          amount: regionAmt,
+          weightsByKey: farmWeights,
+        });
+        for (const [farmId, farmAmt] of farmAlloc.entries()) {
+          addToNested(farmWeekYield, farmId, b.week, farmAmt);
+        }
+      }
+    }
+  }
+
   // Upsert snapshots (delete and re-insert in range for determinism).
   const { regionRows, farmRows } = await db.transaction(async (tx) => {
     await tx
@@ -591,10 +646,12 @@ async function recomputeRevenueSnapshots(params: {
     let regionRows = 0;
     for (const [region, byWeekMiner] of regionWeekMiner.entries()) {
       const byWeekMints = regionWeekMints.get(region) ?? new Map<number, bigint>();
+      const byWeekYield = regionWeekYield.get(region) ?? new Map<number, bigint>();
       for (let w = params.startWeek; w <= params.endWeek; w++) {
         const miner = byWeekMiner.get(w) ?? 0n;
         const mints = byWeekMints.get(w) ?? 0n;
-        const total = miner + mints;
+        const yieldLq = byWeekYield.get(w) ?? 0n;
+        const total = miner + mints + yieldLq;
         if (total === 0n) continue;
         await tx.insert(polRevenueByRegionWeek).values({
           weekNumber: w,
@@ -602,6 +659,7 @@ async function recomputeRevenueSnapshots(params: {
           totalLq: total.toString(),
           minerSalesLq: miner.toString(),
           gctlMintsLq: mints.toString(),
+          polYieldLq: yieldLq.toString(),
           computedAt: new Date(),
         });
         regionRows++;
@@ -611,6 +669,7 @@ async function recomputeRevenueSnapshots(params: {
     // Regions that only have mints.
     for (const [region, byWeekMints] of regionWeekMints.entries()) {
       if (regionWeekMiner.has(region)) continue;
+      if (regionWeekYield.has(region)) continue;
       for (let w = params.startWeek; w <= params.endWeek; w++) {
         const mints = byWeekMints.get(w) ?? 0n;
         if (mints === 0n) continue;
@@ -620,6 +679,26 @@ async function recomputeRevenueSnapshots(params: {
           totalLq: mints.toString(),
           minerSalesLq: "0",
           gctlMintsLq: mints.toString(),
+          polYieldLq: "0",
+          computedAt: new Date(),
+        });
+        regionRows++;
+      }
+    }
+
+    // Regions that only have yield.
+    for (const [region, byWeekYield] of regionWeekYield.entries()) {
+      if (regionWeekMiner.has(region) || regionWeekMints.has(region)) continue;
+      for (let w = params.startWeek; w <= params.endWeek; w++) {
+        const yieldLq = byWeekYield.get(w) ?? 0n;
+        if (yieldLq === 0n) continue;
+        await tx.insert(polRevenueByRegionWeek).values({
+          weekNumber: w,
+          region,
+          totalLq: yieldLq.toString(),
+          minerSalesLq: "0",
+          gctlMintsLq: "0",
+          polYieldLq: yieldLq.toString(),
           computedAt: new Date(),
         });
         regionRows++;
@@ -630,14 +709,17 @@ async function recomputeRevenueSnapshots(params: {
     const farmIds = new Set<string>([
       ...farmWeekMiner.keys(),
       ...farmWeekMints.keys(),
+      ...farmWeekYield.keys(),
     ]);
     for (const farmId of Array.from(farmIds)) {
       const byWeekMiner = farmWeekMiner.get(farmId) ?? new Map<number, bigint>();
       const byWeekMints = farmWeekMints.get(farmId) ?? new Map<number, bigint>();
+      const byWeekYield = farmWeekYield.get(farmId) ?? new Map<number, bigint>();
       for (let w = params.startWeek; w <= params.endWeek; w++) {
         const miner = byWeekMiner.get(w) ?? 0n;
         const mints = byWeekMints.get(w) ?? 0n;
-        const total = miner + mints;
+        const yieldLq = byWeekYield.get(w) ?? 0n;
+        const total = miner + mints + yieldLq;
         if (total === 0n) continue;
         await tx.insert(polRevenueByFarmWeek).values({
           weekNumber: w,
@@ -645,6 +727,7 @@ async function recomputeRevenueSnapshots(params: {
           totalLq: total.toString(),
           minerSalesLq: miner.toString(),
           gctlMintsLq: mints.toString(),
+          polYieldLq: yieldLq.toString(),
           computedAt: new Date(),
         });
         farmRows++;
