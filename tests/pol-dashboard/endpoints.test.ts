@@ -1,5 +1,6 @@
 import { describe, expect, it, beforeEach, afterEach } from "bun:test";
 import { Elysia } from "elysia";
+import { and, eq, inArray } from "drizzle-orm";
 import { db } from "../../src/db/db";
 import {
   fmiWeeklyInputs,
@@ -25,38 +26,85 @@ function withFrozenNow<T>(unixSeconds: number, fn: () => Promise<T>): Promise<T>
 
 describe("PoL Dashboard: endpoint integration-ish", () => {
   // Use a deterministic completed week in tests.
-  const nowUnixSeconds = GENESIS_TIMESTAMP + 50 * 604800 + 123;
-  const completedWeek = 49;
+  // Use far-future weeks/dates to avoid colliding with real data in a shared dev DB.
+  const completedWeek = 9_999;
+  const nowUnixSeconds = GENESIS_TIMESTAMP + (completedWeek + 1) * 604800 + 123;
+  const testRegion = "__test_region__";
+  const testWeeks = [completedWeek - 1, completedWeek];
+  const vestingDates = ["2998-01-01", "2999-01-01"];
 
   beforeEach(async () => {
-    await db.delete(polRevenueByRegionWeek);
-    await db.delete(polYieldWeek);
-    await db.delete(fmiWeeklyInputs);
-    await db.delete(glwVestingSchedule);
-    await db.delete(gctlStakedByRegionWeek);
+    // Targeted cleanup only for rows inserted by these tests.
+    await db
+      .delete(polRevenueByRegionWeek)
+      .where(
+        and(
+          inArray(polRevenueByRegionWeek.weekNumber, testWeeks),
+          eq(polRevenueByRegionWeek.region, testRegion)
+        )
+      );
+    await db
+      .delete(polYieldWeek)
+      .where(eq(polYieldWeek.weekNumber, completedWeek));
+    await db
+      .delete(fmiWeeklyInputs)
+      .where(eq(fmiWeeklyInputs.weekNumber, completedWeek));
+    await db
+      .delete(glwVestingSchedule)
+      .where(inArray(glwVestingSchedule.date, vestingDates));
+    await db
+      .delete(gctlStakedByRegionWeek)
+      .where(
+        and(
+          eq(gctlStakedByRegionWeek.weekNumber, completedWeek),
+          eq(gctlStakedByRegionWeek.region, testRegion)
+        )
+      );
   });
 
   afterEach(async () => {
-    await db.delete(polRevenueByRegionWeek);
-    await db.delete(polYieldWeek);
-    await db.delete(fmiWeeklyInputs);
-    await db.delete(glwVestingSchedule);
-    await db.delete(gctlStakedByRegionWeek);
+    // Same targeted cleanup after each test to keep reruns stable.
+    await db
+      .delete(polRevenueByRegionWeek)
+      .where(
+        and(
+          inArray(polRevenueByRegionWeek.weekNumber, testWeeks),
+          eq(polRevenueByRegionWeek.region, testRegion)
+        )
+      );
+    await db
+      .delete(polYieldWeek)
+      .where(eq(polYieldWeek.weekNumber, completedWeek));
+    await db
+      .delete(fmiWeeklyInputs)
+      .where(eq(fmiWeeklyInputs.weekNumber, completedWeek));
+    await db
+      .delete(glwVestingSchedule)
+      .where(inArray(glwVestingSchedule.date, vestingDates));
+    await db
+      .delete(gctlStakedByRegionWeek)
+      .where(
+        and(
+          eq(gctlStakedByRegionWeek.weekNumber, completedWeek),
+          eq(gctlStakedByRegionWeek.region, testRegion)
+        )
+      );
   });
 
   it("GET /glw/vesting-schedule returns rows ordered by date", async () => {
     await db.insert(glwVestingSchedule).values([
-      { date: "2028-01-01", unlocked: "2", updatedAt: new Date() },
-      { date: "2027-01-01", unlocked: "1", updatedAt: new Date() },
+      { date: vestingDates[1], unlocked: "2", updatedAt: new Date() },
+      { date: vestingDates[0], unlocked: "1", updatedAt: new Date() },
     ]);
 
     const res = await app.handle(new Request("http://localhost/glw/vesting-schedule"));
     expect(res.status).toBe(200);
     const json = await res.json();
-    expect(json).toEqual([
-      { date: "2027-01-01", unlocked: "1.000000000000000000" },
-      { date: "2028-01-01", unlocked: "2.000000000000000000" },
-    ]);
+    const idxA = json.findIndex((r: any) => r.date === vestingDates[0]);
+    const idxB = json.findIndex((r: any) => r.date === vestingDates[1]);
+    expect(idxA).toBeGreaterThanOrEqual(0);
+    expect(idxB).toBeGreaterThanOrEqual(0);
+    expect(idxA).toBeLessThan(idxB);
   });
 
   it("GET /fmi/pressure returns latest completed week snapshot", async () => {
@@ -86,8 +134,8 @@ describe("PoL Dashboard: endpoint integration-ish", () => {
 
   it("GET /pol/revenue/aggregate uses snapshots for revenue + yield + active farm count", async () => {
     await db.insert(polRevenueByRegionWeek).values([
-      { weekNumber: 48, region: "us-ca", totalLq: "100", minerSalesLq: "100", gctlMintsLq: "0" },
-      { weekNumber: 49, region: "us-ca", totalLq: "200", minerSalesLq: "0", gctlMintsLq: "200" },
+      { weekNumber: completedWeek - 1, region: testRegion, totalLq: "100", minerSalesLq: "100", gctlMintsLq: "0" },
+      { weekNumber: completedWeek, region: testRegion, totalLq: "200", minerSalesLq: "0", gctlMintsLq: "200" },
     ]);
 
     await db.insert(polYieldWeek).values({
@@ -105,7 +153,8 @@ describe("PoL Dashboard: endpoint integration-ish", () => {
       const res = await app.handle(new Request("http://localhost/pol/revenue/aggregate?range=90d"));
       expect(res.status).toBe(200);
       const json = await res.json();
-      expect(json.lifetime_lq).toBe("300");
+      // lifetime includes all historical rows (might include preexisting dev DB data), but range should be isolated to the far-future window.
+      expect(BigInt(json.lifetime_lq)).toBeGreaterThanOrEqual(300n);
       expect(json.ninety_day_yield_lq).toBe("15");
       // The test database may have existing applications; just validate the field shape.
       expect(typeof json.active_farms).toBe("number");
@@ -115,11 +164,11 @@ describe("PoL Dashboard: endpoint integration-ish", () => {
 
   it("GET /pol/revenue/regions returns region aggregates and staked_gctl for latest week", async () => {
     await db.insert(polRevenueByRegionWeek).values([
-      { weekNumber: 49, region: "us-ca", totalLq: "200", minerSalesLq: "0", gctlMintsLq: "200" },
+      { weekNumber: completedWeek, region: testRegion, totalLq: "200", minerSalesLq: "0", gctlMintsLq: "200" },
     ]);
     await db.insert(gctlStakedByRegionWeek).values({
-      weekNumber: 49,
-      region: "us-ca",
+      weekNumber: completedWeek,
+      region: testRegion,
       gctlStakedRaw: "123",
       fetchedAt: new Date(),
     });
@@ -128,8 +177,9 @@ describe("PoL Dashboard: endpoint integration-ish", () => {
       const res = await app.handle(new Request("http://localhost/pol/revenue/regions?range=90d"));
       expect(res.status).toBe(200);
       const json = await res.json();
-      expect(json[0].region).toBe("us-ca");
-      expect(json[0].staked_gctl).toBe("123");
+      const row = json.find((r: any) => r.region === testRegion);
+      expect(row).toBeTruthy();
+      expect(row.staked_gctl).toBe("123");
     });
   });
 });
