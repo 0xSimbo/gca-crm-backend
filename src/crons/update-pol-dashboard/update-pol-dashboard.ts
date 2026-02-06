@@ -74,6 +74,79 @@ type ActiveFarmWeightRow = {
   ccPerWeekScaled5: bigint;
 };
 
+function summarizeSetDiff(params: {
+  leftName: string;
+  rightName: string;
+  left: Set<string>;
+  right: Set<string>;
+  sampleSize?: number;
+}): { missingFromRight: string[]; missingFromLeft: string[] } {
+  const sampleSize = params.sampleSize ?? 10;
+  const missingFromRight: string[] = [];
+  const missingFromLeft: string[] = [];
+
+  for (const v of Array.from(params.left).sort()) {
+    if (!params.right.has(v)) {
+      missingFromRight.push(v);
+      if (missingFromRight.length >= sampleSize) break;
+    }
+  }
+  for (const v of Array.from(params.right).sort()) {
+    if (!params.left.has(v)) {
+      missingFromLeft.push(v);
+      if (missingFromLeft.length >= sampleSize) break;
+    }
+  }
+
+  return { missingFromRight, missingFromLeft };
+}
+
+function logRegionAlignmentDiagnostics(params: {
+  startWeek: number;
+  endWeek: number;
+  regionsWithActiveFarms: Set<string>;
+  stakeByWeek: Map<number, Map<string, bigint>>;
+}) {
+  const regionsWithStake = new Set<string>();
+  for (const [, byRegion] of params.stakeByWeek.entries()) {
+    for (const r of byRegion.keys()) regionsWithStake.add(r);
+  }
+
+  const diff = summarizeSetDiff({
+    leftName: "farms.region",
+    rightName: "control.region.code",
+    left: params.regionsWithActiveFarms,
+    right: regionsWithStake,
+  });
+
+  const weeksMissingStake: number[] = [];
+  for (let w = params.startWeek; w <= params.endWeek; w++) {
+    const weights = params.stakeByWeek.get(w);
+    if (!weights || weights.size === 0) {
+      weeksMissingStake.push(w);
+      continue;
+    }
+    let sum = 0n;
+    for (const v of weights.values()) sum += v;
+    if (sum === 0n) weeksMissingStake.push(w);
+  }
+
+  if (
+    diff.missingFromRight.length > 0 ||
+    diff.missingFromLeft.length > 0 ||
+    weeksMissingStake.length > 0
+  ) {
+    console.warn("[PoL Dashboard] Region alignment diagnostics", {
+      weekRange: { startWeek: params.startWeek, endWeek: params.endWeek },
+      note: "If control.region.code != farms.region, GCTL mint attribution by region may be wrong or skipped.",
+      farmsRegionsMissingInControlStake: diff.missingFromLeft,
+      controlStakeRegionsMissingInFarms: diff.missingFromRight,
+      weeksMissingStakeDataSample: weeksMissingStake.slice(0, 10),
+      weeksMissingStakeDataCount: weeksMissingStake.length,
+    });
+  }
+}
+
 async function loadActiveFarmWeights(): Promise<{
   farms: ActiveFarmWeightRow[];
   weightsByRegion: Map<string, Map<string, bigint>>;
@@ -349,6 +422,13 @@ async function recomputeRevenueSnapshots(params: {
     map.set(s.region, parseNumericToBigInt(s.gctlStakedRaw));
     stakeByWeek.set(w, map);
   }
+
+  logRegionAlignmentDiagnostics({
+    startWeek: params.startWeek,
+    endWeek: params.endWeek,
+    regionsWithActiveFarms: new Set<string>(Array.from(weightsByRegion.keys())),
+    stakeByWeek,
+  });
 
   const splitsByApplication = new Map<string, MinerSplitRow[]>();
   for (const s of splits) {
