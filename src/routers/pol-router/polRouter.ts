@@ -15,6 +15,7 @@ import {
 import { Decimal } from "../../pol/math/decimal";
 import { getCompletedWeekNumber, getProtocolWeekForTimestamp } from "../../pol/protocolWeeks";
 import { fetchPonderPolYield } from "../../pol/clients/ponder";
+import { GENESIS_TIMESTAMP } from "../../constants/genesis-timestamp";
 
 function getWeeksForRange(range: string): number {
   if (range === "90d") return 13;
@@ -185,12 +186,17 @@ export const polRouter = new Elysia({ prefix: "/pol" })
           });
         }
 
-        return activeFarms.map((f) => {
+          return activeFarms.map((f) => {
           const ccPerWeek = String(f.ccPerWeek ?? "0");
           const cc = new Decimal(ccPerWeek);
-          const auditWeek = f.auditCompleteDate
-            ? getProtocolWeekForTimestamp(Math.floor(new Date(f.auditCompleteDate).getTime() / 1000))
-            : endWeek;
+          let auditWeek = endWeek;
+          if (f.auditCompleteDate) {
+            const auditTs = Math.floor(
+              new Date(f.auditCompleteDate).getTime() / 1000
+            );
+            auditWeek =
+              auditTs < GENESIS_TIMESTAMP ? 0 : getProtocolWeekForTimestamp(auditTs);
+          }
           const creditWeeks = Math.max(0, endWeek - auditWeek + 1);
           const creditsTotal = cc.mul(creditWeeks).toString();
 
