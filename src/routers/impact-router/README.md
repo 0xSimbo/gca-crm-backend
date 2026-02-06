@@ -42,6 +42,14 @@ For each week in the requested week range, we compute:
   - Steering (sGCTL): **+3.0** points per **GLW** steered by staking GCTL
   - Vault bonus (delegated GLW): **+0.005** points per week per **GLW** in `DelegatedActiveGLW`
   - GLW Worth: **+0.001** points per week per **GLW** of `GlowWorth` for that week
+
+**Steering boost for excluded wallets**: if any excluded wallet stakes GCTL, we apply a weekly steering points multiplier to all **non-excluded** wallets so user points match the “no excluded stake” baseline. The boost is:
+
+```
+steeringBoost = totalGctlStaked / (totalGctlStaked - excludedGctlStaked)
+```
+
+This boost is applied to **steering points only** (pre-streak/cash-miner multiplier).
 - **Weekly multiplier** (calculated and applied on week rollover):
   - Total multiplier = **Base multiplier + Streak bonus**
   - Base multiplier:
@@ -243,6 +251,7 @@ The leaderboard is **not** limited to "protocol participants" anymore. In list m
 **Exclusions**:
 
 - Internal/team wallets (via `EXCLUDED_LEADERBOARD_WALLETS` list)
+  - These wallets are **hard-zeroed** for impact scoring: `totals`, `weekly`, `pointsPerRegion`, and `currentWeekProjection` all return **0 points**, even for single-wallet queries.
 - Excluded wallets are also filtered out of **region cache** and **weekly power** snapshots, so they will not appear in Solar Collector watts.
 - **Wallets with < 0.01 points** - To avoid confusion and clutter from dust wallets, wallets below this threshold are excluded. This filters out:
   - Wallets with 0 points (no historical contribution yet, typically acquired GLW during current ongoing week)

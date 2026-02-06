@@ -677,6 +677,59 @@ bun run scripts/get-farm-name-by-application-id.ts clv5lf6ha0000mkq3dbnqddwb
 
 ---
 
+### `move-applications-to-zone.ts` - Move Applications to Another Zone
+
+Moves a list of applications (and their associated farms, if any) to a different zone.
+
+**Usage:**
+
+```bash
+# Dry run (default) - preview changes without modifying the database
+bun run scripts/move-applications-to-zone.ts
+
+# Execute for real
+bun run scripts/move-applications-to-zone.ts --execute
+```
+
+**Configuration:**
+
+Edit the script to set your target zone and application IDs:
+
+```typescript
+const TARGET_ZONE_ID = 8; // Oklahoma
+
+const APPLICATION_IDS = [
+  "3c8a504d-64e1-4dca-b747-34fd438fa339",
+  "52069f39-ff18-43b1-acbf-1c42e0a3fcd6",
+  // ... add more application IDs
+];
+```
+
+**What it does:**
+
+1. Verifies the target zone exists and shows its details
+2. Fetches all specified applications with their current zone info
+3. Displays a table showing current state and planned changes
+4. Updates `applications.zoneId` and `applications.updatedAt`
+5. Updates `farms.zoneId` for any applications that have associated farms
+
+**Output:**
+
+- Current zone and status for each application
+- List of applications that would be/were updated
+- Warning for any application IDs not found in the database
+
+**Example output:**
+
+```
+Application ID                           | Current Zone       | Status              | Has Farm | Owner
+─────────────────────────────────────────────────────────────────────────────────────────────────────
+3c8a504d-64e1-4dca-b747-34fd438fa339 | Clean Grid Project | waiting-for-approval | No       | John Doe
+                                         | → Noble Oklahoma
+```
+
+---
+
 ## Common Patterns
 
 ### Environment Variables

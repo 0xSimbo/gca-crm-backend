@@ -7,6 +7,7 @@ import {
 import {
   getImpactLeaderboardWalletUniverse,
   computeGlowImpactScores,
+  getCurrentWeekProjection,
 } from "../../routers/impact-router/helpers/impact-score";
 import { getWeekRangeForImpact } from "../../routers/fractions-router/helpers/apy-helpers";
 import { excludedLeaderboardWalletsSet } from "../../constants/excluded-wallets";
@@ -165,6 +166,75 @@ export async function updateImpactLeaderboard() {
     endWeek,
     thresholdScaled6: ACTIVATION_THRESHOLD_SCALED6,
   });
+
+  // Second pass: check still-pending referrals against current-week projected points.
+  // This catches referees who crossed the 100-point threshold mid-week.
+  const stillPendingReferrals = allReferrals.filter(
+    (ref) =>
+      ref.status === "pending" &&
+      !ref.activationBonusAwarded &&
+      !activationCandidates.has(ref.id)
+  );
+
+  if (stillPendingReferrals.length > 0) {
+    console.log(
+      `[Cron] Checking ${stillPendingReferrals.length} pending referrals against current-week projections...`
+    );
+
+    const projectionResults = await Promise.all(
+      stillPendingReferrals.map(async (ref) => {
+        const refereeWallet = ref.refereeWallet.toLowerCase();
+        try {
+          const refereeResult = resultsByWallet.get(refereeWallet);
+          const glowWorth = refereeResult?.glowWorth;
+          const projection = await getCurrentWeekProjection(
+            refereeWallet,
+            glowWorth
+          );
+          const projectedBasePointsRaw = parseScaled6(
+            projection.projectedPoints.basePointsPreMultiplierScaled6
+          );
+          const projectedBasePointsScaled6 = applyPostLinkProration({
+            basePointsScaled6: projectedBasePointsRaw,
+            linkedAt: ref.linkedAt,
+            weekNumber: projection.weekNumber,
+          });
+          return { ref, projectedBasePointsScaled6, weekNumber: projection.weekNumber };
+        } catch (err) {
+          console.error(
+            `[Cron] Projection failed for ${refereeWallet}:`,
+            err
+          );
+          return { ref, projectedBasePointsScaled6: 0n, weekNumber: endWeek + 1 };
+        }
+      })
+    );
+
+    let projectedActivations = 0;
+    for (const { ref, projectedBasePointsScaled6, weekNumber } of projectionResults) {
+      const refereeWallet = ref.refereeWallet.toLowerCase();
+      const activationStartWeek =
+        activationStartWeekByReferee.get(refereeWallet) ?? 0;
+      if (weekNumber < activationStartWeek) continue;
+
+      const historical =
+        historicalBasePointsByReferee.get(refereeWallet) || 0n;
+      const endWeekPts =
+        basePointsThisWeekByReferee.get(refereeWallet) || 0n;
+      const total = historical + endWeekPts + projectedBasePointsScaled6;
+
+      if (total >= ACTIVATION_THRESHOLD_SCALED6) {
+        activationCandidates.add(ref.id);
+        projectedActivations++;
+      }
+    }
+
+    if (projectedActivations > 0) {
+      console.log(
+        `[Cron] Found ${projectedActivations} additional activation(s) via current-week projections`
+      );
+    }
+  }
 
   const activeReferralCountMap = buildActiveReferralCountMap({
     referrals: allReferrals as ReferralSnapshot[],
