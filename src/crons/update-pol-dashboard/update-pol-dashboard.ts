@@ -43,16 +43,26 @@ function parseNumericToBigInt(value: unknown): bigint {
 function parseCrsCcPerWeekToScaledInt(ccPerWeek: unknown): bigint {
   // netCarbonCreditEarningWeekly is numeric(10,5) -> scale 5.
   if (ccPerWeek === null || ccPerWeek === undefined) return 0n;
-  const dec = new Decimal(String(ccPerWeek));
-  if (!dec.isFinite() || dec.isNeg()) return 0n;
+  let dec: Decimal;
+  try {
+    dec = new Decimal(String(ccPerWeek));
+  } catch {
+    return 0n;
+  }
+  if (dec.isNegative()) return 0n;
   return BigInt(dec.mul(100000).toFixed(0, Decimal.ROUND_FLOOR));
 }
 
 function parseUsdDollarsToUsdc6Atomic(dollars: unknown): bigint {
   // bountyUsd is numeric(20,2) in DB.
   if (dollars === null || dollars === undefined) return 0n;
-  const dec = new Decimal(String(dollars));
-  if (!dec.isFinite() || dec.isNeg()) return 0n;
+  let dec: Decimal;
+  try {
+    dec = new Decimal(String(dollars));
+  } catch {
+    return 0n;
+  }
+  if (dec.isNegative()) return 0n;
   // dollars -> USDC6 atomic: * 1e6
   return BigInt(dec.mul(1_000_000).toFixed(0, Decimal.ROUND_FLOOR));
 }
