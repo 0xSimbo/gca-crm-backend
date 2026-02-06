@@ -722,8 +722,12 @@ async function recomputeFmiWeeklyInputs(params: {
     db
       .select()
       .from(polYieldWeek)
-      .where(eq(polYieldWeek.weekNumber, params.endWeek))
-      .limit(1),
+      .where(
+        and(
+          gte(polYieldWeek.weekNumber, params.startWeek),
+          lt(polYieldWeek.weekNumber, params.endWeek + 1)
+        )
+      ),
   ]);
 
   // Miner sales weekly USD after bounty (deduct applied earliest-first per application).
@@ -763,10 +767,11 @@ async function recomputeFmiWeeklyInputs(params: {
   }
 
   // PoL yield weekly USD: use yieldPerWeekLq from latest snapshot, convert using spot price at week end.
-  const yieldSnapshot = polYieldRows[0] ?? null;
-  const yieldPerWeekLqAtomic = yieldSnapshot
-    ? parseNumericToBigInt(yieldSnapshot.yieldPerWeekLq)
-    : 0n;
+  const yieldLqByWeek = new Map<number, bigint>();
+  for (const r of polYieldRows) {
+    yieldLqByWeek.set(r.weekNumber, parseNumericToBigInt(r.yieldPerWeekLq));
+  }
+  const fallbackYieldPerWeekLqAtomic = yieldLqByWeek.get(params.endWeek) ?? 0n;
 
   const sellPressure = await fetchPonderFmiSellPressure({ range: "12w" });
   const sellByWeekGlw = new Map<number, bigint>();
@@ -792,9 +797,11 @@ async function recomputeFmiWeeklyInputs(params: {
         const spot = await getSpotPriceAtWeekEnd(week);
         const minerUsd = minerUsdByWeek.get(week) ?? 0n;
         const gctlUsd = gctlMintUsdByWeek.get(week) ?? 0n;
-        const polYieldUsd = yieldPerWeekLqAtomic
+        const yieldLqAtomic =
+          yieldLqByWeek.get(week) ?? fallbackYieldPerWeekLqAtomic;
+        const polYieldUsd = yieldLqAtomic
           ? lqAtomicToUsdUsdc6({
-              lqAtomic: yieldPerWeekLqAtomic,
+              lqAtomic: yieldLqAtomic,
               spotPriceUsdgPerGlw: spot,
             })
           : 0n;
