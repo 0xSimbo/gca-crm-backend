@@ -25,6 +25,7 @@ import { bucketEvenlyAcrossWeeks } from "../../pol/math/bucketing";
 import { allocateAmountByWeights } from "../../pol/math/allocation";
 import { Decimal } from "../../pol/math/decimal";
 import { usdUsdc6ToLqAtomic, lqAtomicToUsdUsdc6 } from "../../pol/math/usdLq";
+import { computeFmiMetrics } from "../../pol/fmi/computeFmiMetrics";
 import {
   fetchControlMintedEvents,
   fetchControlRegionsActiveSummary,
@@ -643,8 +644,12 @@ async function recomputeFmiWeeklyInputs(params: {
 
         const buy = minerUsd + gctlUsd + polYieldUsd;
         const sell = dexSellUsd;
-        const net = buy - sell;
-        const ratio = sell > 0n ? new Decimal(buy.toString()).div(sell.toString()).toString() : null;
+        const { netUsdUsdc6: net, buySellRatio: ratio } = computeFmiMetrics({
+          minerSalesUsdUsdc6: minerUsd,
+          gctlMintsUsdUsdc6: gctlUsd,
+          polYieldUsdUsdc6: polYieldUsd,
+          dexSellPressureUsdUsdc6: sell,
+        });
 
         await db
           .insert(fmiWeeklyInputs)
