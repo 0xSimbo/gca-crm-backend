@@ -1,0 +1,135 @@
+import { describe, expect, it, beforeEach, afterEach } from "bun:test";
+import { Elysia } from "elysia";
+import { db } from "../../src/db/db";
+import {
+  fmiWeeklyInputs,
+  glwVestingSchedule,
+  gctlStakedByRegionWeek,
+  polRevenueByRegionWeek,
+  polYieldWeek,
+} from "../../src/db/schema";
+import { polRouter } from "../../src/routers/pol-router/polRouter";
+import { fmiRouter } from "../../src/routers/fmi-router/fmiRouter";
+import { glwRouter } from "../../src/routers/glw-router/glwRouter";
+import { GENESIS_TIMESTAMP } from "../../src/constants/genesis-timestamp";
+
+const app = new Elysia().use(polRouter).use(fmiRouter).use(glwRouter);
+
+function withFrozenNow<T>(unixSeconds: number, fn: () => Promise<T>): Promise<T> {
+  const original = Date.now;
+  Date.now = () => unixSeconds * 1000;
+  return fn().finally(() => {
+    Date.now = original;
+  });
+}
+
+describe("PoL Dashboard: endpoint integration-ish", () => {
+  // Use a deterministic completed week in tests.
+  const nowUnixSeconds = GENESIS_TIMESTAMP + 50 * 604800 + 123;
+  const completedWeek = 49;
+
+  beforeEach(async () => {
+    await db.delete(polRevenueByRegionWeek);
+    await db.delete(polYieldWeek);
+    await db.delete(fmiWeeklyInputs);
+    await db.delete(glwVestingSchedule);
+    await db.delete(gctlStakedByRegionWeek);
+  });
+
+  afterEach(async () => {
+    await db.delete(polRevenueByRegionWeek);
+    await db.delete(polYieldWeek);
+    await db.delete(fmiWeeklyInputs);
+    await db.delete(glwVestingSchedule);
+    await db.delete(gctlStakedByRegionWeek);
+  });
+
+  it("GET /glw/vesting-schedule returns rows ordered by date", async () => {
+    await db.insert(glwVestingSchedule).values([
+      { date: "2028-01-01", unlocked: "2", updatedAt: new Date() },
+      { date: "2027-01-01", unlocked: "1", updatedAt: new Date() },
+    ]);
+
+    const res = await app.handle(new Request("http://localhost/glw/vesting-schedule"));
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json).toEqual([
+      { date: "2027-01-01", unlocked: "1.000000000000000000" },
+      { date: "2028-01-01", unlocked: "2.000000000000000000" },
+    ]);
+  });
+
+  it("GET /fmi/pressure returns latest completed week snapshot", async () => {
+    await db.insert(fmiWeeklyInputs).values({
+      weekNumber: completedWeek,
+      minerSalesUsd: "100",
+      gctlMintsUsd: "200",
+      polYieldUsd: "300",
+      dexSellPressureUsd: "50",
+      buyPressureUsd: "600",
+      sellPressureUsd: "50",
+      netUsd: "550",
+      buySellRatio: "12",
+      indexingComplete: true,
+      computedAt: new Date(),
+    });
+
+    await withFrozenNow(nowUnixSeconds, async () => {
+      const res = await app.handle(new Request("http://localhost/fmi/pressure?range=7d"));
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json.week).toBe(completedWeek);
+      expect(json.buy_pressure).toBe("600");
+      expect(json.dex_sell_pressure_weekly_usd).toBe("50");
+    });
+  });
+
+  it("GET /pol/revenue/aggregate uses snapshots for revenue + yield + active farm count", async () => {
+    await db.insert(polRevenueByRegionWeek).values([
+      { weekNumber: 48, region: "us-ca", totalLq: "100", minerSalesLq: "100", gctlMintsLq: "0" },
+      { weekNumber: 49, region: "us-ca", totalLq: "200", minerSalesLq: "0", gctlMintsLq: "200" },
+    ]);
+
+    await db.insert(polYieldWeek).values({
+      weekNumber: completedWeek,
+      strategyReturns90dLq: "10",
+      uniFees90dLq: "5",
+      polStartLq: "0",
+      apy: "0.12",
+      yieldPerWeekLq: "1",
+      indexingComplete: true,
+      fetchedAt: new Date(),
+    });
+
+    await withFrozenNow(nowUnixSeconds, async () => {
+      const res = await app.handle(new Request("http://localhost/pol/revenue/aggregate?range=90d"));
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json.lifetime_lq).toBe("300");
+      expect(json.ninety_day_yield_lq).toBe("15");
+      // The test database may have existing applications; just validate the field shape.
+      expect(typeof json.active_farms).toBe("number");
+      expect(json.active_farms).toBeGreaterThanOrEqual(0);
+    });
+  });
+
+  it("GET /pol/revenue/regions returns region aggregates and staked_gctl for latest week", async () => {
+    await db.insert(polRevenueByRegionWeek).values([
+      { weekNumber: 49, region: "us-ca", totalLq: "200", minerSalesLq: "0", gctlMintsLq: "200" },
+    ]);
+    await db.insert(gctlStakedByRegionWeek).values({
+      weekNumber: 49,
+      region: "us-ca",
+      gctlStakedRaw: "123",
+      fetchedAt: new Date(),
+    });
+
+    await withFrozenNow(nowUnixSeconds, async () => {
+      const res = await app.handle(new Request("http://localhost/pol/revenue/regions?range=90d"));
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json[0].region).toBe("us-ca");
+      expect(json[0].staked_gctl).toBe("123");
+    });
+  });
+});
