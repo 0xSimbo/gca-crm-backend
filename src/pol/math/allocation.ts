@@ -6,10 +6,29 @@
 export function allocateAmountByWeights(params: {
   amount: bigint;
   weightsByKey: Map<string, bigint>;
-}): Map<string, bigint> {
+}): Map<string, bigint>;
+
+export function allocateAmountByWeights(params: {
+  amount: bigint;
+  weightsByKey: Map<number, bigint>;
+}): Map<number, bigint>;
+
+export function allocateAmountByWeights<K extends string | number>(params: {
+  amount: bigint;
+  weightsByKey: Map<K, bigint>;
+}): Map<K, bigint> {
   const { amount, weightsByKey } = params;
-  const keys = Array.from(weightsByKey.keys()).sort();
-  const out = new Map<string, bigint>();
+  const keys = Array.from(weightsByKey.keys());
+  keys.sort((a, b) => {
+    if (typeof a === "number" && typeof b === "number") return a - b;
+    const as = String(a);
+    const bs = String(b);
+    if (as < bs) return -1;
+    if (as > bs) return 1;
+    return 0;
+  });
+
+  const out = new Map<K, bigint>();
   if (keys.length === 0) return out;
 
   let totalWeight = 0n;
@@ -47,4 +66,3 @@ export function allocateAmountByWeights(params: {
   }
   return out;
 }
-

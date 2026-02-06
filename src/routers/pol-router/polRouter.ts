@@ -119,7 +119,7 @@ export const polRouter = new Elysia({ prefix: "/pol" })
           .select({
             farmId: farms.id,
             name: farms.name,
-            region: farms.region,
+            zoneId: farms.zoneId,
             auditCompleteDate: farms.auditCompleteDate,
             applicationId: applications.id,
             paymentAmount: applications.paymentAmount,
@@ -208,7 +208,7 @@ export const polRouter = new Elysia({ prefix: "/pol" })
           return {
             farm_id: f.farmId,
             name: f.name,
-            region: f.region,
+            zone_id: Number(f.zoneId),
             panels: Number(f.panels ?? 0),
             lifetime_lq: a.lifetime,
             ninety_day_lq: a.ninety,
@@ -258,7 +258,7 @@ export const polRouter = new Elysia({ prefix: "/pol" })
 
         const activeFarms = await db
           .select({
-            region: farms.region,
+            zoneId: farms.zoneId,
             farmId: farms.id,
             ccPerWeek: applicationsAuditFieldsCRS.netCarbonCreditEarningWeekly,
           })
@@ -270,34 +270,41 @@ export const polRouter = new Elysia({ prefix: "/pol" })
           )
           .where(sql`${applications.paymentAmount}::numeric > 0`);
 
-        const ccByRegion = new Map<string, Decimal>();
-        const countByRegion = new Map<string, number>();
+        const ccByZoneId = new Map<number, Decimal>();
+        const countByZoneId = new Map<number, number>();
         for (const f of activeFarms) {
-          const region = f.region;
-          if (!region || region === "__UNSET__") continue;
+          const zoneId = Number(f.zoneId);
+          if (!Number.isFinite(zoneId)) continue;
           const cc = new Decimal(String(f.ccPerWeek ?? "0"));
-          ccByRegion.set(region, (ccByRegion.get(region) ?? new Decimal(0)).add(cc));
-          countByRegion.set(region, (countByRegion.get(region) ?? 0) + 1);
+          ccByZoneId.set(
+            zoneId,
+            (ccByZoneId.get(zoneId) ?? new Decimal(0)).add(cc)
+          );
+          countByZoneId.set(zoneId, (countByZoneId.get(zoneId) ?? 0) + 1);
         }
 
         const stakeRows = await db
           .select()
           .from(gctlStakedByRegionWeek)
           .where(eq(gctlStakedByRegionWeek.weekNumber, endWeek));
-        const stakeByRegion = new Map<string, string>();
+        const stakeByZoneId = new Map<number, string>();
         for (const s of stakeRows) {
-          stakeByRegion.set(s.region, String(s.gctlStakedRaw));
+          const zoneId = Number(s.region);
+          if (!Number.isFinite(zoneId)) continue;
+          stakeByZoneId.set(zoneId, String(s.gctlStakedRaw));
         }
 
-        return regionAgg.map((r) => {
-          const cc = ccByRegion.get(r.region) ?? new Decimal(0);
+        return regionAgg.flatMap((r) => {
+          const zoneId = Number(r.region);
+          if (!Number.isFinite(zoneId)) return [];
+          const cc = ccByZoneId.get(zoneId) ?? new Decimal(0);
           return {
-            region: r.region,
+            zone_id: zoneId,
             lifetime_lq: r.lifetime,
             ninety_day_lq: r.ninety,
             cc_per_week: cc.toString(),
-            farm_count: countByRegion.get(r.region) ?? 0,
-            staked_gctl: stakeByRegion.get(r.region) ?? "0",
+            farm_count: countByZoneId.get(zoneId) ?? 0,
+            staked_gctl: stakeByZoneId.get(zoneId) ?? "0",
           };
         });
       } catch (e) {

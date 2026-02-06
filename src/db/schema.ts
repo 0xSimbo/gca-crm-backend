@@ -2632,9 +2632,12 @@ export const gctlStakedByRegionWeek = pgTable(
   "gctl_staked_by_region_week",
   {
     weekNumber: integer("week_number").notNull(),
+    // NOTE: This stores the numeric `zoneId` as a string for backward compatibility.
+    // API surfaces it as `zone_id: number`.
     region: varchar("region", { length: 255 }).notNull(),
+    // From weekly report `zoneStakeMap.totalStaked`.
     gctlStakedRaw: numeric("gctl_staked_raw", { precision: 78, scale: 0 })
-      .notNull(), // 18 decimals atomic
+      .notNull(),
     fetchedAt: timestamp("fetched_at").notNull().defaultNow(),
   },
   (t) => ({
@@ -2658,6 +2661,8 @@ export const polRevenueByRegionWeek = pgTable(
   "pol_revenue_by_region_week",
   {
     weekNumber: integer("week_number").notNull(),
+    // NOTE: This stores the numeric `zoneId` as a string for backward compatibility.
+    // API surfaces it as `zone_id: number`.
     region: varchar("region", { length: 255 }).notNull(),
     totalLq: numeric("total_lq", { precision: 78, scale: 0 }).notNull(),
     minerSalesLq: numeric("miner_sales_lq", { precision: 78, scale: 0 })

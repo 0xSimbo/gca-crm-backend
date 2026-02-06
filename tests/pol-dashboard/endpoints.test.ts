@@ -29,7 +29,7 @@ describe("PoL Dashboard: endpoint integration-ish", () => {
   // Use far-future weeks/dates to avoid colliding with real data in a shared dev DB.
   const completedWeek = 9_999;
   const nowUnixSeconds = GENESIS_TIMESTAMP + (completedWeek + 1) * 604800 + 123;
-  const testRegion = "__test_region__";
+  const testZoneId = 9_999;
   const testWeeks = [completedWeek - 1, completedWeek];
   const vestingDates = ["2998-01-01", "2999-01-01"];
 
@@ -40,7 +40,7 @@ describe("PoL Dashboard: endpoint integration-ish", () => {
       .where(
         and(
           inArray(polRevenueByRegionWeek.weekNumber, testWeeks),
-          eq(polRevenueByRegionWeek.region, testRegion)
+          eq(polRevenueByRegionWeek.region, String(testZoneId))
         )
       );
     await db
@@ -57,7 +57,7 @@ describe("PoL Dashboard: endpoint integration-ish", () => {
       .where(
         and(
           eq(gctlStakedByRegionWeek.weekNumber, completedWeek),
-          eq(gctlStakedByRegionWeek.region, testRegion)
+          eq(gctlStakedByRegionWeek.region, String(testZoneId))
         )
       );
   });
@@ -69,7 +69,7 @@ describe("PoL Dashboard: endpoint integration-ish", () => {
       .where(
         and(
           inArray(polRevenueByRegionWeek.weekNumber, testWeeks),
-          eq(polRevenueByRegionWeek.region, testRegion)
+          eq(polRevenueByRegionWeek.region, String(testZoneId))
         )
       );
     await db
@@ -86,7 +86,7 @@ describe("PoL Dashboard: endpoint integration-ish", () => {
       .where(
         and(
           eq(gctlStakedByRegionWeek.weekNumber, completedWeek),
-          eq(gctlStakedByRegionWeek.region, testRegion)
+          eq(gctlStakedByRegionWeek.region, String(testZoneId))
         )
       );
   });
@@ -134,8 +134,8 @@ describe("PoL Dashboard: endpoint integration-ish", () => {
 
   it("GET /pol/revenue/aggregate uses snapshots for revenue + yield + active farm count", async () => {
     await db.insert(polRevenueByRegionWeek).values([
-      { weekNumber: completedWeek - 1, region: testRegion, totalLq: "100", minerSalesLq: "100", gctlMintsLq: "0" },
-      { weekNumber: completedWeek, region: testRegion, totalLq: "200", minerSalesLq: "0", gctlMintsLq: "200" },
+      { weekNumber: completedWeek - 1, region: String(testZoneId), totalLq: "100", minerSalesLq: "100", gctlMintsLq: "0" },
+      { weekNumber: completedWeek, region: String(testZoneId), totalLq: "200", minerSalesLq: "0", gctlMintsLq: "200" },
     ]);
 
     await db.insert(polYieldWeek).values({
@@ -162,13 +162,13 @@ describe("PoL Dashboard: endpoint integration-ish", () => {
     });
   });
 
-  it("GET /pol/revenue/regions returns region aggregates and staked_gctl for latest week", async () => {
+  it("GET /pol/revenue/regions returns zone aggregates and staked_gctl for latest week", async () => {
     await db.insert(polRevenueByRegionWeek).values([
-      { weekNumber: completedWeek, region: testRegion, totalLq: "200", minerSalesLq: "0", gctlMintsLq: "200" },
+      { weekNumber: completedWeek, region: String(testZoneId), totalLq: "200", minerSalesLq: "0", gctlMintsLq: "200" },
     ]);
     await db.insert(gctlStakedByRegionWeek).values({
       weekNumber: completedWeek,
-      region: testRegion,
+      region: String(testZoneId),
       gctlStakedRaw: "123",
       fetchedAt: new Date(),
     });
@@ -177,7 +177,7 @@ describe("PoL Dashboard: endpoint integration-ish", () => {
       const res = await app.handle(new Request("http://localhost/pol/revenue/regions?range=90d"));
       expect(res.status).toBe(200);
       const json = await res.json();
-      const row = json.find((r: any) => r.region === testRegion);
+      const row = json.find((r: any) => r.zone_id === testZoneId);
       expect(row).toBeTruthy();
       expect(row.staked_gctl).toBe("123");
     });

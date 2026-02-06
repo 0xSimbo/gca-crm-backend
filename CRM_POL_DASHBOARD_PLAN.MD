@@ -48,14 +48,14 @@ CRM should periodically ingest PoL yield and store weekly / 13w aggregates for d
    - Expect temporary lag/zero values immediately after sales; accept short-term inaccuracies.
    - Seed with the initial mapping in section **10** below (`CASH_BOUNTY_BY_APPLICATION_ID`).
 3. **GCTL mints**
-   - Source: **Control API** `GET /events/minted` (see `glow-control-backend/src/routers/control/router.ts`)
+   - Source: **Weekly report JSON** `weekly-report-week-${week}.json` → `controlMintedEvents`
    - Mint USD value
    - Timestamp
-   - Region attribution by **staked GCTL**
+   - Zone attribution by **staked GCTL**
 4. **GCTL staking by region**
-   - Source: **Control API** `GET /regions/active/summary?epochs=13` (see `glow-control-backend/src/routers/regions/router.ts`)
-   - Staked GCTL per region (for allocation)
-   - Requires Control API update to support `epochs` param (see `glow-control-backend/CONTROL_GCTL_HISTORY_PLAN.MD`)
+   - Source: **Weekly report JSON** `weekly-report-week-${week}.json` → `zoneStakeMap`
+   - Use `zoneStakeMap.totalStaked`
+   - Staked GCTL per `zoneId` (for allocation)
 5. **Impact Credits (ICs/CCs)**
    - Canonical weekly IC source: `applications_audit_fields_crs.netCarbonCreditEarningWeekly`
    - Treat as **average weekly rate** per farm (constant across weeks)
@@ -76,24 +76,24 @@ CRM should periodically ingest PoL yield and store weekly / 13w aggregates for d
 2. Convert USD to lq using **GLW price at time of sale**:
    - `miner_lq = net_miner_sales_usd / (2 * sqrt(glw_price_at_sale))`
 2. Bucket evenly into 10 weeks: `weekly_bucket = miner_lq / 10`
-3. Allocate 100% to the sale’s region
-4. Within region, distribute by **Impact Credits per farm for that week**
+3. Allocate 100% to the sale’s `zone_id`
+4. Within zone, distribute by **Impact Credits per farm for that week**
 
 ### 3.3 GCTL Mint Attribution
 1. Convert mint USD to lq (same formula)
 2. Bucket evenly into 10 weeks
 3. Allocate to region by **staked GCTL share** for that week
-4. Within region, distribute by **Impact Credits per farm**
+4. Within zone, distribute by **Impact Credits per farm**
 
-### 3.4 GCTL Yield Attribution (if required)
+### 3.4 GCTL Yield Attribution (required)
 - Yield sources: PoL yield from Ponder
 - Bucket over 10 weeks
-- Region allocation by **staked GCTL**
+- Zone allocation by **staked GCTL**
 - Farm allocation by **Impact Credits**
 
 ### 3.5 Aggregates
 - **Per farm**: lifetime lq, 90d lq (13 weeks), cc/week
-- **Per region**: lifetime lq, 90d lq, cc/week, farm count, staked GCTL
+- **Per zone**: lifetime lq, 90d lq, cc/week, farm count, staked GCTL
 - **Aggregate KPIs**: lifetime revenue, 90d revenue, 90d PoL yield, active farms
 
 ## 4) FMI Inputs (No Fallback)
@@ -125,9 +125,9 @@ CRM should expose vesting unlock schedule for the Unlock/FDV widget.
 - `GET /pol/revenue/aggregate?range=90d`
   - `lifetime_lq`, `ninety_day_lq`, `ninety_day_yield_lq`, `ninety_day_apy`, `active_farms`
 - `GET /pol/revenue/farms?range=90d`
-  - array of farms: `farm_id`, `name`, `region`, `panels`, `lifetime_lq`, `ninety_day_lq`, `ninety_day_delta_pct`, `credits_total`, `cc_per_week`, `image_url`
+  - array of farms: `farm_id`, `name`, `zone_id`, `panels`, `lifetime_lq`, `ninety_day_lq`, `ninety_day_delta_pct`, `credits_total`, `cc_per_week`, `image_url`
 - `GET /pol/revenue/regions?range=90d`
-  - array of regions: `region`, `lifetime_lq`, `ninety_day_lq`, `cc_per_week`, `farm_count`, `staked_gctl`
+  - array of zones: `zone_id`, `lifetime_lq`, `ninety_day_lq`, `cc_per_week`, `farm_count`, `staked_gctl`
 - `GET /farms/active-count`
   - `{ count: number }` where PD > 0
 

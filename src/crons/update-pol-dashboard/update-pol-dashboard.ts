@@ -1,5 +1,6 @@
 import { and, eq, gte, inArray, lt, sql } from "drizzle-orm";
 import pLimit from "p-limit";
+import { createHash } from "crypto";
 import { db } from "../../db/db";
 import {
   applications,
@@ -26,10 +27,7 @@ import { allocateAmountByWeights } from "../../pol/math/allocation";
 import { Decimal } from "../../pol/math/decimal";
 import { usdUsdc6ToLqAtomic, lqAtomicToUsdUsdc6 } from "../../pol/math/usdLq";
 import { computeFmiMetrics } from "../../pol/fmi/computeFmiMetrics";
-import {
-  fetchControlMintedEvents,
-  fetchControlRegionsActiveSummary,
-} from "../../pol/clients/control";
+import { fetchWeeklyReportWeek } from "../../pol/clients/weekly-report";
 import {
   fetchPonderFmiSellPressure,
   fetchPonderPolYield,
@@ -70,91 +68,18 @@ function parseUsdDollarsToUsdc6Atomic(dollars: unknown): bigint {
 
 type ActiveFarmWeightRow = {
   farmId: string;
-  region: string;
+  zoneId: number;
   ccPerWeekScaled5: bigint;
 };
 
-function summarizeSetDiff(params: {
-  leftName: string;
-  rightName: string;
-  left: Set<string>;
-  right: Set<string>;
-  sampleSize?: number;
-}): { missingFromRight: string[]; missingFromLeft: string[] } {
-  const sampleSize = params.sampleSize ?? 10;
-  const missingFromRight: string[] = [];
-  const missingFromLeft: string[] = [];
-
-  for (const v of Array.from(params.left).sort()) {
-    if (!params.right.has(v)) {
-      missingFromRight.push(v);
-      if (missingFromRight.length >= sampleSize) break;
-    }
-  }
-  for (const v of Array.from(params.right).sort()) {
-    if (!params.left.has(v)) {
-      missingFromLeft.push(v);
-      if (missingFromLeft.length >= sampleSize) break;
-    }
-  }
-
-  return { missingFromRight, missingFromLeft };
-}
-
-function logRegionAlignmentDiagnostics(params: {
-  startWeek: number;
-  endWeek: number;
-  regionsWithActiveFarms: Set<string>;
-  stakeByWeek: Map<number, Map<string, bigint>>;
-}) {
-  const regionsWithStake = new Set<string>();
-  for (const [, byRegion] of params.stakeByWeek.entries()) {
-    for (const r of byRegion.keys()) regionsWithStake.add(r);
-  }
-
-  const diff = summarizeSetDiff({
-    leftName: "farms.region",
-    rightName: "control.region.code",
-    left: params.regionsWithActiveFarms,
-    right: regionsWithStake,
-  });
-
-  const weeksMissingStake: number[] = [];
-  for (let w = params.startWeek; w <= params.endWeek; w++) {
-    const weights = params.stakeByWeek.get(w);
-    if (!weights || weights.size === 0) {
-      weeksMissingStake.push(w);
-      continue;
-    }
-    let sum = 0n;
-    for (const v of weights.values()) sum += v;
-    if (sum === 0n) weeksMissingStake.push(w);
-  }
-
-  if (
-    diff.missingFromRight.length > 0 ||
-    diff.missingFromLeft.length > 0 ||
-    weeksMissingStake.length > 0
-  ) {
-    console.warn("[PoL Dashboard] Region alignment diagnostics", {
-      weekRange: { startWeek: params.startWeek, endWeek: params.endWeek },
-      note: "If control.region.code != farms.region, GCTL mint attribution by region may be wrong or skipped.",
-      farmsRegionsMissingInControlStake: diff.missingFromLeft,
-      controlStakeRegionsMissingInFarms: diff.missingFromRight,
-      weeksMissingStakeDataSample: weeksMissingStake.slice(0, 10),
-      weeksMissingStakeDataCount: weeksMissingStake.length,
-    });
-  }
-}
-
 async function loadActiveFarmWeights(): Promise<{
   farms: ActiveFarmWeightRow[];
-  weightsByRegion: Map<string, Map<string, bigint>>;
+  weightsByZoneId: Map<number, Map<string, bigint>>;
 }> {
   const rows = await db
     .select({
       farmId: farms.id,
-      region: farms.region,
+      zoneId: farms.zoneId,
       paymentAmount: applications.paymentAmount,
       ccPerWeek: applicationsAuditFieldsCRS.netCarbonCreditEarningWeekly,
     })
@@ -167,28 +92,28 @@ async function loadActiveFarmWeights(): Promise<{
     .where(sql`${applications.paymentAmount}::numeric > 0`);
 
   const active: ActiveFarmWeightRow[] = [];
-  const weightsByRegion = new Map<string, Map<string, bigint>>();
+  const weightsByZoneId = new Map<number, Map<string, bigint>>();
   for (const r of rows) {
-    const region = r.region ?? "__UNSET__";
-    if (region === "__UNSET__") continue;
+    const zoneId = Number(r.zoneId);
+    if (!Number.isFinite(zoneId)) continue;
     const ccScaled = parseCrsCcPerWeekToScaledInt(r.ccPerWeek);
     const farmRow: ActiveFarmWeightRow = {
       farmId: r.farmId,
-      region,
+      zoneId,
       ccPerWeekScaled5: ccScaled,
     };
     active.push(farmRow);
-    const map = weightsByRegion.get(region) ?? new Map<string, bigint>();
+    const map = weightsByZoneId.get(zoneId) ?? new Map<string, bigint>();
     map.set(r.farmId, ccScaled);
-    weightsByRegion.set(region, map);
+    weightsByZoneId.set(zoneId, map);
   }
 
-  return { farms: active, weightsByRegion };
+  return { farms: active, weightsByZoneId };
 }
 
 type MinerSplitRow = {
   applicationId: string;
-  region: string;
+  zoneId: number;
   timestamp: number;
   amountRaw: string; // USDC6 atomic
 };
@@ -200,7 +125,7 @@ async function loadMiningCenterSplits(params: {
   const rows = await db
     .select({
       applicationId: fractions.applicationId,
-      region: farms.region,
+      zoneId: farms.zoneId,
       timestamp: fractionSplits.timestamp,
       amountRaw: fractionSplits.amount,
     })
@@ -218,7 +143,7 @@ async function loadMiningCenterSplits(params: {
 
   return rows.map((r) => ({
     applicationId: r.applicationId,
-    region: r.region,
+    zoneId: Number(r.zoneId),
     timestamp: r.timestamp,
     amountRaw: String(r.amountRaw),
   }));
@@ -307,80 +232,111 @@ async function upsertPolYieldSnapshot(params: {
   return { indexingComplete: res.indexingComplete };
 }
 
-async function ingestControlMintEvents(): Promise<{ upserted: number }> {
-  const LIMIT = 200;
-  let page = 1;
-  let upserted = 0;
-  let consecutiveNoInsertPages = 0;
-  const MAX_PAGES = 2000;
-  while (true) {
-    const res = await fetchControlMintedEvents({ page, limit: LIMIT });
-    if (!res.events || res.events.length === 0) break;
+async function ingestWeeklyReportForWeek(params: {
+  weekNumber: number;
+}): Promise<{ mintsUpserted: number; stakeUpserted: number }> {
+  const report = await fetchWeeklyReportWeek({ weekNumber: params.weekNumber });
 
-    // Note: This assumes the Control API returns newest-first pages.
-    // We avoid timestamp-based early stops (can lose events), and instead stop only after
-    // a few consecutive pages with zero new inserts.
-    const inserted = await db
+  // Stake snapshot (zoneStakeMap is a per-week snapshot).
+  const zoneStakeMap = Array.isArray(report.zoneStakeMap)
+    ? report.zoneStakeMap
+    : [];
+  if (zoneStakeMap.length > 0) {
+    await db
+      .insert(gctlStakedByRegionWeek)
+      .values(
+        zoneStakeMap.map(([zoneId, stake]) => ({
+          weekNumber: params.weekNumber,
+          region: String(zoneId),
+          gctlStakedRaw: String(stake.totalStaked ?? "0"),
+          fetchedAt: new Date(),
+        }))
+      )
+      .onConflictDoUpdate({
+        target: [
+          gctlStakedByRegionWeek.weekNumber,
+          gctlStakedByRegionWeek.region,
+        ],
+        set: {
+          gctlStakedRaw: sql`excluded.gctl_staked_raw`,
+          fetchedAt: new Date(),
+        },
+      });
+  }
+
+  function normalizeMintEventId(txId: unknown, logIndex: unknown): string {
+    const rawTxId = String(txId ?? "");
+    const li = Number(logIndex ?? 0);
+    if (/^0x[0-9a-fA-F]{64}$/.test(rawTxId)) return rawTxId;
+    // Synthetic ids (premints, etc) won't fit DB constraints. Hash deterministically into 0x + 64 hex chars.
+    const digest = createHash("sha256")
+      .update(`${rawTxId}:${Number.isFinite(li) ? li : 0}`)
+      .digest("hex");
+    return `0x${digest}`;
+  }
+
+  // Mint events (append-only, keyed by txId).
+  const minted = Array.isArray(report.controlMintedEvents)
+    ? report.controlMintedEvents
+    : [];
+  if (minted.length > 0) {
+    await db
       .insert(gctlMintEvents)
       .values(
-        res.events.map((ev) => ({
-          txId: ev.txId,
-          wallet: ev.wallet,
-          epoch: ev.epoch,
-          currency: ev.currency,
-          amountRaw: ev.amountRaw,
-          gctlMintedRaw: ev.gctlMinted,
-          ts: new Date(ev.ts),
+        minted.map((ev) => ({
+          txId: normalizeMintEventId(ev.txId, ev.logIndex),
+          wallet: String(ev.wallet),
+          epoch: Number(ev.epoch),
+          currency: String(ev.currency),
+          amountRaw: String(ev.amountRaw),
+          gctlMintedRaw: String(ev.gctlMinted),
+          ts: new Date(String(ev.ts)),
           createdAt: new Date(),
         }))
       )
-      .onConflictDoNothing()
-      .returning({ txId: gctlMintEvents.txId });
-    const insertedThisPage = inserted.length;
-    upserted += insertedThisPage;
-
-    // If we are repeatedly seeing pages with no *new* inserts, stop early.
-    // To avoid data-loss (same timestamp ordering, etc.), we do not use timestamps as a watermark.
-    // Instead we rely on "eventually we hit already-indexed pages" in a newest-first API.
-    if (insertedThisPage === 0) consecutiveNoInsertPages++;
-    else consecutiveNoInsertPages = 0;
-    if (consecutiveNoInsertPages >= 3) break;
-
-    page++;
-    if (page > MAX_PAGES) break; // safety valve
+      .onConflictDoUpdate({
+        target: gctlMintEvents.txId,
+        set: {
+          wallet: sql`excluded.wallet`,
+          epoch: sql`excluded.epoch`,
+          currency: sql`excluded.currency`,
+          amountRaw: sql`excluded.amount_raw`,
+          gctlMintedRaw: sql`excluded.gctl_minted_raw`,
+          ts: sql`excluded.ts`,
+        },
+      });
   }
 
-  return { upserted };
+  return { mintsUpserted: minted.length, stakeUpserted: zoneStakeMap.length };
 }
 
-async function ingestControlGctlStakeByRegion(params: {
-  epochs: number;
-}): Promise<{ upserted: number }> {
-  const res = await fetchControlRegionsActiveSummary({ epochs: params.epochs });
-  let upserted = 0;
+async function ingestWeeklyReports(params: {
+  startWeek: number;
+  endWeek: number;
+}): Promise<{ mintsUpserted: number; stakeUpserted: number }> {
+  const limit = pLimit(5);
+  let mintsUpserted = 0;
+  let stakeUpserted = 0;
 
-  // Persist region code (must match farms.region for attribution).
-  for (const region of res.regions ?? []) {
-    for (const row of region.data ?? []) {
-      await db
-        .insert(gctlStakedByRegionWeek)
-        .values({
-          weekNumber: row.epoch,
-          region: region.code,
-          gctlStakedRaw: row.gctlStaked,
-          fetchedAt: new Date(),
-        })
-        .onConflictDoUpdate({
-          target: [gctlStakedByRegionWeek.weekNumber, gctlStakedByRegionWeek.region],
-          set: {
-            gctlStakedRaw: row.gctlStaked,
-            fetchedAt: new Date(),
-          },
-        });
-      upserted++;
-    }
+  const tasks: Array<Promise<void>> = [];
+  for (let w = params.startWeek; w <= params.endWeek; w++) {
+    tasks.push(
+      limit(async () => {
+        try {
+          const res = await ingestWeeklyReportForWeek({ weekNumber: w });
+          mintsUpserted += res.mintsUpserted;
+          stakeUpserted += res.stakeUpserted;
+        } catch (e) {
+          console.warn("[PoL Dashboard] weekly report ingest failed", {
+            week: w,
+            error: e instanceof Error ? e.message : String(e),
+          });
+        }
+      })
+    );
   }
-  return { upserted };
+  await Promise.all(tasks);
+  return { mintsUpserted, stakeUpserted };
 }
 
 async function recomputeRevenueSnapshots(params: {
@@ -391,7 +347,7 @@ async function recomputeRevenueSnapshots(params: {
   const startTs = getProtocolWeekStartTimestamp(earliestWeekNeeded);
   const endTs = getProtocolWeekEndTimestamp(params.endWeek);
 
-  const [{ farms: activeFarms, weightsByRegion }, bounties, splits, stakeRows, mints, yieldRows] =
+  const [{ farms: activeFarms, weightsByZoneId }, bounties, splits, stakeRows, mints, yieldRows] =
     await Promise.all([
       loadActiveFarmWeights(),
       loadBountiesByApplicationId(),
@@ -425,21 +381,16 @@ async function recomputeRevenueSnapshots(params: {
         ),
     ]);
 
-  // stakeByWeek[week] => weightsByRegionCode(region => gctlStakedRaw)
-  const stakeByWeek = new Map<number, Map<string, bigint>>();
+  // stakeByWeek[week] => weightsByZoneId(zoneId => totalStakedRaw)
+  const stakeByWeek = new Map<number, Map<number, bigint>>();
   for (const s of stakeRows) {
     const w = s.weekNumber;
-    const map = stakeByWeek.get(w) ?? new Map<string, bigint>();
-    map.set(s.region, parseNumericToBigInt(s.gctlStakedRaw));
+    const zoneId = Number(s.region);
+    if (!Number.isFinite(zoneId)) continue;
+    const map = stakeByWeek.get(w) ?? new Map<number, bigint>();
+    map.set(zoneId, parseNumericToBigInt(s.gctlStakedRaw));
     stakeByWeek.set(w, map);
   }
-
-  logRegionAlignmentDiagnostics({
-    startWeek: params.startWeek,
-    endWeek: params.endWeek,
-    regionsWithActiveFarms: new Set<string>(Array.from(weightsByRegion.keys())),
-    stakeByWeek,
-  });
 
   const splitsByApplication = new Map<string, MinerSplitRow[]>();
   for (const s of splits) {
@@ -468,16 +419,16 @@ async function recomputeRevenueSnapshots(params: {
   }
 
   // Accumulators
-  const regionWeekMiner = new Map<string, Map<number, bigint>>();
-  const regionWeekMints = new Map<string, Map<number, bigint>>();
-  const regionWeekYield = new Map<string, Map<number, bigint>>();
+  const zoneWeekMiner = new Map<number, Map<number, bigint>>();
+  const zoneWeekMints = new Map<number, Map<number, bigint>>();
+  const zoneWeekYield = new Map<number, Map<number, bigint>>();
   const farmWeekMiner = new Map<string, Map<number, bigint>>();
   const farmWeekMints = new Map<string, Map<number, bigint>>();
   const farmWeekYield = new Map<string, Map<number, bigint>>();
 
-  function addToNested(
-    outer: Map<string, Map<number, bigint>>,
-    key: string,
+  function addToNested<K>(
+    outer: Map<K, Map<number, bigint>>,
+    key: K,
     week: number,
     amount: bigint
   ) {
@@ -497,7 +448,7 @@ async function recomputeRevenueSnapshots(params: {
       if (netUsd === 0n) continue;
 
       const saleWeek = getProtocolWeekForTimestamp(split.timestamp);
-      const region = split.region;
+      const zoneId = split.zoneId;
       minerTasks.push(
         limit(async () => {
           const spot = await getSpotPriceAtTimestamp(split.timestamp);
@@ -513,9 +464,9 @@ async function recomputeRevenueSnapshots(params: {
 
           for (const b of buckets) {
             if (b.week < params.startWeek || b.week > params.endWeek) continue;
-            addToNested(regionWeekMiner, region, b.week, b.amount);
+            addToNested(zoneWeekMiner, zoneId, b.week, b.amount);
 
-            const farmWeights = weightsByRegion.get(region);
+            const farmWeights = weightsByZoneId.get(zoneId);
             if (!farmWeights || farmWeights.size === 0) continue;
             const allocations = allocateAmountByWeights({
               amount: b.amount,
@@ -563,13 +514,13 @@ async function recomputeRevenueSnapshots(params: {
             amount: b.amount,
             weightsByKey: stakeWeights,
           });
-          for (const [region, regionAmt] of regionAlloc.entries()) {
-            addToNested(regionWeekMints, region, b.week, regionAmt);
+          for (const [zoneId, zoneAmt] of regionAlloc.entries()) {
+            addToNested(zoneWeekMints, zoneId, b.week, zoneAmt);
 
-            const farmWeights = weightsByRegion.get(region);
+            const farmWeights = weightsByZoneId.get(zoneId);
             if (!farmWeights || farmWeights.size === 0) continue;
             const farmAlloc = allocateAmountByWeights({
-              amount: regionAmt,
+              amount: zoneAmt,
               weightsByKey: farmWeights,
             });
             for (const [farmId, farmAmt] of farmAlloc.entries()) {
@@ -608,13 +559,13 @@ async function recomputeRevenueSnapshots(params: {
         amount: b.amount,
         weightsByKey: stakeWeights,
       });
-      for (const [region, regionAmt] of regionAlloc.entries()) {
-        addToNested(regionWeekYield, region, b.week, regionAmt);
+      for (const [zoneId, zoneAmt] of regionAlloc.entries()) {
+        addToNested(zoneWeekYield, zoneId, b.week, zoneAmt);
 
-        const farmWeights = weightsByRegion.get(region);
+        const farmWeights = weightsByZoneId.get(zoneId);
         if (!farmWeights || farmWeights.size === 0) continue;
         const farmAlloc = allocateAmountByWeights({
-          amount: regionAmt,
+          amount: zoneAmt,
           weightsByKey: farmWeights,
         });
         for (const [farmId, farmAmt] of farmAlloc.entries()) {
@@ -644,9 +595,11 @@ async function recomputeRevenueSnapshots(params: {
       );
 
     let regionRows = 0;
-    for (const [region, byWeekMiner] of regionWeekMiner.entries()) {
-      const byWeekMints = regionWeekMints.get(region) ?? new Map<number, bigint>();
-      const byWeekYield = regionWeekYield.get(region) ?? new Map<number, bigint>();
+    for (const [zoneId, byWeekMiner] of zoneWeekMiner.entries()) {
+      const byWeekMints =
+        zoneWeekMints.get(zoneId) ?? new Map<number, bigint>();
+      const byWeekYield =
+        zoneWeekYield.get(zoneId) ?? new Map<number, bigint>();
       for (let w = params.startWeek; w <= params.endWeek; w++) {
         const miner = byWeekMiner.get(w) ?? 0n;
         const mints = byWeekMints.get(w) ?? 0n;
@@ -655,7 +608,7 @@ async function recomputeRevenueSnapshots(params: {
         if (total === 0n) continue;
         await tx.insert(polRevenueByRegionWeek).values({
           weekNumber: w,
-          region,
+          region: String(zoneId),
           totalLq: total.toString(),
           minerSalesLq: miner.toString(),
           gctlMintsLq: mints.toString(),
@@ -667,15 +620,15 @@ async function recomputeRevenueSnapshots(params: {
     }
 
     // Regions that only have mints.
-    for (const [region, byWeekMints] of regionWeekMints.entries()) {
-      if (regionWeekMiner.has(region)) continue;
-      if (regionWeekYield.has(region)) continue;
+    for (const [zoneId, byWeekMints] of zoneWeekMints.entries()) {
+      if (zoneWeekMiner.has(zoneId)) continue;
+      if (zoneWeekYield.has(zoneId)) continue;
       for (let w = params.startWeek; w <= params.endWeek; w++) {
         const mints = byWeekMints.get(w) ?? 0n;
         if (mints === 0n) continue;
         await tx.insert(polRevenueByRegionWeek).values({
           weekNumber: w,
-          region,
+          region: String(zoneId),
           totalLq: mints.toString(),
           minerSalesLq: "0",
           gctlMintsLq: mints.toString(),
@@ -687,14 +640,14 @@ async function recomputeRevenueSnapshots(params: {
     }
 
     // Regions that only have yield.
-    for (const [region, byWeekYield] of regionWeekYield.entries()) {
-      if (regionWeekMiner.has(region) || regionWeekMints.has(region)) continue;
+    for (const [zoneId, byWeekYield] of zoneWeekYield.entries()) {
+      if (zoneWeekMiner.has(zoneId) || zoneWeekMints.has(zoneId)) continue;
       for (let w = params.startWeek; w <= params.endWeek; w++) {
         const yieldLq = byWeekYield.get(w) ?? 0n;
         if (yieldLq === 0n) continue;
         await tx.insert(polRevenueByRegionWeek).values({
           weekNumber: w,
-          region,
+          region: String(zoneId),
           totalLq: yieldLq.toString(),
           minerSalesLq: "0",
           gctlMintsLq: "0",
@@ -908,8 +861,6 @@ async function recomputeFmiWeeklyInputs(params: {
 export async function updatePolDashboard(params?: {
   // When provided, forces recompute from that week up to the latest completed week.
   backfillFromWeek?: number;
-  // How many epochs to fetch from Control API for staking history.
-  stakeEpochs?: number;
 }): Promise<{
   completedWeek: number;
   polYieldIndexedComplete: boolean;
@@ -920,12 +871,6 @@ export async function updatePolDashboard(params?: {
 }> {
   const completedWeek = getCompletedWeekNumber();
   const polYield = await upsertPolYieldSnapshot({ weekNumber: completedWeek });
-
-  const gctlMints = await ingestControlMintEvents();
-  const stakeEpochs =
-    params?.stakeEpochs ??
-    Math.min(Number(process.env.POL_DASHBOARD_STAKE_EPOCHS ?? 260), completedWeek + 1);
-  const gctlStake = await ingestControlGctlStakeByRegion({ epochs: stakeEpochs });
 
   // Default to recomputing a window big enough to cover 10-week buckets and 13-week rollups.
   const hasExistingRevenue =
@@ -940,6 +885,13 @@ export async function updatePolDashboard(params?: {
     (hasExistingRevenue ? Math.max(0, completedWeek - 40) : 0);
   const endWeek = completedWeek;
 
+  // Ingest enough history to cover 10-week bucketing that backfills into the requested range.
+  const ingestStartWeek = Math.max(0, startWeek - 9);
+  const ingest = await ingestWeeklyReports({
+    startWeek: ingestStartWeek,
+    endWeek,
+  });
+
   await recomputeRevenueSnapshots({ startWeek, endWeek });
 
   const fmiStart = Math.max(0, completedWeek - 20);
@@ -948,8 +900,8 @@ export async function updatePolDashboard(params?: {
   return {
     completedWeek,
     polYieldIndexedComplete: polYield.indexingComplete,
-    gctlMintsUpserted: gctlMints.upserted,
-    gctlStakeUpserted: gctlStake.upserted,
+    gctlMintsUpserted: ingest.mintsUpserted,
+    gctlStakeUpserted: ingest.stakeUpserted,
     revenueRange: { startWeek, endWeek },
     fmiRange: { startWeek: fmiStart, endWeek },
   };
