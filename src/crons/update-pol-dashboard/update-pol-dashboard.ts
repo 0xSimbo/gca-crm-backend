@@ -285,6 +285,7 @@ async function ingestWeeklyReportForWeek(params: {
       .values(
         minted.map((ev) => ({
           txId: normalizeMintEventId(ev.txId, ev.logIndex),
+          logIndex: Number(ev.logIndex ?? 0),
           wallet: String(ev.wallet),
           epoch: Number(ev.epoch),
           currency: String(ev.currency),
@@ -295,7 +296,7 @@ async function ingestWeeklyReportForWeek(params: {
         }))
       )
       .onConflictDoUpdate({
-        target: gctlMintEvents.txId,
+        target: [gctlMintEvents.txId, gctlMintEvents.logIndex],
         set: {
           wallet: sql`excluded.wallet`,
           epoch: sql`excluded.epoch`,
