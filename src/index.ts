@@ -38,6 +38,10 @@ import { updateImpactLeaderboard } from "./crons/update-impact-leaderboard";
 import { updateImpactLeaderboardByRegion } from "./crons/update-impact-leaderboard-by-region/update-impact-leaderboard-by-region";
 import { updatePowerByRegionByWeek } from "./crons/update-power-by-region-by-week/update-power-by-region-by-week";
 import { createSlackClient } from "./slack/create-slack-client";
+import { updatePolDashboard } from "./crons/update-pol-dashboard/update-pol-dashboard";
+import { polRouter } from "./routers/pol-router/polRouter";
+import { fmiRouter } from "./routers/fmi-router/fmiRouter";
+import { glwRouter } from "./routers/glw-router/glwRouter";
 
 const PORT = process.env.PORT || 3005;
 const app = new Elysia()
@@ -221,6 +225,21 @@ const app = new Elysia()
       },
     })
   )
+  .use(
+    cron({
+      name: "Update PoL Dashboard",
+      pattern: "0 1 * * 0", // Weekly on Sunday at 01:00 UTC (1 hour after protocol week rollover)
+      async run() {
+        try {
+          if (process.env.NODE_ENV === "production") {
+            await updatePolDashboard();
+          }
+        } catch (error) {
+          console.error("[Cron] Error updating PoL dashboard:", error);
+        }
+      },
+    })
+  )
   .get(
     "/trigger-merkle-root-cron",
     async ({
@@ -298,6 +317,17 @@ const app = new Elysia()
       return { message: "success" };
     }
   )
+  .get(
+    "/trigger-pol-dashboard-cron",
+    async ({
+      store: {
+        cron: { "Update PoL Dashboard": cronJob },
+      },
+    }) => {
+      await cronJob.trigger();
+      return { message: "success" };
+    }
+  )
   .use(protocolFeeRouter)
   .use(rewardsRouter)
   .use(accountsRouter)
@@ -317,6 +347,9 @@ const app = new Elysia()
   .use(impactRouter)
   .use(solarCollectorRouter)
   .use(referralRouter)
+  .use(polRouter)
+  .use(fmiRouter)
+  .use(glwRouter)
   .get("/update-rewards-for-current-week", async () => {
     //Will only work if the GCA has submitted the report for the current week.
     const currentWeek = getProtocolWeek();

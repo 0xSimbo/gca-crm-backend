@@ -706,9 +706,16 @@ export async function updatePolDashboard(params?: {
   const gctlStake = await ingestControlGctlStakeByRegion({ epochs: stakeEpochs });
 
   // Default to recomputing a window big enough to cover 10-week buckets and 13-week rollups.
+  const hasExistingRevenue =
+    (await db
+      .select({ c: sql<number>`count(*)` })
+      .from(polRevenueByRegionWeek)
+      .limit(1)
+      .then((r) => Number(r[0]?.c ?? 0))) > 0;
+
   const startWeek =
     params?.backfillFromWeek ??
-    Math.max(0, completedWeek - 40);
+    (hasExistingRevenue ? Math.max(0, completedWeek - 40) : 0);
   const endWeek = completedWeek;
 
   await recomputeRevenueSnapshots({ startWeek, endWeek });
