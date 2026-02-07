@@ -189,7 +189,7 @@ export const polRouter = new Elysia({ prefix: "/pol" })
           });
         }
 
-          return activeFarms.map((f) => {
+        return activeFarms.map((f) => {
           const ccPerWeek = String(f.ccPerWeek ?? "0");
           const cc = new Decimal(ccPerWeek);
           let auditWeek = endWeek;
