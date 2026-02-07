@@ -33,6 +33,7 @@ import {
   fetchPonderPolYield,
   fetchPonderSpotPriceByTimestamp,
 } from "../../pol/clients/ponder";
+import { computeRegionRevenueRows } from "../../pol/snapshots/regionRevenueRows";
 
 const POL_DASHBOARD_START_WEEK = 97;
 
@@ -597,69 +598,28 @@ async function recomputeRevenueSnapshots(params: {
         )
       );
 
-    let regionRows = 0;
-    for (const [zoneId, byWeekMiner] of zoneWeekMiner.entries()) {
-      const byWeekMints =
-        zoneWeekMints.get(zoneId) ?? new Map<number, bigint>();
-      const byWeekYield =
-        zoneWeekYield.get(zoneId) ?? new Map<number, bigint>();
-      for (let w = startWeek; w <= endWeek; w++) {
-        const miner = byWeekMiner.get(w) ?? 0n;
-        const mints = byWeekMints.get(w) ?? 0n;
-        const yieldLq = byWeekYield.get(w) ?? 0n;
-        const total = miner + mints + yieldLq;
-        if (total === 0n) continue;
-        await tx.insert(polRevenueByRegionWeek).values({
-          weekNumber: w,
-          region: String(zoneId),
-          totalLq: total.toString(),
-          minerSalesLq: miner.toString(),
-          gctlMintsLq: mints.toString(),
-          polYieldLq: yieldLq.toString(),
-          computedAt: new Date(),
-        });
-        regionRows++;
-      }
+    const computedAt = new Date();
+    const regionRowsToInsert = computeRegionRevenueRows({
+      startWeek,
+      endWeek,
+      zoneWeekMiner,
+      zoneWeekMints,
+      zoneWeekYield,
+    });
+    if (regionRowsToInsert.length > 0) {
+      await tx.insert(polRevenueByRegionWeek).values(
+        regionRowsToInsert.map((r) => ({
+          weekNumber: r.weekNumber,
+          region: String(r.zoneId),
+          totalLq: r.totalLq.toString(),
+          minerSalesLq: r.minerSalesLq.toString(),
+          gctlMintsLq: r.gctlMintsLq.toString(),
+          polYieldLq: r.polYieldLq.toString(),
+          computedAt,
+        }))
+      );
     }
-
-    // Regions that only have mints.
-    for (const [zoneId, byWeekMints] of zoneWeekMints.entries()) {
-      if (zoneWeekMiner.has(zoneId)) continue;
-      if (zoneWeekYield.has(zoneId)) continue;
-      for (let w = startWeek; w <= endWeek; w++) {
-        const mints = byWeekMints.get(w) ?? 0n;
-        if (mints === 0n) continue;
-        await tx.insert(polRevenueByRegionWeek).values({
-          weekNumber: w,
-          region: String(zoneId),
-          totalLq: mints.toString(),
-          minerSalesLq: "0",
-          gctlMintsLq: mints.toString(),
-          polYieldLq: "0",
-          computedAt: new Date(),
-        });
-        regionRows++;
-      }
-    }
-
-    // Regions that only have yield.
-    for (const [zoneId, byWeekYield] of zoneWeekYield.entries()) {
-      if (zoneWeekMiner.has(zoneId) || zoneWeekMints.has(zoneId)) continue;
-      for (let w = startWeek; w <= endWeek; w++) {
-        const yieldLq = byWeekYield.get(w) ?? 0n;
-        if (yieldLq === 0n) continue;
-        await tx.insert(polRevenueByRegionWeek).values({
-          weekNumber: w,
-          region: String(zoneId),
-          totalLq: yieldLq.toString(),
-          minerSalesLq: "0",
-          gctlMintsLq: "0",
-          polYieldLq: yieldLq.toString(),
-          computedAt: new Date(),
-        });
-        regionRows++;
-      }
-    }
+    const regionRows = regionRowsToInsert.length;
 
     let farmRows = 0;
     const farmIds = new Set<string>([
