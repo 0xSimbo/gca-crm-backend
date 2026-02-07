@@ -10,8 +10,8 @@ import { findFirstFarmIdByShortId } from "../../db/queries/farms/findFirstFarmId
 import { findFarmsByUserId } from "../../db/queries/farms/findFarmsByUserId";
 import { db } from "../../db/db";
 import { createHash } from "crypto"; // Node.js built-in
-import { farms } from "../../db/schema";
-import { eq } from "drizzle-orm";
+import { applications, farms } from "../../db/schema";
+import { eq, sql } from "drizzle-orm";
 import { getDeterministicStarName } from "./helpers";
 
 /**
@@ -40,6 +40,35 @@ export async function getUniqueStarNameForApplicationId(
 
 export const farmsRouter = new Elysia({ prefix: "/farms" })
   .use(bearerplugin())
+  .get(
+    "/active-count",
+    async ({ set }) => {
+      try {
+        const result = await db
+          .select({
+            count: sql<number>`count(distinct ${farms.id})`,
+          })
+          .from(farms)
+          .innerJoin(applications, eq(applications.farmId, farms.id))
+          .where(sql`${applications.paymentAmount}::numeric > 0`);
+
+        return { count: Number(result[0]?.count ?? 0) };
+      } catch (e) {
+        if (e instanceof Error) {
+          set.status = 400;
+          return { error: e.message };
+        }
+        set.status = 500;
+        return { error: "Internal Server Error" };
+      }
+    },
+    {
+      detail: {
+        summary: "Count active farms (PD > 0)",
+        tags: [TAG.FARMS],
+      },
+    }
+  )
   .get(
     "/regions",
     async ({ set }) => {

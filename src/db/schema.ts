@@ -2520,3 +2520,247 @@ export const ReferralPointsWeeklyRelations = relations(
     }),
   })
 );
+
+// ============================================
+// PoL Dashboard (CRM_POL_DASHBOARD_PLAN.MD)
+// ============================================
+
+/**
+ * Manual bounty payments keyed by applicationId.
+ * Stored in human USD with 2 decimals (e.g. 1500.00).
+ */
+export const polCashBounties = pgTable(
+  "pol_cash_bounties",
+  {
+    applicationId: text("application_id")
+      .primaryKey()
+      .notNull()
+      .references(() => applications.id, { onDelete: "cascade" }),
+    bountyUsd: numeric("bounty_usd", { precision: 20, scale: 2 }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    updatedAtIdx: index("pol_cash_bounties_updated_at_ix").on(t.updatedAt),
+  })
+);
+
+export type PolCashBountyType = InferSelectModel<typeof polCashBounties>;
+export type PolCashBountyInsertType = typeof polCashBounties.$inferInsert;
+
+/**
+ * GLW vesting schedule for FDV/unlock widget.
+ * `unlocked` is stored as a decimal amount (18 decimals) to preserve precision.
+ */
+export const glwVestingSchedule = pgTable(
+  "glw_vesting_schedule",
+  {
+    date: varchar("date", { length: 10 }).primaryKey().notNull(), // YYYY-MM-DD
+    unlocked: numeric("unlocked", { precision: 78, scale: 18 }).notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    updatedAtIdx: index("glw_vesting_schedule_updated_at_ix").on(t.updatedAt),
+  })
+);
+
+export type GlwVestingScheduleType = InferSelectModel<typeof glwVestingSchedule>;
+export type GlwVestingScheduleInsertType =
+  typeof glwVestingSchedule.$inferInsert;
+
+/**
+ * Snapshot of PoL yield inputs for the week (protocol week boundary).
+ * LQ fields are stored as raw LQ with 12 decimals (atomic = 1e12).
+ */
+export const polYieldWeek = pgTable(
+  "pol_yield_week",
+  {
+    weekNumber: integer("week_number").primaryKey().notNull(),
+    strategyReturns90dLq: numeric("strategy_returns_90d_lq", {
+      precision: 78,
+      scale: 0,
+    }).notNull(),
+    uniFees90dLq: numeric("uni_fees_90d_lq", { precision: 78, scale: 0 })
+      .notNull(),
+    polStartLq: numeric("pol_start_lq", { precision: 78, scale: 0 }).notNull(),
+    apy: numeric("apy", { precision: 30, scale: 18 }).notNull(),
+    yieldPerWeekLq: numeric("yield_per_week_lq", { precision: 78, scale: 0 })
+      .notNull(),
+    indexingComplete: boolean("indexing_complete").notNull().default(false),
+    fetchedAt: timestamp("fetched_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    fetchedAtIdx: index("pol_yield_week_fetched_at_ix").on(t.fetchedAt),
+  })
+);
+
+export type PolYieldWeekType = InferSelectModel<typeof polYieldWeek>;
+export type PolYieldWeekInsertType = typeof polYieldWeek.$inferInsert;
+
+/**
+ * GCTL mint events (from immutable weekly report JSON; originally sourced from Control).
+ * Amounts are stored in token atomic units.
+ */
+export const gctlMintEvents = pgTable(
+  "gctl_mint_events",
+  {
+    // Note: historical deployments may not have a PK/unique constraint on this table.
+    // Ingestion is implemented to be idempotent without ON CONFLICT.
+    txId: varchar("tx_id", { length: 66 }).notNull(),
+    wallet: varchar("wallet", { length: 42 }).notNull(),
+    epoch: integer("epoch").notNull(),
+    currency: varchar("currency", { length: 16 }).notNull(), // USDC
+    amountRaw: numeric("amount_raw", { precision: 78, scale: 0 }).notNull(), // USDC6
+    gctlMintedRaw: numeric("gctl_minted_raw", { precision: 78, scale: 0 })
+      .notNull(), // 18 decimals atomic
+    ts: timestamp("ts").notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    epochIdx: index("gctl_mint_events_epoch_ix").on(t.epoch),
+    tsIdx: index("gctl_mint_events_ts_ix").on(t.ts),
+    walletIdx: index("gctl_mint_events_wallet_ix").on(t.wallet),
+    txIdIdx: index("gctl_mint_events_tx_id_ix").on(t.txId),
+  })
+);
+
+export type GctlMintEventType = InferSelectModel<typeof gctlMintEvents>;
+export type GctlMintEventInsertType = typeof gctlMintEvents.$inferInsert;
+
+/**
+ * Weekly staked GCTL by region (Control API /regions/active/summary).
+ */
+export const gctlStakedByRegionWeek = pgTable(
+  "gctl_staked_by_region_week",
+  {
+    weekNumber: integer("week_number").notNull(),
+    // NOTE: This stores the numeric `zoneId` as a string for backward compatibility.
+    // API surfaces it as `zone_id: number`.
+    region: varchar("region", { length: 255 }).notNull(),
+    // From weekly report `zoneStakeMap.totalStaked`.
+    gctlStakedRaw: numeric("gctl_staked_raw", { precision: 78, scale: 0 })
+      .notNull(),
+    fetchedAt: timestamp("fetched_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.weekNumber, t.region] }),
+    weekIdx: index("gctl_staked_by_region_week_week_ix").on(t.weekNumber),
+    regionIdx: index("gctl_staked_by_region_week_region_ix").on(t.region),
+  })
+);
+
+export type GctlStakedByRegionWeekType = InferSelectModel<
+  typeof gctlStakedByRegionWeek
+>;
+export type GctlStakedByRegionWeekInsertType =
+  typeof gctlStakedByRegionWeek.$inferInsert;
+
+/**
+ * Weekly PoL revenue attribution snapshots.
+ * LQ is stored as raw LQ with 12 decimals (atomic = 1e12).
+ */
+export const polRevenueByRegionWeek = pgTable(
+  "pol_revenue_by_region_week",
+  {
+    weekNumber: integer("week_number").notNull(),
+    // NOTE: This stores the numeric `zoneId` as a string for backward compatibility.
+    // API surfaces it as `zone_id: number`.
+    region: varchar("region", { length: 255 }).notNull(),
+    totalLq: numeric("total_lq", { precision: 78, scale: 0 }).notNull(),
+    minerSalesLq: numeric("miner_sales_lq", { precision: 78, scale: 0 })
+      .notNull()
+      .default(sql`'0'::numeric`),
+    gctlMintsLq: numeric("gctl_mints_lq", { precision: 78, scale: 0 })
+      .notNull()
+      .default(sql`'0'::numeric`),
+    polYieldLq: numeric("pol_yield_lq", { precision: 78, scale: 0 })
+      .notNull()
+      .default(sql`'0'::numeric`),
+    computedAt: timestamp("computed_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.weekNumber, t.region] }),
+    weekIdx: index("pol_revenue_by_region_week_week_ix").on(t.weekNumber),
+    regionIdx: index("pol_revenue_by_region_week_region_ix").on(t.region),
+  })
+);
+
+export type PolRevenueByRegionWeekType = InferSelectModel<
+  typeof polRevenueByRegionWeek
+>;
+export type PolRevenueByRegionWeekInsertType =
+  typeof polRevenueByRegionWeek.$inferInsert;
+
+export const polRevenueByFarmWeek = pgTable(
+  "pol_revenue_by_farm_week",
+  {
+    weekNumber: integer("week_number").notNull(),
+    farmId: varchar("farm_id").notNull(),
+    totalLq: numeric("total_lq", { precision: 78, scale: 0 }).notNull(),
+    minerSalesLq: numeric("miner_sales_lq", { precision: 78, scale: 0 })
+      .notNull()
+      .default(sql`'0'::numeric`),
+    gctlMintsLq: numeric("gctl_mints_lq", { precision: 78, scale: 0 })
+      .notNull()
+      .default(sql`'0'::numeric`),
+    polYieldLq: numeric("pol_yield_lq", { precision: 78, scale: 0 })
+      .notNull()
+      .default(sql`'0'::numeric`),
+    computedAt: timestamp("computed_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.weekNumber, t.farmId] }),
+    weekIdx: index("pol_revenue_by_farm_week_week_ix").on(t.weekNumber),
+    farmIdx: index("pol_revenue_by_farm_week_farm_ix").on(t.farmId),
+  })
+);
+
+export type PolRevenueByFarmWeekType = InferSelectModel<
+  typeof polRevenueByFarmWeek
+>;
+export type PolRevenueByFarmWeekInsertType =
+  typeof polRevenueByFarmWeek.$inferInsert;
+
+/**
+ * FMI weekly inputs snapshot (all USD fields stored as USDC6 atomic).
+ */
+export const fmiWeeklyInputs = pgTable(
+  "fmi_weekly_inputs",
+  {
+    weekNumber: integer("week_number").primaryKey().notNull(),
+    minerSalesUsd: numeric("miner_sales_usd", { precision: 78, scale: 0 })
+      .notNull()
+      .default(sql`'0'::numeric`),
+    gctlMintsUsd: numeric("gctl_mints_usd", { precision: 78, scale: 0 })
+      .notNull()
+      .default(sql`'0'::numeric`),
+    polYieldUsd: numeric("pol_yield_usd", { precision: 78, scale: 0 })
+      .notNull()
+      .default(sql`'0'::numeric`),
+    dexSellPressureUsd: numeric("dex_sell_pressure_usd", {
+      precision: 78,
+      scale: 0,
+    })
+      .notNull()
+      .default(sql`'0'::numeric`),
+    buyPressureUsd: numeric("buy_pressure_usd", { precision: 78, scale: 0 })
+      .notNull()
+      .default(sql`'0'::numeric`),
+    sellPressureUsd: numeric("sell_pressure_usd", { precision: 78, scale: 0 })
+      .notNull()
+      .default(sql`'0'::numeric`),
+    netUsd: numeric("net_usd", { precision: 78, scale: 0 })
+      .notNull()
+      .default(sql`'0'::numeric`),
+    buySellRatio: numeric("buy_sell_ratio", { precision: 30, scale: 18 }),
+    indexingComplete: boolean("indexing_complete").notNull().default(false),
+    computedAt: timestamp("computed_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    computedAtIdx: index("fmi_weekly_inputs_computed_at_ix").on(t.computedAt),
+  })
+);
+
+export type FmiWeeklyInputsType = InferSelectModel<typeof fmiWeeklyInputs>;
+export type FmiWeeklyInputsInsertType = typeof fmiWeeklyInputs.$inferInsert;

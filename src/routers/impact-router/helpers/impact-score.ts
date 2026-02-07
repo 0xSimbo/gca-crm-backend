@@ -189,7 +189,7 @@ export function applyMultiplierScaled6(params: {
   return (pointsScaled6 * multiplierScaled6) / MULTIPLIER_SCALE_SCALED6;
 }
 
-function computeSteeringBoostScaled6(params: {
+export function computeSteeringBoostScaled6(params: {
   totalStakedWei: bigint;
   foundationStakedWei: bigint;
 }): bigint {
@@ -201,6 +201,12 @@ function computeSteeringBoostScaled6(params: {
   const userStakedWei = totalStakedWei - foundationStakedWei;
   if (userStakedWei <= 0n) return MULTIPLIER_SCALE_SCALED6;
   return (totalStakedWei * MULTIPLIER_SCALE_SCALED6) / userStakedWei;
+}
+
+export function normalizeFoundationWallets(wallets: string[]): string[] {
+  return Array.from(
+    new Set(wallets.map((w) => w.toLowerCase()).filter(Boolean))
+  ).sort();
 }
 
 async function getSteeringBoostByWeek(params: {
@@ -218,10 +224,9 @@ async function getSteeringBoostByWeek(params: {
 
   if (!foundationWallets || foundationWallets.length === 0) return new Map();
 
-  const normalizedWallets = foundationWallets
-    .map((w) => w.toLowerCase())
-    .filter(Boolean)
-    .sort();
+  // Dedupe to avoid double-counting stake when an excluded wallet appears
+  // both as a static literal and as an env-derived constant (e.g. ENDOWMENT_WALLET).
+  const normalizedWallets = normalizeFoundationWallets(foundationWallets);
   if (normalizedWallets.length === 0) return new Map();
 
   const boostsByWeek = new Map<number, bigint>();
