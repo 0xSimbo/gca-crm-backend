@@ -8,9 +8,8 @@ export type GlwVestingScheduleRow = {
 };
 
 function getMonth0DateIso(): string {
-  const genesis = new Date(GENESIS_TIMESTAMP * 1000);
-  const month0 = new Date(Date.UTC(genesis.getUTCFullYear(), genesis.getUTCMonth(), 1));
-  return month0.toISOString().slice(0, 10);
+  // Month 0 is the protocol genesis timestamp (not normalized to month start).
+  return new Date(GENESIS_TIMESTAMP * 1000).toISOString().slice(0, 10);
 }
 
 function addMonthsIso(isoDate: string, monthsToAdd: number): string {
@@ -43,4 +42,3 @@ export function getGlwVestingScheduleFromTokenSupply(): GlwVestingScheduleRow[] 
   rows.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
   return rows;
 }
-
