@@ -253,8 +253,10 @@ export function getGlwVestingBreakdownFromTokenSupply(
   return rows;
 }
 
-export function getGlwVestingScheduleFromTokenSupply(): GlwVestingScheduleRow[] {
-  return getGlwVestingBreakdownFromTokenSupply().map((r) => ({
+export function getGlwVestingScheduleFromTokenSupply(
+  rules?: GlwVestingRules
+): GlwVestingScheduleRow[] {
+  return getGlwVestingBreakdownFromTokenSupply(rules).map((r) => ({
     date: r.date,
     unlocked: r.total,
   }));
