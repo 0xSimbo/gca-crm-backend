@@ -265,9 +265,18 @@ async function ingestWeeklyReportForWeek(params: {
       );
     }
 
-    await tx
-      .delete(gctlMintEvents)
-      .where(eq(gctlMintEvents.epoch, params.weekNumber));
+    const epochsInReport = Array.from(
+      new Set(
+        minted
+          .map((ev) => Number(ev.epoch))
+          .filter((n) => Number.isFinite(n))
+      )
+    );
+    if (epochsInReport.length > 0) {
+      await tx
+        .delete(gctlMintEvents)
+        .where(inArray(gctlMintEvents.epoch, epochsInReport));
+    }
     if (minted.length > 0) {
       await tx.insert(gctlMintEvents).values(
         minted.map((ev) => ({
