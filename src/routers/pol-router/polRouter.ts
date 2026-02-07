@@ -143,17 +143,20 @@ export const polRouter = new Elysia({ prefix: "/pol" })
             url: Documents.url,
             createdAt: Documents.createdAt,
             name: Documents.name,
+            isShowingSolarPanels: Documents.isShowingSolarPanels,
           })
           .from(Documents)
           .where(
             and(
               inArray(Documents.applicationId, activeFarms.map((f) => f.applicationId)),
-              sql`${Documents.name} ilike '%after_install_pictures%'`
+              sql`${Documents.name} ilike '%after_install_pictures%'`,
+              eq(Documents.isShowingSolarPanels, true)
             )
           );
 
         const imageByApplication = new Map<string, { url: string; createdAtMs: number }>();
         for (const d of docs) {
+          if (!d.isShowingSolarPanels) continue;
           const curAt = d.createdAt ? new Date(d.createdAt).getTime() : 0;
           const prev = imageByApplication.get(d.applicationId);
           if (!prev || curAt > prev.createdAtMs) {
