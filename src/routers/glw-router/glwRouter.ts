@@ -1,22 +1,14 @@
 import { Elysia } from "elysia";
-import { asc } from "drizzle-orm";
 import { TAG } from "../../constants";
-import { db } from "../../db/db";
-import { glwVestingSchedule } from "../../db/schema";
+import { getGlwVestingScheduleFromTokenSupply } from "../../pol/vesting/tokenSupplyVestingSchedule";
 
 export const glwRouter = new Elysia({ prefix: "/glw" }).get(
   "/vesting-schedule",
   async ({ set }) => {
     try {
-      const rows = await db
-        .select()
-        .from(glwVestingSchedule)
-        .orderBy(asc(glwVestingSchedule.date));
-
-      return rows.map((r) => ({
-        date: r.date,
-        unlocked: String(r.unlocked),
-      }));
+      // Canonical schedule comes from `data/tokenSupplyOverTimeData.ts` (monthly, cumulative unlocked).
+      // This avoids relying on a manually-pushed DB seed for a static dataset.
+      return getGlwVestingScheduleFromTokenSupply();
     } catch (e) {
       if (e instanceof Error) {
         set.status = 400;
@@ -33,4 +25,3 @@ export const glwRouter = new Elysia({ prefix: "/glw" }).get(
     },
   }
 );
-

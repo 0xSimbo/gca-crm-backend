@@ -4,7 +4,6 @@ import { and, eq, inArray } from "drizzle-orm";
 import { db } from "../../src/db/db";
 import {
   fmiWeeklyInputs,
-  glwVestingSchedule,
   gctlStakedByRegionWeek,
   polRevenueByRegionWeek,
   polYieldWeek,
@@ -31,7 +30,6 @@ describe("PoL Dashboard: endpoint integration-ish", () => {
   const nowUnixSeconds = GENESIS_TIMESTAMP + (completedWeek + 1) * 604800 + 123;
   const testZoneId = 9_999;
   const testWeeks = [completedWeek - 1, completedWeek];
-  const vestingDates = ["2998-01-01", "2999-01-01"];
 
   beforeEach(async () => {
     // Targeted cleanup only for rows inserted by these tests.
@@ -49,9 +47,6 @@ describe("PoL Dashboard: endpoint integration-ish", () => {
     await db
       .delete(fmiWeeklyInputs)
       .where(eq(fmiWeeklyInputs.weekNumber, completedWeek));
-    await db
-      .delete(glwVestingSchedule)
-      .where(inArray(glwVestingSchedule.date, vestingDates));
     await db
       .delete(gctlStakedByRegionWeek)
       .where(
@@ -79,9 +74,6 @@ describe("PoL Dashboard: endpoint integration-ish", () => {
       .delete(fmiWeeklyInputs)
       .where(eq(fmiWeeklyInputs.weekNumber, completedWeek));
     await db
-      .delete(glwVestingSchedule)
-      .where(inArray(glwVestingSchedule.date, vestingDates));
-    await db
       .delete(gctlStakedByRegionWeek)
       .where(
         and(
@@ -92,19 +84,19 @@ describe("PoL Dashboard: endpoint integration-ish", () => {
   });
 
   it("GET /glw/vesting-schedule returns rows ordered by date", async () => {
-    await db.insert(glwVestingSchedule).values([
-      { date: vestingDates[1], unlocked: "2", updatedAt: new Date() },
-      { date: vestingDates[0], unlocked: "1", updatedAt: new Date() },
-    ]);
-
     const res = await app.handle(new Request("http://localhost/glw/vesting-schedule"));
     expect(res.status).toBe(200);
     const json = await res.json();
-    const idxA = json.findIndex((r: any) => r.date === vestingDates[0]);
-    const idxB = json.findIndex((r: any) => r.date === vestingDates[1]);
-    expect(idxA).toBeGreaterThanOrEqual(0);
-    expect(idxB).toBeGreaterThanOrEqual(0);
-    expect(idxA).toBeLessThan(idxB);
+    expect(Array.isArray(json)).toBe(true);
+    expect(json.length).toBeGreaterThan(0);
+    // Ensure sorted by date.
+    for (let i = 1; i < json.length; i++) {
+      expect(String(json[i - 1].date) <= String(json[i].date)).toBe(true);
+    }
+    // Basic shape: unlocked is an integer string.
+    expect(typeof json[0].date).toBe("string");
+    expect(typeof json[0].unlocked).toBe("string");
+    expect(/^\d+$/.test(json[0].unlocked)).toBe(true);
   });
 
   it("GET /fmi/pressure returns latest completed week snapshot", async () => {
