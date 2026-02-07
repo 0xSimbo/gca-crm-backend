@@ -243,28 +243,46 @@ async function ingestWeeklyReportForWeek(params: {
   const zoneStakeMap = Array.isArray(report.zoneStakeMap)
     ? report.zoneStakeMap
     : [];
-  if (zoneStakeMap.length > 0) {
-    await db
-      .insert(gctlStakedByRegionWeek)
-      .values(
+  // Mint events (append-only, keyed by txId).
+  const minted = Array.isArray(report.controlMintedEvents)
+    ? report.controlMintedEvents
+    : [];
+
+  // The existing prod DB may not have uniqueness constraints on gctl_mint_events (older pushes),
+  // so we avoid ON CONFLICT here and instead do deterministic per-week replace.
+  await db.transaction(async (tx) => {
+    await tx
+      .delete(gctlStakedByRegionWeek)
+      .where(eq(gctlStakedByRegionWeek.weekNumber, params.weekNumber));
+    if (zoneStakeMap.length > 0) {
+      await tx.insert(gctlStakedByRegionWeek).values(
         zoneStakeMap.map(([zoneId, stake]) => ({
           weekNumber: params.weekNumber,
           region: String(zoneId),
           gctlStakedRaw: String(stake.totalStaked ?? "0"),
           fetchedAt: new Date(),
         }))
-      )
-      .onConflictDoUpdate({
-        target: [
-          gctlStakedByRegionWeek.weekNumber,
-          gctlStakedByRegionWeek.region,
-        ],
-        set: {
-          gctlStakedRaw: sql`excluded.gctl_staked_raw`,
-          fetchedAt: new Date(),
-        },
-      });
-  }
+      );
+    }
+
+    await tx
+      .delete(gctlMintEvents)
+      .where(eq(gctlMintEvents.epoch, params.weekNumber));
+    if (minted.length > 0) {
+      await tx.insert(gctlMintEvents).values(
+        minted.map((ev) => ({
+          txId: normalizeMintEventId(ev.txId, ev.logIndex),
+          wallet: String(ev.wallet),
+          epoch: Number(ev.epoch),
+          currency: String(ev.currency),
+          amountRaw: String(ev.amountRaw),
+          gctlMintedRaw: String(ev.gctlMinted),
+          ts: new Date(String(ev.ts)),
+          createdAt: new Date(),
+        }))
+      );
+    }
+  });
 
   function normalizeMintEventId(txId: unknown, logIndex: unknown): string {
     const rawTxId = String(txId ?? "");
@@ -277,38 +295,6 @@ async function ingestWeeklyReportForWeek(params: {
       .update(`${rawTxId}:${Number.isFinite(li) ? li : 0}`)
       .digest("hex");
     return `0x${digest}`;
-  }
-
-  // Mint events (append-only, keyed by txId).
-  const minted = Array.isArray(report.controlMintedEvents)
-    ? report.controlMintedEvents
-    : [];
-  if (minted.length > 0) {
-    await db
-      .insert(gctlMintEvents)
-      .values(
-        minted.map((ev) => ({
-          txId: normalizeMintEventId(ev.txId, ev.logIndex),
-          wallet: String(ev.wallet),
-          epoch: Number(ev.epoch),
-          currency: String(ev.currency),
-          amountRaw: String(ev.amountRaw),
-          gctlMintedRaw: String(ev.gctlMinted),
-          ts: new Date(String(ev.ts)),
-          createdAt: new Date(),
-        }))
-      )
-      .onConflictDoUpdate({
-        target: gctlMintEvents.txId,
-        set: {
-          wallet: sql`excluded.wallet`,
-          epoch: sql`excluded.epoch`,
-          currency: sql`excluded.currency`,
-          amountRaw: sql`excluded.amount_raw`,
-          gctlMintedRaw: sql`excluded.gctl_minted_raw`,
-          ts: sql`excluded.ts`,
-        },
-      });
   }
 
   return { mintsUpserted: minted.length, stakeUpserted: zoneStakeMap.length };
