@@ -7,6 +7,15 @@ import {
   type GlwVestingRules,
 } from "../src/pol/vesting/tokenSupplyVestingSchedule";
 
+function requireConfirmation() {
+  // This script wipes and replaces a table. Guard against accidental runs.
+  if (process.env.CONFIRM_SEED_GLW_VESTING_SCHEDULE === "YES") return;
+  console.error(
+    "Refusing to run without CONFIRM_SEED_GLW_VESTING_SCHEDULE=YES (this will DELETE all rows in glw_vesting_schedule)."
+  );
+  process.exit(1);
+}
+
 function getDbHost(): string | null {
   const url = process.env.DATABASE_URL;
   if (!url) return null;
@@ -18,6 +27,8 @@ function getDbHost(): string | null {
 }
 
 async function main() {
+  requireConfirmation();
+
   const rules: GlwVestingRules = {
     contractUpgradeDateIso:
       process.env.GLW_CONTRACT_UPGRADE_DATE_ISO ?? "2026-02-07",
@@ -65,4 +76,3 @@ main()
     console.error("Failed to seed glw_vesting_schedule:", err);
     process.exit(1);
   });
-

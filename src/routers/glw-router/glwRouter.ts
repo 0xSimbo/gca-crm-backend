@@ -1,13 +1,35 @@
 import { Elysia } from "elysia";
+import { asc } from "drizzle-orm";
 import { TAG } from "../../constants";
+import { db } from "../../db/db";
+import { glwVestingSchedule } from "../../db/schema";
 import { getGlwVestingScheduleFromTokenSupply } from "../../pol/vesting/tokenSupplyVestingSchedule";
+
+function normalizeNumericToIntString(value: unknown): string {
+  const raw = String(value ?? "0");
+  // drizzle numeric may come back like "18000000.000000000000000000"
+  const intPart = raw.includes(".") ? raw.split(".")[0] : raw;
+  return /^\d+$/.test(intPart) ? intPart : "0";
+}
 
 export const glwRouter = new Elysia({ prefix: "/glw" }).get(
   "/vesting-schedule",
   async ({ set }) => {
     try {
-      // Canonical schedule comes from `data/tokenSupplyOverTimeData.ts` (monthly, cumulative unlocked).
-      // This avoids relying on a manually-pushed DB seed for a static dataset.
+      // Prefer the DB-backed schedule (seeded once, can be updated without deploy).
+      const rows = await db
+        .select()
+        .from(glwVestingSchedule)
+        .orderBy(asc(glwVestingSchedule.date));
+
+      if (rows.length > 0) {
+        return rows.map((r) => ({
+          date: r.date,
+          unlocked: normalizeNumericToIntString(r.unlocked),
+        }));
+      }
+
+      // Fallback to derived schedule so non-seeded envs still work.
       return getGlwVestingScheduleFromTokenSupply();
     } catch (e) {
       if (e instanceof Error) {
