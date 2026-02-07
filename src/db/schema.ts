@@ -2605,8 +2605,7 @@ export type PolYieldWeekInsertType = typeof polYieldWeek.$inferInsert;
 export const gctlMintEvents = pgTable(
   "gctl_mint_events",
   {
-    txId: varchar("tx_id", { length: 66 }).notNull(),
-    logIndex: integer("log_index").notNull(),
+    txId: varchar("tx_id", { length: 66 }).primaryKey().notNull(),
     wallet: varchar("wallet", { length: 42 }).notNull(),
     epoch: integer("epoch").notNull(),
     currency: varchar("currency", { length: 16 }).notNull(), // USDC
@@ -2617,7 +2616,6 @@ export const gctlMintEvents = pgTable(
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (t) => ({
-    pk: primaryKey({ columns: [t.txId, t.logIndex] }),
     epochIdx: index("gctl_mint_events_epoch_ix").on(t.epoch),
     tsIdx: index("gctl_mint_events_ts_ix").on(t.ts),
     walletIdx: index("gctl_mint_events_wallet_ix").on(t.wallet),

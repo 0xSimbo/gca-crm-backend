@@ -34,6 +34,8 @@ import {
   fetchPonderSpotPriceByTimestamp,
 } from "../../pol/clients/ponder";
 
+const POL_DASHBOARD_START_WEEK = 97;
+
 function parseNumericToBigInt(value: unknown): bigint {
   if (value === null || value === undefined) return 0n;
   return BigInt(String(value));
@@ -267,8 +269,10 @@ async function ingestWeeklyReportForWeek(params: {
   function normalizeMintEventId(txId: unknown, logIndex: unknown): string {
     const rawTxId = String(txId ?? "");
     const li = Number(logIndex ?? 0);
-    if (/^0x[0-9a-fA-F]{64}$/.test(rawTxId)) return rawTxId;
-    // Synthetic ids (premints, etc) won't fit DB constraints. Hash deterministically into 0x + 64 hex chars.
+    // Keep the raw tx hash when logIndex is 0 so we don't duplicate rows that were previously ingested.
+    if (/^0x[0-9a-fA-F]{64}$/.test(rawTxId) && li === 0) return rawTxId;
+    // For any non-hash txId (premints, etc) or non-zero logIndex, hash deterministically into 0x + 64 hex chars.
+    // This guarantees uniqueness per (txId, logIndex) without needing a schema change.
     const digest = createHash("sha256")
       .update(`${rawTxId}:${Number.isFinite(li) ? li : 0}`)
       .digest("hex");
@@ -285,7 +289,6 @@ async function ingestWeeklyReportForWeek(params: {
       .values(
         minted.map((ev) => ({
           txId: normalizeMintEventId(ev.txId, ev.logIndex),
-          logIndex: Number(ev.logIndex ?? 0),
           wallet: String(ev.wallet),
           epoch: Number(ev.epoch),
           currency: String(ev.currency),
@@ -296,7 +299,7 @@ async function ingestWeeklyReportForWeek(params: {
         }))
       )
       .onConflictDoUpdate({
-        target: [gctlMintEvents.txId, gctlMintEvents.logIndex],
+        target: gctlMintEvents.txId,
         set: {
           wallet: sql`excluded.wallet`,
           epoch: sql`excluded.epoch`,
@@ -344,9 +347,13 @@ async function recomputeRevenueSnapshots(params: {
   startWeek: number;
   endWeek: number;
 }): Promise<{ regionRows: number; farmRows: number }> {
-  const earliestWeekNeeded = Math.max(0, params.startWeek - 9);
+  // Weekly report history starts at week 97; we intentionally do not attribute earlier weeks.
+  const startWeek = Math.max(POL_DASHBOARD_START_WEEK, params.startWeek);
+  const endWeek = Math.max(startWeek, params.endWeek);
+
+  const earliestWeekNeeded = Math.max(POL_DASHBOARD_START_WEEK, startWeek - 9);
   const startTs = getProtocolWeekStartTimestamp(earliestWeekNeeded);
-  const endTs = getProtocolWeekEndTimestamp(params.endWeek);
+  const endTs = getProtocolWeekEndTimestamp(endWeek);
 
   const [{ farms: activeFarms, weightsByZoneId }, bounties, splits, stakeRows, mints, yieldRows] =
     await Promise.all([
@@ -358,8 +365,8 @@ async function recomputeRevenueSnapshots(params: {
         .from(gctlStakedByRegionWeek)
         .where(
           and(
-            gte(gctlStakedByRegionWeek.weekNumber, params.startWeek),
-            lt(gctlStakedByRegionWeek.weekNumber, params.endWeek + 1)
+            gte(gctlStakedByRegionWeek.weekNumber, startWeek),
+            lt(gctlStakedByRegionWeek.weekNumber, endWeek + 1)
           )
         ),
       db
@@ -368,7 +375,7 @@ async function recomputeRevenueSnapshots(params: {
         .where(
           and(
             gte(gctlMintEvents.epoch, earliestWeekNeeded),
-            lt(gctlMintEvents.epoch, params.endWeek + 1)
+            lt(gctlMintEvents.epoch, endWeek + 1)
           )
         ),
       db
@@ -377,7 +384,7 @@ async function recomputeRevenueSnapshots(params: {
         .where(
           and(
             gte(polYieldWeek.weekNumber, earliestWeekNeeded),
-            lt(polYieldWeek.weekNumber, params.endWeek + 1)
+            lt(polYieldWeek.weekNumber, endWeek + 1)
           )
         ),
     ]);
@@ -464,7 +471,7 @@ async function recomputeRevenueSnapshots(params: {
           });
 
           for (const b of buckets) {
-            if (b.week < params.startWeek || b.week > params.endWeek) continue;
+            if (b.week < startWeek || b.week > endWeek) continue;
             addToNested(zoneWeekMiner, zoneId, b.week, b.amount);
 
             const farmWeights = weightsByZoneId.get(zoneId);
@@ -506,7 +513,7 @@ async function recomputeRevenueSnapshots(params: {
         });
 
         for (const b of buckets) {
-          if (b.week < params.startWeek || b.week > params.endWeek) continue;
+          if (b.week < startWeek || b.week > endWeek) continue;
 
           const stakeWeights = stakeByWeek.get(b.week);
           if (!stakeWeights || stakeWeights.size === 0) continue;
@@ -539,9 +546,9 @@ async function recomputeRevenueSnapshots(params: {
   for (const y of yieldRows) {
     yieldByWeek.set(y.weekNumber, parseNumericToBigInt(y.yieldPerWeekLq));
   }
-  const fallbackYield = yieldByWeek.get(params.endWeek) ?? 0n;
+  const fallbackYield = yieldByWeek.get(endWeek) ?? 0n;
 
-  for (let sourceWeek = earliestWeekNeeded; sourceWeek <= params.endWeek; sourceWeek++) {
+  for (let sourceWeek = earliestWeekNeeded; sourceWeek <= endWeek; sourceWeek++) {
     const yieldLq = yieldByWeek.get(sourceWeek) ?? fallbackYield;
     if (yieldLq === 0n) continue;
 
@@ -552,7 +559,7 @@ async function recomputeRevenueSnapshots(params: {
     });
 
     for (const b of buckets) {
-      if (b.week < params.startWeek || b.week > params.endWeek) continue;
+      if (b.week < startWeek || b.week > endWeek) continue;
       const stakeWeights = stakeByWeek.get(b.week);
       if (!stakeWeights || stakeWeights.size === 0) continue;
 
@@ -582,16 +589,16 @@ async function recomputeRevenueSnapshots(params: {
       .delete(polRevenueByRegionWeek)
       .where(
         and(
-          gte(polRevenueByRegionWeek.weekNumber, params.startWeek),
-          lt(polRevenueByRegionWeek.weekNumber, params.endWeek + 1)
+          gte(polRevenueByRegionWeek.weekNumber, startWeek),
+          lt(polRevenueByRegionWeek.weekNumber, endWeek + 1)
         )
       );
     await tx
       .delete(polRevenueByFarmWeek)
       .where(
         and(
-          gte(polRevenueByFarmWeek.weekNumber, params.startWeek),
-          lt(polRevenueByFarmWeek.weekNumber, params.endWeek + 1)
+          gte(polRevenueByFarmWeek.weekNumber, startWeek),
+          lt(polRevenueByFarmWeek.weekNumber, endWeek + 1)
         )
       );
 
@@ -601,7 +608,7 @@ async function recomputeRevenueSnapshots(params: {
         zoneWeekMints.get(zoneId) ?? new Map<number, bigint>();
       const byWeekYield =
         zoneWeekYield.get(zoneId) ?? new Map<number, bigint>();
-      for (let w = params.startWeek; w <= params.endWeek; w++) {
+      for (let w = startWeek; w <= endWeek; w++) {
         const miner = byWeekMiner.get(w) ?? 0n;
         const mints = byWeekMints.get(w) ?? 0n;
         const yieldLq = byWeekYield.get(w) ?? 0n;
@@ -624,7 +631,7 @@ async function recomputeRevenueSnapshots(params: {
     for (const [zoneId, byWeekMints] of zoneWeekMints.entries()) {
       if (zoneWeekMiner.has(zoneId)) continue;
       if (zoneWeekYield.has(zoneId)) continue;
-      for (let w = params.startWeek; w <= params.endWeek; w++) {
+      for (let w = startWeek; w <= endWeek; w++) {
         const mints = byWeekMints.get(w) ?? 0n;
         if (mints === 0n) continue;
         await tx.insert(polRevenueByRegionWeek).values({
@@ -643,7 +650,7 @@ async function recomputeRevenueSnapshots(params: {
     // Regions that only have yield.
     for (const [zoneId, byWeekYield] of zoneWeekYield.entries()) {
       if (zoneWeekMiner.has(zoneId) || zoneWeekMints.has(zoneId)) continue;
-      for (let w = params.startWeek; w <= params.endWeek; w++) {
+      for (let w = startWeek; w <= endWeek; w++) {
         const yieldLq = byWeekYield.get(w) ?? 0n;
         if (yieldLq === 0n) continue;
         await tx.insert(polRevenueByRegionWeek).values({
@@ -669,7 +676,7 @@ async function recomputeRevenueSnapshots(params: {
       const byWeekMiner = farmWeekMiner.get(farmId) ?? new Map<number, bigint>();
       const byWeekMints = farmWeekMints.get(farmId) ?? new Map<number, bigint>();
       const byWeekYield = farmWeekYield.get(farmId) ?? new Map<number, bigint>();
-      for (let w = params.startWeek; w <= params.endWeek; w++) {
+      for (let w = startWeek; w <= endWeek; w++) {
         const miner = byWeekMiner.get(w) ?? 0n;
         const mints = byWeekMints.get(w) ?? 0n;
         const yieldLq = byWeekYield.get(w) ?? 0n;
@@ -706,9 +713,11 @@ async function recomputeFmiWeeklyInputs(params: {
   startWeek: number;
   endWeek: number;
 }): Promise<{ upserted: number }> {
-  const earliestWeekNeeded = Math.max(0, params.startWeek);
+  const startWeek = Math.max(POL_DASHBOARD_START_WEEK, params.startWeek);
+  const endWeek = Math.max(startWeek, params.endWeek);
+  const earliestWeekNeeded = Math.max(POL_DASHBOARD_START_WEEK, startWeek);
   const startTs = getProtocolWeekStartTimestamp(earliestWeekNeeded);
-  const endTs = getProtocolWeekEndTimestamp(params.endWeek);
+  const endTs = getProtocolWeekEndTimestamp(endWeek);
 
   const [bounties, splits, mintRows, polYieldRows] = await Promise.all([
     loadBountiesByApplicationId(),
@@ -717,15 +726,15 @@ async function recomputeFmiWeeklyInputs(params: {
       .select()
       .from(gctlMintEvents)
       .where(
-        and(gte(gctlMintEvents.epoch, params.startWeek), lt(gctlMintEvents.epoch, params.endWeek + 1))
+        and(gte(gctlMintEvents.epoch, startWeek), lt(gctlMintEvents.epoch, endWeek + 1))
       ),
     db
       .select()
       .from(polYieldWeek)
       .where(
         and(
-          gte(polYieldWeek.weekNumber, params.startWeek),
-          lt(polYieldWeek.weekNumber, params.endWeek + 1)
+          gte(polYieldWeek.weekNumber, startWeek),
+          lt(polYieldWeek.weekNumber, endWeek + 1)
         )
       ),
   ]);
@@ -771,7 +780,7 @@ async function recomputeFmiWeeklyInputs(params: {
   for (const r of polYieldRows) {
     yieldLqByWeek.set(r.weekNumber, parseNumericToBigInt(r.yieldPerWeekLq));
   }
-  const fallbackYieldPerWeekLqAtomic = yieldLqByWeek.get(params.endWeek) ?? 0n;
+  const fallbackYieldPerWeekLqAtomic = yieldLqByWeek.get(endWeek) ?? 0n;
 
   const sellPressure = await fetchPonderFmiSellPressure({ range: "12w" });
   const sellByWeekGlw = new Map<number, bigint>();
@@ -791,7 +800,7 @@ async function recomputeFmiWeeklyInputs(params: {
   }
 
   const upserts: Array<Promise<void>> = [];
-  for (let week = params.startWeek; week <= params.endWeek; week++) {
+  for (let week = startWeek; week <= endWeek; week++) {
     upserts.push(
       limit(async () => {
         const spot = await getSpotPriceAtWeekEnd(week);
@@ -888,13 +897,16 @@ export async function updatePolDashboard(params?: {
       .limit(1)
       .then((r) => Number(r[0]?.c ?? 0))) > 0;
 
-  const startWeek =
+  const startWeekRaw =
     params?.backfillFromWeek ??
-    (hasExistingRevenue ? Math.max(0, completedWeek - 40) : 0);
+    (hasExistingRevenue
+      ? Math.max(0, completedWeek - 40)
+      : POL_DASHBOARD_START_WEEK);
+  const startWeek = Math.max(POL_DASHBOARD_START_WEEK, startWeekRaw);
   const endWeek = completedWeek;
 
   // Ingest enough history to cover 10-week bucketing that backfills into the requested range.
-  const ingestStartWeek = Math.max(0, startWeek - 9);
+  const ingestStartWeek = Math.max(POL_DASHBOARD_START_WEEK, startWeek - 9);
   const ingest = await ingestWeeklyReports({
     startWeek: ingestStartWeek,
     endWeek,
@@ -902,7 +914,7 @@ export async function updatePolDashboard(params?: {
 
   await recomputeRevenueSnapshots({ startWeek, endWeek });
 
-  const fmiStart = Math.max(0, completedWeek - 20);
+  const fmiStart = Math.max(POL_DASHBOARD_START_WEEK, completedWeek - 20);
   await recomputeFmiWeeklyInputs({ startWeek: fmiStart, endWeek });
 
   return {
