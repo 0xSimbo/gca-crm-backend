@@ -1,5 +1,5 @@
 import { Elysia, t } from "elysia";
-import { and, eq, gte, inArray, lt, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, lt, lte, sql } from "drizzle-orm";
 import { TAG } from "../../constants";
 import { db } from "../../db/db";
 import {
@@ -287,11 +287,20 @@ export const polRouter = new Elysia({ prefix: "/pol" })
         }
 
         const stakeRows = await db
-          .select()
+          .select({ weekNumber: sql<number>`max(${gctlStakedByRegionWeek.weekNumber})` })
           .from(gctlStakedByRegionWeek)
-          .where(eq(gctlStakedByRegionWeek.weekNumber, endWeek));
+          .where(lte(gctlStakedByRegionWeek.weekNumber, endWeek));
+
+        const stakeWeek = stakeRows[0]?.weekNumber ?? null;
+        const stakeSnapshotRows =
+          stakeWeek == null
+            ? []
+            : await db
+                .select()
+                .from(gctlStakedByRegionWeek)
+                .where(eq(gctlStakedByRegionWeek.weekNumber, stakeWeek));
         const stakeByZoneId = new Map<number, string>();
-        for (const s of stakeRows) {
+        for (const s of stakeSnapshotRows) {
           const zoneId = Number(s.region);
           if (!Number.isFinite(zoneId)) continue;
           stakeByZoneId.set(zoneId, String(s.gctlStakedRaw));
