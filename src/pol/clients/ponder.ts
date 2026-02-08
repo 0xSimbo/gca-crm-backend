@@ -38,6 +38,40 @@ export type PonderSpotPriceResponse = {
   indexingComplete: boolean;
 };
 
+export type PonderPolPointsResponse = {
+  from: number;
+  to: number;
+  range: string | null;
+  interval: "sync" | "hour" | "day" | "week";
+  points: Array<{
+    timestamp: string; // unix seconds
+    week: number; // protocol week for the point timestamp
+    blockNumber: string;
+    logIndex: string;
+    spotPrice: string; // USDG per GLW (decimal string)
+    endowment: {
+      lpBalance: string;
+      totalLpSupply: string;
+      usdg: string;
+      glw: string;
+      lq: string;
+    };
+    botActive: {
+      timestamp: string | null;
+      tradeType: string | null;
+      usdg: string;
+      glw: string;
+      lq: string;
+    };
+    total: {
+      usdg: string;
+      glw: string;
+      lq: string;
+    };
+  }>;
+  indexingComplete: boolean;
+};
+
 export async function fetchPonderPolYield(params: {
   range: "90d";
 }): Promise<PonderPolYieldResponse> {
@@ -66,3 +100,20 @@ export async function fetchPonderSpotPriceByTimestamp(params: {
   return await fetchJson<PonderSpotPriceResponse>(url);
 }
 
+export async function fetchPonderPolPoints(params: {
+  from: number;
+  to: number;
+  interval: "sync" | "hour" | "day" | "week";
+  includePrior?: boolean;
+  limit?: number;
+}): Promise<PonderPolPointsResponse> {
+  const base = getPonderBaseUrl();
+  const qs = new URLSearchParams();
+  qs.set("from", String(params.from));
+  qs.set("to", String(params.to));
+  qs.set("interval", params.interval);
+  if (params.includePrior) qs.set("includePrior", "true");
+  if (params.limit != null) qs.set("limit", String(params.limit));
+  const url = `${base}/pol/points?${qs.toString()}`;
+  return await fetchJson<PonderPolPointsResponse>(url);
+}

@@ -13,9 +13,18 @@ import {
   polYieldWeek,
 } from "../../db/schema";
 import { Decimal } from "../../pol/math/decimal";
-import { getCompletedWeekNumber, getProtocolWeekForTimestamp } from "../../pol/protocolWeeks";
-import { fetchPonderPolYield } from "../../pol/clients/ponder";
+import {
+  getCompletedWeekNumber,
+  getProtocolWeekEndTimestamp,
+  getProtocolWeekForTimestamp,
+  getProtocolWeekStartTimestamp,
+} from "../../pol/protocolWeeks";
+import { fetchPonderPolPoints, fetchPonderPolYield } from "../../pol/clients/ponder";
 import { GENESIS_TIMESTAMP } from "../../constants/genesis-timestamp";
+import {
+  computeWeeklyPolLiquiditySeries,
+  type PolLiquidityPoint,
+} from "../../pol/liquidity/weeklyLiquiditySeries";
 
 function getWeeksForRange(range: string): number {
   if (range === "90d") return 13;
@@ -25,6 +34,70 @@ function getWeeksForRange(range: string): number {
 }
 
 export const polRouter = new Elysia({ prefix: "/pol" })
+  .get(
+    "/liquidity",
+    async ({ query, set }) => {
+      try {
+        const range = query.range ?? "12w";
+        const weeks = getWeeksForRange(range);
+        const endWeek = getCompletedWeekNumber();
+        const startWeek = Math.max(0, endWeek - (weeks - 1));
+
+        const from = getProtocolWeekStartTimestamp(startWeek);
+        const to = getProtocolWeekEndTimestamp(endWeek);
+
+        // Use bucketed points to keep the payload bounded while still letting us
+        // deterministically pick "as-of week end" values. Protocol week boundaries
+        // are always on hour boundaries, so hourly bucketing is sufficient.
+        const pointsRes = await fetchPonderPolPoints({
+          from,
+          to,
+          interval: "hour",
+          includePrior: true,
+          limit: 5000,
+        });
+
+        const points: PolLiquidityPoint[] = pointsRes.points
+          .map((p) => ({
+            timestamp: p.timestamp,
+            spotPrice: p.spotPrice,
+            endowment: { lq: p.endowment.lq },
+            botActive: { lq: p.botActive.lq },
+            total: { lq: p.total.lq },
+          }))
+          .sort((a, b) => Number(a.timestamp) - Number(b.timestamp));
+
+        const series = computeWeeklyPolLiquiditySeries({
+          startWeek,
+          endWeek,
+          points,
+        });
+
+        return {
+          range,
+          weekRange: { startWeek, endWeek },
+          series,
+          indexingComplete: pointsRes.indexingComplete,
+        };
+      } catch (e) {
+        if (e instanceof Error) {
+          set.status = 400;
+          return { error: e.message };
+        }
+        set.status = 500;
+        return { error: "Internal Server Error" };
+      }
+    },
+    {
+      query: t.Object({
+        range: t.Optional(t.String()),
+      }),
+      detail: {
+        summary: "PoL liquidity weekly series (as-of protocol week end)",
+        tags: [TAG.POL],
+      },
+    }
+  )
   .get(
     "/revenue/aggregate",
     async ({ query, set }) => {

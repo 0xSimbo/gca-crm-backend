@@ -12,6 +12,7 @@ import { polRouter } from "../../src/routers/pol-router/polRouter";
 import { fmiRouter } from "../../src/routers/fmi-router/fmiRouter";
 import { glwRouter } from "../../src/routers/glw-router/glwRouter";
 import { GENESIS_TIMESTAMP } from "../../src/constants/genesis-timestamp";
+import { lqAtomicToUsdUsdc6 } from "../../src/pol/math/usdLq";
 
 const app = new Elysia().use(polRouter).use(fmiRouter).use(glwRouter);
 
@@ -196,5 +197,89 @@ describe("PoL Dashboard: endpoint integration-ish", () => {
       expect(row).toBeTruthy();
       expect(row.staked_gctl).toBe("456");
     });
+  });
+
+  it("GET /pol/liquidity returns weekly series derived from ponder /pol/points", async () => {
+    const originalFetch = globalThis.fetch;
+    process.env.CLAIMS_API_BASE_URL = "http://ponder.local";
+
+    try {
+      await withFrozenNow(nowUnixSeconds, async () => {
+        const endWeek = completedWeek;
+        const startWeek = completedWeek - 2;
+
+        const weekEnd0 = GENESIS_TIMESTAMP + (startWeek + 1) * 604800;
+        const weekEnd1 = GENESIS_TIMESTAMP + (startWeek + 2) * 604800;
+        const weekEnd2 = GENESIS_TIMESTAMP + (startWeek + 3) * 604800;
+
+        const spot = "4"; // USDG per GLW
+        const p0 = {
+          timestamp: String(weekEnd0 - 10),
+          week: startWeek,
+          blockNumber: "1",
+          logIndex: "0",
+          spotPrice: spot,
+          endowment: { lpBalance: "0", totalLpSupply: "0", usdg: "0", glw: "0", lq: "1000" },
+          botActive: { timestamp: null, tradeType: null, usdg: "0", glw: "0", lq: "2000" },
+          total: { usdg: "0", glw: "0", lq: "3000" },
+        };
+        const p1 = {
+          ...p0,
+          timestamp: String(weekEnd1 - 10),
+          week: startWeek + 1,
+          endowment: { ...p0.endowment, lq: "2000" },
+          botActive: { ...p0.botActive, lq: "3000" },
+          total: { ...p0.total, lq: "5000" },
+        };
+        const p2 = {
+          ...p0,
+          timestamp: String(weekEnd2 - 10),
+          week: startWeek + 2,
+          endowment: { ...p0.endowment, lq: "4000" },
+          botActive: { ...p0.botActive, lq: "4000" },
+          total: { ...p0.total, lq: "8000" },
+        };
+
+        globalThis.fetch = async (input: any, init?: any) => {
+          const url = String(input);
+          if (!url.startsWith("http://ponder.local/pol/points?")) {
+            return await originalFetch(input, init);
+          }
+          const body = {
+            from: weekEnd0 - 604800,
+            to: weekEnd2,
+            range: null,
+            interval: "hour",
+            points: [p0, p1, p2],
+            indexingComplete: true,
+          };
+          return new Response(JSON.stringify(body), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          });
+        };
+
+        const res = await app.handle(
+          new Request("http://localhost/pol/liquidity?range=3w")
+        );
+        expect(res.status).toBe(200);
+        const json: any = await res.json();
+        expect(json.weekRange.startWeek).toBe(startWeek);
+        expect(json.weekRange.endWeek).toBe(endWeek);
+        expect(json.series.length).toBe(3);
+
+        const last = json.series[2];
+        expect(last.weekNumber).toBe(endWeek);
+        expect(last.totalLq).toBe("8000");
+
+        const expectedUsd = lqAtomicToUsdUsdc6({
+          lqAtomic: 8000n,
+          spotPriceUsdgPerGlw: spot,
+        }).toString();
+        expect(last.totalUsdUsdc6).toBe(expectedUsd);
+      });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 });
