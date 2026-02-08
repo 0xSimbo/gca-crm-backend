@@ -20,6 +20,7 @@ import {
 } from "viem";
 import { mainnet, sepolia } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
+import { normalizePrivateKey32Hex } from "./normalizePrivateKey32";
 
 interface Declaration {
   fullname: string;
@@ -68,7 +69,7 @@ export async function postMerkleRoot(merkleRoot: string) {
   const rpcUrl = process.env.MAINNET_RPC_URL;
   const chain = process.env.NODE_ENV === "production" ? mainnet : sepolia;
   const publicClient = createPublicClient({ chain, transport: http(rpcUrl) });
-  const account = privateKeyToAccount(process.env.PRIVATE_KEY as `0x${string}`);
+  const account = privateKeyToAccount(normalizePrivateKey32Hex(process.env.PRIVATE_KEY));
   const walletClient = createWalletClient({
     account,
     chain,
