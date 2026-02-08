@@ -21,6 +21,6 @@ export const CASH_BOUNTY_BY_APPLICATION_ID: Record<string, number | null> = {
   "7be6c9e7-5ef5-4fd8-b67a-040d6e436822": 2500,
   "b4d5f092-9c99-44ee-a14a-bcf7ed2fc636": 2600,
   "51e2d48b-243c-4909-bc26-2b15b77daed7": 1200,
+  "3c8a504d-64e1-4dca-b747-34fd438fa339": 1200,
   "cc098775-8a92-4f28-924e-4c1ba8c7a4f6": null,
 };
-
