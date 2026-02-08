@@ -51,7 +51,7 @@ describe("PoL Dashboard: endpoint integration-ish", () => {
       .delete(gctlStakedByRegionWeek)
       .where(
         and(
-          eq(gctlStakedByRegionWeek.weekNumber, completedWeek),
+          inArray(gctlStakedByRegionWeek.weekNumber, testWeeks),
           eq(gctlStakedByRegionWeek.region, String(testZoneId))
         )
       );
@@ -77,7 +77,7 @@ describe("PoL Dashboard: endpoint integration-ish", () => {
       .delete(gctlStakedByRegionWeek)
       .where(
         and(
-          eq(gctlStakedByRegionWeek.weekNumber, completedWeek),
+          inArray(gctlStakedByRegionWeek.weekNumber, testWeeks),
           eq(gctlStakedByRegionWeek.region, String(testZoneId))
         )
       );
@@ -172,6 +172,29 @@ describe("PoL Dashboard: endpoint integration-ish", () => {
       const row = json.find((r: any) => r.zone_id === testZoneId);
       expect(row).toBeTruthy();
       expect(row.staked_gctl).toBe("123");
+    });
+  });
+
+  it("GET /pol/revenue/regions falls back to latest available stake snapshot week when current week is missing", async () => {
+    await db.insert(polRevenueByRegionWeek).values([
+      { weekNumber: completedWeek, region: String(testZoneId), totalLq: "200", minerSalesLq: "0", gctlMintsLq: "200" },
+    ]);
+
+    // Insert stake for the previous week only.
+    await db.insert(gctlStakedByRegionWeek).values({
+      weekNumber: completedWeek - 1,
+      region: String(testZoneId),
+      gctlStakedRaw: "456",
+      fetchedAt: new Date(),
+    });
+
+    await withFrozenNow(nowUnixSeconds, async () => {
+      const res = await app.handle(new Request("http://localhost/pol/revenue/regions?range=90d"));
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      const row = json.find((r: any) => r.zone_id === testZoneId);
+      expect(row).toBeTruthy();
+      expect(row.staked_gctl).toBe("456");
     });
   });
 });
