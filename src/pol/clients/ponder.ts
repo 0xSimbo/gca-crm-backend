@@ -19,6 +19,18 @@ export type PonderPolYieldResponse = {
   indexingComplete: boolean;
 };
 
+export type PonderPolSummaryResponse = {
+  endowment: { usdg: string; glw: string; lq: string };
+  botActive: { usdg: string; glw: string; lq: string };
+  total: {
+    lq: string;
+    usd: string;
+    breakdown: { usdg: string; glw: string };
+  };
+  spotPrice: string; // USDG per GLW (decimal string)
+  indexingComplete: boolean;
+};
+
 export type PonderFmiSellPressureResponse = {
   range: string;
   weekRange: { startWeek: number; endWeek: number };
@@ -78,6 +90,12 @@ export async function fetchPonderPolYield(params: {
   const base = getPonderBaseUrl();
   const url = `${base}/pol/yield?range=${encodeURIComponent(params.range)}`;
   return await fetchJson<PonderPolYieldResponse>(url);
+}
+
+export async function fetchPonderPolSummary(): Promise<PonderPolSummaryResponse> {
+  const base = getPonderBaseUrl();
+  const url = `${base}/pol/summary`;
+  return await fetchJson<PonderPolSummaryResponse>(url);
 }
 
 export async function fetchPonderFmiSellPressure(params: {

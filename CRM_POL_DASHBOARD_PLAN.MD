@@ -124,10 +124,21 @@ CRM should expose vesting unlock schedule for the Unlock/FDV widget.
 ### 6.1 Revenue + Farms
 - `GET /pol/revenue/aggregate?range=90d`
   - `lifetime_lq`, `ninety_day_lq`, `ninety_day_yield_lq`, `ninety_day_apy`, `active_farms`
+  - Lifetime alignment fields (internal/debug):
+    - `lifetime_attributed_lq`: sum of weekly attributed revenue (DB snapshot sum, pre-adjustment)
+    - `lifetime_cgp_adjustment_lq`: delta applied so displayed lifetime matches current Total PoL
+  - Note: `lifetime_lq` is a **display value** that is aligned to current Total PoL (from Ponder `/pol/summary`) by allocating the delta into CGP (zone `1`) in the farm/region endpoints.
 - `GET /pol/revenue/farms?range=90d`
-  - array of farms: `farm_id`, `name`, `zone_id`, `panels`, `lifetime_lq`, `ninety_day_lq`, `ninety_day_delta_pct`, `credits_total`, `cc_per_week`, `image_url`
+  - array of farms:
+    - `farm_id`, `name`, `zone_id`, `panels`, `lifetime_lq`, `ninety_day_lq`, `ninety_day_delta_pct`, `credits_total`, `cc_per_week`, `image_url`
+    - `audit_week`: protocol week derived from `farms.auditCompleteDate` (proxy for "builtEpoch" until we ingest Control's builtEpoch)
+    - `lifetime_attributed_lq`: pre-adjustment lifetime (from weekly attributed snapshots)
+    - `lifetime_cgp_adjustment_lq`: farm-level delta applied (only non-zero for CGP farms, zone `1`, unless CGP is empty)
 - `GET /pol/revenue/regions?range=90d`
-  - array of zones: `zone_id`, `lifetime_lq`, `ninety_day_lq`, `cc_per_week`, `farm_count`, `staked_gctl`
+  - array of zones:
+    - `zone_id`, `lifetime_lq`, `ninety_day_lq`, `cc_per_week`, `farm_count`, `staked_gctl`
+    - `lifetime_attributed_lq`: pre-adjustment lifetime (from weekly attributed snapshots)
+    - `lifetime_cgp_adjustment_lq`: region-level delta applied (entire delta is assigned to CGP zone `1`)
 - `GET /farms/active-count`
   - `{ count: number }` where PD > 0
 

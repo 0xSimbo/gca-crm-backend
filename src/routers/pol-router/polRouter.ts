@@ -19,18 +19,109 @@ import {
   getProtocolWeekForTimestamp,
   getProtocolWeekStartTimestamp,
 } from "../../pol/protocolWeeks";
-import { fetchPonderPolPoints, fetchPonderPolYield } from "../../pol/clients/ponder";
+import {
+  fetchPonderPolPoints,
+  fetchPonderPolSummary,
+  fetchPonderPolYield,
+} from "../../pol/clients/ponder";
 import { GENESIS_TIMESTAMP } from "../../constants/genesis-timestamp";
 import {
   computeWeeklyPolLiquiditySeries,
   type PolLiquidityPoint,
 } from "../../pol/liquidity/weeklyLiquiditySeries";
+import { allocateAmountByWeights } from "../../pol/math/allocation";
 
 function getWeeksForRange(range: string): number {
   if (range === "90d") return 13;
   if (range === "7d") return 1;
   if (/^\d+w$/.test(range)) return Number(range.replace("w", ""));
   throw new Error(`Unsupported range: ${range}`);
+}
+
+const CGP_ZONE_ID = 1;
+
+function parseBigIntSafe(value: unknown): bigint {
+  if (value === null || value === undefined) return 0n;
+  try {
+    return BigInt(String(value));
+  } catch {
+    return 0n;
+  }
+}
+
+function parseCrsCcPerWeekToScaledInt(ccPerWeek: unknown): bigint {
+  // netCarbonCreditEarningWeekly is numeric(10,5) -> scale 5.
+  if (ccPerWeek === null || ccPerWeek === undefined) return 0n;
+  let dec: Decimal;
+  try {
+    dec = new Decimal(String(ccPerWeek));
+  } catch {
+    return 0n;
+  }
+  if (dec.isNegative()) return 0n;
+  return BigInt(dec.mul(100000).toFixed(0, Decimal.ROUND_FLOOR));
+}
+
+function allocateDeltaNonNegative(params: {
+  delta: bigint; // can be positive or negative
+  baselineByKey: Map<string, bigint>; // baseline lifetime per farm (>= 0)
+  weightsByKey: Map<string, bigint>;
+}): Map<string, bigint> {
+  const { delta, baselineByKey, weightsByKey } = params;
+  const keys = Array.from(weightsByKey.keys()).sort();
+  const out = new Map<string, bigint>();
+  for (const k of keys) out.set(k, 0n);
+  if (keys.length === 0 || delta === 0n) return out;
+
+  // Positive deltas are always safe.
+  if (delta > 0n) {
+    const alloc = allocateAmountByWeights({ amount: delta, weightsByKey });
+    for (const [k, amt] of alloc.entries()) out.set(String(k), amt);
+    return out;
+  }
+
+  // Negative delta: subtract without taking any farm below 0 lifetime.
+  // Water-fill style:
+  // - Iterate: allocate proportional negative deltas.
+  // - If any farm would go below 0, clamp it to -baseline and remove from pool.
+  let remaining = delta; // negative
+  const remainingKeys = new Set(keys);
+
+  while (remaining < 0n && remainingKeys.size > 0) {
+    const w = new Map<string, bigint>();
+    for (const k of remainingKeys) w.set(k, weightsByKey.get(k) ?? 0n);
+    const allocPos = allocateAmountByWeights({
+      amount: -remaining,
+      weightsByKey: w,
+    });
+
+    let clampedAny = false;
+    for (const [k, amtPos] of allocPos.entries()) {
+      const key = String(k);
+      const curAdj = out.get(key) ?? 0n;
+      const proposedAdj = curAdj - amtPos; // negative movement
+      const baseline = baselineByKey.get(key) ?? 0n;
+      if (baseline + proposedAdj < 0n) {
+        out.set(key, -baseline);
+        remaining -= (-baseline - curAdj); // consume portion of remaining delta
+        remainingKeys.delete(key);
+        clampedAny = true;
+      }
+    }
+
+    if (clampedAny) continue;
+
+    // No clamps: apply all and we're done.
+    for (const [k, amtPos] of allocPos.entries()) {
+      const key = String(k);
+      out.set(key, (out.get(key) ?? 0n) - amtPos);
+    }
+    remaining = 0n;
+  }
+
+  // If we ran out of keys, we can't apply the full negative delta without going below zero.
+  // Leave as-is; callers should tolerate imperfect matching in this pathological case.
+  return out;
 }
 
 export const polRouter = new Elysia({ prefix: "/pol" })
@@ -107,6 +198,9 @@ export const polRouter = new Elysia({ prefix: "/pol" })
         const endWeek = getCompletedWeekNumber();
         const startWeek = Math.max(0, endWeek - (weeks - 1));
 
+        const polSummary = await fetchPonderPolSummary().catch(() => null);
+        const totalPolLqAtomic = polSummary ? parseBigIntSafe(polSummary.total.lq) : null;
+
         const lifetime = await db
           .select({
             total: sql<string>`coalesce(sum(${polRevenueByRegionWeek.totalLq}), 0)`,
@@ -151,8 +245,18 @@ export const polRouter = new Elysia({ prefix: "/pol" })
           BigInt(String((yieldData as any).uniFees90dLq ?? "0"))
         ).toString();
 
+        const lifetimeAttributedLqAtomic = parseBigIntSafe(lifetime[0]?.total ?? "0");
+        const lifetimeDisplayLqAtomic =
+          totalPolLqAtomic !== null ? totalPolLqAtomic : lifetimeAttributedLqAtomic;
+        const lifetimeCgpAdjustmentLqAtomic =
+          totalPolLqAtomic !== null ? totalPolLqAtomic - lifetimeAttributedLqAtomic : 0n;
+
         return {
-          lifetime_lq: lifetime[0]?.total ?? "0",
+          // "lifetime_lq" is a display value: by request, we make it sum to Total PoL by
+          // allocating the delta into CGP (zone 1) farms/region in the other endpoints.
+          lifetime_lq: lifetimeDisplayLqAtomic.toString(),
+          lifetime_attributed_lq: lifetimeAttributedLqAtomic.toString(),
+          lifetime_cgp_adjustment_lq: lifetimeCgpAdjustmentLqAtomic.toString(),
           ninety_day_lq: ninety[0]?.total ?? "0",
           ninety_day_yield_lq: ninetyDayYieldLq,
           ninety_day_apy: String((yieldData as any).apy ?? "0"),
@@ -173,6 +277,8 @@ export const polRouter = new Elysia({ prefix: "/pol" })
       }),
       detail: {
         summary: "PoL revenue aggregate (lifetime + range)",
+        description:
+          "Returns attributed lifetime + range totals. lifetime_lq is aligned to current Total PoL (Ponder /pol/summary) via a CGP (zone 1) adjustment; debug fields expose the delta.",
         tags: [TAG.POL],
       },
     }
@@ -187,6 +293,9 @@ export const polRouter = new Elysia({ prefix: "/pol" })
         const startWeek = Math.max(0, endWeek - (weeks - 1));
         const prevStartWeek = Math.max(0, startWeek - weeks);
         const prevEndWeek = startWeek - 1;
+
+        const polSummary = await fetchPonderPolSummary().catch(() => null);
+        const totalPolLqAtomic = polSummary ? parseBigIntSafe(polSummary.total.lq) : null;
 
         const activeFarms = await db
           .select({
@@ -262,6 +371,43 @@ export const polRouter = new Elysia({ prefix: "/pol" })
           });
         }
 
+        // Synthetic "CGP boost" to make sum(farm lifetime) == Total PoL.
+        // The delta is applied to CGP farms (zone 1). If there are no CGP farms in the
+        // active set, we fall back to distributing across all active farms so totals match.
+        const baselineLifetimeByFarmId = new Map<string, bigint>();
+        for (const f of activeFarms) {
+          const a = aggByFarm.get(f.farmId) ?? { lifetime: "0", ninety: "0", prev: "0" };
+          baselineLifetimeByFarmId.set(f.farmId, parseBigIntSafe(a.lifetime));
+        }
+        const baselineSum = Array.from(baselineLifetimeByFarmId.values()).reduce(
+          (acc, v) => acc + v,
+          0n
+        );
+        const boostTotal = totalPolLqAtomic !== null ? totalPolLqAtomic - baselineSum : 0n;
+
+        const cgpFarmIds = activeFarms
+          .filter((f) => Number(f.zoneId) === CGP_ZONE_ID)
+          .map((f) => f.farmId);
+        const eligibleFarmIds = cgpFarmIds.length > 0 ? cgpFarmIds : activeFarms.map((f) => f.farmId);
+
+        const weightsByFarmId = new Map<string, bigint>();
+        for (const f of activeFarms) {
+          if (!eligibleFarmIds.includes(f.farmId)) continue;
+          weightsByFarmId.set(f.farmId, parseCrsCcPerWeekToScaledInt(f.ccPerWeek));
+        }
+        const baselineEligible = new Map<string, bigint>();
+        for (const id of eligibleFarmIds) {
+          baselineEligible.set(id, baselineLifetimeByFarmId.get(id) ?? 0n);
+        }
+        const boostByFarmId =
+          boostTotal !== 0n && eligibleFarmIds.length > 0
+            ? allocateDeltaNonNegative({
+                delta: boostTotal,
+                baselineByKey: baselineEligible,
+                weightsByKey: weightsByFarmId,
+              })
+            : new Map<string, bigint>();
+
         return activeFarms.map((f) => {
           const ccPerWeek = String(f.ccPerWeek ?? "0");
           const cc = new Decimal(ccPerWeek);
@@ -281,12 +427,20 @@ export const polRouter = new Elysia({ prefix: "/pol" })
           const deltaPct =
             prev.gt(0) ? new Decimal(a.ninety).minus(prev).div(prev).toNumber() : null;
 
+          const baselineLifetime = parseBigIntSafe(a.lifetime);
+          const boost = boostByFarmId.get(f.farmId) ?? 0n;
+          const lifetimeWithBoost = (baselineLifetime + boost).toString();
+
           return {
             farm_id: f.farmId,
             name: f.name,
             zone_id: Number(f.zoneId),
             panels: Number(f.panels ?? 0),
-            lifetime_lq: a.lifetime,
+            // Useful proxy for "built epoch" until we ingest Control's builtEpoch.
+            audit_week: auditWeek,
+            lifetime_lq: lifetimeWithBoost,
+            lifetime_attributed_lq: baselineLifetime.toString(),
+            lifetime_cgp_adjustment_lq: boost.toString(),
             ninety_day_lq: a.ninety,
             ninety_day_delta_pct: deltaPct,
             credits_total: creditsTotal,
@@ -309,6 +463,8 @@ export const polRouter = new Elysia({ prefix: "/pol" })
       }),
       detail: {
         summary: "PoL revenue by farm (lifetime + range)",
+        description:
+          "Returns farm revenue aggregates. Includes audit_week (proxy for builtEpoch) and optional CGP lifetime adjustment so totals can match current Total PoL.",
         tags: [TAG.POL],
       },
     }
@@ -321,6 +477,9 @@ export const polRouter = new Elysia({ prefix: "/pol" })
         const weeks = getWeeksForRange(range);
         const endWeek = getCompletedWeekNumber();
         const startWeek = Math.max(0, endWeek - (weeks - 1));
+
+        const polSummary = await fetchPonderPolSummary().catch(() => null);
+        const totalPolLqAtomic = polSummary ? parseBigIntSafe(polSummary.total.lq) : null;
 
         const regionAgg = await db
           .select({
@@ -379,13 +538,27 @@ export const polRouter = new Elysia({ prefix: "/pol" })
           stakeByZoneId.set(zoneId, String(s.gctlStakedRaw));
         }
 
+        const baselineRegionLifetime = regionAgg.reduce(
+          (acc, r) => acc + parseBigIntSafe(r.lifetime),
+          0n
+        );
+        const deltaToMatch =
+          totalPolLqAtomic !== null ? totalPolLqAtomic - baselineRegionLifetime : 0n;
+
         return regionAgg.flatMap((r) => {
           const zoneId = Number(r.region);
           if (!Number.isFinite(zoneId)) return [];
           const cc = ccByZoneId.get(zoneId) ?? new Decimal(0);
+
+          const baselineLifetime = parseBigIntSafe(r.lifetime);
+          const boost = zoneId === CGP_ZONE_ID ? deltaToMatch : 0n;
+          const lifetimeWithBoost = (baselineLifetime + boost).toString();
+
           return {
             zone_id: zoneId,
-            lifetime_lq: r.lifetime,
+            lifetime_lq: lifetimeWithBoost,
+            lifetime_attributed_lq: baselineLifetime.toString(),
+            lifetime_cgp_adjustment_lq: boost.toString(),
             ninety_day_lq: r.ninety,
             cc_per_week: cc.toString(),
             farm_count: countByZoneId.get(zoneId) ?? 0,
@@ -407,6 +580,8 @@ export const polRouter = new Elysia({ prefix: "/pol" })
       }),
       detail: {
         summary: "PoL revenue by region (lifetime + range)",
+        description:
+          "Returns region revenue aggregates. Region lifetime can include a CGP (zone 1) adjustment so the sum matches current Total PoL.",
         tags: [TAG.POL],
       },
     }
