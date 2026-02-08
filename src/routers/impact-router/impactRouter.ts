@@ -1,5 +1,5 @@
 import { Elysia, t } from "elysia";
-import { desc, asc, sql, and, eq, inArray } from "drizzle-orm";
+import { desc, asc, sql, and, eq, inArray, lte } from "drizzle-orm";
 import { db } from "../../db/db";
 import {
   impactLeaderboardCache,
@@ -87,6 +87,9 @@ const delegatorsLeaderboardCache = new Map<
   { expiresAtMs: number; data: unknown }
 >();
 
+const WALLET_STATS_CACHE_TTL_MS = 10 * 60_000;
+const walletStatsCache = new Map<string, { expiresAtMs: number; data: unknown }>();
+
 const MIN_POINTS_THRESHOLD = 0.01;
 
 function filterLeaderboardWallets(wallets: string[]): string[] {
@@ -133,11 +136,21 @@ function readCachedDelegatorsLeaderboard(key: string): unknown | null {
   return cached.data;
 }
 
+function readCachedWalletStats(key: string): unknown | null {
+  const cached = walletStatsCache.get(key);
+  if (!cached) return null;
+  if (Date.now() >= cached.expiresAtMs) {
+    walletStatsCache.delete(key);
+    return null;
+  }
+  return cached.data;
+}
+
 async function getLeaderboardWalletsForRange(params: {
   startWeek: number;
   endWeek: number;
-}): Promise<string[]> {
-  const rows = await db
+}): Promise<{ wallets: string[]; endWeekUsed: number }> {
+  const exactRows = await db
     .select({
       wallet: impactLeaderboardCache.walletAddress,
       totalPoints: impactLeaderboardCache.totalPoints,
@@ -150,7 +163,8 @@ async function getLeaderboardWalletsForRange(params: {
       )
     );
 
-  return rows
+  const filterRows = (rows: Array<{ wallet: string; totalPoints: unknown }>) =>
+    rows
     .map((row) => ({
       wallet: (row.wallet || "").toLowerCase(),
       points: Number(row.totalPoints),
@@ -163,6 +177,40 @@ async function getLeaderboardWalletsForRange(params: {
         !excludedLeaderboardWalletsSet.has(row.wallet)
     )
     .map((row) => row.wallet);
+
+  if (exactRows.length > 0) {
+    return { wallets: filterRows(exactRows), endWeekUsed: params.endWeek };
+  }
+
+  // Cache is sometimes computed only up to an earlier week. Fall back to the latest available <= requested.
+  const maxRes = await db
+    .select({ maxEnd: sql<number>`max(${impactLeaderboardCache.endWeek})` })
+    .from(impactLeaderboardCache)
+    .where(
+      and(
+        eq(impactLeaderboardCache.startWeek, params.startWeek),
+        lte(impactLeaderboardCache.endWeek, params.endWeek)
+      )
+    );
+  const maxEndRaw = (maxRes[0] as any)?.maxEnd;
+  const maxEnd = maxEndRaw == null ? null : Number(maxEndRaw);
+  if (maxEnd == null || !Number.isFinite(maxEnd)) {
+    return { wallets: [], endWeekUsed: params.endWeek };
+  }
+
+  const rows = await db
+    .select({
+      wallet: impactLeaderboardCache.walletAddress,
+      totalPoints: impactLeaderboardCache.totalPoints,
+    })
+    .from(impactLeaderboardCache)
+    .where(
+      and(
+        eq(impactLeaderboardCache.startWeek, params.startWeek),
+        eq(impactLeaderboardCache.endWeek, maxEnd)
+      )
+    );
+  return { wallets: filterRows(rows), endWeekUsed: maxEnd };
 }
 
 function updateEarliestWeek(
@@ -360,13 +408,23 @@ export const impactRouter = new Elysia({ prefix: "/impact" })
     async ({ set }) => {
       try {
         const leaderboardRange = getWeekRangeForImpact();
-        const wallets = await getLeaderboardWalletsForRange({
+        const currentWeek = getCurrentEpoch();
+
+        const { wallets, endWeekUsed } = await getLeaderboardWalletsForRange({
           startWeek: leaderboardRange.startWeek,
           endWeek: leaderboardRange.endWeek,
         });
         const totalWallets = wallets.length;
 
-        const currentWeek = getCurrentEpoch();
+        const cacheKey = [
+          leaderboardRange.startWeek,
+          leaderboardRange.endWeek,
+          endWeekUsed,
+          currentWeek,
+        ].join(":");
+        const cached = readCachedWalletStats(cacheKey);
+        if (cached) return cached;
+
         let delegators = 0;
         let miners = 0;
 
@@ -412,16 +470,21 @@ export const impactRouter = new Elysia({ prefix: "/impact" })
           }
         }
 
-        return {
+        const payload = {
           weekRange: {
             startWeek: leaderboardRange.startWeek,
-            endWeek: leaderboardRange.endWeek,
+            endWeek: endWeekUsed,
           },
           totalWallets,
           delegators,
           miners,
           delegationWeek: currentWeek,
         };
+        walletStatsCache.set(cacheKey, {
+          expiresAtMs: Date.now() + WALLET_STATS_CACHE_TTL_MS,
+          data: payload,
+        });
+        return payload;
       } catch (e) {
         if (e instanceof Error) {
           set.status = 400;
