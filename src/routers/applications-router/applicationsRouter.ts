@@ -87,6 +87,8 @@ import { computeProjectQuote } from "./helpers/computeProjectQuote";
 import { createProjectQuote } from "../../db/mutations/project-quotes/createProjectQuote";
 import { countQuotesInLastHour } from "../../db/queries/project-quotes/countQuotesInLastHour";
 import { getRegionCodeFromCoordinates } from "./helpers/mapStateToRegionCode";
+import { protocolFeeAssumptions } from "../../constants/protocol-fee-assumptions";
+import { isLebanonCoordinates } from "../../lib/geography/is-lebanon-coordinates";
 import { parseUnits } from "viem";
 import { updateQuoteCashAmount } from "../../db/mutations/project-quotes/updateQuoteCashAmount";
 import { updateQuoteStatus } from "../../db/mutations/project-quotes/updateQuoteStatus";
@@ -109,6 +111,10 @@ import {
 import { findActiveDefaultMaxSplits } from "../../db/queries/defaultMaxSplits/findActiveDefaultMaxSplits";
 
 const WEEKS_PER_YEAR = 52.18; // must match computeProjectQuote conversion (365.25/7 rounded)
+const LEBANON_REGION_CODE = "LB";
+const LEBANON_ELECTRICITY_PRICE_PER_KWH = 0.3474;
+const LEBANON_ESCALATOR_RATE = 0.05;
+const LEBANON_UTILITY_BILL_URL_SENTINEL = "lebanon-fixed-rate";
 
 export const applicationsRouter = new Elysia({ prefix: "/applications" })
   .use(publicApplicationsRoutes)
@@ -2651,19 +2657,6 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
               };
             }
 
-            // Derive region code from coordinates
-            const regionCode = await getRegionCodeFromCoordinates(
-              latitude,
-              longitude
-            );
-            if (!regionCode) {
-              set.status = 400;
-              return {
-                error:
-                  "Unable to determine region from the provided coordinates. Please ensure the location is within a supported region.",
-              };
-            }
-
             // Validate utility bill file
             if (!body.utilityBill) {
               set.status = 400;
@@ -2686,6 +2679,111 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
             if (file.size > maxSize) {
               set.status = 400;
               return { error: "File size must be less than 10MB" };
+            }
+
+            // Lebanon: auto-detect from coordinates and use fixed-rate logic.
+            // This avoids the US-only state->region mapper returning null.
+            if (isLebanonCoordinates(latitude, longitude)) {
+              const weeklyConsumptionMWh = annualConsumptionMWh / WEEKS_PER_YEAR;
+
+              const quoteResult = await computeProjectQuote({
+                weeklyConsumptionMWh,
+                systemSizeKw,
+                electricityPricePerKwh: LEBANON_ELECTRICITY_PRICE_PER_KWH,
+                latitude,
+                longitude,
+                override: {
+                  // Avoid reverse-geocode dependency and enforce Lebanon fixed rates.
+                  escalatorRate: LEBANON_ESCALATOR_RATE,
+                  discountRate: protocolFeeAssumptions.lebanonDiscountRate,
+                },
+              });
+
+              const savedQuote = await createProjectQuote({
+                walletAddress,
+                userId,
+                metadata: body.metadata,
+                isProjectCompleted: parseOptionalBoolean(
+                  body.isProjectCompleted,
+                  {
+                    defaultValue: false,
+                    fieldName: "isProjectCompleted",
+                  }
+                ),
+                regionCode: LEBANON_REGION_CODE,
+                latitude: latitude.toString(),
+                longitude: longitude.toString(),
+                weeklyConsumptionMWh: weeklyConsumptionMWh.toString(),
+                systemSizeKw: systemSizeKw.toString(),
+                electricityPricePerKwh: LEBANON_ELECTRICITY_PRICE_PER_KWH.toString(),
+                priceSource: "blended",
+                priceConfidence: "1",
+                utilityBillUrl: LEBANON_UTILITY_BILL_URL_SENTINEL,
+                discountRate: quoteResult.discountRate.toString(),
+                escalatorRate: quoteResult.escalatorRate.toString(),
+                years: quoteResult.years,
+                protocolDepositUsd6: quoteResult.protocolDepositUsd6,
+                weeklyCredits: quoteResult.weeklyCredits.toString(),
+                weeklyDebt: quoteResult.weeklyDebt.toString(),
+                netWeeklyCc: quoteResult.netWeeklyCc.toString(),
+                netCcPerMwh: quoteResult.netCcPerMwh.toString(),
+                weeklyImpactAssetsWad: quoteResult.weeklyImpactAssetsWad,
+                efficiencyScore: quoteResult.efficiencyScore,
+                carbonOffsetsPerMwh: quoteResult.carbonOffsetsPerMwh.toString(),
+                uncertaintyApplied: quoteResult.uncertaintyApplied.toString(),
+                debugJson: quoteResult.debugJson,
+              });
+
+              return {
+                quoteId: savedQuote.id,
+                walletAddress: savedQuote.walletAddress,
+                userId: savedQuote.userId,
+                metadata: savedQuote.metadata,
+                isProjectCompleted: savedQuote.isProjectCompleted,
+                regionCode: savedQuote.regionCode,
+                protocolDeposit: {
+                  usd: quoteResult.protocolDepositUsd,
+                  usd6Decimals: quoteResult.protocolDepositUsd6,
+                },
+                carbonMetrics: {
+                  weeklyCredits: quoteResult.weeklyCredits,
+                  weeklyDebt: quoteResult.weeklyDebt,
+                  netWeeklyCc: quoteResult.netWeeklyCc,
+                  netCcPerMwh: quoteResult.netCcPerMwh,
+                  carbonOffsetsPerMwh: quoteResult.carbonOffsetsPerMwh,
+                  uncertaintyApplied: quoteResult.uncertaintyApplied,
+                },
+                efficiency: {
+                  score: quoteResult.efficiencyScore,
+                  weeklyImpactAssetsWad: quoteResult.weeklyImpactAssetsWad,
+                },
+                rates: {
+                  discountRate: quoteResult.discountRate,
+                  escalatorRate: quoteResult.escalatorRate,
+                  commitmentYears: quoteResult.years,
+                },
+                extraction: {
+                  electricityPricePerKwh: LEBANON_ELECTRICITY_PRICE_PER_KWH,
+                  confidence: 1,
+                  rationale:
+                    "Fixed blended Lebanon electricity rate: $0.3474/kWh (no utility bill required).",
+                  utilityBillUrl: LEBANON_UTILITY_BILL_URL_SENTINEL,
+                },
+                debug: quoteResult.debugJson,
+              };
+            }
+
+            // Derive region code from coordinates (US-only mapping)
+            const regionCode = await getRegionCodeFromCoordinates(
+              latitude,
+              longitude
+            );
+            if (!regionCode) {
+              set.status = 400;
+              return {
+                error:
+                  "Unable to determine region from the provided coordinates. Please ensure the location is within a supported region.",
+              };
             }
 
             // Extract electricity price from utility bill

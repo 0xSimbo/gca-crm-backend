@@ -258,6 +258,14 @@ curl -X POST https://your-api.com/applications/project-quote \
 
 ## Notes
 
+### Lebanon auto-detection
+
+If `latitude`/`longitude` fall within Lebanon, the server will automatically create a Lebanon fixed-rate quote (region `"LB"`):
+
+- Electricity price is fixed at **0.3474 USD/kWh**
+- Discount rate is fixed at **35%**
+- The uploaded utility bill is **accepted but ignored** (kept required for compatibility with existing hub UI)
+
 - The `walletAddress` in the response is automatically derived from the authenticated user's `userId`
 - Region is automatically detected from the provided coordinates
 - The utility bill PDF is processed using AI to extract the electricity price
