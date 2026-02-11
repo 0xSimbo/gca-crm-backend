@@ -6,6 +6,7 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "bun run src/index.ts",
     "dev": "bun run --watch src/index.ts",
+    "monitor:rabbitmq": "bun run scripts/check-rabbitmq.ts",
     "build:types": "rm -rf lib && npm run build:cjs && npm run build:esm",
     "build:cjs": "tsc  --module es2015 --outDir ./lib/cjs  && node postbuild-cjs.mjs",
     "build:esm": "tsc  --module es2015 --outDir ./lib/esm   && node postbuild-esm.mjs",

@@ -27,12 +27,54 @@ import {
   findFractionRefundByTxHash,
 } from "../db/mutations/fractions/recordFractionRefund";
 
+export interface FractionEventServiceHealth {
+  isListening: boolean;
+  listenerStartedAt: string | null;
+  lastEventAt: string | null;
+  lastEventType: string | null;
+  lastEventFractionId: string | null;
+  listenerError: string | null;
+  listenerErrorAt: string | null;
+}
+
 export class FractionEventService {
   private listener?: ReturnType<typeof createGlowEventListener>;
   private emitter?: ReturnType<typeof createGlowEventEmitter>;
   private isListening = false;
+  private listenerStartedAtMs: number | null = null;
+  private lastEventAtMs: number | null = null;
+  private lastEventType: string | null = null;
+  private lastEventFractionId: string | null = null;
+  private listenerError: string | null = null;
+  private listenerErrorAtMs: number | null = null;
 
   constructor() {}
+
+  private toIsoTimestamp(ms: number | null): string | null {
+    return ms == null ? null : new Date(ms).toISOString();
+  }
+
+  private markEventReceived(eventType: string, fractionId?: string): void {
+    this.lastEventAtMs = Date.now();
+    this.lastEventType = eventType;
+    this.lastEventFractionId = fractionId ?? null;
+  }
+
+  private markListenerError(context: string, error: unknown): void {
+    const message =
+      error instanceof Error
+        ? error.message
+        : typeof error === "string"
+        ? error
+        : JSON.stringify(error);
+    this.listenerError = `[${context}] ${message}`;
+    this.listenerErrorAtMs = Date.now();
+  }
+
+  private clearListenerError(): void {
+    this.listenerError = null;
+    this.listenerErrorAtMs = null;
+  }
 
   /**
    * Initialize the event listener for fraction events
@@ -73,6 +115,7 @@ export class FractionEventService {
         if (event.environment !== environment) {
           return;
         }
+        this.markEventReceived("fraction.sold", event.payload.fractionId);
         console.log(
           "[FractionEventService] Received fraction.sold event:",
           event.payload.fractionId
@@ -334,6 +377,7 @@ export class FractionEventService {
         if (event.environment !== environment) {
           return;
         }
+        this.markEventReceived("fraction.created", event.payload.fractionId);
         console.log(
           "[FractionEventService] Received fraction.created event:",
           event.payload.fractionId,
@@ -478,6 +522,7 @@ export class FractionEventService {
         if (event.environment !== environment) {
           return;
         }
+        this.markEventReceived("fraction.closed", event.payload.fractionId);
 
         // Get the fraction to check its current status
         const fraction = await findFractionById(event.payload.fractionId);
@@ -555,6 +600,7 @@ export class FractionEventService {
         if (event.environment !== environment) {
           return;
         }
+        this.markEventReceived("fraction.refunded", event.payload.fractionId);
 
         // Check if we already processed this refund event (idempotency)
         const existingRefund = await findFractionRefundByTxHash(
@@ -629,9 +675,16 @@ export class FractionEventService {
       }
     });
 
-    await this.listener.start();
-    this.isListening = true;
-    console.log("[FractionEventService] Event listener started");
+    try {
+      await this.listener.start();
+      this.isListening = true;
+      this.listenerStartedAtMs = Date.now();
+      this.clearListenerError();
+      console.log("[FractionEventService] Event listener started");
+    } catch (error) {
+      this.markListenerError("listener.start", error);
+      throw error;
+    }
   }
 
   /**
@@ -646,6 +699,22 @@ export class FractionEventService {
     await this.listener.stop();
     this.isListening = false;
     console.log("[FractionEventService] Event listener stopped");
+  }
+
+  setListenerError(error: unknown, context = "listener"): void {
+    this.markListenerError(context, error);
+  }
+
+  getHealthSnapshot(): FractionEventServiceHealth {
+    return {
+      isListening: this.isListening,
+      listenerStartedAt: this.toIsoTimestamp(this.listenerStartedAtMs),
+      lastEventAt: this.toIsoTimestamp(this.lastEventAtMs),
+      lastEventType: this.lastEventType,
+      lastEventFractionId: this.lastEventFractionId,
+      listenerError: this.listenerError,
+      listenerErrorAt: this.toIsoTimestamp(this.listenerErrorAtMs),
+    };
   }
 
   /**

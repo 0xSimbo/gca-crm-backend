@@ -32,7 +32,10 @@ import { solarCollectorRouter } from "./routers/solar-collector-router/solarColl
 import { referralRouter } from "./routers/referral-router/referralRouter";
 import { incrementStaleFractions } from "./crons/increment-stale-fractions/incrementStaleFractions";
 import { expireFractions } from "./crons/expire-fractions/expireFractions";
-import { initializeFractionEventService } from "./services/eventListener";
+import {
+  getFractionEventService,
+  initializeFractionEventService,
+} from "./services/eventListener";
 import { retryFailedOperations } from "./services/retryFailedOperations";
 import { updateImpactLeaderboard } from "./crons/update-impact-leaderboard";
 import { updateImpactLeaderboardByRegion } from "./crons/update-impact-leaderboard-by-region/update-impact-leaderboard-by-region";
@@ -44,6 +47,26 @@ import { fmiRouter } from "./routers/fmi-router/fmiRouter";
 import { glwRouter } from "./routers/glw-router/glwRouter";
 
 const PORT = process.env.PORT || 3005;
+
+function hasFractionEventServiceEnv(): boolean {
+  return Boolean(
+    process.env.RABBITMQ_ADMIN_USER &&
+      process.env.RABBITMQ_ADMIN_PASSWORD &&
+      process.env.RABBITMQ_QUEUE_NAME &&
+      process.env.NODE_ENV
+  );
+}
+
+function shouldRunFractionEventService(): boolean {
+  if (!hasFractionEventServiceEnv()) return false;
+  return !(
+    process.env.NODE_ENV === "staging" || process.env.RUN_LOCAL === "true"
+  );
+}
+
+let fractionEventServiceStartupError: string | null = null;
+let fractionEventServiceStartupErrorAtMs: number | null = null;
+
 const app = new Elysia()
   .onError({ as: "global" }, ({ request, set, error, body }) => {
     if (error instanceof NotFoundError) {
@@ -369,6 +392,45 @@ const app = new Elysia()
   .get("/legacyFarms", async () => {
     return legacyFarms;
   })
+  .get("/health/fraction-events", ({ set }) => {
+    const envConfigured = hasFractionEventServiceEnv();
+    const expectedToRun = shouldRunFractionEventService();
+
+    let serviceHealth: ReturnType<
+      ReturnType<typeof getFractionEventService>["getHealthSnapshot"]
+    > | null = null;
+    try {
+      serviceHealth = getFractionEventService().getHealthSnapshot();
+    } catch {}
+
+    const isListening = serviceHealth?.isListening ?? false;
+    const startupError =
+      serviceHealth?.listenerError ?? fractionEventServiceStartupError;
+    const startupErrorAt =
+      serviceHealth?.listenerErrorAt ??
+      (fractionEventServiceStartupErrorAtMs
+        ? new Date(fractionEventServiceStartupErrorAtMs).toISOString()
+        : null);
+
+    const healthy = !expectedToRun || isListening;
+    if (!healthy) set.status = 503;
+
+    return {
+      status: healthy ? "ok" : "error",
+      expectedToRun,
+      envConfigured,
+      isListening,
+      listenerStartedAt: serviceHealth?.listenerStartedAt ?? null,
+      lastEventAt: serviceHealth?.lastEventAt ?? null,
+      lastEventType: serviceHealth?.lastEventType ?? null,
+      lastEventFractionId: serviceHealth?.lastEventFractionId ?? null,
+      startupError,
+      startupErrorAt,
+      nodeEnv: process.env.NODE_ENV ?? null,
+      runLocal: process.env.RUN_LOCAL === "true",
+      queueName: process.env.RABBITMQ_QUEUE_NAME ?? null,
+    };
+  })
   .get("/", () => "Hey!")
   .listen(PORT);
 
@@ -385,13 +447,8 @@ if (process.env.SLACK_BOT_TOKEN) {
 }
 
 // Initialize and start the fraction event service
-if (
-  process.env.RABBITMQ_ADMIN_USER &&
-  process.env.RABBITMQ_ADMIN_PASSWORD &&
-  process.env.RABBITMQ_QUEUE_NAME &&
-  process.env.NODE_ENV
-) {
-  if (process.env.NODE_ENV === "staging" || process.env.RUN_LOCAL === "true") {
+if (hasFractionEventServiceEnv()) {
+  if (!shouldRunFractionEventService()) {
     console.log(
       "⚠️ Fraction event service not initialized - staging environment"
     );
@@ -401,9 +458,15 @@ if (
     fractionEventService
       .startListener()
       .then(() => {
+        fractionEventServiceStartupError = null;
+        fractionEventServiceStartupErrorAtMs = null;
         console.log("✅ Fraction event service started successfully");
       })
       .catch((error) => {
+        fractionEventService.setListenerError(error, "startup");
+        fractionEventServiceStartupError =
+          error instanceof Error ? error.message : String(error);
+        fractionEventServiceStartupErrorAtMs = Date.now();
         console.error("❌ Failed to start fraction event service:", error);
       });
 

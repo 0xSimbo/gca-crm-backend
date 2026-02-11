@@ -1,0 +1,66 @@
+name: RabbitMQ Monitor
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      RABBITMQ_ADMIN_USER: ${{ secrets.RABBITMQ_ADMIN_USER }}
+      RABBITMQ_ADMIN_PASSWORD: ${{ secrets.RABBITMQ_ADMIN_PASSWORD }}
+      RABBITMQ_QUEUE_NAME: ${{ secrets.RABBITMQ_QUEUE_NAME }}
+      RABBITMQ_URL: ${{ secrets.RABBITMQ_URL }}
+      RABBITMQ_HOST: ${{ secrets.RABBITMQ_HOST }}
+      RABBITMQ_MANAGEMENT_URL: ${{ secrets.RABBITMQ_MANAGEMENT_URL }}
+      RABBITMQ_MANAGEMENT_AUTH_USER: ${{ secrets.RABBITMQ_MANAGEMENT_AUTH_USER }}
+      RABBITMQ_MANAGEMENT_AUTH_PASSWORD: ${{ secrets.RABBITMQ_MANAGEMENT_AUTH_PASSWORD }}
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_ALERT_WEBHOOK_URL }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.2.10"
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Run RabbitMQ synthetic check
+        id: monitor
+        run: |
+          set +e
+          bun run scripts/check-rabbitmq.ts > monitor-output.log 2>&1
+          EXIT_CODE=$?
+          cat monitor-output.log
+          echo "exit_code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
+          if [ "$EXIT_CODE" -ne 0 ]; then
+            echo "failed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "failed=false" >> "$GITHUB_OUTPUT"
+          fi
+          exit 0
+
+      - name: Send Slack alert on failure
+        if: steps.monitor.outputs.failed == 'true' && env.SLACK_WEBHOOK_URL != ''
+        run: |
+          SUMMARY="$(tail -n 80 monitor-output.log)"
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          TEXT="🚨 RabbitMQ monitor failed for ${{ github.repository }} on ${GITHUB_REF_NAME}
+          Run: ${RUN_URL}
+
+          ${SUMMARY}"
+          PAYLOAD="$(jq -n --arg text "$TEXT" '{text: $text}')"
+          curl -sS -X POST -H 'Content-type: application/json' --data "$PAYLOAD" "$SLACK_WEBHOOK_URL"
+
+      - name: Fail workflow when monitor fails
+        if: steps.monitor.outputs.failed == 'true'
+        run: |
+          echo "RabbitMQ synthetic check failed."
+          exit 1
