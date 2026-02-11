@@ -98,6 +98,81 @@ function getPonderListenerBaseUrl(): string {
   return CLAIMS_API_BASE_URL;
 }
 
+const RETRYABLE_CONTROL_API_STATUSES = new Set([429, 500, 502, 503, 504]);
+const CONTROL_API_BASE_RETRY_DELAY_MS = 300;
+const CONTROL_API_WEEK_WINDOW_SIZE = 5;
+const CONTROL_API_WEEK_WINDOW_CONCURRENCY = 2;
+const CONTROL_API_MIN_WALLET_SPLIT_SIZE = 25;
+const CONTROL_API_MAX_RECURSION_DEPTH = 4;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function getControlApiRetryDelayMs(attempt: number): number {
+  const jitterMs = Math.floor(Math.random() * 150);
+  return CONTROL_API_BASE_RETRY_DELAY_MS * 2 ** attempt + jitterMs;
+}
+
+function getErrorStatus(error: unknown): number | null {
+  if (typeof error !== "object" || error == null) return null;
+  const maybeStatus = (error as { status?: unknown }).status;
+  if (typeof maybeStatus !== "number" || !Number.isFinite(maybeStatus))
+    return null;
+  return maybeStatus;
+}
+
+function isRetryableControlApiError(error: unknown): boolean {
+  const status = getErrorStatus(error);
+  return (
+    (status != null && RETRYABLE_CONTROL_API_STATUSES.has(status)) ||
+    status == null
+  );
+}
+
+function makeControlApiError(message: string, status: number): Error {
+  const err = new Error(message) as Error & { status?: number };
+  err.status = status;
+  return err;
+}
+
+function chunkWeekRange(
+  startWeek: number,
+  endWeek: number,
+  windowSize: number
+): Array<{ startWeek: number; endWeek: number }> {
+  const windows: Array<{ startWeek: number; endWeek: number }> = [];
+  for (let week = startWeek; week <= endWeek; week += windowSize) {
+    windows.push({
+      startWeek: week,
+      endWeek: Math.min(endWeek, week + windowSize - 1),
+    });
+  }
+  return windows;
+}
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  worker: (item: T) => Promise<R>
+): Promise<R[]> {
+  if (items.length === 0) return [];
+
+  const results: R[] = new Array(items.length);
+  let cursor = 0;
+  const workers = Array.from({
+    length: Math.max(1, Math.min(concurrency, items.length)),
+  }).map(async () => {
+    for (;;) {
+      const idx = cursor++;
+      if (idx >= items.length) break;
+      results[idx] = await worker(items[idx]!);
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
+
 interface GlwHolderRow {
   id: string;
   balance: string;
@@ -629,33 +704,193 @@ export async function fetchDepositSplitsHistoryBatch(params: {
   startWeek: number;
   endWeek: number;
 }): Promise<Map<string, ControlApiDepositSplitHistorySegment[]>> {
-  const { wallets, startWeek, endWeek } = params;
+  const { startWeek, endWeek } = params;
   const result = new Map<string, ControlApiDepositSplitHistorySegment[]>();
-  if (wallets.length === 0) return result;
-
-  const response = await fetch(
-    `${getControlApiUrl()}/farms/by-wallet/deposit-splits-history/batch`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ wallets, startWeek, endWeek }),
-    }
+  const normalizedWallets = Array.from(
+    new Set(params.wallets.map((w) => w.toLowerCase()))
   );
+  if (normalizedWallets.length === 0) return result;
 
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(
-      `Control API batch deposit splits history failed (${response.status}): ${text}`
+  const mergeMaps = (
+    target: Map<string, ControlApiDepositSplitHistorySegment[]>,
+    source: Map<string, ControlApiDepositSplitHistorySegment[]>
+  ): void => {
+    for (const [wallet, rows] of source) {
+      if (!target.has(wallet)) target.set(wallet, []);
+      target.get(wallet)!.push(...rows);
+    }
+  };
+
+  const compressSegments = (
+    rows: ControlApiDepositSplitHistorySegment[]
+  ): ControlApiDepositSplitHistorySegment[] => {
+    const seen = new Set<string>();
+    const deduped: ControlApiDepositSplitHistorySegment[] = [];
+    for (const row of rows) {
+      const key = [
+        row.farmId,
+        row.startWeek,
+        row.endWeek,
+        row.depositSplitPercent6Decimals,
+      ].join("|");
+      if (seen.has(key)) continue;
+      seen.add(key);
+      deduped.push({ ...row });
+    }
+    deduped.sort((a, b) => {
+      const farmDiff = (a.farmId || "").localeCompare(b.farmId || "");
+      if (farmDiff !== 0) return farmDiff;
+      const startDiff = a.startWeek - b.startWeek;
+      if (startDiff !== 0) return startDiff;
+      return a.endWeek - b.endWeek;
+    });
+    const compressed: ControlApiDepositSplitHistorySegment[] = [];
+    for (const row of deduped) {
+      const prev = compressed[compressed.length - 1];
+      if (
+        prev &&
+        prev.farmId === row.farmId &&
+        prev.depositSplitPercent6Decimals === row.depositSplitPercent6Decimals &&
+        prev.endWeek + 1 >= row.startWeek
+      ) {
+        if (row.endWeek > prev.endWeek) prev.endWeek = row.endWeek;
+      } else {
+        compressed.push({ ...row });
+      }
+    }
+    return compressed;
+  };
+
+  const fetchBatchOnce = async (
+    wallets: string[],
+    start: number,
+    end: number
+  ): Promise<Map<string, ControlApiDepositSplitHistorySegment[]>> => {
+    const response = await fetch(
+      `${getControlApiUrl()}/farms/by-wallet/deposit-splits-history/batch`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ wallets, startWeek: start, endWeek: end }),
+      }
     );
-  }
 
-  const data =
-    (await response.json()) as ControlApiBatchDepositSplitsHistoryResponse;
-  const results = data.results || {};
-  for (const wallet of wallets) {
-    const rows = results[wallet] || results[wallet.toLowerCase()];
-    if (!rows) continue;
-    result.set(wallet.toLowerCase(), rows);
+    if (!response.ok) {
+      const text = await response.text().catch(() => "");
+      throw makeControlApiError(
+        `Control API batch deposit splits history failed (${response.status}): ${text}`,
+        response.status
+      );
+    }
+
+    const data =
+      (await response.json()) as ControlApiBatchDepositSplitsHistoryResponse;
+    const rowsByWallet = data.results || {};
+    const batchResult = new Map<string, ControlApiDepositSplitHistorySegment[]>();
+    for (const wallet of wallets) {
+      const rows = rowsByWallet[wallet] || rowsByWallet[wallet.toLowerCase()];
+      if (!rows) continue;
+      batchResult.set(wallet.toLowerCase(), rows);
+    }
+    return batchResult;
+  };
+
+  const fetchBatchWithFallback = async (
+    wallets: string[],
+    start: number,
+    end: number,
+    depth = 0
+  ): Promise<Map<string, ControlApiDepositSplitHistorySegment[]>> => {
+    const maxAttempts = wallets.length > 1 ? 3 : 4;
+    let lastError: unknown = null;
+
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      try {
+        return await fetchBatchOnce(wallets, start, end);
+      } catch (error) {
+        lastError = error;
+        if (!isRetryableControlApiError(error)) throw error;
+        if (attempt >= maxAttempts - 1) break;
+        await sleep(getControlApiRetryDelayMs(attempt));
+      }
+    }
+
+    if (depth >= CONTROL_API_MAX_RECURSION_DEPTH) {
+      throw lastError instanceof Error
+        ? lastError
+        : new Error("Control API batch deposit splits history failed");
+    }
+
+    const weekSpan = end - start + 1;
+    if (weekSpan > CONTROL_API_WEEK_WINDOW_SIZE) {
+      if (depth === 0) {
+        const status = getErrorStatus(lastError);
+        console.warn(
+          `[control-api] retry exhausted for deposit splits batch (wallets=${wallets.length}, startWeek=${start}, endWeek=${end}, status=${status ?? "unknown"}); retrying in ${CONTROL_API_WEEK_WINDOW_SIZE}-week windows`
+        );
+      }
+      const windows = chunkWeekRange(start, end, CONTROL_API_WEEK_WINDOW_SIZE);
+      const windowResults = await mapWithConcurrency(
+        windows,
+        CONTROL_API_WEEK_WINDOW_CONCURRENCY,
+        async (window) =>
+          await fetchBatchWithFallback(
+            wallets,
+            window.startWeek,
+            window.endWeek,
+            depth + 1
+          )
+      );
+      const merged = new Map<string, ControlApiDepositSplitHistorySegment[]>();
+      for (const m of windowResults) mergeMaps(merged, m);
+      return merged;
+    }
+
+    if (wallets.length > CONTROL_API_MIN_WALLET_SPLIT_SIZE) {
+      if (depth === 0) {
+        const status = getErrorStatus(lastError);
+        console.warn(
+          `[control-api] retry exhausted for deposit splits batch (wallets=${wallets.length}, startWeek=${start}, endWeek=${end}, status=${status ?? "unknown"}); retrying in smaller wallet batches`
+        );
+      }
+      const midpoint = Math.ceil(wallets.length / 2);
+      const leftWallets = wallets.slice(0, midpoint);
+      const rightWallets = wallets.slice(midpoint);
+      if (leftWallets.length === 0 || rightWallets.length === 0) {
+        throw lastError instanceof Error
+          ? lastError
+          : new Error("Control API batch deposit splits history failed");
+      }
+      const leftMap = await fetchBatchWithFallback(
+        leftWallets,
+        start,
+        end,
+        depth + 1
+      );
+      const rightMap = await fetchBatchWithFallback(
+        rightWallets,
+        start,
+        end,
+        depth + 1
+      );
+      const merged = new Map<string, ControlApiDepositSplitHistorySegment[]>();
+      mergeMaps(merged, leftMap);
+      mergeMaps(merged, rightMap);
+      return merged;
+    }
+
+    throw lastError instanceof Error
+      ? lastError
+      : new Error("Control API batch deposit splits history failed");
+  };
+
+  const fetched = await fetchBatchWithFallback(
+    normalizedWallets,
+    startWeek,
+    endWeek
+  );
+  for (const [wallet, rows] of fetched) {
+    result.set(wallet, compressSegments(rows));
   }
 
   return result;
