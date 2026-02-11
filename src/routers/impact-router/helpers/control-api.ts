@@ -103,6 +103,7 @@ const CONTROL_API_BASE_RETRY_DELAY_MS = 300;
 const CONTROL_API_WEEK_WINDOW_SIZE = 5;
 const CONTROL_API_WEEK_WINDOW_CONCURRENCY = 2;
 const CONTROL_API_MIN_WALLET_SPLIT_SIZE = 25;
+const CONTROL_API_MIN_FARM_SPLIT_SIZE = 25;
 const CONTROL_API_MAX_RECURSION_DEPTH = 4;
 
 function sleep(ms: number): Promise<void> {
@@ -668,32 +669,182 @@ export async function fetchWalletRewardsHistoryBatch(params: {
   startWeek: number;
   endWeek: number;
 }): Promise<Map<string, ControlApiFarmReward[]>> {
-  const { wallets, startWeek, endWeek } = params;
-  const result = new Map<string, ControlApiFarmReward[]>();
-  if (wallets.length === 0) return result;
-
-  const response = await fetch(
-    `${getControlApiUrl()}/farms/by-wallet/farm-rewards-history/batch`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ wallets, startWeek, endWeek }),
-    }
+  const { startWeek, endWeek } = params;
+  const normalizedWallets = Array.from(
+    new Set(params.wallets.map((w) => w.toLowerCase()))
   );
+  const result = new Map<string, ControlApiFarmReward[]>();
+  if (normalizedWallets.length === 0) return result;
 
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(
-      `Control API batch wallet rewards failed (${response.status}): ${text}`
+  const mergeMaps = (
+    target: Map<string, ControlApiFarmReward[]>,
+    source: Map<string, ControlApiFarmReward[]>
+  ): void => {
+    for (const [wallet, rows] of source) {
+      if (!target.has(wallet)) target.set(wallet, []);
+      target.get(wallet)!.push(...rows);
+    }
+  };
+
+  const dedupeRows = (rows: ControlApiFarmReward[]): ControlApiFarmReward[] => {
+    const seen = new Set<string>();
+    const deduped: ControlApiFarmReward[] = [];
+    for (const row of rows) {
+      const key = [
+        row.weekNumber,
+        row.farmId,
+        row.regionId ?? "",
+        row.asset ?? "",
+        row.walletTotalGlowInflationReward ?? "",
+        row.walletTotalProtocolDepositReward ?? "",
+        row.walletInflationFromLaunchpad ?? "",
+        row.walletInflationFromMiningCenter ?? "",
+        row.walletProtocolDepositFromLaunchpad ?? "",
+        row.walletProtocolDepositFromMiningCenter ?? "",
+      ].join("|");
+      if (seen.has(key)) continue;
+      seen.add(key);
+      deduped.push({ ...row });
+    }
+    deduped.sort((a, b) => {
+      const weekDiff = Number(a.weekNumber) - Number(b.weekNumber);
+      if (weekDiff !== 0) return weekDiff;
+      const farmDiff = (a.farmId || "").localeCompare(b.farmId || "");
+      if (farmDiff !== 0) return farmDiff;
+      return (a.asset || "").localeCompare(b.asset || "");
+    });
+    return deduped;
+  };
+
+  const fetchBatchOnce = async (
+    wallets: string[],
+    start: number,
+    end: number
+  ): Promise<Map<string, ControlApiFarmReward[]>> => {
+    const response = await fetch(
+      `${getControlApiUrl()}/farms/by-wallet/farm-rewards-history/batch`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ wallets, startWeek: start, endWeek: end }),
+      }
     );
-  }
 
-  const data = (await response.json()) as ControlApiBatchWalletRewardsResponse;
-  const results = data.results || {};
-  for (const wallet of wallets) {
-    const walletData = results[wallet];
-    if (!walletData?.farmRewards) continue;
-    result.set(wallet.toLowerCase(), walletData.farmRewards);
+    if (!response.ok) {
+      const text = await response.text().catch(() => "");
+      throw makeControlApiError(
+        `Control API batch wallet rewards failed (${response.status}): ${text}`,
+        response.status
+      );
+    }
+
+    const data = (await response.json()) as ControlApiBatchWalletRewardsResponse;
+    const rowsByWallet = data.results || {};
+    const batchResult = new Map<string, ControlApiFarmReward[]>();
+    for (const wallet of wallets) {
+      const walletData = rowsByWallet[wallet] || rowsByWallet[wallet.toLowerCase()];
+      if (!walletData?.farmRewards) continue;
+      batchResult.set(wallet.toLowerCase(), walletData.farmRewards);
+    }
+    return batchResult;
+  };
+
+  const fetchBatchWithFallback = async (
+    wallets: string[],
+    start: number,
+    end: number,
+    depth = 0
+  ): Promise<Map<string, ControlApiFarmReward[]>> => {
+    const maxAttempts = wallets.length > 1 ? 3 : 4;
+    let lastError: unknown = null;
+
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      try {
+        return await fetchBatchOnce(wallets, start, end);
+      } catch (error) {
+        lastError = error;
+        if (!isRetryableControlApiError(error)) throw error;
+        if (attempt >= maxAttempts - 1) break;
+        await sleep(getControlApiRetryDelayMs(attempt));
+      }
+    }
+
+    if (depth >= CONTROL_API_MAX_RECURSION_DEPTH) {
+      throw lastError instanceof Error
+        ? lastError
+        : new Error("Control API batch wallet rewards failed");
+    }
+
+    const weekSpan = end - start + 1;
+    if (weekSpan > CONTROL_API_WEEK_WINDOW_SIZE) {
+      if (depth === 0) {
+        const status = getErrorStatus(lastError);
+        console.warn(
+          `[control-api] retry exhausted for wallet rewards batch (wallets=${wallets.length}, startWeek=${start}, endWeek=${end}, status=${status ?? "unknown"}); retrying in ${CONTROL_API_WEEK_WINDOW_SIZE}-week windows`
+        );
+      }
+      const windows = chunkWeekRange(start, end, CONTROL_API_WEEK_WINDOW_SIZE);
+      const windowResults = await mapWithConcurrency(
+        windows,
+        CONTROL_API_WEEK_WINDOW_CONCURRENCY,
+        async (window) =>
+          await fetchBatchWithFallback(
+            wallets,
+            window.startWeek,
+            window.endWeek,
+            depth + 1
+          )
+      );
+      const merged = new Map<string, ControlApiFarmReward[]>();
+      for (const m of windowResults) mergeMaps(merged, m);
+      return merged;
+    }
+
+    if (wallets.length > CONTROL_API_MIN_WALLET_SPLIT_SIZE) {
+      if (depth === 0) {
+        const status = getErrorStatus(lastError);
+        console.warn(
+          `[control-api] retry exhausted for wallet rewards batch (wallets=${wallets.length}, startWeek=${start}, endWeek=${end}, status=${status ?? "unknown"}); retrying in smaller wallet batches`
+        );
+      }
+      const midpoint = Math.ceil(wallets.length / 2);
+      const leftWallets = wallets.slice(0, midpoint);
+      const rightWallets = wallets.slice(midpoint);
+      if (leftWallets.length === 0 || rightWallets.length === 0) {
+        throw lastError instanceof Error
+          ? lastError
+          : new Error("Control API batch wallet rewards failed");
+      }
+      const leftMap = await fetchBatchWithFallback(
+        leftWallets,
+        start,
+        end,
+        depth + 1
+      );
+      const rightMap = await fetchBatchWithFallback(
+        rightWallets,
+        start,
+        end,
+        depth + 1
+      );
+      const merged = new Map<string, ControlApiFarmReward[]>();
+      mergeMaps(merged, leftMap);
+      mergeMaps(merged, rightMap);
+      return merged;
+    }
+
+    throw lastError instanceof Error
+      ? lastError
+      : new Error("Control API batch wallet rewards failed");
+  };
+
+  const fetched = await fetchBatchWithFallback(
+    normalizedWallets,
+    startWeek,
+    endWeek
+  );
+  for (const [wallet, rows] of fetched) {
+    result.set(wallet, dedupeRows(rows));
   }
 
   return result;
@@ -901,33 +1052,171 @@ export async function fetchFarmRewardsHistoryBatch(params: {
   startWeek: number;
   endWeek: number;
 }): Promise<Map<string, ControlApiFarmRewardsHistoryRewardRow[]>> {
-  const { farmIds, startWeek, endWeek } = params;
+  const { startWeek, endWeek } = params;
+  const normalizedFarmIds = Array.from(new Set(params.farmIds));
   const result = new Map<string, ControlApiFarmRewardsHistoryRewardRow[]>();
-  if (farmIds.length === 0) return result;
+  if (normalizedFarmIds.length === 0) return result;
 
-  const response = await fetch(
-    `${getControlApiUrl()}/farms/rewards-history/batch`,
-    {
+  const mergeMaps = (
+    target: Map<string, ControlApiFarmRewardsHistoryRewardRow[]>,
+    source: Map<string, ControlApiFarmRewardsHistoryRewardRow[]>
+  ): void => {
+    for (const [farmId, rows] of source) {
+      if (!target.has(farmId)) target.set(farmId, []);
+      target.get(farmId)!.push(...rows);
+    }
+  };
+
+  const dedupeRows = (
+    rows: ControlApiFarmRewardsHistoryRewardRow[]
+  ): ControlApiFarmRewardsHistoryRewardRow[] => {
+    const seen = new Set<string>();
+    const deduped: ControlApiFarmRewardsHistoryRewardRow[] = [];
+    for (const row of rows) {
+      const key = [
+        row.weekNumber,
+        row.paymentCurrency,
+        row.protocolDepositRewardsDistributed,
+      ].join("|");
+      if (seen.has(key)) continue;
+      seen.add(key);
+      deduped.push({ ...row });
+    }
+    deduped.sort((a, b) => {
+      const weekDiff = Number(a.weekNumber) - Number(b.weekNumber);
+      if (weekDiff !== 0) return weekDiff;
+      return (a.paymentCurrency || "").localeCompare(b.paymentCurrency || "");
+    });
+    return deduped;
+  };
+
+  const fetchBatchOnce = async (
+    farmIds: string[],
+    start: number,
+    end: number
+  ): Promise<Map<string, ControlApiFarmRewardsHistoryRewardRow[]>> => {
+    const response = await fetch(`${getControlApiUrl()}/farms/rewards-history/batch`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ farmIds, startWeek, endWeek }),
+      body: JSON.stringify({ farmIds, startWeek: start, endWeek: end }),
+    });
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => "");
+      throw makeControlApiError(
+        `Control API batch farm rewards history failed (${response.status}): ${text}`,
+        response.status
+      );
     }
+
+    const data =
+      (await response.json()) as ControlApiBatchFarmRewardsHistoryResponse;
+    const rowsByFarm = data.results || {};
+    const batchResult = new Map<string, ControlApiFarmRewardsHistoryRewardRow[]>();
+    for (const farmId of farmIds) {
+      const row = rowsByFarm[farmId];
+      if (!row?.rewards) continue;
+      batchResult.set(farmId, row.rewards);
+    }
+    return batchResult;
+  };
+
+  const fetchBatchWithFallback = async (
+    farmIds: string[],
+    start: number,
+    end: number,
+    depth = 0
+  ): Promise<Map<string, ControlApiFarmRewardsHistoryRewardRow[]>> => {
+    const maxAttempts = farmIds.length > 1 ? 3 : 4;
+    let lastError: unknown = null;
+
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      try {
+        return await fetchBatchOnce(farmIds, start, end);
+      } catch (error) {
+        lastError = error;
+        if (!isRetryableControlApiError(error)) throw error;
+        if (attempt >= maxAttempts - 1) break;
+        await sleep(getControlApiRetryDelayMs(attempt));
+      }
+    }
+
+    if (depth >= CONTROL_API_MAX_RECURSION_DEPTH) {
+      throw lastError instanceof Error
+        ? lastError
+        : new Error("Control API batch farm rewards history failed");
+    }
+
+    const weekSpan = end - start + 1;
+    if (weekSpan > CONTROL_API_WEEK_WINDOW_SIZE) {
+      if (depth === 0) {
+        const status = getErrorStatus(lastError);
+        console.warn(
+          `[control-api] retry exhausted for farm rewards batch (farms=${farmIds.length}, startWeek=${start}, endWeek=${end}, status=${status ?? "unknown"}); retrying in ${CONTROL_API_WEEK_WINDOW_SIZE}-week windows`
+        );
+      }
+      const windows = chunkWeekRange(start, end, CONTROL_API_WEEK_WINDOW_SIZE);
+      const windowResults = await mapWithConcurrency(
+        windows,
+        CONTROL_API_WEEK_WINDOW_CONCURRENCY,
+        async (window) =>
+          await fetchBatchWithFallback(
+            farmIds,
+            window.startWeek,
+            window.endWeek,
+            depth + 1
+          )
+      );
+      const merged = new Map<string, ControlApiFarmRewardsHistoryRewardRow[]>();
+      for (const m of windowResults) mergeMaps(merged, m);
+      return merged;
+    }
+
+    if (farmIds.length > CONTROL_API_MIN_FARM_SPLIT_SIZE) {
+      if (depth === 0) {
+        const status = getErrorStatus(lastError);
+        console.warn(
+          `[control-api] retry exhausted for farm rewards batch (farms=${farmIds.length}, startWeek=${start}, endWeek=${end}, status=${status ?? "unknown"}); retrying in smaller farm batches`
+        );
+      }
+      const midpoint = Math.ceil(farmIds.length / 2);
+      const leftFarmIds = farmIds.slice(0, midpoint);
+      const rightFarmIds = farmIds.slice(midpoint);
+      if (leftFarmIds.length === 0 || rightFarmIds.length === 0) {
+        throw lastError instanceof Error
+          ? lastError
+          : new Error("Control API batch farm rewards history failed");
+      }
+      const leftMap = await fetchBatchWithFallback(
+        leftFarmIds,
+        start,
+        end,
+        depth + 1
+      );
+      const rightMap = await fetchBatchWithFallback(
+        rightFarmIds,
+        start,
+        end,
+        depth + 1
+      );
+      const merged = new Map<string, ControlApiFarmRewardsHistoryRewardRow[]>();
+      mergeMaps(merged, leftMap);
+      mergeMaps(merged, rightMap);
+      return merged;
+    }
+
+    throw lastError instanceof Error
+      ? lastError
+      : new Error("Control API batch farm rewards history failed");
+  };
+
+  const fetched = await fetchBatchWithFallback(
+    normalizedFarmIds,
+    startWeek,
+    endWeek
   );
-
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(
-      `Control API batch farm rewards history failed (${response.status}): ${text}`
-    );
-  }
-
-  const data =
-    (await response.json()) as ControlApiBatchFarmRewardsHistoryResponse;
-  const results = data.results || {};
-  for (const farmId of farmIds) {
-    const row = results[farmId];
-    if (!row?.rewards) continue;
-    result.set(farmId, row.rewards);
+  for (const [farmId, rows] of fetched) {
+    result.set(farmId, dedupeRows(rows));
   }
 
   return result;
