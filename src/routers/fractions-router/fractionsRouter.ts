@@ -3889,6 +3889,11 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
               return "Application not found";
             }
 
+            if (application.status !== "completed") {
+              set.status = 400;
+              return "Mining-center listings can only be created for completed applications";
+            }
+
             // Check if user has access to this application
             if (application.userId !== userId) {
               const account = await findFirstAccountById(userId);

@@ -316,6 +316,12 @@ export interface RecordFractionSplitResult {
   wasAlreadyFilled?: boolean;
 }
 
+export function shouldCompleteApplicationOnFractionFill(
+  fractionType: string | null | undefined
+): boolean {
+  return fractionType !== "mining-center";
+}
+
 /**
  * Records a fraction split sale and increments the splitsSold counter
  * If splitsSold reaches totalSteps, marks the fraction as filled and completes the application
@@ -458,52 +464,62 @@ export async function recordFractionSplit(
   // If the fraction was just filled, complete the application
   if (transactionResult.shouldCompleteApplication) {
     try {
-      // Get the application data
-      const application = await FindFirstApplicationById(
-        transactionResult.fraction.applicationId
+      const shouldCompleteApplication = shouldCompleteApplicationOnFractionFill(
+        transactionResult.fraction.type
       );
 
-      if (!application) {
-        console.error(
-          "[recordFractionSplit] Application not found for fraction:",
-          params.fractionId
+      // Mining-center fractions belong to already-completed applications/farms.
+      // When sold out, we only close the fraction and skip application completion.
+      if (shouldCompleteApplication) {
+        // Get the application data
+        const application = await FindFirstApplicationById(
+          transactionResult.fraction.applicationId
         );
-        return transactionResult;
-      }
 
-      // Calculate payment amount (step * totalSteps)
-      const stepBigInt = BigInt(transactionResult.fraction.step!);
-      const totalStepsBigInt = BigInt(transactionResult.fraction.totalSteps!);
-      const paymentAmount = (stepBigInt * totalStepsBigInt).toString();
-
-      // Complete the application if it has all required data
-      if (application.gca?.id && application.user?.id) {
-        if (
-          application.auditFields?.devices &&
-          application.auditFields?.devices.length > 0
-        ) {
-          // Determine payment currency based on fraction type
-          const paymentCurrency =
-            transactionResult.fraction.type === "mining-center"
-              ? "USDC"
-              : "GLW";
-
-          // Use the completeApplicationAndCreateFarm helper which includes solar farm sync
-          await completeApplicationAndCreateFarm({
-            application,
-            txHash: params.transactionHash,
-            paymentDate: new Date(params.timestamp * 1000),
-            paymentCurrency,
-            paymentEventType: "OnchainFractionRoundFilled",
-            paymentAmount: paymentAmount,
-            protocolFee: BigInt(application.finalProtocolFeeBigInt),
-            protocolFeeAdditionalPaymentTxHash: null,
-          });
-
-          console.log(
-            "[recordFractionSplit] Successfully completed application and created farm for fraction:",
+        if (!application) {
+          console.error(
+            "[recordFractionSplit] Application not found for fraction:",
             params.fractionId
           );
+          return transactionResult;
+        }
+
+        // Skip repeated completion attempts if the application is already completed.
+        if (application.status === "completed") {
+          console.log(
+            "[recordFractionSplit] Application already completed, skipping completion for fraction:",
+            params.fractionId
+          );
+        } else {
+          // Calculate payment amount (step * totalSteps)
+          const stepBigInt = BigInt(transactionResult.fraction.step!);
+          const totalStepsBigInt = BigInt(transactionResult.fraction.totalSteps!);
+          const paymentAmount = (stepBigInt * totalStepsBigInt).toString();
+
+          // Complete the application if it has all required data
+          if (application.gca?.id && application.user?.id) {
+            if (
+              application.auditFields?.devices &&
+              application.auditFields?.devices.length > 0
+            ) {
+              // Launchpad fractions are GLW-funded.
+              await completeApplicationAndCreateFarm({
+                application,
+                txHash: params.transactionHash,
+                paymentDate: new Date(params.timestamp * 1000),
+                paymentCurrency: "GLW",
+                paymentEventType: "OnchainFractionRoundFilled",
+                paymentAmount: paymentAmount,
+                protocolFee: BigInt(application.finalProtocolFeeBigInt),
+                protocolFeeAdditionalPaymentTxHash: null,
+              });
+
+              console.log(
+                "[recordFractionSplit] Successfully completed application and created farm for fraction:",
+                params.fractionId
+              );
+            }
+          }
         }
       }
 

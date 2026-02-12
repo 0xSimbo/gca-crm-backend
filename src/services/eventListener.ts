@@ -76,6 +76,17 @@ export class FractionEventService {
     this.listenerErrorAtMs = null;
   }
 
+  private shouldLogExpectedEvents(): boolean {
+    return process.env.FRACTION_EVENT_VERBOSE_EXPECTED === "true";
+  }
+
+  private logExpected(message: string, ...args: unknown[]): void {
+    if (!this.shouldLogExpectedEvents()) {
+      return;
+    }
+    console.log(message, ...args);
+  }
+
   /**
    * Initialize the event listener for fraction events
    */
@@ -111,16 +122,12 @@ export class FractionEventService {
 
     // Listen for fraction.sold events
     this.listener.onEvent("fraction.sold", "v2-alpha", async (event) => {
-      try {
-        if (event.environment !== environment) {
-          return;
-        }
-        this.markEventReceived("fraction.sold", event.payload.fractionId);
-        console.log(
-          "[FractionEventService] Received fraction.sold event:",
-          event.payload.fractionId
-        );
+      if (event.environment !== environment) {
+        return;
+      }
+      this.markEventReceived("fraction.sold", event.payload.fractionId);
 
+      try {
         // Check if we already processed this event (idempotency)
         const existingSplit = await findFractionSplitByTxHash(
           event.payload.transactionHash,
@@ -128,13 +135,18 @@ export class FractionEventService {
         );
 
         if (existingSplit) {
-          console.log(
+          this.logExpected(
             "[FractionEventService] Split already processed, skipping:",
             event.payload.transactionHash,
             event.payload.logIndex
           );
           return;
         }
+
+        console.log(
+          "[FractionEventService] Received fraction.sold event:",
+          event.payload.fractionId
+        );
 
         // CRITICAL: Verify the event payload against on-chain transaction data
         const verification = await verifyFractionSoldTransaction(event.payload);
@@ -159,7 +171,7 @@ export class FractionEventService {
           return;
         }
 
-        console.log(
+        this.logExpected(
           "[FractionEventService] Transaction verification passed for:",
           event.payload.transactionHash,
           event.payload.logIndex
@@ -186,6 +198,22 @@ export class FractionEventService {
         };
 
         const result = await recordFractionSplit(params);
+
+        // If no split was created, this was likely a duplicate delivery/race condition.
+        if (!result.split) {
+          this.logExpected(
+            "[FractionEventService] Split not created (already processed/filled), skipping post-processing:",
+            event.payload.transactionHash,
+            event.payload.logIndex
+          );
+          if (result.wasAlreadyFilled) {
+            this.logExpected(
+              "[FractionEventService] Fraction was already filled, skipped processing (race condition):",
+              event.payload.fractionId
+            );
+          }
+          return;
+        }
 
         // Snapshot reward score for launchpad fractions on each sale
         try {
@@ -214,12 +242,12 @@ export class FractionEventService {
             } catch {
               protocolDepositAmount = "0";
             }
-            console.log(
+            this.logExpected(
               "[reward score] expectedWeeklyCarbonCredits",
               expectedWeeklyCarbonCredits
             );
-            console.log("[reward score] regionId", regionId);
-            console.log(
+            this.logExpected("[reward score] regionId", regionId);
+            this.logExpected(
               "[reward score] protocolDepositAmount",
               protocolDepositAmount
             );
@@ -297,15 +325,6 @@ export class FractionEventService {
           );
         }
 
-        // Check if the fraction was already filled (race condition)
-        if (result.wasAlreadyFilled) {
-          console.log(
-            "[FractionEventService] Fraction was already filled, skipped processing (race condition):",
-            event.payload.fractionId
-          );
-          return;
-        }
-
         if (result.fraction.isFilled) {
           console.log(
             "[FractionEventService] Fraction is now fully filled:",
@@ -323,7 +342,7 @@ export class FractionEventService {
           error.code === "23505" ||
           error.message?.includes("duplicate key")
         ) {
-          console.log(
+          this.logExpected(
             "[FractionEventService] Duplicate fraction split detected (likely due to concurrent processing), ignoring:",
             event.payload.transactionHash,
             event.payload.logIndex
@@ -339,7 +358,7 @@ export class FractionEventService {
           ) ||
           error.message?.includes("fraction is already filled")
         ) {
-          console.log(
+          this.logExpected(
             "[FractionEventService] Fraction already filled (race condition), ignoring:",
             event.payload.fractionId,
             event.payload.transactionHash
@@ -398,7 +417,7 @@ export class FractionEventService {
 
         // Check if already committed to avoid duplicate processing
         if (fraction.isCommittedOnChain) {
-          console.log(
+          this.logExpected(
             "[FractionEventService] Fraction already committed, skipping:",
             event.payload.fractionId
           );
@@ -480,7 +499,7 @@ export class FractionEventService {
           error.message?.includes("duplicate key") ||
           error.message?.includes("already committed")
         ) {
-          console.log(
+          this.logExpected(
             "[FractionEventService] Fraction already committed (likely due to concurrent processing), ignoring:",
             event.payload.fractionId
           );
@@ -514,15 +533,14 @@ export class FractionEventService {
     // Listen for fraction.closed events
     this.listener.onEvent("fraction.closed", "v2-alpha", async (event) => {
       try {
-        console.log(
-          "[FractionEventService] Received fraction.closed event:",
-          event.payload.fractionId
-        );
-
         if (event.environment !== environment) {
           return;
         }
         this.markEventReceived("fraction.closed", event.payload.fractionId);
+        console.log(
+          "[FractionEventService] Received fraction.closed event:",
+          event.payload.fractionId
+        );
 
         // Get the fraction to check its current status
         const fraction = await findFractionById(event.payload.fractionId);
@@ -543,7 +561,7 @@ export class FractionEventService {
             event.payload.fractionId
           );
         } else {
-          console.log(
+          this.logExpected(
             "[FractionEventService] Fraction already filled, skipping cancellation:",
             event.payload.fractionId
           );
@@ -556,7 +574,7 @@ export class FractionEventService {
           error.message?.includes("already cancelled") ||
           error.message?.includes("already filled")
         ) {
-          console.log(
+          this.logExpected(
             "[FractionEventService] Fraction status already updated (likely due to concurrent processing), ignoring:",
             event.payload.fractionId
           );
@@ -590,17 +608,16 @@ export class FractionEventService {
     // Listen for fraction.refunded events
     this.listener.onEvent("fraction.refunded", "v2-alpha", async (event) => {
       try {
+        if (event.environment !== environment) {
+          return;
+        }
+        this.markEventReceived("fraction.refunded", event.payload.fractionId);
         console.log(
           "[FractionEventService] Received fraction.refunded event:",
           event.payload.fractionId,
           "for user:",
           event.payload.user
         );
-
-        if (event.environment !== environment) {
-          return;
-        }
-        this.markEventReceived("fraction.refunded", event.payload.fractionId);
 
         // Check if we already processed this refund event (idempotency)
         const existingRefund = await findFractionRefundByTxHash(
@@ -609,7 +626,7 @@ export class FractionEventService {
         );
 
         if (existingRefund) {
-          console.log(
+          this.logExpected(
             "[FractionEventService] Refund already processed, skipping:",
             event.payload.transactionHash,
             event.payload.logIndex
@@ -643,7 +660,7 @@ export class FractionEventService {
           error.message?.includes("duplicate key") ||
           error.message?.includes("already recorded")
         ) {
-          console.log(
+          this.logExpected(
             "[FractionEventService] Duplicate refund detected (likely due to concurrent processing), ignoring:",
             event.payload.transactionHash,
             event.payload.logIndex
