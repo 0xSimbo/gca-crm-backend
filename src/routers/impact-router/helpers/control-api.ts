@@ -1,3 +1,9 @@
+import { and, eq, gte, lte } from "drizzle-orm";
+import { db } from "../../../db/db";
+import {
+  controlRegionRewardsWeek,
+  controlWalletStakeByEpoch,
+} from "../../../db/schema";
 import { getCurrentEpoch } from "../../../utils/getProtocolWeek";
 
 export interface ControlApiFarmReward {
@@ -105,6 +111,11 @@ const CONTROL_API_WEEK_WINDOW_CONCURRENCY = 2;
 const CONTROL_API_MIN_WALLET_SPLIT_SIZE = 25;
 const CONTROL_API_MIN_FARM_SPLIT_SIZE = 25;
 const CONTROL_API_MAX_RECURSION_DEPTH = 4;
+const CONTROL_API_SINGLE_ENDPOINT_MAX_ATTEMPTS = 4;
+const CONTROL_API_EPOCH_REWARDS_TTL_CURRENT_MS = 30_000;
+const CONTROL_API_EPOCH_REWARDS_TTL_FINALIZED_MS = 10 * 60_000;
+const CONTROL_API_WALLET_STAKE_TTL_CURRENT_MS = 30_000;
+const CONTROL_API_WALLET_STAKE_TTL_FINALIZED_MS = 5 * 60_000;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -135,6 +146,12 @@ function makeControlApiError(message: string, status: number): Error {
   const err = new Error(message) as Error & { status?: number };
   err.status = status;
   return err;
+}
+
+function isUndefinedTableError(error: unknown): boolean {
+  if (typeof error !== "object" || error == null) return false;
+  const maybeCode = (error as { code?: unknown }).code;
+  return maybeCode === "42P01";
 }
 
 function chunkWeekRange(
@@ -590,7 +607,7 @@ export async function fetchNewGlwHoldersByWeek(params: {
   return data;
 }
 
-interface RegionRewardsResponse {
+export interface RegionRewardsResponse {
   totalGctlStaked: string;
   totalGlwRewards: string;
   regionRewards: Array<{
@@ -1290,31 +1307,368 @@ const cachedRegionRewardsByEpoch = new Map<
   number,
   { data: RegionRewardsResponse; expiresAtMs: number }
 >();
+const inFlightRegionRewardsByEpoch = new Map<
+  number,
+  Promise<RegionRewardsResponse>
+>();
+const cachedWalletStakeByEpoch = new Map<
+  string,
+  {
+    data: Map<number, Array<{ regionId: number; totalStakedWei: bigint }>>;
+    expiresAtMs: number;
+  }
+>();
+const inFlightWalletStakeByEpoch = new Map<
+  string,
+  Promise<Map<number, Array<{ regionId: number; totalStakedWei: bigint }>>>
+>();
+let controlRegionRewardsTableAvailable: boolean | null = null;
+let controlWalletStakeTableAvailable: boolean | null = null;
+
+async function readRegionRewardsFromDb(
+  epoch: number
+): Promise<RegionRewardsResponse | null> {
+  if (controlRegionRewardsTableAvailable === false) return null;
+
+  try {
+    const rows = await db
+      .select({
+        regionId: controlRegionRewardsWeek.regionId,
+        glwRewardRaw: controlRegionRewardsWeek.glwRewardRaw,
+        gctlStakedRaw: controlRegionRewardsWeek.gctlStakedRaw,
+        rewardShareRaw: controlRegionRewardsWeek.rewardShareRaw,
+      })
+      .from(controlRegionRewardsWeek)
+      .where(eq(controlRegionRewardsWeek.weekNumber, epoch));
+
+    if (rows.length === 0) return null;
+    controlRegionRewardsTableAvailable = true;
+
+    const regionRewards: RegionRewardsResponse["regionRewards"] = [];
+    let totalGctlStaked = 0n;
+    let totalGlwRewards = 0n;
+
+    for (const row of rows) {
+      const glwReward = safeBigInt(row.glwRewardRaw);
+      const gctlStaked = safeBigInt(row.gctlStakedRaw);
+      const rewardShare = String(row.rewardShareRaw ?? "0");
+
+      if (row.regionId > 0) {
+        regionRewards.push({
+          regionId: row.regionId,
+          gctlStaked: gctlStaked.toString(),
+          glwReward: glwReward.toString(),
+          rewardShare,
+        });
+      }
+
+      if (glwReward > 0n) totalGlwRewards += glwReward;
+      if (gctlStaked > 0n) totalGctlStaked += gctlStaked;
+    }
+
+    return {
+      totalGctlStaked: totalGctlStaked.toString(),
+      totalGlwRewards: totalGlwRewards.toString(),
+      regionRewards,
+    };
+  } catch (error) {
+    if (isUndefinedTableError(error)) {
+      controlRegionRewardsTableAvailable = false;
+      return null;
+    }
+    throw error;
+  }
+}
+
+async function upsertRegionRewardsToDb(
+  epoch: number,
+  data: RegionRewardsResponse
+): Promise<void> {
+  if (controlRegionRewardsTableAvailable === false) return;
+
+  const fetchedAt = new Date();
+  const rows =
+    (data.regionRewards || []).length > 0
+      ? (data.regionRewards || []).map((row) => ({
+          weekNumber: epoch,
+          regionId: Number(row.regionId),
+          glwRewardRaw: String(row.glwReward || "0"),
+          gctlStakedRaw: String(row.gctlStaked || "0"),
+          rewardShareRaw: String(row.rewardShare || "0"),
+          fetchedAt,
+        }))
+      : [
+          {
+            weekNumber: epoch,
+            regionId: 0,
+            glwRewardRaw: "0",
+            gctlStakedRaw: "0",
+            rewardShareRaw: "0",
+            fetchedAt,
+          },
+        ];
+
+  try {
+    await db.transaction(async (tx) => {
+      await tx
+        .delete(controlRegionRewardsWeek)
+        .where(eq(controlRegionRewardsWeek.weekNumber, epoch));
+      await tx.insert(controlRegionRewardsWeek).values(rows);
+    });
+    controlRegionRewardsTableAvailable = true;
+  } catch (error) {
+    if (isUndefinedTableError(error)) {
+      controlRegionRewardsTableAvailable = false;
+      return;
+    }
+    console.warn(
+      `[control-api] failed to persist region rewards to DB (epoch=${epoch})`,
+      error
+    );
+  }
+}
+
+async function readWalletStakeRangeFromDb(params: {
+  walletAddress: string;
+  startWeek: number;
+  endWeek: number;
+}): Promise<Map<number, Array<{ regionId: number; totalStakedWei: bigint }>> | null> {
+  if (controlWalletStakeTableAvailable === false) return null;
+
+  const wallet = params.walletAddress.toLowerCase();
+
+  try {
+    const rows = await db
+      .select({
+        weekNumber: controlWalletStakeByEpoch.weekNumber,
+        regionId: controlWalletStakeByEpoch.regionId,
+        totalStakedRaw: controlWalletStakeByEpoch.totalStakedRaw,
+      })
+      .from(controlWalletStakeByEpoch)
+      .where(
+        and(
+          eq(controlWalletStakeByEpoch.wallet, wallet),
+          gte(controlWalletStakeByEpoch.weekNumber, params.startWeek),
+          lte(controlWalletStakeByEpoch.weekNumber, params.endWeek)
+        )
+      );
+    if (rows.length === 0) return null;
+    controlWalletStakeTableAvailable = true;
+
+    const coveredWeeks = new Set<number>(rows.map((r) => r.weekNumber));
+    for (let week = params.startWeek; week <= params.endWeek; week++) {
+      if (!coveredWeeks.has(week)) return null;
+    }
+
+    const out = new Map<
+      number,
+      Array<{ regionId: number; totalStakedWei: bigint }>
+    >();
+    for (let week = params.startWeek; week <= params.endWeek; week++) {
+      out.set(week, []);
+    }
+
+    for (const row of rows) {
+      if (row.regionId <= 0) continue;
+      out.get(row.weekNumber)!.push({
+        regionId: row.regionId,
+        totalStakedWei: safeBigInt(row.totalStakedRaw),
+      });
+    }
+
+    return out;
+  } catch (error) {
+    if (isUndefinedTableError(error)) {
+      controlWalletStakeTableAvailable = false;
+      return null;
+    }
+    throw error;
+  }
+}
+
+async function upsertWalletStakeRangeToDb(params: {
+  walletAddress: string;
+  startWeek: number;
+  endWeek: number;
+  rowsByWeek: Map<number, Array<{ regionId: number; totalStakedWei: bigint }>>;
+}): Promise<void> {
+  if (controlWalletStakeTableAvailable === false) return;
+
+  const wallet = params.walletAddress.toLowerCase();
+  const fetchedAt = new Date();
+  const rows: Array<
+    typeof controlWalletStakeByEpoch.$inferInsert
+  > = [];
+
+  for (let week = params.startWeek; week <= params.endWeek; week++) {
+    const weekRows = params.rowsByWeek.get(week) || [];
+    if (weekRows.length === 0) {
+      rows.push({
+        weekNumber: week,
+        wallet,
+        regionId: 0,
+        totalStakedRaw: "0",
+        pendingUnstakeRaw: "0",
+        pendingRestakeOutRaw: "0",
+        pendingRestakeInRaw: "0",
+        fetchedAt,
+      });
+      continue;
+    }
+
+    for (const row of weekRows) {
+      rows.push({
+        weekNumber: week,
+        wallet,
+        regionId: row.regionId,
+        totalStakedRaw: row.totalStakedWei.toString(),
+        pendingUnstakeRaw: "0",
+        pendingRestakeOutRaw: "0",
+        pendingRestakeInRaw: "0",
+        fetchedAt,
+      });
+    }
+  }
+
+  if (rows.length === 0) return;
+
+  try {
+    await db.transaction(async (tx) => {
+      await tx
+        .delete(controlWalletStakeByEpoch)
+        .where(
+          and(
+            eq(controlWalletStakeByEpoch.wallet, wallet),
+            gte(controlWalletStakeByEpoch.weekNumber, params.startWeek),
+            lte(controlWalletStakeByEpoch.weekNumber, params.endWeek)
+          )
+        );
+      await tx.insert(controlWalletStakeByEpoch).values(rows);
+    });
+    controlWalletStakeTableAvailable = true;
+  } catch (error) {
+    if (isUndefinedTableError(error)) {
+      controlWalletStakeTableAvailable = false;
+      return;
+    }
+    console.warn(
+      `[control-api] failed to persist wallet stake range to DB (wallet=${wallet}, startWeek=${params.startWeek}, endWeek=${params.endWeek})`,
+      error
+    );
+  }
+}
 
 export async function getRegionRewardsAtEpoch(params: {
   epoch: number;
   ttlMs?: number;
 }): Promise<RegionRewardsResponse> {
-  const { epoch, ttlMs = 30_000 } = params;
+  const { epoch } = params;
+  const currentEpoch = getCurrentEpoch(Math.floor(Date.now() / 1000));
+  const isFinalizedEpoch = epoch < currentEpoch;
   const now = Date.now();
   const cached = cachedRegionRewardsByEpoch.get(epoch);
   if (cached && now < cached.expiresAtMs) return cached.data;
 
-  const response = await fetch(
-    `${getControlApiUrl()}/regions/rewards/glw/regions?epoch=${epoch}`
-  );
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(
-      `Control API region rewards (epoch=${epoch}) failed (${response.status}): ${text}`
-    );
+  const inFlight = inFlightRegionRewardsByEpoch.get(epoch);
+  if (inFlight) return inFlight;
+
+  if (isFinalizedEpoch) {
+    try {
+      const dbData = await readRegionRewardsFromDb(epoch);
+      if (dbData) {
+        const nowMs = Date.now();
+        const ttlMs =
+          params.ttlMs ??
+          (epoch < getCurrentEpoch(Math.floor(nowMs / 1000))
+            ? CONTROL_API_EPOCH_REWARDS_TTL_FINALIZED_MS
+            : CONTROL_API_EPOCH_REWARDS_TTL_CURRENT_MS);
+        cachedRegionRewardsByEpoch.set(epoch, {
+          data: dbData,
+          expiresAtMs: nowMs + ttlMs,
+        });
+        return dbData;
+      }
+    } catch (error) {
+      console.warn(
+        `[control-api] DB read failed for region rewards (epoch=${epoch}); falling back to Control API`,
+        error
+      );
+    }
   }
-  const data = (await response.json()) as RegionRewardsResponse;
-  cachedRegionRewardsByEpoch.set(epoch, { data, expiresAtMs: now + ttlMs });
-  return data;
+
+  const requestedTtlMs = params.ttlMs;
+  const request = (async () => {
+    let lastError: unknown = null;
+    for (
+      let attempt = 0;
+      attempt < CONTROL_API_SINGLE_ENDPOINT_MAX_ATTEMPTS;
+      attempt++
+    ) {
+      try {
+        const response = await fetch(
+          `${getControlApiUrl()}/regions/rewards/glw/regions?epoch=${epoch}`
+        );
+        if (!response.ok) {
+          const text = await response.text().catch(() => "");
+          throw makeControlApiError(
+            `Control API region rewards (epoch=${epoch}) failed (${response.status}): ${text}`,
+            response.status
+          );
+        }
+        const data = (await response.json()) as RegionRewardsResponse;
+        const nowMs = Date.now();
+        const ttlMs =
+          requestedTtlMs ??
+          (epoch < getCurrentEpoch(Math.floor(nowMs / 1000))
+            ? CONTROL_API_EPOCH_REWARDS_TTL_FINALIZED_MS
+            : CONTROL_API_EPOCH_REWARDS_TTL_CURRENT_MS);
+        cachedRegionRewardsByEpoch.set(epoch, {
+          data,
+          expiresAtMs: nowMs + ttlMs,
+        });
+        await upsertRegionRewardsToDb(epoch, data);
+        return data;
+      } catch (error) {
+        lastError = error;
+        if (!isRetryableControlApiError(error)) break;
+        if (attempt >= CONTROL_API_SINGLE_ENDPOINT_MAX_ATTEMPTS - 1) break;
+        await sleep(getControlApiRetryDelayMs(attempt));
+      }
+    }
+
+    const stale = cachedRegionRewardsByEpoch.get(epoch);
+    if (stale) {
+      const status = getErrorStatus(lastError);
+      console.warn(
+        `[control-api] region rewards fetch failed (epoch=${epoch}, status=${status ?? "unknown"}); using stale cached value`
+      );
+      return stale.data;
+    }
+
+    throw lastError instanceof Error
+      ? lastError
+      : new Error(`Control API region rewards (epoch=${epoch}) failed`);
+  })();
+
+  inFlightRegionRewardsByEpoch.set(epoch, request);
+  try {
+    return await request;
+  } finally {
+    inFlightRegionRewardsByEpoch.delete(epoch);
+  }
 }
 
-async function getWalletStakeByEpoch(params: {
+function makeWalletStakeCacheKey(params: {
+  walletAddress: string;
+  startWeek: number;
+  endWeek: number;
+}): string {
+  return `${params.walletAddress.toLowerCase()}|${params.startWeek}|${
+    params.endWeek
+  }`;
+}
+
+async function fetchWalletStakeByEpochOnce(params: {
   walletAddress: string;
   startWeek: number;
   endWeek: number;
@@ -1327,8 +1681,9 @@ async function getWalletStakeByEpoch(params: {
   );
   if (!response.ok) {
     const text = await response.text().catch(() => "");
-    throw new Error(
-      `Control API wallet stake-by-epoch failed (${response.status}): ${text}`
+    throw makeControlApiError(
+      `Control API wallet stake-by-epoch failed (${response.status}): ${text}`,
+      response.status
     );
   }
   const data = (await response.json()) as WalletStakeByEpochResponse;
@@ -1344,6 +1699,195 @@ async function getWalletStakeByEpoch(params: {
     map.set(row.epoch, regions);
   }
   return map;
+}
+
+function mergeWalletStakeEpochMaps(
+  target: Map<number, Array<{ regionId: number; totalStakedWei: bigint }>>,
+  source: Map<number, Array<{ regionId: number; totalStakedWei: bigint }>>
+): void {
+  for (const [epoch, rows] of source) {
+    target.set(epoch, rows);
+  }
+}
+
+async function fetchWalletStakeByEpochWithFallback(
+  params: {
+    walletAddress: string;
+    startWeek: number;
+    endWeek: number;
+  },
+  depth = 0
+): Promise<Map<number, Array<{ regionId: number; totalStakedWei: bigint }>>> {
+  let lastError: unknown = null;
+
+  for (
+    let attempt = 0;
+    attempt < CONTROL_API_SINGLE_ENDPOINT_MAX_ATTEMPTS;
+    attempt++
+  ) {
+    try {
+      return await fetchWalletStakeByEpochOnce(params);
+    } catch (error) {
+      lastError = error;
+      if (!isRetryableControlApiError(error)) throw error;
+      if (attempt >= CONTROL_API_SINGLE_ENDPOINT_MAX_ATTEMPTS - 1) break;
+      await sleep(getControlApiRetryDelayMs(attempt));
+    }
+  }
+
+  if (depth >= CONTROL_API_MAX_RECURSION_DEPTH) {
+    throw lastError instanceof Error
+      ? lastError
+      : new Error("Control API wallet stake-by-epoch failed");
+  }
+
+  const weekSpan = params.endWeek - params.startWeek + 1;
+  if (weekSpan > CONTROL_API_WEEK_WINDOW_SIZE) {
+    if (depth === 0) {
+      const status = getErrorStatus(lastError);
+      console.warn(
+        `[control-api] retry exhausted for wallet stake-by-epoch (wallet=${params.walletAddress.toLowerCase()}, startWeek=${params.startWeek}, endWeek=${params.endWeek}, status=${status ?? "unknown"}); retrying in ${CONTROL_API_WEEK_WINDOW_SIZE}-week windows`
+      );
+    }
+    const windows = chunkWeekRange(
+      params.startWeek,
+      params.endWeek,
+      CONTROL_API_WEEK_WINDOW_SIZE
+    );
+    const windowResults = await mapWithConcurrency(
+      windows,
+      CONTROL_API_WEEK_WINDOW_CONCURRENCY,
+      async (window) =>
+        await fetchWalletStakeByEpochWithFallback(
+          {
+            walletAddress: params.walletAddress,
+            startWeek: window.startWeek,
+            endWeek: window.endWeek,
+          },
+          depth + 1
+        )
+    );
+    const merged = new Map<
+      number,
+      Array<{ regionId: number; totalStakedWei: bigint }>
+    >();
+    for (const windowMap of windowResults) {
+      mergeWalletStakeEpochMaps(merged, windowMap);
+    }
+    return merged;
+  }
+
+  if (weekSpan > 1) {
+    if (depth === 0) {
+      const status = getErrorStatus(lastError);
+      console.warn(
+        `[control-api] retry exhausted for wallet stake-by-epoch (wallet=${params.walletAddress.toLowerCase()}, startWeek=${params.startWeek}, endWeek=${params.endWeek}, status=${status ?? "unknown"}); retrying in smaller week ranges`
+      );
+    }
+    const midpoint = params.startWeek + Math.floor(weekSpan / 2);
+    const left = await fetchWalletStakeByEpochWithFallback(
+      {
+        walletAddress: params.walletAddress,
+        startWeek: params.startWeek,
+        endWeek: midpoint - 1,
+      },
+      depth + 1
+    );
+    const right = await fetchWalletStakeByEpochWithFallback(
+      {
+        walletAddress: params.walletAddress,
+        startWeek: midpoint,
+        endWeek: params.endWeek,
+      },
+      depth + 1
+    );
+    const merged = new Map<
+      number,
+      Array<{ regionId: number; totalStakedWei: bigint }>
+    >();
+    mergeWalletStakeEpochMaps(merged, left);
+    mergeWalletStakeEpochMaps(merged, right);
+    return merged;
+  }
+
+  const stale = cachedWalletStakeByEpoch.get(makeWalletStakeCacheKey(params));
+  if (stale) {
+    const status = getErrorStatus(lastError);
+    console.warn(
+      `[control-api] wallet stake-by-epoch failed (wallet=${params.walletAddress.toLowerCase()}, startWeek=${params.startWeek}, endWeek=${params.endWeek}, status=${status ?? "unknown"}); using stale cached value`
+    );
+    return stale.data;
+  }
+
+  throw lastError instanceof Error
+    ? lastError
+    : new Error("Control API wallet stake-by-epoch failed");
+}
+
+async function getWalletStakeByEpoch(params: {
+  walletAddress: string;
+  startWeek: number;
+  endWeek: number;
+}): Promise<Map<number, Array<{ regionId: number; totalStakedWei: bigint }>>> {
+  const currentEpoch = getCurrentEpoch(Math.floor(Date.now() / 1000));
+  const isFinalizedRange = params.endWeek < currentEpoch;
+  const cacheKey = makeWalletStakeCacheKey(params);
+  const now = Date.now();
+  const cached = cachedWalletStakeByEpoch.get(cacheKey);
+  if (cached && now < cached.expiresAtMs) return cached.data;
+
+  const inFlight = inFlightWalletStakeByEpoch.get(cacheKey);
+  if (inFlight) return inFlight;
+
+  if (isFinalizedRange) {
+    try {
+      const dbData = await readWalletStakeRangeFromDb(params);
+      if (dbData) {
+        const nowMs = Date.now();
+        const ttlMs =
+          params.endWeek < getCurrentEpoch(Math.floor(nowMs / 1000))
+            ? CONTROL_API_WALLET_STAKE_TTL_FINALIZED_MS
+            : CONTROL_API_WALLET_STAKE_TTL_CURRENT_MS;
+        cachedWalletStakeByEpoch.set(cacheKey, {
+          data: dbData,
+          expiresAtMs: nowMs + ttlMs,
+        });
+        return dbData;
+      }
+    } catch (error) {
+      console.warn(
+        `[control-api] DB read failed for wallet stake-by-epoch (wallet=${params.walletAddress.toLowerCase()}, startWeek=${params.startWeek}, endWeek=${params.endWeek}); falling back to Control API`,
+        error
+      );
+    }
+  }
+
+  const request = (async () => {
+    const data = await fetchWalletStakeByEpochWithFallback(params);
+    await upsertWalletStakeRangeToDb({
+      walletAddress: params.walletAddress,
+      startWeek: params.startWeek,
+      endWeek: params.endWeek,
+      rowsByWeek: data,
+    });
+    const nowMs = Date.now();
+    const ttlMs =
+      params.endWeek < getCurrentEpoch(Math.floor(nowMs / 1000))
+        ? CONTROL_API_WALLET_STAKE_TTL_FINALIZED_MS
+        : CONTROL_API_WALLET_STAKE_TTL_CURRENT_MS;
+    cachedWalletStakeByEpoch.set(cacheKey, {
+      data,
+      expiresAtMs: nowMs + ttlMs,
+    });
+    return data;
+  })();
+
+  inFlightWalletStakeByEpoch.set(cacheKey, request);
+  try {
+    return await request;
+  } finally {
+    inFlightWalletStakeByEpoch.delete(cacheKey);
+  }
 }
 
 export async function fetchWalletStakeByEpochRange(params: {
@@ -1695,26 +2239,38 @@ export async function getGctlSteeringByWeekWei(params: {
   walletAddress: string;
   startWeek: number;
   endWeek: number;
+  regionRewardsByEpoch?: Map<number, RegionRewardsResponse>;
 }): Promise<SteeringByWeekResult> {
-  const { walletAddress, startWeek, endWeek } = params;
+  const { walletAddress, startWeek, endWeek, regionRewardsByEpoch } = params;
 
   const byWeek = new Map<number, bigint>();
   const byWeekAndRegion = new Map<number, Map<number, bigint>>();
 
   try {
-    // Fetch wallet stake and all region rewards in parallel
     const weeks = Array.from({ length: endWeek - startWeek + 1 }, (_, i) => startWeek + i);
-    const [walletStakeByEpoch, ...regionRewardsResults] = await Promise.all([
+    const missingRewardWeeks = weeks.filter(
+      (w) => !(regionRewardsByEpoch?.has(w) ?? false)
+    );
+
+    const [walletStakeByEpoch, ...fetchedRegionRewards] = await Promise.all([
       getWalletStakeByEpoch({ walletAddress, startWeek, endWeek }),
-      ...weeks.map((w) => getRegionRewardsAtEpoch({ epoch: w })),
+      ...missingRewardWeeks.map((w) => getRegionRewardsAtEpoch({ epoch: w })),
     ]);
 
-    // Build a map of week -> region rewards
     const regionRewardsByWeek = new Map<number, RegionRewardsResponse>();
-    weeks.forEach((w, i) => regionRewardsByWeek.set(w, regionRewardsResults[i]));
+    if (regionRewardsByEpoch) {
+      for (const [week, row] of regionRewardsByEpoch) {
+        if (week < startWeek || week > endWeek) continue;
+        regionRewardsByWeek.set(week, row);
+      }
+    }
+    missingRewardWeeks.forEach((w, i) =>
+      regionRewardsByWeek.set(w, fetchedRegionRewards[i]!)
+    );
 
     for (let w = startWeek; w <= endWeek; w++) {
-      const regionRewards = regionRewardsByWeek.get(w)!;
+      const regionRewards = regionRewardsByWeek.get(w);
+      if (!regionRewards) continue;
       const regionRewardById = new Map<
         number,
         { gctlStaked: bigint; glwRewardWei: bigint }

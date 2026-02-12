@@ -12,6 +12,7 @@ import {
   fractions,
   applications,
   RewardSplits,
+  gctlStakedByRegionWeek,
 } from "../../../db/schema";
 import { GENESIS_TIMESTAMP } from "../../../constants/genesis-timestamp";
 import { getCurrentEpoch } from "../../../utils/getProtocolWeek";
@@ -36,6 +37,7 @@ import {
   type ControlApiDepositSplitHistorySegment,
   type ControlApiFarmRewardsHistoryRewardRow,
   type SteeringByWeekResult,
+  type RegionRewardsResponse,
 } from "./control-api";
 import {
   addScaled6Points,
@@ -187,6 +189,125 @@ export function applyMultiplierScaled6(params: {
   if (pointsScaled6 <= BigInt(0)) return BigInt(0);
   if (multiplierScaled6 <= BigInt(0)) return BigInt(0);
   return (pointsScaled6 * multiplierScaled6) / MULTIPLIER_SCALE_SCALED6;
+}
+
+type RegionRewardsAggregateByWeek = Map<
+  number,
+  { totalGlw: bigint; byRegion: Map<number, bigint>; totalGctlStaked: bigint }
+>;
+
+async function loadDbGctlStakeByRegionByWeek(params: {
+  startWeek: number;
+  endWeek: number;
+}): Promise<Map<number, Map<number, bigint>>> {
+  const rows = await db
+    .select({
+      weekNumber: gctlStakedByRegionWeek.weekNumber,
+      region: gctlStakedByRegionWeek.region,
+      gctlStakedRaw: gctlStakedByRegionWeek.gctlStakedRaw,
+    })
+    .from(gctlStakedByRegionWeek)
+    .where(
+      and(
+        gte(gctlStakedByRegionWeek.weekNumber, params.startWeek),
+        lte(gctlStakedByRegionWeek.weekNumber, params.endWeek)
+      )
+    );
+
+  const byWeek = new Map<number, Map<number, bigint>>();
+  for (const row of rows) {
+    const regionId = Number(row.region);
+    if (!Number.isFinite(regionId)) continue;
+    let staked = 0n;
+    try {
+      staked = BigInt(String(row.gctlStakedRaw ?? "0"));
+    } catch {
+      staked = 0n;
+    }
+    if (!byWeek.has(row.weekNumber)) byWeek.set(row.weekNumber, new Map());
+    byWeek.get(row.weekNumber)!.set(regionId, staked);
+  }
+  return byWeek;
+}
+
+function toRegionRewardsAggregate(params: {
+  rewards: RegionRewardsResponse;
+  dbStakeByRegion?: Map<number, bigint>;
+}): {
+  totalGlw: bigint;
+  byRegion: Map<number, bigint>;
+  totalGctlStaked: bigint;
+} {
+  const byRegion = new Map<number, bigint>();
+  let totalGlw = 0n;
+  let totalGctlStaked = 0n;
+  for (const r of params.rewards.regionRewards || []) {
+    const glw = BigInt(r.glwReward || "0");
+    const controlStake = BigInt(r.gctlStaked || "0");
+    const dbStake = params.dbStakeByRegion?.get(r.regionId);
+    // Prefer Control stake when present; only fall back to DB snapshot for finalized historical rows that came back as zero/missing.
+    const gctl =
+      controlStake > 0n
+        ? controlStake
+        : dbStake && dbStake > 0n
+          ? dbStake
+          : controlStake;
+
+    if (glw > 0n) {
+      byRegion.set(r.regionId, glw);
+      totalGlw += glw;
+    }
+    if (gctl > 0n) totalGctlStaked += gctl;
+  }
+
+  return { totalGlw, byRegion, totalGctlStaked };
+}
+
+async function loadRegionRewardsByWeek(params: {
+  startWeek: number;
+  endWeek: number;
+  debug?: ImpactTimingCollector;
+}): Promise<{
+  rawByWeek: Map<number, RegionRewardsResponse>;
+  aggregateByWeek: RegionRewardsAggregateByWeek;
+}> {
+  const dbStakeStart = nowMs();
+  const dbStakeByWeek = await loadDbGctlStakeByRegionByWeek({
+    startWeek: params.startWeek,
+    endWeek: params.endWeek,
+  }).catch((error) => {
+    console.error("[impact-score] failed to load DB gctl stake snapshots", error);
+    return new Map<number, Map<number, bigint>>();
+  });
+  recordTimingSafe(params.debug, {
+    label: "compute.regionRewards.dbStakeLookup",
+    ms: nowMs() - dbStakeStart,
+    meta: {
+      weeks: params.endWeek - params.startWeek + 1,
+      weeksWithStakeSnapshot: dbStakeByWeek.size,
+    },
+  });
+
+  const rawByWeek = new Map<number, RegionRewardsResponse>();
+  const aggregateByWeek: RegionRewardsAggregateByWeek = new Map();
+
+  for (let w = params.startWeek; w <= params.endWeek; w++) {
+    try {
+      const rewards = await getRegionRewardsAtEpoch({ epoch: w });
+      rawByWeek.set(w, rewards);
+      aggregateByWeek.set(
+        w,
+        toRegionRewardsAggregate({
+          rewards,
+          dbStakeByRegion: dbStakeByWeek.get(w),
+        })
+      );
+    } catch (e) {
+      console.error(`[impact-score] failed to fetch region rewards for week ${w}`, e);
+    }
+  }
+
+  return { rawByWeek, aggregateByWeek };
 }
 
 export function computeSteeringBoostScaled6(params: {
@@ -1617,6 +1738,24 @@ export async function computeGlowImpactScores(params: {
     });
   }
 
+  const regionRewardsStart = nowMs();
+  const {
+    rawByWeek: regionRewardsRawByWeek,
+    aggregateByWeek: regionRewardsByWeek,
+  } = await loadRegionRewardsByWeek({
+    startWeek,
+    endWeek,
+    debug,
+  });
+  recordTimingSafe(debug, {
+    label: "compute.regionRewards.total",
+    ms: nowMs() - regionRewardsStart,
+    meta: {
+      weeks: endWeek - startWeek + 1,
+      fetchedWeeks: regionRewardsRawByWeek.size,
+    },
+  });
+
   const concurrency = 8;
   const walletInputsStart = nowMs();
   const perWalletTimings: Array<
@@ -1667,6 +1806,7 @@ export async function computeGlowImpactScores(params: {
             walletAddress: wallet,
             startWeek,
             endWeek,
+            regionRewardsByEpoch: regionRewardsRawByWeek,
           }).catch((error) => {
             console.error(
               `[impact-score] steering fetch failed for wallet=${wallet}`,
@@ -1796,39 +1936,6 @@ export async function computeGlowImpactScores(params: {
   });
 
   const results: GlowImpactScoreResult[] = [];
-
-  const regionRewardsByWeek = new Map<
-    number,
-    { totalGlw: bigint; byRegion: Map<number, bigint>; totalGctlStaked: bigint }
-  >();
-  const regionRewardsStart = nowMs();
-  for (let w = startWeek; w <= endWeek; w++) {
-    try {
-      const rr = await getRegionRewardsAtEpoch({ epoch: w });
-      const byRegion = new Map<number, bigint>();
-      let total = BigInt(0);
-      let totalGctlStaked = BigInt(0);
-      for (const r of rr.regionRewards || []) {
-        const glw = BigInt(r.glwReward || "0");
-        const gctl = BigInt(r.gctlStaked || "0");
-        if (glw > 0n) {
-          byRegion.set(r.regionId, glw);
-          total += glw;
-        }
-        if (gctl > 0n) totalGctlStaked += gctl;
-      }
-      regionRewardsByWeek.set(w, {
-        totalGlw: total,
-        byRegion,
-        totalGctlStaked,
-      });
-    } catch (e) {
-      console.error(
-        `[impact-score] failed to fetch region rewards for week ${w}`,
-        e
-      );
-    }
-  }
 
   const steeringBoostByWeek = await getSteeringBoostByWeek({
     startWeek,

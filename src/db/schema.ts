@@ -2657,6 +2657,102 @@ export type GctlStakedByRegionWeekInsertType =
   typeof gctlStakedByRegionWeek.$inferInsert;
 
 /**
+ * Weekly Control API region rewards snapshot.
+ * Values are stored in atomic units (wei-style integers as numeric strings).
+ */
+export const controlRegionRewardsWeek = pgTable(
+  "control_region_rewards_week",
+  {
+    weekNumber: integer("week_number").notNull(),
+    // Region id from Control API. `0` is reserved as a sentinel row for "fetched but empty".
+    regionId: integer("region_id").notNull(),
+    glwRewardRaw: numeric("glw_reward_raw", { precision: 78, scale: 0 })
+      .notNull()
+      .default(sql`'0'::numeric`),
+    gctlStakedRaw: numeric("gctl_staked_raw", { precision: 78, scale: 0 })
+      .notNull()
+      .default(sql`'0'::numeric`),
+    rewardShareRaw: numeric("reward_share_raw", { precision: 38, scale: 18 })
+      .notNull()
+      .default(sql`'0'::numeric`),
+    fetchedAt: timestamp("fetched_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.weekNumber, t.regionId] }),
+    weekIdx: index("control_region_rewards_week_week_ix").on(t.weekNumber),
+    regionWeekIdx: index("control_region_rewards_week_region_week_ix").on(
+      t.regionId,
+      t.weekNumber
+    ),
+    fetchedAtIdx: index("control_region_rewards_week_fetched_at_ix").on(
+      t.fetchedAt
+    ),
+  })
+);
+
+export type ControlRegionRewardsWeekType = InferSelectModel<
+  typeof controlRegionRewardsWeek
+>;
+export type ControlRegionRewardsWeekInsertType =
+  typeof controlRegionRewardsWeek.$inferInsert;
+
+/**
+ * Wallet stake by epoch/region snapshots from Control API.
+ */
+export const controlWalletStakeByEpoch = pgTable(
+  "control_wallet_stake_by_epoch",
+  {
+    weekNumber: integer("week_number").notNull(),
+    wallet: varchar("wallet", { length: 42 }).notNull(),
+    // Region id from Control API. `0` is reserved as a sentinel row for "fetched but empty".
+    regionId: integer("region_id").notNull(),
+    totalStakedRaw: numeric("total_staked_raw", { precision: 78, scale: 0 })
+      .notNull()
+      .default(sql`'0'::numeric`),
+    pendingUnstakeRaw: numeric("pending_unstake_raw", { precision: 78, scale: 0 })
+      .notNull()
+      .default(sql`'0'::numeric`),
+    pendingRestakeOutRaw: numeric("pending_restake_out_raw", {
+      precision: 78,
+      scale: 0,
+    })
+      .notNull()
+      .default(sql`'0'::numeric`),
+    pendingRestakeInRaw: numeric("pending_restake_in_raw", {
+      precision: 78,
+      scale: 0,
+    })
+      .notNull()
+      .default(sql`'0'::numeric`),
+    fetchedAt: timestamp("fetched_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.weekNumber, t.wallet, t.regionId] }),
+    walletWeekIdx: index("control_wallet_stake_by_epoch_wallet_week_ix").on(
+      t.wallet,
+      t.weekNumber
+    ),
+    weekWalletIdx: index("control_wallet_stake_by_epoch_week_wallet_ix").on(
+      t.weekNumber,
+      t.wallet
+    ),
+    regionWeekIdx: index("control_wallet_stake_by_epoch_region_week_ix").on(
+      t.regionId,
+      t.weekNumber
+    ),
+    fetchedAtIdx: index("control_wallet_stake_by_epoch_fetched_at_ix").on(
+      t.fetchedAt
+    ),
+  })
+);
+
+export type ControlWalletStakeByEpochType = InferSelectModel<
+  typeof controlWalletStakeByEpoch
+>;
+export type ControlWalletStakeByEpochInsertType =
+  typeof controlWalletStakeByEpoch.$inferInsert;
+
+/**
  * Weekly PoL revenue attribution snapshots.
  * LQ is stored as raw LQ with 12 decimals (atomic = 1e12).
  */

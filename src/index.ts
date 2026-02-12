@@ -42,11 +42,17 @@ import { updateImpactLeaderboardByRegion } from "./crons/update-impact-leaderboa
 import { updatePowerByRegionByWeek } from "./crons/update-power-by-region-by-week/update-power-by-region-by-week";
 import { createSlackClient } from "./slack/create-slack-client";
 import { updatePolDashboard } from "./crons/update-pol-dashboard/update-pol-dashboard";
+import { updateControlSnapshots } from "./crons/update-control-snapshots";
 import { polRouter } from "./routers/pol-router/polRouter";
 import { fmiRouter } from "./routers/fmi-router/fmiRouter";
 import { glwRouter } from "./routers/glw-router/glwRouter";
 
 const PORT = process.env.PORT || 3005;
+function parsePositiveIntEnv(value: string | undefined, fallback: number): number {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return fallback;
+  return Math.trunc(n);
+}
 
 function hasFractionEventServiceEnv(): boolean {
   return Boolean(
@@ -263,6 +269,33 @@ const app = new Elysia()
       },
     })
   )
+  .use(
+    cron({
+      name: "Update Control Snapshots",
+      pattern: "*/30 * * * *", // Every 30 minutes
+      async run() {
+        try {
+          if (process.env.NODE_ENV === "production") {
+            const currentWeek = getProtocolWeek();
+            const finalizedEndWeek = Math.max(97, currentWeek - 1);
+            const lookbackWeeks = parsePositiveIntEnv(
+              process.env.CONTROL_SNAPSHOT_CRON_LOOKBACK_WEEKS,
+              8
+            );
+            const startWeek = Math.max(97, finalizedEndWeek - lookbackWeeks + 1);
+            const summary = await updateControlSnapshots({
+              startWeek,
+              endWeek: finalizedEndWeek,
+              includeWalletStakeWarm: true,
+            });
+            console.log("[Cron] Update Control Snapshots:", summary);
+          }
+        } catch (error) {
+          console.error("[Cron] Error updating control snapshots:", error);
+        }
+      },
+    })
+  )
   .get(
     "/trigger-merkle-root-cron",
     async ({
@@ -345,6 +378,17 @@ const app = new Elysia()
     async ({
       store: {
         cron: { "Update PoL Dashboard": cronJob },
+      },
+    }) => {
+      await cronJob.trigger();
+      return { message: "success" };
+    }
+  )
+  .get(
+    "/trigger-control-snapshots-cron",
+    async ({
+      store: {
+        cron: { "Update Control Snapshots": cronJob },
       },
     }) => {
       await cronJob.trigger();
