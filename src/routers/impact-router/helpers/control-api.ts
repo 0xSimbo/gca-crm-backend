@@ -1385,9 +1385,12 @@ async function upsertRegionRewardsToDb(
   data: RegionRewardsResponse
 ): Promise<void> {
   if (controlRegionRewardsTableAvailable === false) return;
+  const currentEpoch = getCurrentEpoch(Math.floor(Date.now() / 1000));
+  // Only persist finalized epochs; live week remains API-first to avoid churn.
+  if (epoch >= currentEpoch) return;
 
   const fetchedAt = new Date();
-  const rows =
+  const rowsRaw =
     (data.regionRewards || []).length > 0
       ? (data.regionRewards || []).map((row) => ({
           weekNumber: epoch,
@@ -1407,14 +1410,34 @@ async function upsertRegionRewardsToDb(
             fetchedAt,
           },
         ];
+  const rowsByRegion = new Map<
+    number,
+    (typeof controlRegionRewardsWeek.$inferInsert)
+  >();
+  for (const row of rowsRaw) {
+    rowsByRegion.set(row.regionId, row);
+  }
+  const rows = Array.from(rowsByRegion.values());
 
   try {
-    await db.transaction(async (tx) => {
-      await tx
-        .delete(controlRegionRewardsWeek)
-        .where(eq(controlRegionRewardsWeek.weekNumber, epoch));
-      await tx.insert(controlRegionRewardsWeek).values(rows);
-    });
+    const existing = await db
+      .select({ regionId: controlRegionRewardsWeek.regionId })
+      .from(controlRegionRewardsWeek)
+      .where(eq(controlRegionRewardsWeek.weekNumber, epoch));
+    if (existing.length > 0) {
+      controlRegionRewardsTableAvailable = true;
+      return;
+    }
+
+    await db
+      .insert(controlRegionRewardsWeek)
+      .values(rows)
+      .onConflictDoNothing({
+        target: [
+          controlRegionRewardsWeek.weekNumber,
+          controlRegionRewardsWeek.regionId,
+        ],
+      });
     controlRegionRewardsTableAvailable = true;
   } catch (error) {
     if (isUndefinedTableError(error)) {
@@ -1495,12 +1518,37 @@ async function upsertWalletStakeRangeToDb(params: {
   if (controlWalletStakeTableAvailable === false) return;
 
   const wallet = params.walletAddress.toLowerCase();
+  const currentEpoch = getCurrentEpoch(Math.floor(Date.now() / 1000));
+  const writeEndWeek = Math.min(params.endWeek, currentEpoch - 1);
+  if (writeEndWeek < params.startWeek) return;
   const fetchedAt = new Date();
+  let existingWeekRows: Array<{ weekNumber: number }> = [];
+  try {
+    existingWeekRows = await db
+      .select({ weekNumber: controlWalletStakeByEpoch.weekNumber })
+      .from(controlWalletStakeByEpoch)
+      .where(
+        and(
+          eq(controlWalletStakeByEpoch.wallet, wallet),
+          gte(controlWalletStakeByEpoch.weekNumber, params.startWeek),
+          lte(controlWalletStakeByEpoch.weekNumber, writeEndWeek)
+        )
+      );
+  } catch (error) {
+    if (isUndefinedTableError(error)) {
+      controlWalletStakeTableAvailable = false;
+      return;
+    }
+    throw error;
+  }
+  const existingWeeks = new Set(existingWeekRows.map((row) => row.weekNumber));
+
   const rows: Array<
     typeof controlWalletStakeByEpoch.$inferInsert
   > = [];
 
-  for (let week = params.startWeek; week <= params.endWeek; week++) {
+  for (let week = params.startWeek; week <= writeEndWeek; week++) {
+    if (existingWeeks.has(week)) continue;
     const weekRows = params.rowsByWeek.get(week) || [];
     if (weekRows.length === 0) {
       rows.push({
@@ -1516,12 +1564,16 @@ async function upsertWalletStakeRangeToDb(params: {
       continue;
     }
 
+    const dedupedByRegion = new Map<number, bigint>();
     for (const row of weekRows) {
+      dedupedByRegion.set(row.regionId, row.totalStakedWei);
+    }
+    for (const [regionId, totalStakedWei] of dedupedByRegion) {
       rows.push({
         weekNumber: week,
         wallet,
-        regionId: row.regionId,
-        totalStakedRaw: row.totalStakedWei.toString(),
+        regionId,
+        totalStakedRaw: totalStakedWei.toString(),
         pendingUnstakeRaw: "0",
         pendingRestakeOutRaw: "0",
         pendingRestakeInRaw: "0",
@@ -1533,18 +1585,16 @@ async function upsertWalletStakeRangeToDb(params: {
   if (rows.length === 0) return;
 
   try {
-    await db.transaction(async (tx) => {
-      await tx
-        .delete(controlWalletStakeByEpoch)
-        .where(
-          and(
-            eq(controlWalletStakeByEpoch.wallet, wallet),
-            gte(controlWalletStakeByEpoch.weekNumber, params.startWeek),
-            lte(controlWalletStakeByEpoch.weekNumber, params.endWeek)
-          )
-        );
-      await tx.insert(controlWalletStakeByEpoch).values(rows);
-    });
+    await db
+      .insert(controlWalletStakeByEpoch)
+      .values(rows)
+      .onConflictDoNothing({
+        target: [
+          controlWalletStakeByEpoch.weekNumber,
+          controlWalletStakeByEpoch.wallet,
+          controlWalletStakeByEpoch.regionId,
+        ],
+      });
     controlWalletStakeTableAvailable = true;
   } catch (error) {
     if (isUndefinedTableError(error)) {
