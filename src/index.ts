@@ -48,11 +48,6 @@ import { fmiRouter } from "./routers/fmi-router/fmiRouter";
 import { glwRouter } from "./routers/glw-router/glwRouter";
 
 const PORT = process.env.PORT || 3005;
-function parsePositiveIntEnv(value: string | undefined, fallback: number): number {
-  const n = Number(value);
-  if (!Number.isFinite(n) || n <= 0) return fallback;
-  return Math.trunc(n);
-}
 
 function hasFractionEventServiceEnv(): boolean {
   return Boolean(
@@ -272,21 +267,17 @@ const app = new Elysia()
   .use(
     cron({
       name: "Update Control Snapshots",
-      pattern: "*/30 * * * *", // Every 30 minutes
+      pattern: "0 1 * * 0", // Weekly on Sunday at 01:00 UTC (after epoch rollover)
       async run() {
         try {
           if (process.env.NODE_ENV === "production") {
             const currentWeek = getProtocolWeek();
             const finalizedEndWeek = Math.max(97, currentWeek - 1);
-            const lookbackWeeks = parsePositiveIntEnv(
-              process.env.CONTROL_SNAPSHOT_CRON_LOOKBACK_WEEKS,
-              8
-            );
-            const startWeek = Math.max(97, finalizedEndWeek - lookbackWeeks + 1);
             const summary = await updateControlSnapshots({
-              startWeek,
+              startWeek: 97,
               endWeek: finalizedEndWeek,
               includeWalletStakeWarm: true,
+              onlyMissingFinalized: true,
             });
             console.log("[Cron] Update Control Snapshots:", summary);
           }
