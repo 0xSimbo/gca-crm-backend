@@ -6,17 +6,26 @@ The non-account quote system allows users to estimate their protocol deposit and
 
 ## API Endpoints
 
-### GET `/applications/non-account/regions`
+The legacy `/applications/non-account/*` endpoints are no longer used.
 
-Returns list of available regions for quote submission.
+Current quote endpoints are:
 
-### POST `/applications/non-account/quote`
+- `GET /quotes/regions`
+- `POST /quotes/project`
+- `POST /quotes/project/lebanon`
+- `POST /quotes/project/batch`
+- `GET /quotes/project/batch/:batchId`
+- `GET /quotes/project-quotes` (requires `x-api-key`)
+- `POST /applications/project-quote` (bearer auth)
+- `GET /applications/project-quotes` (bearer auth)
+- `GET /applications/project-quote/:id` (bearer auth)
 
-Submit a quote request with utility bill and farm specifications.
+### `POST /quotes/project` or `POST /applications/project-quote`
+
+Submit a quote request with utility bill and project specifications.
 
 **Required Fields:**
 
-- `regionCode`: Region code from regionMetadata
 - `annualConsumptionMWh`: Annual energy consumption in MWh (from Aurora Solar)
 - `systemSizeKw`: System nameplate capacity in kW
 - `latitude`, `longitude`: Farm location coordinates
@@ -33,10 +42,6 @@ Submit a quote request with utility bill and farm specifications.
 - Net carbon credits per MWh
 - Efficiency score
 - Electricity price extraction details
-
-### GET `/applications/non-account/quote/:id`
-
-Retrieve a previously computed quote by ID.
 
 ## Core Calculations
 

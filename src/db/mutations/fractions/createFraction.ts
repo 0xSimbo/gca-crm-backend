@@ -21,6 +21,10 @@ import { FindFirstApplicationById } from "../../queries/applications/findFirstAp
 import { getFractionEventService } from "../../../services/eventListener";
 import { completeApplicationAndCreateFarm } from "../../../routers/applications-router/publicRoutes";
 import { createSlackClient } from "../../../slack/create-slack-client";
+import {
+  getMarketplaceVisibleAtFromCreatedAt,
+  hasMarketplaceVisibilityWindow,
+} from "../../../utils/fractions/marketplaceVisibility";
 
 const SLACK_CHANNEL = "#devs";
 
@@ -185,6 +189,16 @@ export async function createFraction(params: CreateFractionParams, tx?: any) {
     fractionType === "mining-center"
       ? getNextSaturdayAt2PMET()
       : new Date(now.getTime() + LAUNCHPAD_FRACTION_LIFETIME_MS);
+
+  if (
+    fractionType === "mining-center" &&
+    !hasMarketplaceVisibilityWindow(now, expirationAt)
+  ) {
+    const marketplaceVisibleAt = getMarketplaceVisibleAtFromCreatedAt(now);
+    throw new Error(
+      `Cannot create mining-center fraction: expiration (${expirationAt.toISOString()}) must be after marketplace visibility (${marketplaceVisibleAt.toISOString()})`
+    );
+  }
 
   const fractionData: FractionInsertType = {
     id: fractionId,

@@ -3077,7 +3077,7 @@ export const fractionsRouter = new Elysia({ prefix: "/fractions" })
       detail: {
         summary: "Get currently available fractions",
         description:
-          "Returns committed fractions that have not expired yet. Optionally filter by fraction type to retrieve available launchpad or mining-center listings.",
+          "Returns committed fractions that have not expired yet and have reached marketplace release time (next Tuesday at 1:00 PM ET based on creation time). Optionally filter by fraction type to retrieve available launchpad or mining-center listings.",
         tags: [TAG.APPLICATIONS],
       },
     }

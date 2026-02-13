@@ -19,6 +19,7 @@ The `/sponsor-listings-applications` endpoint returns applications with active f
 | `sortBy`          | `string`                                    | No       | Sort field (see sorting options below)          |
 | `sortOrder`       | `"asc"` \| `"desc"`                         | No       | Sort direction. Default: `"desc"`               |
 | `paymentCurrency` | `"USDG"` \| `"USDC"` \| `"GLW"` \| `"GCTL"` | No       | Filter by payment currency availability         |
+| `includeFilled`   | `"true"`                                    | No       | Include filled fractions in addition to active ones |
 
 ### Sorting Options
 
@@ -43,7 +44,7 @@ The `/sponsor-listings-applications` endpoint returns applications with active f
 - **Purpose**: Completed applications selling mining rewards
 - **Farm Status**: Farm already created (farmId exists)
 - **Farm Name**: Actual farm name from database (e.g., "Gleaming Meadow")
-- **Zones**: Can be in any zone
+- **Zones**: Must be in zones with `isAcceptingSponsors: true`
 
 ## Response Structure
 
@@ -92,7 +93,7 @@ Returns an array of application objects with the following structure:
   activeFraction: {
     id: string;                         // Fraction ID (bytes32)
     nonce: string;                      // Fraction nonce
-    status: string;                     // "draft" | "committed"
+    status: string;                     // "draft" | "committed" | "filled" (filled only when includeFilled=true)
     sponsorSplitPercent: number;        // Sponsor split percentage
     createdAt: Date;                    // Fraction creation date
     expirationAt: Date;                 // Fraction expiration date
@@ -106,6 +107,7 @@ Returns an array of application objects with the following structure:
     owner: string;                      // Fraction owner address
     txHash: string | null;              // Commitment transaction hash
     rewardScore: number;                // Reward score multiplier
+    marketplaceVisibleAt: Date;         // Marketplace release timestamp (Tuesday 1:00 PM ET schedule)
 
     // Calculated Fields
     progressPercent: number;            // Percentage filled (0-100)
@@ -146,9 +148,9 @@ const resolvedName =
 
 Only applications with active fractions are returned:
 
-- Fraction status: `committed`
-- `isCommittedOnChain: true`
-- `expirationAt > now()`
+- Default fraction statuses considered: `draft` and `committed` (`filled` is included only when `includeFilled=true`)
+- When `includeFilled` is not set: `isCommittedOnChain: true` and `expirationAt > now()`
+- Marketplace visibility window reached: next Tuesday at `1:00 PM ET` based on fraction `createdAt`
 - Fraction type matches query parameter (or excludes mining-center by default)
 
 ### Zone Requirements

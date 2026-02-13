@@ -55,7 +55,7 @@ The router uses optimized data fetching strategies:
 ## `GET /fractions/available`
 
 - Optionally filter by `type` query param (`launchpad` | `mining-center`). When omitted the response is segmented per type.
-- Includes only fractions with status `committed` and `expirationAt` in the future.
+- Includes only fractions with status `committed`, `expirationAt` in the future, and marketplace release window reached (next Tuesday at `1:00 PM ET` based on `createdAt`).
 - **Response when `type` is provided**
   - `type` (`"launchpad" | "mining-center"`).
   - `summary`

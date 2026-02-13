@@ -207,12 +207,12 @@ Tests require a running PostgreSQL database. Ensure `DATABASE_URL` is set.
 
 ### Cleanup Failures
 
-If tests fail mid-execution, test data may persist. Run cleanup manually:
+If tests fail mid-execution, test data may persist. Clean up only fixture rows by exact keys.
+Do not run broad pattern deletes. Follow `tests/AGENTS.md` rules:
 
-```sql
-DELETE FROM referrals WHERE referee_wallet LIKE '0xaa%' OR referee_wallet LIKE '0xbb%';
-DELETE FROM referral_codes WHERE wallet_address LIKE '0xaa%' OR wallet_address LIKE '0xbb%';
-DELETE FROM referral_nonces WHERE wallet_address LIKE '0xaa%' OR wallet_address LIKE '0xbb%';
+```text
+- Delete by primary/composite key values for rows inserted by the test.
+- Avoid deletes based on wide predicates (prefix, ranges, timestamps, etc.).
 ```
 
 ### Timing-Sensitive Tests

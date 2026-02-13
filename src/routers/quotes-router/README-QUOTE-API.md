@@ -187,15 +187,7 @@ GET /quotes/project/batch/{batchId}
   - `{ index, success: true, quoteId }`
   - `{ index, success: false, error }`
 
-### 5. Get Quotes by Wallet
-
-```
-GET /quotes/project/{walletAddress}
-```
-
-Retrieve all quotes created by a specific wallet address.
-
-### 5b. Get Quotes for Current API Key
+### 5. Get Quotes for Current API Key
 
 ```
 GET /quotes/project-quotes
@@ -203,14 +195,6 @@ x-api-key: gq_...
 ```
 
 Retrieve all quotes associated with the provided API key (uses admin-configured `quote_api_keys.wallet_address` when set; otherwise uses the pseudo-wallet derived from the apiKey hash).
-
-### 6. Get Quote by ID
-
-```
-GET /quotes/project/quote/{quoteId}?signature={sig}&timestamp={ts}
-```
-
-Retrieve a specific quote. Optional signature verification for access control.
 
 ## Authenticated Quote Management (Bearer Token)
 

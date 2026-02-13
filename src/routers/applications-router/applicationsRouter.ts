@@ -2108,7 +2108,7 @@ export const applicationsRouter = new Elysia({ prefix: "/applications" })
           }),
           detail: {
             summary: "Publish Application to auction",
-            description: `Set sponsorSplitPercent (${MIN_SPONSOR_SPLIT_PERCENT}-${MAX_SPONSOR_SPLIT_PERCENT} inclusive, in 1% steps). If not yet published, also toggle isPublishedOnAuction and set publishedOnAuctionTimestamp. If already published, only updates sponsorSplitPercent and sponsorSplitUpdatedAt.`,
+            description: `Create or update the application's active launchpad fraction with sponsor split, step price, total steps, and reward score. Marketplace visibility is controlled by fraction scheduling (Tuesday 1:00 PM ET release window), not legacy application-level publication flags.`,
             tags: [TAG.APPLICATIONS],
           },
         }

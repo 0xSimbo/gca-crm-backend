@@ -1,6 +1,7 @@
 import { and, eq, gt, inArray } from "drizzle-orm";
 
 import { FRACTION_STATUS } from "../../../constants/fractions";
+import { isFractionVisibleOnMarketplace } from "../../../utils/fractions/marketplaceVisibility";
 import { db } from "../../db";
 import { fractions } from "../../schema";
 
@@ -24,11 +25,12 @@ export async function getAvailableFractions(
     conditions.push(eq(fractions.type, options.type));
   }
 
-  return db
+  const rows = await db
     .select({
       id: fractions.id,
       applicationId: fractions.applicationId,
       createdBy: fractions.createdBy,
+      createdAt: fractions.createdAt,
       stepPrice: fractions.stepPrice,
       totalSteps: fractions.totalSteps,
       splitsSold: fractions.splitsSold,
@@ -41,4 +43,8 @@ export async function getAvailableFractions(
     .from(fractions)
     .where(and(...conditions))
     .orderBy(fractions.expirationAt);
+
+  return rows
+    .filter((fraction) => isFractionVisibleOnMarketplace(fraction.createdAt, now))
+    .map(({ createdAt: _createdAt, ...fraction }) => fraction);
 }

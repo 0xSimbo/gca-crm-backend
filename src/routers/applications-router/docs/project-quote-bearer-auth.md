@@ -31,6 +31,7 @@ Content-Type: multipart/form-data
 | `longitude`            | string | Yes      | Longitude of the solar farm location                                            |
 | `utilityBill`          | File   | Yes      | Utility bill PDF for price extraction (max 10MB)                                |
 | `metadata`             | string | No       | Optional metadata for identifying the quote (e.g., farm owner name, project ID) |
+| `isProjectCompleted`   | bool/string | No   | Optional project-live flag (`true`/`false`; multipart forms may send strings)   |
 
 ### Constraints
 
@@ -51,6 +52,7 @@ Content-Type: multipart/form-data
   "walletAddress": "0x...",
   "userId": "0x...",
   "metadata": "optional-metadata",
+  "isProjectCompleted": false,
   "regionCode": "REGION_CODE",
   "protocolDeposit": {
     "usd": 1234.56,

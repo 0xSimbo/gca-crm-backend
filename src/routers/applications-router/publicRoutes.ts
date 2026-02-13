@@ -56,6 +56,10 @@ import {
 import { markFractionAsFilled } from "../../db/mutations/fractions/createFraction";
 import { getFractionEventService } from "../../services/eventListener";
 import { FRACTION_STATUS } from "../../constants/fractions";
+import {
+  getMarketplaceVisibleAtFromCreatedAt,
+  isFractionVisibleOnMarketplace,
+} from "../../utils/fractions/marketplaceVisibility";
 
 /**
  * Helper function to complete an application and create a farm with devices
@@ -158,6 +162,7 @@ export const publicApplicationsRoutes = new Elysia()
     async ({ query, set }) => {
       try {
         const { zoneId, sortBy, sortOrder, paymentCurrency, type, includeFilled } = query;
+        const now = new Date();
 
         // Parse zoneId if provided
         const parsedZoneId = zoneId !== undefined ? Number(zoneId) : undefined;
@@ -224,7 +229,7 @@ export const publicApplicationsRoutes = new Elysia()
         // If not including filled, add more strict conditions for active fractions
         if (includeFilled !== "true") {
           fractionConditions.push(eq(fractions.isCommittedOnChain, true));
-          fractionConditions.push(gt(fractions.expirationAt, new Date()));
+          fractionConditions.push(gt(fractions.expirationAt, now));
         }
 
         // Filter by fraction type
@@ -365,7 +370,42 @@ export const publicApplicationsRoutes = new Elysia()
           });
         }
 
-        // Fetch farm names for all applications
+        const bestFractionByApplicationId = new Map<string, any | null>();
+        const getBestVisibleFraction = (app: any) => {
+          if (bestFractionByApplicationId.has(app.id)) {
+            return bestFractionByApplicationId.get(app.id) || null;
+          }
+
+          const statusPriority: Record<string, number> = {
+            committed: 0,
+            draft: 1,
+            filled: 2,
+          };
+
+          const visibleFractions = (app.fractions || []).filter((fraction: any) =>
+            isFractionVisibleOnMarketplace(fraction.createdAt, now)
+          );
+
+          const sortedFractions = [...visibleFractions].sort((a, b) => {
+            const priorityA = statusPriority[a.status] ?? 99;
+            const priorityB = statusPriority[b.status] ?? 99;
+            if (priorityA !== priorityB) return priorityA - priorityB;
+            return (
+              new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+            );
+          });
+
+          const best = sortedFractions.length > 0 ? sortedFractions[0] : null;
+          bestFractionByApplicationId.set(app.id, best);
+          return best;
+        };
+
+        // Hide listings until their release schedule allows them on marketplace.
+        filteredApplications = filteredApplications.filter((app) =>
+          Boolean(getBestVisibleFraction(app))
+        );
+
+        // Fetch farm names for all applications that are currently visible
         const applicationIds = filteredApplications.map((app) => app.id);
         const farmNamesMap = await getFarmNamesByApplicationIds(applicationIds);
 
@@ -376,11 +416,13 @@ export const publicApplicationsRoutes = new Elysia()
           filteredApplications.sort((a, b) => {
             let aValue: any;
             let bValue: any;
+            const aFraction = getBestVisibleFraction(a);
+            const bFraction = getBestVisibleFraction(b);
 
             switch (sortBy) {
               case "sponsorSplitPercent":
-                aValue = a.fractions?.[0]?.sponsorSplitPercent || 0;
-                bValue = b.fractions?.[0]?.sponsorSplitPercent || 0;
+                aValue = aFraction?.sponsorSplitPercent || 0;
+                bValue = bFraction?.sponsorSplitPercent || 0;
                 break;
               case "finalProtocolFee":
                 aValue = Number(a.finalProtocolFee || 0);
@@ -425,11 +467,11 @@ export const publicApplicationsRoutes = new Elysia()
                 break;
               default:
                 // Default sort by fraction creation date
-                aValue = a.fractions?.[0]?.createdAt
-                  ? new Date(a.fractions[0].createdAt).getTime()
+                aValue = aFraction?.createdAt
+                  ? new Date(aFraction.createdAt).getTime()
                   : 0;
-                bValue = b.fractions?.[0]?.createdAt
-                  ? new Date(b.fractions[0].createdAt).getTime()
+                bValue = bFraction?.createdAt
+                  ? new Date(bFraction.createdAt).getTime()
                   : 0;
                 break;
             }
@@ -440,22 +482,7 @@ export const publicApplicationsRoutes = new Elysia()
           });
         }
         const returnApplications = filteredApplications.map((app) => {
-          // Get the best fraction: prioritized committed > draft > filled
-          const sortedFractions = [...(app.fractions || [])].sort((a, b) => {
-            const statusPriority: Record<string, number> = {
-              committed: 0,
-              draft: 1,
-              filled: 2,
-            };
-            const priorityA = statusPriority[a.status] ?? 99;
-            const priorityB = statusPriority[b.status] ?? 99;
-            if (priorityA !== priorityB) return priorityA - priorityB;
-            return (
-              new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-            );
-          });
-
-          const activeFraction = sortedFractions.length > 0 ? sortedFractions[0] : null;
+          const activeFraction = getBestVisibleFraction(app);
 
           return {
             id: app.id,
@@ -498,6 +525,10 @@ export const publicApplicationsRoutes = new Elysia()
                   token: activeFraction.token,
                   owner: activeFraction.owner,
                   txHash: activeFraction.txHash,
+                  marketplaceVisibleAt:
+                    getMarketplaceVisibleAtFromCreatedAt(
+                      activeFraction.createdAt
+                    ),
                   // Calculate progress percentage
                   progressPercent:
                     activeFraction.totalSteps && activeFraction.splitsSold
@@ -569,7 +600,7 @@ export const publicApplicationsRoutes = new Elysia()
       }),
       detail: {
         summary: "Get auction applications available for sponsorship",
-        description: `Returns applications with active fractions available for purchase. The application status depends on the fraction type: 'launchpad' (default) returns applications waiting for payment in zones accepting sponsors, while 'mining-center' returns completed applications. Only applications with active fractions (draft or committed status, not expired) are returned. Supports filtering by zoneId, paymentCurrency, and fraction type. Sorting options include publishedOnAuctionTimestamp, sponsorSplitPercent, finalProtocolFee, or paymentCurrency. When sorting by paymentCurrency with a specific currency filter, sorts by lowest price for that currency. Includes application price quotes, related data, and active fraction information showing funding progress, steps sold, amounts raised, and expiration details.`,
+        description: `Returns applications with active fractions available for purchase. The application status depends on the fraction type: 'launchpad' (default) returns applications waiting for payment in zones accepting sponsors, while 'mining-center' returns completed applications. Listings are only returned after their marketplace release time (next Tuesday at 1:00 PM ET relative to fraction creation). Supports filtering by zoneId, paymentCurrency, and fraction type. Sorting options include publishedOnAuctionTimestamp, sponsorSplitPercent, finalProtocolFee, or paymentCurrency. When sorting by paymentCurrency with a specific currency filter, sorts by lowest price for that currency. Includes application price quotes, related data, and active fraction information showing funding progress, steps sold, amounts raised, and expiration details.`,
         tags: [TAG.APPLICATIONS],
       },
     }
