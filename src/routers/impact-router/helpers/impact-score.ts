@@ -1766,6 +1766,7 @@ export async function computeGlowImpactScores(params: {
         liquidMs: number;
         unclaimedMs: number;
         steeringMs: number;
+        liquidUsedFallback: boolean;
         steeringUsedFallback: boolean;
       }
     | {
@@ -1786,11 +1787,19 @@ export async function computeGlowImpactScores(params: {
         let liquidMs = 0;
         let unclaimedMs = 0;
         let steeringMs = 0;
+        let liquidUsedFallback = false;
 
         try {
           const liquidStart = nowMs();
           const liquid = isHexWallet(wallet)
-            ? await getLiquidGlwBalanceWei(wallet)
+            ? await getLiquidGlwBalanceWei(wallet).catch((error) => {
+                liquidUsedFallback = true;
+                console.error(
+                  `[impact-score] liquid balance fetch failed for wallet=${wallet}; using zero fallback`,
+                  error
+                );
+                return 0n;
+              })
             : BigInt(0);
           liquidMs = nowMs() - liquidStart;
 
@@ -1827,6 +1836,7 @@ export async function computeGlowImpactScores(params: {
             liquidMs,
             unclaimedMs,
             steeringMs,
+            liquidUsedFallback,
           };
         } catch (error) {
           const totalMs = nowMs() - walletStart;
@@ -1872,6 +1882,7 @@ export async function computeGlowImpactScores(params: {
         liquidMs: r.liquidMs,
         unclaimedMs: r.unclaimedMs,
         steeringMs: r.steeringMs,
+        liquidUsedFallback: r.liquidUsedFallback,
         steeringUsedFallback: r.steering.isFallback === true,
       });
     }
@@ -1899,6 +1910,10 @@ export async function computeGlowImpactScores(params: {
     (acc, r) => acc + (r.steeringUsedFallback ? 1 : 0),
     0
   );
+  const liquidFallbackCount = okWalletTimingRows.reduce(
+    (acc, r) => acc + (r.liquidUsedFallback ? 1 : 0),
+    0
+  );
   const topSlowWallets = okWalletTimingRows
     .slice()
     .sort((a, b) => b.totalMs - a.totalMs)
@@ -1909,6 +1924,7 @@ export async function computeGlowImpactScores(params: {
       liquidMs: Math.round(r.liquidMs * 10) / 10,
       unclaimedMs: Math.round(r.unclaimedMs * 10) / 10,
       steeringMs: Math.round(r.steeringMs * 10) / 10,
+      liquidUsedFallback: r.liquidUsedFallback,
       steeringUsedFallback: r.steeringUsedFallback,
     }));
 
@@ -1920,6 +1936,7 @@ export async function computeGlowImpactScores(params: {
       concurrency,
       okWallets: okWalletTimingRows.length,
       failedWallets: failedWalletCount,
+      liquidFallbackWallets: liquidFallbackCount,
       steeringFallbackWallets: steeringFallbackCount,
       avgMsPerWallet:
         okWalletTimingRows.length > 0

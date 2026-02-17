@@ -4,6 +4,69 @@ import { OFFCHAIN_FRACTIONS_ABI } from "@glowlabs-org/utils/browser";
 import type { Abi } from "viem";
 import { forwarderAddresses } from "../constants/addresses";
 
+const RETRYABLE_RPC_STATUS_CODES = new Set([408, 429, 500, 502, 503, 504]);
+const VERIFY_TX_RPC_TIMEOUT_MS = 20_000;
+const VERIFY_TX_RPC_RETRY_COUNT = 2;
+const VERIFY_TX_RPC_RETRY_DELAY_MS = 200;
+
+function getErrorStatus(error: unknown): number | null {
+  if (typeof error !== "object" || error == null) return null;
+
+  const status = (error as { status?: unknown }).status;
+  if (typeof status === "number" && Number.isFinite(status)) return status;
+
+  const causeStatus = (error as { cause?: { status?: unknown } }).cause?.status;
+  if (typeof causeStatus === "number" && Number.isFinite(causeStatus))
+    return causeStatus;
+
+  return null;
+}
+
+function getErrorText(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  return String(error);
+}
+
+function isRetryableRpcTransportError(error: unknown): boolean {
+  const status = getErrorStatus(error);
+  if (status != null) return RETRYABLE_RPC_STATUS_CODES.has(status);
+
+  const message = getErrorText(error).toLowerCase();
+  return (
+    message.includes("timed out") ||
+    message.includes("timeout") ||
+    message.includes("fetch failed") ||
+    message.includes("network error") ||
+    message.includes("socket hang up") ||
+    message.includes("connection reset")
+  );
+}
+
+function isHttpUrl(value: string | undefined): value is string {
+  return typeof value === "string" && /^https?:\/\//i.test(value);
+}
+
+function getFallbackRpcUrl(params: {
+  primaryRpcUrl: string;
+  isProduction: boolean;
+}): string | null {
+  const explicitFallback = process.env.MAINNET_RPC_FALLBACK_URL?.trim();
+  if (
+    params.isProduction &&
+    isHttpUrl(explicitFallback) &&
+    explicitFallback !== params.primaryRpcUrl
+  ) {
+    return explicitFallback;
+  }
+
+  const chainDefaultUrl = params.isProduction
+    ? mainnet.rpcUrls.default.http[0]
+    : sepolia.rpcUrls.default.http[0];
+
+  if (!chainDefaultUrl || chainDefaultUrl === params.primaryRpcUrl) return null;
+  return chainDefaultUrl;
+}
+
 /**
  * Verify fraction.sold event data against on-chain transaction logs
  */
@@ -22,17 +85,57 @@ export async function verifyFractionSoldTransaction(eventPayload: {
       throw new Error("MAINNET_RPC_URL is not set");
     }
 
-    const rpcUrl =
-      process.env.NODE_ENV === "production"
+    const isProduction = process.env.NODE_ENV === "production";
+    const primaryRpcUrl =
+      isProduction
         ? process.env.MAINNET_RPC_URL!
         : "https://ethereum-sepolia-rpc.publicnode.com";
-    const chain = process.env.NODE_ENV === "production" ? mainnet : sepolia;
-    const client = createPublicClient({ chain, transport: http(rpcUrl) });
+    const chain = isProduction ? mainnet : sepolia;
+    const client = createPublicClient({
+      chain,
+      transport: http(primaryRpcUrl, {
+        timeout: VERIFY_TX_RPC_TIMEOUT_MS,
+        retryCount: VERIFY_TX_RPC_RETRY_COUNT,
+        retryDelay: VERIFY_TX_RPC_RETRY_DELAY_MS,
+      }),
+    });
 
     // Fetch the transaction receipt
-    const receipt = await client.getTransactionReceipt({
-      hash: eventPayload.transactionHash as `0x${string}`,
-    });
+    let receipt: Awaited<ReturnType<typeof client.getTransactionReceipt>>;
+    try {
+      receipt = await client.getTransactionReceipt({
+        hash: eventPayload.transactionHash as `0x${string}`,
+      });
+    } catch (primaryError) {
+      if (!isRetryableRpcTransportError(primaryError)) throw primaryError;
+
+      const fallbackRpcUrl = getFallbackRpcUrl({
+        primaryRpcUrl,
+        isProduction,
+      });
+      if (!fallbackRpcUrl) throw primaryError;
+
+      const fallbackClient = createPublicClient({
+        chain,
+        transport: http(fallbackRpcUrl, {
+          timeout: VERIFY_TX_RPC_TIMEOUT_MS,
+          retryCount: VERIFY_TX_RPC_RETRY_COUNT,
+          retryDelay: VERIFY_TX_RPC_RETRY_DELAY_MS,
+        }),
+      });
+
+      try {
+        receipt = await fallbackClient.getTransactionReceipt({
+          hash: eventPayload.transactionHash as `0x${string}`,
+        });
+      } catch (fallbackError) {
+        throw new Error(
+          `Failed to fetch transaction receipt from primary and fallback RPC providers. primary=${getErrorText(
+            primaryError
+          )}; fallback=${getErrorText(fallbackError)}`
+        );
+      }
+    }
 
     if (!receipt) {
       return {
