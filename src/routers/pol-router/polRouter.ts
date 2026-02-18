@@ -8,6 +8,7 @@ import {
   Documents,
   farms,
   gctlStakedByRegionWeek,
+  polCashBounties,
   polRevenueByFarmWeek,
   polRevenueByRegionWeek,
   polYieldWeek,
@@ -465,6 +466,51 @@ export const polRouter = new Elysia({ prefix: "/pol" })
         summary: "PoL revenue by farm (lifetime + range)",
         description:
           "Returns farm revenue aggregates. Includes audit_week (proxy for builtEpoch) and optional CGP lifetime adjustment so totals can match current Total PoL.",
+        tags: [TAG.POL],
+      },
+    }
+  )
+  .get(
+    "/bounties/farms",
+    async ({ set }) => {
+      try {
+        const rows = await db
+          .select({
+            farmId: farms.id,
+            name: farms.name,
+            zoneId: farms.zoneId,
+            bountyUsd: sql<string>`coalesce(sum(${polCashBounties.bountyUsd}), 0)`,
+            applicationsCount: sql<number>`count(distinct ${applications.id})`,
+            latestBountyUpdatedAt: sql<Date | null>`max(${polCashBounties.updatedAt})`,
+          })
+          .from(polCashBounties)
+          .innerJoin(applications, eq(polCashBounties.applicationId, applications.id))
+          .innerJoin(farms, eq(applications.farmId, farms.id))
+          .groupBy(farms.id, farms.name, farms.zoneId)
+          .orderBy(sql`sum(${polCashBounties.bountyUsd}) desc`, farms.name);
+
+        return rows.map((r) => ({
+          farm_id: r.farmId,
+          name: r.name,
+          zone_id: Number(r.zoneId),
+          bounty_usd: r.bountyUsd,
+          applications_count: Number(r.applicationsCount),
+          latest_bounty_updated_at: r.latestBountyUpdatedAt,
+        }));
+      } catch (e) {
+        if (e instanceof Error) {
+          set.status = 400;
+          return { error: e.message };
+        }
+        set.status = 500;
+        return { error: "Internal Server Error" };
+      }
+    },
+    {
+      detail: {
+        summary: "PoL cash bounties by farm",
+        description:
+          "Returns cash bounty totals (USD) per farm from pol_cash_bounties, grouped by farm.",
         tags: [TAG.POL],
       },
     }
