@@ -451,9 +451,10 @@ async function loadRegionRewardsByWeek(params: {
     },
   });
 
+  const finalizedWeek = getWeekRange().endWeek;
   const missingWeeks: number[] = [];
   for (let w = params.startWeek; w <= params.endWeek; w++) {
-    if (!dbRewardsByWeek.has(w)) missingWeeks.push(w);
+    if (!dbRewardsByWeek.has(w) && w <= finalizedWeek) missingWeeks.push(w);
   }
 
   const fetchedMissingRewards = new Map<number, RegionRewardsResponse>();
@@ -2155,6 +2156,8 @@ export async function computeGlowImpactScores(params: {
   } = params;
   const overallStart = nowMs();
   const finalizedWeek = getFinalizedRewardsWeek(startWeek, endWeek);
+  const steeringComputationEndWeek = Math.min(endWeek, finalizedWeek);
+  const hasSteeringRange = steeringComputationEndWeek >= startWeek;
 
   const wallets = walletAddresses
     .map((w) => w.toLowerCase())
@@ -2633,13 +2636,18 @@ export async function computeGlowImpactScores(params: {
   const {
     steeringByWallet: precomputedSteeringByWallet,
     missingWallets: steeringFallbackWallets,
-  } = await precomputeSteeringByWalletFromDb({
-    wallets,
-    startWeek,
-    endWeek,
-    regionRewardsByEpoch: regionRewardsRawByWeek,
-    debug,
-  });
+  } = hasSteeringRange
+    ? await precomputeSteeringByWalletFromDb({
+        wallets,
+        startWeek,
+        endWeek: steeringComputationEndWeek,
+        regionRewardsByEpoch: regionRewardsRawByWeek,
+        debug,
+      })
+    : {
+        steeringByWallet: new Map<string, SteeringByWeekResult>(),
+        missingWallets: new Set<string>(),
+      };
 
   const hexWallets = wallets.filter(isHexWallet) as Array<`0x${string}`>;
   const liquidBatchStart = nowMs();
@@ -2718,18 +2726,24 @@ export async function computeGlowImpactScores(params: {
           const steering =
             precomputedSteering && !steeringFallbackWallets.has(wallet)
               ? precomputedSteering
-              : await getGctlSteeringByWeekWei({
-                  walletAddress: wallet,
-                  startWeek,
-                  endWeek,
-                  regionRewardsByEpoch: regionRewardsRawByWeek,
-                }).catch((error) => {
-                  console.error(
-                    `[impact-score] steering fetch failed for wallet=${wallet}`,
-                    error
-                  );
-                  return getSteeringFallback({ startWeek, endWeek, error });
-                });
+              : hasSteeringRange
+                ? await getGctlSteeringByWeekWei({
+                    walletAddress: wallet,
+                    startWeek,
+                    endWeek: steeringComputationEndWeek,
+                    regionRewardsByEpoch: regionRewardsRawByWeek,
+                  }).catch((error) => {
+                    console.error(
+                      `[impact-score] steering fetch failed for wallet=${wallet}`,
+                      error
+                    );
+                    return getSteeringFallback({ startWeek, endWeek, error });
+                  })
+                : getSteeringFallback({
+                    startWeek,
+                    endWeek,
+                    error: "No finalized steering weeks in requested range",
+                  });
           steeringMs = nowMs() - steeringStart;
 
           const totalMs = nowMs() - walletStart;
@@ -2862,13 +2876,15 @@ export async function computeGlowImpactScores(params: {
   const farmDistributedTimelineByFarm = await farmDistributedTimelineByFarmPromise;
   const results: GlowImpactScoreResult[] = [];
 
-  const steeringBoostByWeek = await getSteeringBoostByWeek({
-    startWeek,
-    endWeek,
-    foundationWallets: EXCLUDED_LEADERBOARD_WALLETS,
-    regionRewardsByWeek,
-    debug,
-  });
+  const steeringBoostByWeek = hasSteeringRange
+    ? await getSteeringBoostByWeek({
+        startWeek,
+        endWeek: steeringComputationEndWeek,
+        foundationWallets: EXCLUDED_LEADERBOARD_WALLETS,
+        regionRewardsByWeek,
+        debug,
+      })
+    : new Map<number, bigint>();
 
   const scoringStart = nowMs();
   for (const wallet of wallets) {
@@ -3830,7 +3846,7 @@ async function getImpactStreakSnapshot(params: {
   try {
     const m = await fetchDepositSplitsHistoryBatch({
       wallets: [wallet],
-      startWeek: DELEGATION_START_WEEK,
+      startWeek: streakSeedStartWeek,
       endWeek: weekNumber,
     });
     splitSegments = m.get(wallet) || [];
@@ -3965,52 +3981,73 @@ export async function getCurrentWeekProjection(
     };
   }
 
-  // Run all 3 fetches in parallel
-  const [
-    { steeredGlwWeiPerWeek, hasSteeringStake },
-    {
-      impactStreakWeeks,
-      streakAsOfPreviousWeek,
-      hasImpactActionThisWeek,
-      hasMinerMultiplier,
-      baseMultiplier,
-      streakBonusMultiplier,
-      totalMultiplierScaled6,
-      totalMultiplier,
-    },
-    rewardsResult,
-    steeringBoostByWeek,
-  ] = await Promise.all([
+  const projectionBoostWeek = Math.min(weekNumber, getWeekRange().endWeek);
+
+  const [steeringSnapshot, streakSnapshot, weeklyRewards] = await Promise.all([
     getSteeringSnapshot(wallet, weekNumber),
     getImpactStreakSnapshot({ walletAddress: wallet, weekNumber }),
-    fetchWalletRewardsHistoryBatch({
-      wallets: [wallet],
+    fetchWalletWeeklyRewards({
+      walletAddress: wallet,
+      paymentCurrency: "GLW",
+      limit: 8,
       startWeek: weekNumber,
       endWeek: weekNumber,
-    }).catch(() => new Map<string, ControlApiFarmReward[]>()),
-    getSteeringBoostByWeek({
-      startWeek: weekNumber,
-      endWeek: weekNumber,
-      foundationWallets: EXCLUDED_LEADERBOARD_WALLETS,
+    }).catch(async () => {
+      const rewardsResult = await fetchWalletRewardsHistoryBatch({
+        wallets: [wallet],
+        startWeek: weekNumber,
+        endWeek: weekNumber,
+      }).catch(() => new Map<string, ControlApiFarmReward[]>());
+      const rewards = rewardsResult.get(wallet) || [];
+      return rewards.map((r) => ({
+        weekNumber: Number(r.weekNumber),
+        paymentCurrency: "GLW",
+        protocolDepositRewardsReceived: "0",
+        glowInflationTotal: r.walletTotalGlowInflationReward || "0",
+      }));
     }),
   ]);
+
+  const {
+    steeredGlwWeiPerWeek,
+    hasSteeringStake,
+  } = steeringSnapshot;
+  const {
+    impactStreakWeeks,
+    streakAsOfPreviousWeek,
+    hasImpactActionThisWeek,
+    hasMinerMultiplier,
+    baseMultiplier,
+    streakBonusMultiplier,
+    totalMultiplierScaled6,
+    totalMultiplier,
+  } = streakSnapshot;
+
+  let steeringBoostScaled6 = MULTIPLIER_SCALE_SCALED6;
+  if (steeredGlwWeiPerWeek > 0n) {
+    const steeringBoostByWeek = await getSteeringBoostByWeek({
+      startWeek: projectionBoostWeek,
+      endWeek: projectionBoostWeek,
+      foundationWallets: EXCLUDED_LEADERBOARD_WALLETS,
+    });
+    steeringBoostScaled6 =
+      steeringBoostByWeek.get(projectionBoostWeek) ?? MULTIPLIER_SCALE_SCALED6;
+  }
 
   const delegatedGlwWei = BigInt(glowWorth?.delegatedActiveGlwWei || "0");
   const glowWorthWei = BigInt(glowWorth?.glowWorthWei || "0");
 
-  // Extract inflation from rewards result
+  // Extract inflation from weekly rewards result
   let inflationGlwWei = BigInt(0);
-  const rewards = rewardsResult.get(wallet) || [];
-  for (const r of rewards) {
-    inflationGlwWei += BigInt(r.walletTotalGlowInflationReward || "0");
+  for (const row of weeklyRewards) {
+    if (Number(row.weekNumber) !== weekNumber) continue;
+    inflationGlwWei += safeBigInt(row.glowInflationTotal);
   }
 
   const inflationPts = glwWeiToPointsScaled6(
     inflationGlwWei,
     INFLATION_POINTS_PER_GLW_SCALED6
   );
-  const steeringBoostScaled6 =
-    steeringBoostByWeek.get(weekNumber) ?? MULTIPLIER_SCALE_SCALED6;
   let steeringPts = glwWeiToPointsScaled6(
     steeredGlwWeiPerWeek,
     STEERING_POINTS_PER_GLW_SCALED6

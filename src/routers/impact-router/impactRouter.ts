@@ -725,6 +725,8 @@ export const impactRouter = new Elysia({ prefix: "/impact" })
         endWeek,
         limit,
         includeWeekly,
+        includeProjection,
+        includeReferral,
         debugTimings,
         sort,
         dir,
@@ -757,6 +759,10 @@ export const impactRouter = new Elysia({ prefix: "/impact" })
         const limitWasProvided = limit != null;
         const shouldIncludeWeekly =
           includeWeekly === "true" || includeWeekly === "1";
+        const shouldIncludeProjection =
+          includeProjection == null ? true : parseOptionalBool(includeProjection);
+        const shouldIncludeReferral =
+          includeReferral == null ? true : parseOptionalBool(includeReferral);
         const isListMode = !walletAddress;
         const shouldLogTimingsForRequest = shouldLogTimings && isListMode;
         const sortKey =
@@ -909,17 +915,29 @@ export const impactRouter = new Elysia({ prefix: "/impact" })
             set.status = 404;
             return "Wallet not found";
           }
-          const currentWeekProjection = await getCurrentWeekProjection(
-            walletAddress.toLowerCase(),
-            match.glowWorth
-          );
+          let currentWeekProjection: Awaited<
+            ReturnType<typeof getCurrentWeekProjection>
+          > | null = null;
+          if (shouldIncludeProjection) {
+            currentWeekProjection = await getCurrentWeekProjection(
+              walletAddress.toLowerCase(),
+              match.glowWorth
+            );
+          }
 
-          await populateReferralData(
-            [match],
-            actualEndWeek,
-            new Map([[walletAddress.toLowerCase(), currentWeekProjection]])
-          );
-          return { ...match, currentWeekProjection };
+          if (shouldIncludeReferral) {
+            await populateReferralData(
+              [match],
+              actualEndWeek,
+              currentWeekProjection
+                ? new Map([[walletAddress.toLowerCase(), currentWeekProjection]])
+                : undefined
+            );
+          }
+
+          return currentWeekProjection
+            ? { ...match, currentWeekProjection }
+            : match;
         }
 
         function safePointsNumber(value: string | undefined): number {
@@ -1183,11 +1201,13 @@ export const impactRouter = new Elysia({ prefix: "/impact" })
         walletAddress: t.Optional(t.String({ pattern: "^0x[a-fA-F0-9]{40}$" })),
         startWeek: t.Optional(t.String()),
         endWeek: t.Optional(t.String()),
-        limit: t.Optional(t.String()),
-        includeWeekly: t.Optional(t.String()),
-        debugTimings: t.Optional(t.String()),
-        sort: t.Optional(t.String()),
-        dir: t.Optional(t.String()),
+          limit: t.Optional(t.String()),
+          includeWeekly: t.Optional(t.String()),
+          includeProjection: t.Optional(t.String()),
+          includeReferral: t.Optional(t.String()),
+          debugTimings: t.Optional(t.String()),
+          sort: t.Optional(t.String()),
+          dir: t.Optional(t.String()),
       }),
       detail: {
         summary: "Get Glow Impact Score",
