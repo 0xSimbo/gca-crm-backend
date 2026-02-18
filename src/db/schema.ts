@@ -1352,27 +1352,37 @@ export const DefermentsRelations = relations(deferments, ({ one }) => ({
  * @param {string} type - The type of the document.
  * @param {EncryptedMasterKeySet[]} encryptedMasterKeys - The encrypted master keys for the document.
  */
-export const Documents = pgTable("documents", {
-  id: text("document_id")
-    .primaryKey()
-    .$defaultFn(() => crypto.randomUUID()),
-  applicationId: text("application_id").notNull(),
-  annotation: text("annotation"),
-  step: integer("step").notNull(),
-  name: varchar("name", { length: 255 }).notNull(),
-  url: varchar("url", { length: 255 }).notNull(), // bytes of the encrypted document are stored on r2
-  type: varchar("type", { length: 255 }).notNull(), // extension of the document ( pdf, png, jpg, ...)
-  isEncrypted: boolean("isEncrypted").notNull().default(false), // if true the document is stored on r2 with the ".enc" extension
-  createdAt: timestamp("created_at").notNull(),
-  updatedAt: timestamp("updated_at"),
-  encryptedMasterKeys: json("encrypted_master_keys")
-    .$type<EncryptedMasterKeySet>()
-    .array(),
-  isOverWritten: boolean("over_written").notNull().default(false),
-  isShowingSolarPanels: boolean("is_showing_solar_panels")
-    .notNull()
-    .default(false),
-});
+export const Documents = pgTable(
+  "documents",
+  {
+    id: text("document_id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    applicationId: text("application_id").notNull(),
+    annotation: text("annotation"),
+    step: integer("step").notNull(),
+    name: varchar("name", { length: 255 }).notNull(),
+    url: varchar("url", { length: 255 }).notNull(), // bytes of the encrypted document are stored on r2
+    type: varchar("type", { length: 255 }).notNull(), // extension of the document ( pdf, png, jpg, ...)
+    isEncrypted: boolean("isEncrypted").notNull().default(false), // if true the document is stored on r2 with the ".enc" extension
+    createdAt: timestamp("created_at").notNull(),
+    updatedAt: timestamp("updated_at"),
+    encryptedMasterKeys: json("encrypted_master_keys")
+      .$type<EncryptedMasterKeySet>()
+      .array(),
+    isOverWritten: boolean("over_written").notNull().default(false),
+    isShowingSolarPanels: boolean("is_showing_solar_panels")
+      .notNull()
+      .default(false),
+  },
+  (t) => ({
+    appSolarPanelsCreatedAtIdx: index(
+      "documents_app_solar_panels_created_at_ix"
+    )
+      .on(t.applicationId, t.createdAt)
+      .where(sql`${t.isShowingSolarPanels} = true`),
+  })
+);
 
 export type DocumentsType = InferSelectModel<typeof Documents>;
 export type DocumentsInsertType = typeof Documents.$inferInsert;

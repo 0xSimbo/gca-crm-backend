@@ -1,5 +1,5 @@
 import { Elysia, t } from "elysia";
-import { and, eq, gte, inArray, lt, lte, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, lt, lte, sql } from "drizzle-orm";
 import { TAG } from "../../constants";
 import { db } from "../../db/db";
 import {
@@ -199,39 +199,28 @@ export const polRouter = new Elysia({ prefix: "/pol" })
         const endWeek = getCompletedWeekNumber();
         const startWeek = Math.max(0, endWeek - (weeks - 1));
 
-        const polSummary = await fetchPonderPolSummary().catch(() => null);
-        const totalPolLqAtomic = polSummary ? parseBigIntSafe(polSummary.total.lq) : null;
-
-        const lifetime = await db
-          .select({
-            total: sql<string>`coalesce(sum(${polRevenueByRegionWeek.totalLq}), 0)`,
-          })
-          .from(polRevenueByRegionWeek)
-          .where(lt(polRevenueByRegionWeek.weekNumber, endWeek + 1));
-
-        const ninety = await db
-          .select({
-            total: sql<string>`coalesce(sum(${polRevenueByRegionWeek.totalLq}), 0)`,
-          })
-          .from(polRevenueByRegionWeek)
-          .where(
-            and(
-              gte(polRevenueByRegionWeek.weekNumber, startWeek),
-              lt(polRevenueByRegionWeek.weekNumber, endWeek + 1)
-            )
-          );
-
-        const activeFarms = await db
-          .select({
-            count: sql<number>`count(distinct ${applications.farmId})`,
-          })
-          .from(applications)
-          .where(sql`${applications.paymentAmount}::numeric > 0`);
-
-        const yieldSnapshot =
-          (await db.query.polYieldWeek.findFirst({
+        const [polSummary, revenueAggRows, activeFarms, yieldSnapshot] = await Promise.all([
+          fetchPonderPolSummary().catch(() => null),
+          db
+            .select({
+              lifetime: sql<string>`coalesce(sum(${polRevenueByRegionWeek.totalLq}), 0)`,
+              ninety: sql<string>`coalesce(sum(case when ${polRevenueByRegionWeek.weekNumber} between ${startWeek} and ${endWeek} then ${polRevenueByRegionWeek.totalLq} else 0 end), 0)`,
+            })
+            .from(polRevenueByRegionWeek)
+            .where(lt(polRevenueByRegionWeek.weekNumber, endWeek + 1)),
+          db
+            .select({
+              count: sql<number>`count(distinct ${applications.farmId})`,
+            })
+            .from(applications)
+            .where(sql`${applications.paymentAmount}::numeric > 0`),
+          db.query.polYieldWeek.findFirst({
             where: (t, { eq }) => eq(t.weekNumber, endWeek),
-          })) ?? null;
+          }),
+        ]);
+
+        const totalPolLqAtomic = polSummary ? parseBigIntSafe(polSummary.total.lq) : null;
+        const revenueAgg = revenueAggRows[0] ?? { lifetime: "0", ninety: "0" };
 
         const yieldData =
           yieldSnapshot ??
@@ -246,7 +235,7 @@ export const polRouter = new Elysia({ prefix: "/pol" })
           BigInt(String((yieldData as any).uniFees90dLq ?? "0"))
         ).toString();
 
-        const lifetimeAttributedLqAtomic = parseBigIntSafe(lifetime[0]?.total ?? "0");
+        const lifetimeAttributedLqAtomic = parseBigIntSafe(revenueAgg.lifetime);
         const lifetimeDisplayLqAtomic =
           totalPolLqAtomic !== null ? totalPolLqAtomic : lifetimeAttributedLqAtomic;
         const lifetimeCgpAdjustmentLqAtomic =
@@ -258,7 +247,7 @@ export const polRouter = new Elysia({ prefix: "/pol" })
           lifetime_lq: lifetimeDisplayLqAtomic.toString(),
           lifetime_attributed_lq: lifetimeAttributedLqAtomic.toString(),
           lifetime_cgp_adjustment_lq: lifetimeCgpAdjustmentLqAtomic.toString(),
-          ninety_day_lq: ninety[0]?.total ?? "0",
+          ninety_day_lq: revenueAgg.ninety,
           ninety_day_yield_lq: ninetyDayYieldLq,
           ninety_day_apy: String((yieldData as any).apy ?? "0"),
           active_farms: Number(activeFarms[0]?.count ?? 0),
@@ -295,73 +284,69 @@ export const polRouter = new Elysia({ prefix: "/pol" })
         const prevStartWeek = Math.max(0, startWeek - weeks);
         const prevEndWeek = startWeek - 1;
 
-        const polSummary = await fetchPonderPolSummary().catch(() => null);
+        const [polSummary, activeFarms] = await Promise.all([
+          fetchPonderPolSummary().catch(() => null),
+          db
+            .select({
+              farmId: farms.id,
+              name: farms.name,
+              zoneId: farms.zoneId,
+              auditCompleteDate: farms.auditCompleteDate,
+              applicationId: applications.id,
+              paymentAmount: applications.paymentAmount,
+              ccPerWeek: applicationsAuditFieldsCRS.netCarbonCreditEarningWeekly,
+              panels: applicationsAuditFieldsCRS.solarPanelsQuantity,
+            })
+            .from(farms)
+            .innerJoin(applications, eq(applications.farmId, farms.id))
+            .leftJoin(
+              applicationsAuditFieldsCRS,
+              eq(applicationsAuditFieldsCRS.applicationId, applications.id)
+            )
+            .where(sql`${applications.paymentAmount}::numeric > 0`),
+        ]);
         const totalPolLqAtomic = polSummary ? parseBigIntSafe(polSummary.total.lq) : null;
 
-        const activeFarms = await db
-          .select({
-            farmId: farms.id,
-            name: farms.name,
-            zoneId: farms.zoneId,
-            auditCompleteDate: farms.auditCompleteDate,
-            applicationId: applications.id,
-            paymentAmount: applications.paymentAmount,
-            ccPerWeek: applicationsAuditFieldsCRS.netCarbonCreditEarningWeekly,
-            panels: applicationsAuditFieldsCRS.solarPanelsQuantity,
-          })
-          .from(farms)
-          .innerJoin(applications, eq(applications.farmId, farms.id))
-          .leftJoin(
-            applicationsAuditFieldsCRS,
-            eq(applicationsAuditFieldsCRS.applicationId, applications.id)
-          )
-          .where(sql`${applications.paymentAmount}::numeric > 0`);
-
         const farmIds = activeFarms.map((f) => f.farmId);
+        const applicationIds = activeFarms.map((f) => f.applicationId);
         if (farmIds.length === 0) return [];
 
-        const docs = await db
-          .select({
-            applicationId: Documents.applicationId,
-            url: Documents.url,
-            createdAt: Documents.createdAt,
-            name: Documents.name,
-            isShowingSolarPanels: Documents.isShowingSolarPanels,
-          })
-          .from(Documents)
-          .where(
-            and(
-              inArray(Documents.applicationId, activeFarms.map((f) => f.applicationId)),
-              sql`${Documents.name} ilike '%after_install_pictures%'`,
-              eq(Documents.isShowingSolarPanels, true)
+        const [docs, agg] = await Promise.all([
+          db
+            .selectDistinctOn([Documents.applicationId], {
+              applicationId: Documents.applicationId,
+              url: Documents.url,
+            })
+            .from(Documents)
+            .where(
+              and(
+                inArray(Documents.applicationId, applicationIds),
+                sql`${Documents.name} ilike '%after_install_pictures%'`,
+                eq(Documents.isShowingSolarPanels, true)
+              )
             )
-          );
+            .orderBy(Documents.applicationId, desc(Documents.createdAt), sql`ctid`),
+          db
+            .select({
+              farmId: polRevenueByFarmWeek.farmId,
+              lifetime: sql<string>`coalesce(sum(${polRevenueByFarmWeek.totalLq}), 0)`,
+              ninety: sql<string>`coalesce(sum(case when ${polRevenueByFarmWeek.weekNumber} between ${startWeek} and ${endWeek} then ${polRevenueByFarmWeek.totalLq} else 0 end), 0)`,
+              prev: sql<string>`coalesce(sum(case when ${polRevenueByFarmWeek.weekNumber} between ${prevStartWeek} and ${prevEndWeek} then ${polRevenueByFarmWeek.totalLq} else 0 end), 0)`,
+            })
+            .from(polRevenueByFarmWeek)
+            .where(
+              and(
+                inArray(polRevenueByFarmWeek.farmId, farmIds),
+                lt(polRevenueByFarmWeek.weekNumber, endWeek + 1)
+              )
+            )
+            .groupBy(polRevenueByFarmWeek.farmId),
+        ]);
 
-        const imageByApplication = new Map<string, { url: string; createdAtMs: number }>();
+        const imageByApplication = new Map<string, string>();
         for (const d of docs) {
-          if (!d.isShowingSolarPanels) continue;
-          const curAt = d.createdAt ? new Date(d.createdAt).getTime() : 0;
-          const prev = imageByApplication.get(d.applicationId);
-          if (!prev || curAt > prev.createdAtMs) {
-            imageByApplication.set(d.applicationId, { url: d.url, createdAtMs: curAt });
-          }
+          imageByApplication.set(d.applicationId, d.url);
         }
-
-        const agg = await db
-          .select({
-            farmId: polRevenueByFarmWeek.farmId,
-            lifetime: sql<string>`coalesce(sum(${polRevenueByFarmWeek.totalLq}), 0)`,
-            ninety: sql<string>`coalesce(sum(case when ${polRevenueByFarmWeek.weekNumber} between ${startWeek} and ${endWeek} then ${polRevenueByFarmWeek.totalLq} else 0 end), 0)`,
-            prev: sql<string>`coalesce(sum(case when ${polRevenueByFarmWeek.weekNumber} between ${prevStartWeek} and ${prevEndWeek} then ${polRevenueByFarmWeek.totalLq} else 0 end), 0)`,
-          })
-          .from(polRevenueByFarmWeek)
-          .where(
-            and(
-              inArray(polRevenueByFarmWeek.farmId, farmIds),
-              lt(polRevenueByFarmWeek.weekNumber, endWeek + 1)
-            )
-          )
-          .groupBy(polRevenueByFarmWeek.farmId);
 
         const aggByFarm = new Map<string, { lifetime: string; ninety: string; prev: string }>();
         for (const r of agg) {
@@ -446,7 +431,7 @@ export const polRouter = new Elysia({ prefix: "/pol" })
             ninety_day_delta_pct: deltaPct,
             credits_total: creditsTotal,
             cc_per_week: ccPerWeek,
-            image_url: imageByApplication.get(f.applicationId)?.url ?? null,
+            image_url: imageByApplication.get(f.applicationId) ?? null,
           };
         });
       } catch (e) {
