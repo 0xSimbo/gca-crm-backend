@@ -14,6 +14,7 @@ import { dateToEpoch, getCurrentEpoch } from "../../utils/getProtocolWeek";
 import {
   computeDelegatorsLeaderboard,
   computeGlowImpactScores,
+  computeGlowWorths,
   getCurrentWeekProjection,
   getAllImpactWallets,
   getImpactLeaderboardWalletUniverse,
@@ -291,11 +292,10 @@ export const impactRouter = new Elysia({ prefix: "/impact" })
           ? [walletAddress.toLowerCase()]
           : allWallets!.slice(0, parsedLimit);
 
-        const results = await computeGlowImpactScores({
+        const results = await computeGlowWorths({
           walletAddresses: wallets,
           startWeek: actualStartWeek,
           endWeek: actualEndWeek,
-          includeWeeklyBreakdown: false,
         });
 
         if (walletAddress) {
@@ -304,7 +304,7 @@ export const impactRouter = new Elysia({ prefix: "/impact" })
             set.status = 404;
             return "Wallet not found";
           }
-          return match.glowWorth;
+          return match;
         }
 
         return {
@@ -313,7 +313,7 @@ export const impactRouter = new Elysia({ prefix: "/impact" })
           ...(!limitWasProvided
             ? { totalWalletCount: allWallets!.length }
             : {}),
-          wallets: results.map((r) => r.glowWorth),
+          wallets: results,
         };
       } catch (e) {
         if (e instanceof Error) {

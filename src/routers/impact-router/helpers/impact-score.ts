@@ -30,6 +30,7 @@ import {
   fetchGctlStakersFromControlApi,
   fetchClaimedPdWeeksBatch,
   fetchClaimsBatch,
+  fetchWalletWeeklyRewards,
   fetchWalletStakeByEpochRange,
   getGctlSteeringByWeekWei,
   getSteeringSnapshot,
@@ -41,6 +42,7 @@ import {
   type ControlApiFarmRewardsHistoryRewardRow,
   type SteeringByWeekResult,
   type RegionRewardsResponse,
+  type ControlApiWalletWeeklyRewardRow,
 } from "./control-api";
 import {
   addScaled6Points,
@@ -1658,6 +1660,479 @@ export async function computeDelegatorsLeaderboard(params: {
     totalWalletCount: computedRows.length,
     wallets: walletsOut,
   };
+}
+
+function toPseudoWalletRewardsRowsFromWeekly(
+  rows: ControlApiWalletWeeklyRewardRow[]
+): ControlApiFarmReward[] {
+  return rows.map((row) => ({
+    weekNumber: row.weekNumber,
+    farmId: "",
+    asset: row.paymentCurrency ?? "GLW",
+    walletTotalGlowInflationReward: row.glowInflationTotal ?? "0",
+    walletProtocolDepositFromLaunchpad:
+      row.protocolDepositRewardsReceived ?? "0",
+  }));
+}
+
+async function loadWalletRewardsForGlowWorth(params: {
+  wallets: string[];
+  startWeek: number;
+  endWeek: number;
+}): Promise<Map<string, ControlApiFarmReward[]>> {
+  const { wallets, startWeek, endWeek } = params;
+  if (wallets.length === 1) {
+    const wallet = wallets[0]!;
+    try {
+      const weeklyRows = await fetchWalletWeeklyRewards({
+        walletAddress: wallet,
+        paymentCurrency: "GLW",
+        limit: 520,
+        startWeek,
+        endWeek,
+      });
+      return new Map([
+        [wallet, toPseudoWalletRewardsRowsFromWeekly(weeklyRows)],
+      ]);
+    } catch (error) {
+      console.warn(
+        `[impact-score] wallet weekly rewards fast-path failed for wallet=${wallet}; falling back to batch endpoint`,
+        error
+      );
+    }
+  }
+
+  return await fetchWalletRewardsHistoryBatch({
+    wallets,
+    startWeek,
+    endWeek,
+  });
+}
+
+export async function computeGlowWorths(params: {
+  walletAddresses: string[];
+  startWeek: number;
+  endWeek: number;
+  debug?: ImpactTimingCollector;
+}): Promise<GlowWorthResult[]> {
+  const { walletAddresses, startWeek, endWeek, debug } = params;
+  const overallStart = nowMs();
+  const finalizedWeek = getFinalizedRewardsWeek(startWeek, endWeek);
+
+  const wallets = walletAddresses
+    .map((w) => w.toLowerCase())
+    .filter((w, idx, arr) => arr.indexOf(w) === idx);
+  if (wallets.length === 0) return [];
+
+  const rewardsFetchStartWeek = Math.min(startWeek, DELEGATION_START_WEEK);
+  const nowSec = Math.floor(Date.now() / 1000);
+  const currentEpoch = getCurrentEpoch(nowSec);
+  const claimableThresholdWeek = Math.min(currentEpoch - 3, currentEpoch - 4);
+  const claimableEndWeek = Math.min(endWeek, claimableThresholdWeek);
+  const claimableStartWeek = startWeek;
+  const claimableStartWeekForFetch = DELEGATION_START_WEEK;
+
+  const glwToken = addresses.glow.toLowerCase();
+  const hexWallets = wallets.filter(isHexWallet) as Array<`0x${string}`>;
+
+  const parallelFetchStart = nowMs();
+  const walletRewardsPromise = loadWalletRewardsForGlowWorth({
+    wallets,
+    startWeek: rewardsFetchStartWeek,
+    endWeek,
+  });
+  const depositSplitsPromise = fetchDepositSplitsHistoryBatch({
+    wallets,
+    startWeek: DELEGATION_START_WEEK,
+    endWeek,
+  });
+  const claimsPromise = fetchClaimsBatch({ wallets });
+  const claimedPdWeeksPromise =
+    claimableEndWeek >= claimableStartWeekForFetch
+      ? fetchClaimedPdWeeksBatch({
+          wallets,
+          startWeek: claimableStartWeekForFetch,
+          endWeek: claimableEndWeek,
+        })
+      : Promise.resolve(new Map<string, Map<number, number>>());
+  const liquidBatchPromise = getLiquidGlwBalancesWeiBatch(hexWallets).catch(
+    (error) => {
+      console.error(
+        `[impact-score] liquid balance batch fetch failed for wallets=${hexWallets.length}; using zero fallback`,
+        error
+      );
+      const zeros = new Map<string, bigint>();
+      for (const wallet of hexWallets) zeros.set(wallet.toLowerCase(), 0n);
+      return zeros;
+    }
+  );
+  const glwSplitRowsPromise = db
+    .select({
+      buyer: fractionSplits.buyer,
+      amount: fractionSplits.amount,
+    })
+    .from(fractionSplits)
+    .innerJoin(fractions, eq(fractionSplits.fractionId, fractions.id))
+    .where(
+      and(
+        inArray(fractionSplits.buyer, wallets),
+        eq(fractions.type, "launchpad"),
+        or(isNull(fractions.token), eq(sql`lower(${fractions.token})`, glwToken))
+      )
+    );
+  const glwRefundRowsPromise = db
+    .select({
+      refundTo: fractionRefunds.refundTo,
+      amount: fractionRefunds.amount,
+    })
+    .from(fractionRefunds)
+    .innerJoin(fractions, eq(fractionRefunds.fractionId, fractions.id))
+    .where(
+      and(
+        inArray(fractionRefunds.refundTo, wallets),
+        eq(fractions.type, "launchpad"),
+        or(isNull(fractions.token), eq(sql`lower(${fractions.token})`, glwToken))
+      )
+    );
+
+  const depositSplitHistoryByWallet = await depositSplitsPromise;
+  const farmIdsSet = new Set<string>();
+  for (const segs of depositSplitHistoryByWallet.values()) {
+    for (const s of segs) farmIdsSet.add(s.farmId);
+  }
+  const farmIds = Array.from(farmIdsSet);
+
+  const principalByFarm = new Map<string, bigint>();
+  if (farmIds.length > 0) {
+    const principalStart = nowMs();
+    const principalRows = await db
+      .select({
+        farmId: applications.farmId,
+        paymentAmount: applications.paymentAmount,
+      })
+      .from(applications)
+      .where(
+        and(
+          inArray(applications.farmId, farmIds),
+          eq(applications.isCancelled, false),
+          eq(applications.status, "completed"),
+          eq(applications.paymentCurrency, "GLW")
+        )
+      );
+    recordTimingSafe(debug, {
+      label: "glowWorth.db.principalRows",
+      ms: nowMs() - principalStart,
+      meta: { rows: principalRows.length, farms: farmIds.length },
+    });
+    for (const row of principalRows) {
+      if (!row.farmId) continue;
+      const amountWei = safeBigInt(row.paymentAmount);
+      if (amountWei <= 0n) continue;
+      principalByFarm.set(
+        row.farmId,
+        (principalByFarm.get(row.farmId) || 0n) + amountWei
+      );
+    }
+  }
+
+  const glwPrincipalFarmIds = farmIds.filter(
+    (id) => (principalByFarm.get(id) || 0n) > 0n
+  );
+  const farmRewardsTimelineEndWeek = Math.min(endWeek, finalizedWeek);
+  const farmDistributedTimelineByFarmPromise = (async () => {
+    const farmDistributedTimelineByFarm = new Map<
+      string,
+      FarmDistributionTimelinePoint[]
+    >();
+    const farmRewardsStart = nowMs();
+    let farmRewardsBatches = 0;
+    if (
+      glwPrincipalFarmIds.length > 0 &&
+      farmRewardsTimelineEndWeek >= DELEGATION_START_WEEK
+    ) {
+      await mapChunksWithConcurrency({
+        items: glwPrincipalFarmIds,
+        chunkSize: FARM_REWARDS_BATCH_SIZE,
+        concurrency: FARM_REWARDS_BATCH_CONCURRENCY,
+        worker: async (farmIdBatch) => {
+          const batchStart = nowMs();
+          const m = await fetchFarmRewardsHistoryBatch({
+            farmIds: farmIdBatch,
+            startWeek: DELEGATION_START_WEEK,
+            endWeek: farmRewardsTimelineEndWeek,
+          });
+          farmRewardsBatches++;
+          recordTimingSafe(debug, {
+            label: "glowWorth.farmRewards.batch",
+            ms: nowMs() - batchStart,
+            meta: {
+              batchSize: farmIdBatch.length,
+              startWeek: DELEGATION_START_WEEK,
+              endWeek: farmRewardsTimelineEndWeek,
+            },
+          });
+          for (const [farmId, rows] of m) {
+            farmDistributedTimelineByFarm.set(
+              farmId,
+              buildFarmCumulativeDistributedTimeline({ rows })
+            );
+          }
+        },
+      });
+    }
+    recordTimingSafe(debug, {
+      label: "glowWorth.farmRewards.total",
+      ms: nowMs() - farmRewardsStart,
+      meta: {
+        farms: glwPrincipalFarmIds.length,
+        batches: farmRewardsBatches,
+        timelineEndWeek: farmRewardsTimelineEndWeek,
+      },
+    });
+    return farmDistributedTimelineByFarm;
+  })();
+
+  const [
+    walletRewardsMap,
+    allClaimsByWallet,
+    claimedPdWeeksByWallet,
+    liquidByWalletBatch,
+    glwSplitRows,
+    glwRefundRows,
+  ] = await Promise.all([
+    walletRewardsPromise,
+    claimsPromise,
+    claimedPdWeeksPromise,
+    liquidBatchPromise,
+    glwSplitRowsPromise,
+    glwRefundRowsPromise,
+  ]);
+
+  recordTimingSafe(debug, {
+    label: "glowWorth.parallelFetches",
+    ms: nowMs() - parallelFetchStart,
+    meta: {
+      wallets: wallets.length,
+      startWeek,
+      endWeek,
+      claimableEndWeek,
+    },
+  });
+
+  const farmDistributedTimelineByFarm = await farmDistributedTimelineByFarmPromise;
+
+  const glwPurchasesByWallet = new Map<string, bigint>();
+  for (const row of glwSplitRows) {
+    const wallet = row.buyer.toLowerCase();
+    const amountWei = safeBigInt(row.amount);
+    if (amountWei <= 0n) continue;
+    glwPurchasesByWallet.set(wallet, (glwPurchasesByWallet.get(wallet) || 0n) + amountWei);
+  }
+
+  const glwRefundsByWallet = new Map<string, bigint>();
+  for (const row of glwRefundRows) {
+    const wallet = row.refundTo.toLowerCase();
+    const amountWei = safeBigInt(row.amount);
+    if (amountWei <= 0n) continue;
+    glwRefundsByWallet.set(wallet, (glwRefundsByWallet.get(wallet) || 0n) + amountWei);
+  }
+
+  const GLW_TOKEN = addresses.glow.toLowerCase();
+  const AMOUNT_MATCH_EPSILON_WEI = BigInt(10_000_000);
+  const WEEK_97_START_TIMESTAMP = GENESIS_TIMESTAMP + 97 * 604800;
+
+  const results: GlowWorthResult[] = [];
+  const computeStart = nowMs();
+  for (const wallet of wallets) {
+    const rewards = walletRewardsMap.get(wallet) || [];
+
+    const inflationByWeek = new Map<number, bigint>();
+    const pdByWeek = new Map<number, bigint>();
+    let maxWeek = -1;
+    for (const r of rewards) {
+      const week = Number(r.weekNumber);
+      if (!Number.isFinite(week)) continue;
+      maxWeek = week > maxWeek ? week : maxWeek;
+
+      const inflation = safeBigInt(r.walletTotalGlowInflationReward);
+      if (inflation > 0n) {
+        inflationByWeek.set(week, (inflationByWeek.get(week) || 0n) + inflation);
+      }
+
+      const pdRaw = safeBigInt(r.walletProtocolDepositFromLaunchpad);
+      const recoveredGlw = protocolDepositReceivedGlwWei({
+        amountRaw: pdRaw,
+        asset: r.asset,
+      });
+      if (recoveredGlw > 0n) {
+        pdByWeek.set(week, (pdByWeek.get(week) || 0n) + recoveredGlw);
+      }
+    }
+
+    const claimPdData =
+      claimedPdWeeksByWallet.get(wallet) || new Map<number, number>();
+    const claims = allClaimsByWallet.get(wallet) || [];
+    const claimedInflationWeeks = new Map<number, number>();
+    for (const c of claims) {
+      const token = String(c?.token || "").toLowerCase();
+      if (token !== GLW_TOKEN) continue;
+      const timestamp = Number(c?.timestamp);
+      if (timestamp < WEEK_97_START_TIMESTAMP) continue;
+      const source = String(c?.source || "");
+      if (source !== "minerPool") continue;
+
+      const amountWei = safeBigInt(c?.amount);
+      let bestWeek: number | null = null;
+      let bestDiff: bigint | null = null;
+      let secondBestDiff: bigint | null = null;
+
+      for (const [week, amount] of inflationByWeek) {
+        if (week < 97) continue;
+        const diff =
+          amountWei >= amount ? amountWei - amount : amount - amountWei;
+        if (bestDiff == null || diff < bestDiff) {
+          secondBestDiff = bestDiff;
+          bestDiff = diff;
+          bestWeek = week;
+          continue;
+        }
+        if (secondBestDiff == null || diff < secondBestDiff) {
+          secondBestDiff = diff;
+        }
+      }
+
+      if (
+        bestWeek != null &&
+        bestDiff != null &&
+        bestDiff <= AMOUNT_MATCH_EPSILON_WEI
+      ) {
+        if (
+          secondBestDiff == null ||
+          secondBestDiff > AMOUNT_MATCH_EPSILON_WEI
+        ) {
+          claimedInflationWeeks.set(bestWeek, timestamp);
+        }
+      }
+    }
+
+    let unclaimedWei = 0n;
+    const effectiveEndWeek = Math.min(claimableEndWeek, maxWeek);
+    if (effectiveEndWeek >= claimableStartWeek) {
+      for (let w = claimableStartWeek; w <= effectiveEndWeek; w++) {
+        const inflationWei = inflationByWeek.get(w) || 0n;
+        const pdWei = pdByWeek.get(w) || 0n;
+        if (inflationWei > 0n && !claimedInflationWeeks.has(w)) {
+          unclaimedWei += inflationWei;
+        }
+        if (pdWei > 0n && !claimPdData.has(w)) {
+          unclaimedWei += pdWei;
+        }
+      }
+    }
+
+    const pdCumulativeByWeek = new Map<number, bigint>();
+    let pdRunning = 0n;
+    for (let w = startWeek; w <= endWeek; w++) {
+      pdRunning += pdByWeek.get(w) || 0n;
+      pdCumulativeByWeek.set(w, pdRunning);
+    }
+    const totalPdCumulative = pdCumulativeByWeek.get(endWeek) || 0n;
+    let claimablePdCumulative = 0n;
+    if (claimableEndWeek >= startWeek) {
+      const claimWeek = Math.min(claimableEndWeek, endWeek);
+      claimablePdCumulative = pdCumulativeByWeek.get(claimWeek) || 0n;
+    }
+    const pendingRecoveredCurrentWei =
+      totalPdCumulative > claimablePdCumulative
+        ? totalPdCumulative - claimablePdCumulative
+        : 0n;
+
+    const splitSegments = depositSplitHistoryByWallet.get(wallet) || [];
+    const splitSegmentsByFarm = new Map<
+      string,
+      ControlApiDepositSplitHistorySegment[]
+    >();
+    for (const seg of splitSegments) {
+      const principalWei = principalByFarm.get(seg.farmId) || 0n;
+      if (principalWei <= 0n) continue;
+      if (!splitSegmentsByFarm.has(seg.farmId)) {
+        splitSegmentsByFarm.set(seg.farmId, []);
+      }
+      splitSegmentsByFarm.get(seg.farmId)!.push(seg);
+    }
+
+    let grossShareAtEndWeek = 0n;
+    let delegatedActiveNow = 0n;
+    for (const [farmId, segs] of splitSegmentsByFarm) {
+      const principalWei = principalByFarm.get(farmId) || 0n;
+      if (principalWei <= 0n) continue;
+
+      const splitState = makeSegmentState(segs);
+      const splitScaled6 = getSplitScaled6AtWeek(splitState, endWeek);
+      if (splitScaled6 <= 0n) continue;
+
+      grossShareAtEndWeek +=
+        (principalWei * splitScaled6) / SPLIT_SCALE_SCALED6;
+
+      const timeline = farmDistributedTimelineByFarm.get(farmId) || [];
+      const distState = makeTimelineState(timeline);
+      const recoveryWeek = endWeek <= finalizedWeek ? endWeek : finalizedWeek;
+      const cumulativeDistributed = getCumulativeDistributedGlwWeiAtWeek(
+        distState,
+        recoveryWeek
+      );
+      const remaining = clampToZero(principalWei - cumulativeDistributed);
+      delegatedActiveNow += (remaining * splitScaled6) / SPLIT_SCALE_SCALED6;
+    }
+
+    const purchasedGlwWei = glwPurchasesByWallet.get(wallet) || 0n;
+    const refundedGlwWei = glwRefundsByWallet.get(wallet) || 0n;
+    const netPurchasedGlwWei =
+      purchasedGlwWei > refundedGlwWei ? purchasedGlwWei - refundedGlwWei : 0n;
+    const pendingDelegatedGlwWei =
+      netPurchasedGlwWei > grossShareAtEndWeek
+        ? netPurchasedGlwWei - grossShareAtEndWeek
+        : 0n;
+    const delegatedActiveEffectiveWei =
+      delegatedActiveNow + pendingDelegatedGlwWei;
+
+    const liquidGlwWei = isHexWallet(wallet)
+      ? liquidByWalletBatch.get(wallet.toLowerCase()) || 0n
+      : 0n;
+    const glowWorthNowWei =
+      liquidGlwWei +
+      delegatedActiveEffectiveWei +
+      unclaimedWei +
+      pendingRecoveredCurrentWei;
+
+    results.push({
+      walletAddress: wallet,
+      liquidGlwWei: liquidGlwWei.toString(),
+      delegatedActiveGlwWei: delegatedActiveEffectiveWei.toString(),
+      pendingRecoveredGlwWei: pendingRecoveredCurrentWei.toString(),
+      unclaimedGlwRewardsWei: unclaimedWei.toString(),
+      glowWorthWei: glowWorthNowWei.toString(),
+      dataSources: {
+        liquidGlw: "onchain",
+        delegatedActiveGlw: "db+control-api",
+        pendingRecoveredGlw: "control-api",
+        unclaimedGlwRewards: "claims-api+control-api",
+      },
+    });
+  }
+
+  recordTimingSafe(debug, {
+    label: "glowWorth.compute",
+    ms: nowMs() - computeStart,
+    meta: { wallets: wallets.length, startWeek, endWeek },
+  });
+  recordTimingSafe(debug, {
+    label: "glowWorth.total",
+    ms: nowMs() - overallStart,
+    meta: { wallets: wallets.length, startWeek, endWeek },
+  });
+
+  return results;
 }
 
 export async function computeGlowImpactScores(params: {

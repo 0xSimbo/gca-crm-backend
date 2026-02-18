@@ -65,6 +65,13 @@ export interface ControlApiBatchWalletRewardsResponse {
   >;
 }
 
+export interface ControlApiWalletWeeklyRewardRow {
+  weekNumber: number;
+  paymentCurrency?: string | null;
+  protocolDepositRewardsReceived?: string;
+  glowInflationTotal?: string;
+}
+
 export interface UnclaimedGlwRewardsResult {
   amountWei: bigint;
   dataSource: "claims-api+control-api";
@@ -899,6 +906,62 @@ export async function fetchWalletRewardsHistoryBatch(params: {
   }
 
   return result;
+}
+
+export async function fetchWalletWeeklyRewards(params: {
+  walletAddress: string;
+  paymentCurrency?: string;
+  limit?: number;
+  startWeek?: number;
+  endWeek?: number;
+}): Promise<ControlApiWalletWeeklyRewardRow[]> {
+  const wallet = params.walletAddress.toLowerCase();
+  const search = new URLSearchParams();
+  if (params.paymentCurrency) search.set("paymentCurrency", params.paymentCurrency);
+  if (params.limit != null && Number.isFinite(params.limit)) {
+    search.set("limit", String(Math.max(1, Math.trunc(params.limit))));
+  }
+  const queryString = search.toString();
+  const url = `${getControlApiUrl()}/wallets/address/${wallet}/weekly-rewards${
+    queryString ? `?${queryString}` : ""
+  }`;
+
+  const response = await fetch(url);
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    throw makeControlApiError(
+      `Control API wallet weekly rewards failed (${response.status}): ${text}`,
+      response.status
+    );
+  }
+
+  const data = (await response.json()) as {
+    rewards?: Array<{
+      weekNumber?: number;
+      paymentCurrency?: string | null;
+      protocolDepositRewardsReceived?: string;
+      glowInflationTotal?: string;
+    }>;
+  };
+
+  const rewards = Array.isArray(data?.rewards) ? data.rewards : [];
+  const startWeek = params.startWeek;
+  const endWeek = params.endWeek;
+  const normalized: ControlApiWalletWeeklyRewardRow[] = [];
+  for (const row of rewards) {
+    const weekNumber = Number(row?.weekNumber);
+    if (!Number.isFinite(weekNumber)) continue;
+    if (startWeek != null && weekNumber < startWeek) continue;
+    if (endWeek != null && weekNumber > endWeek) continue;
+    normalized.push({
+      weekNumber,
+      paymentCurrency: row?.paymentCurrency ?? null,
+      protocolDepositRewardsReceived: row?.protocolDepositRewardsReceived ?? "0",
+      glowInflationTotal: row?.glowInflationTotal ?? "0",
+    });
+  }
+  normalized.sort((a, b) => a.weekNumber - b.weekNumber);
+  return normalized;
 }
 
 export async function fetchDepositSplitsHistoryBatch(params: {
