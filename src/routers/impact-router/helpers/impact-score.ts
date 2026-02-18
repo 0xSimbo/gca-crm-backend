@@ -50,11 +50,14 @@ import {
   formatPointsScaled6,
   glwWeiToPointsScaled6,
   GLW_DECIMALS,
+  parsePointsScaled6,
 } from "./points";
 
 const BATCH_SIZE = 500;
 const FARM_REWARDS_BATCH_SIZE = 100;
 const FARM_REWARDS_BATCH_CONCURRENCY = 3;
+const STEERING_FALLBACK_BATCH_SIZE = 4;
+const STEERING_FALLBACK_BATCH_CONCURRENCY = 6;
 const DELEGATION_START_WEEK = 97;
 const ZERO_POINTS_SCALED6 = formatPointsScaled6(0n);
 const ZERO_WEI_STRING = "0";
@@ -1088,6 +1091,68 @@ async function precomputeSteeringByWalletFromDb(params: {
     steeringByWallet,
     missingWallets: new Set(dbStakeByWallet.missingWallets),
   };
+}
+
+async function precomputeSteeringByWalletFromControlApi(params: {
+  wallets: string[];
+  startWeek: number;
+  endWeek: number;
+  regionRewardsByEpoch: Map<number, RegionRewardsResponse>;
+  debug?: ImpactTimingCollector;
+}): Promise<{
+  steeringByWallet: Map<string, SteeringByWeekResult>;
+  unresolvedWallets: Set<string>;
+}> {
+  const normalizedWallets = Array.from(
+    new Set(params.wallets.map((w) => w.toLowerCase()).filter(Boolean))
+  );
+  const steeringByWallet = new Map<string, SteeringByWeekResult>();
+  const unresolvedWallets = new Set<string>(normalizedWallets);
+  if (normalizedWallets.length === 0) {
+    return { steeringByWallet, unresolvedWallets: new Set<string>() };
+  }
+
+  const loadStart = nowMs();
+  let batches = 0;
+  await mapChunksWithConcurrency({
+    items: normalizedWallets,
+    chunkSize: STEERING_FALLBACK_BATCH_SIZE,
+    concurrency: STEERING_FALLBACK_BATCH_CONCURRENCY,
+    worker: async (walletBatch) => {
+      batches++;
+      await Promise.all(
+        walletBatch.map(async (wallet) => {
+          try {
+            const steering = await getGctlSteeringByWeekWei({
+              walletAddress: wallet,
+              startWeek: params.startWeek,
+              endWeek: params.endWeek,
+              regionRewardsByEpoch: params.regionRewardsByEpoch,
+            });
+            steeringByWallet.set(wallet, steering);
+            unresolvedWallets.delete(wallet);
+          } catch {
+            // unresolved wallet will be retried via the existing per-wallet path
+          }
+        })
+      );
+    },
+  });
+
+  recordTimingSafe(params.debug, {
+    label: "compute.walletInputs.steeringControlFallback",
+    ms: nowMs() - loadStart,
+    meta: {
+      wallets: normalizedWallets.length,
+      resolvedWallets: steeringByWallet.size,
+      unresolvedWallets: unresolvedWallets.size,
+      batches,
+      batchSize: STEERING_FALLBACK_BATCH_SIZE,
+      batchConcurrency: STEERING_FALLBACK_BATCH_CONCURRENCY,
+    },
+  });
+
+  return { steeringByWallet, unresolvedWallets };
 }
 
 export async function getAllImpactWallets(): Promise<string[]> {
@@ -2141,6 +2206,7 @@ export async function computeGlowImpactScores(params: {
   startWeek: number;
   endWeek: number;
   includeWeeklyBreakdown: boolean;
+  includePointsPerRegion?: boolean;
   includeRegionBreakdown?: boolean;
   includeWeeklyRegionBreakdown?: boolean;
   debug?: ImpactTimingCollector;
@@ -2150,10 +2216,17 @@ export async function computeGlowImpactScores(params: {
     startWeek,
     endWeek,
     includeWeeklyBreakdown,
+    includePointsPerRegion = true,
     includeRegionBreakdown = false,
     includeWeeklyRegionBreakdown = false,
     debug,
   } = params;
+  const shouldComputeAggregateRegionPoints =
+    includePointsPerRegion || includeRegionBreakdown;
+  const shouldComputeWeeklyRegionPoints =
+    includeWeeklyBreakdown || includeWeeklyRegionBreakdown;
+  const shouldComputeRegionPoints =
+    shouldComputeAggregateRegionPoints || shouldComputeWeeklyRegionPoints;
   const overallStart = nowMs();
   const finalizedWeek = getFinalizedRewardsWeek(startWeek, endWeek);
   const steeringComputationEndWeek = Math.min(endWeek, finalizedWeek);
@@ -2633,7 +2706,7 @@ export async function computeGlowImpactScores(params: {
     },
   });
 
-  const {
+  let {
     steeringByWallet: precomputedSteeringByWallet,
     missingWallets: steeringFallbackWallets,
   } = hasSteeringRange
@@ -2648,6 +2721,20 @@ export async function computeGlowImpactScores(params: {
         steeringByWallet: new Map<string, SteeringByWeekResult>(),
         missingWallets: new Set<string>(),
       };
+
+  if (hasSteeringRange && steeringFallbackWallets.size > 0) {
+    const controlFallback = await precomputeSteeringByWalletFromControlApi({
+      wallets: Array.from(steeringFallbackWallets),
+      startWeek,
+      endWeek: steeringComputationEndWeek,
+      regionRewardsByEpoch: regionRewardsRawByWeek,
+      debug,
+    });
+    for (const [wallet, steering] of controlFallback.steeringByWallet) {
+      precomputedSteeringByWallet.set(wallet, steering);
+    }
+    steeringFallbackWallets = controlFallback.unresolvedWallets;
+  }
 
   const hexWallets = wallets.filter(isHexWallet) as Array<`0x${string}`>;
   const liquidBatchStart = nowMs();
@@ -3035,9 +3122,15 @@ export async function computeGlowImpactScores(params: {
     let endWeekMultiplier = 1;
 
     let delegatedActiveNow = BigInt(0);
-    const totalPointsPerRegionScaled6 = new Map<string, bigint>();
-    const totalWorthPointsPerRegionScaled6 = new Map<string, bigint>();
-    const totalDirectPointsPerRegionScaled6 = new Map<string, bigint>();
+    const totalPointsPerRegionScaled6 = shouldComputeAggregateRegionPoints
+      ? new Map<string, bigint>()
+      : undefined;
+    const totalWorthPointsPerRegionScaled6 = shouldComputeAggregateRegionPoints
+      ? new Map<string, bigint>()
+      : undefined;
+    const totalDirectPointsPerRegionScaled6 = includeRegionBreakdown
+      ? new Map<string, bigint>()
+      : undefined;
 
     const walletSnapshots = liquidSnapshotByWalletWeek.get(wallet);
     const rewardTimeline = rewardsTimelineByWallet.get(wallet);
@@ -3053,8 +3146,11 @@ export async function computeGlowImpactScores(params: {
       let delegatedActive = BigInt(0);
       let grossShareWei = BigInt(0);
 
-      const weeklyRegionPoints = new Map<string, bigint>();
+      const weeklyRegionPoints = shouldComputeRegionPoints
+        ? new Map<string, bigint>()
+        : undefined;
       const addToRegion = (rid: number | string, pts: bigint) => {
+        if (!weeklyRegionPoints) return;
         if (pts <= 0n) return;
         const k = String(rid);
         weeklyRegionPoints.set(k, (weeklyRegionPoints.get(k) || 0n) + pts);
@@ -3079,15 +3175,17 @@ export async function computeGlowImpactScores(params: {
         const farmDelegated = (remaining * splitScaled6) / SPLIT_SCALE_SCALED6;
         delegatedActive += farmDelegated;
 
-        // Region Logic: Vault Bonus (Direct)
-        // Delegated GLW earns vault bonus (0.005/GLW) attributed to the farm's region.
-        // The continuous GLW Worth points (0.001/GLW) are handled separately via
-        // glowWorthWeekWei and distributed by emission share across all regions.
-        const vaultPts = glwWeiToPointsScaled6(
-          farmDelegated,
-          VAULT_BONUS_POINTS_PER_GLW_SCALED6
-        );
-        addToRegion(farm.regionId, vaultPts);
+        if (weeklyRegionPoints) {
+          // Region Logic: Vault Bonus (Direct)
+          // Delegated GLW earns vault bonus (0.005/GLW) attributed to the farm's region.
+          // The continuous GLW Worth points (0.001/GLW) are handled separately via
+          // glowWorthWeekWei and distributed by emission share across all regions.
+          const vaultPts = glwWeiToPointsScaled6(
+            farmDelegated,
+            VAULT_BONUS_POINTS_PER_GLW_SCALED6
+          );
+          addToRegion(farm.regionId, vaultPts);
+        }
       }
       if (netPurchasesByWeek) {
         cumulativeNetPurchasesWei += netPurchasesByWeek.get(week) || 0n;
@@ -3106,32 +3204,46 @@ export async function computeGlowImpactScores(params: {
         ? steeringBoostByWeek.get(week) ?? MULTIPLIER_SCALE_SCALED6
         : MULTIPLIER_SCALE_SCALED6;
 
-      // Region Logic: Inflation (Direct)
-      const detailedRewards = rewardsTimelineByWallet
-        .get(wallet)
-        ?.detailed?.get(week);
-      if (detailedRewards) {
-        for (const inf of detailedRewards.inflation) {
+      if (weeklyRegionPoints) {
+        // Region Logic: Inflation (Direct)
+        const detailedRewards = rewardsTimelineByWallet
+          .get(wallet)
+          ?.detailed?.get(week);
+        if (detailedRewards) {
+          for (const inf of detailedRewards.inflation) {
+            const pts = glwWeiToPointsScaled6(
+              inf.amount,
+              INFLATION_POINTS_PER_GLW_SCALED6
+            );
+            addToRegion(inf.regionId, pts);
+          }
+        } else if (inflationGlwWei > 0n) {
           const pts = glwWeiToPointsScaled6(
-            inf.amount,
+            inflationGlwWei,
             INFLATION_POINTS_PER_GLW_SCALED6
           );
-          addToRegion(inf.regionId, pts);
+          addToRegion(0, pts);
         }
-      } else if (inflationGlwWei > 0n) {
-        const pts = glwWeiToPointsScaled6(
-          inflationGlwWei,
-          INFLATION_POINTS_PER_GLW_SCALED6
-        );
-        addToRegion(0, pts);
-      }
 
-      // Region Logic: Steering (Direct)
-      const steeringMap = steering.byWeekAndRegion?.get(week);
-      if (steeringMap) {
-        for (const [rid, amount] of steeringMap) {
+        // Region Logic: Steering (Direct)
+        const steeringMap = steering.byWeekAndRegion?.get(week);
+        if (steeringMap) {
+          for (const [rid, amount] of steeringMap) {
+            let pts = glwWeiToPointsScaled6(
+              amount,
+              STEERING_POINTS_PER_GLW_SCALED6
+            );
+            if (steeringBoostScaled6 !== MULTIPLIER_SCALE_SCALED6) {
+              pts = applyMultiplierScaled6({
+                pointsScaled6: pts,
+                multiplierScaled6: steeringBoostScaled6,
+              });
+            }
+            addToRegion(rid, pts);
+          }
+        } else if (steeringGlwWei > 0n) {
           let pts = glwWeiToPointsScaled6(
-            amount,
+            steeringGlwWei,
             STEERING_POINTS_PER_GLW_SCALED6
           );
           if (steeringBoostScaled6 !== MULTIPLIER_SCALE_SCALED6) {
@@ -3140,20 +3252,8 @@ export async function computeGlowImpactScores(params: {
               multiplierScaled6: steeringBoostScaled6,
             });
           }
-          addToRegion(rid, pts);
+          addToRegion(0, pts);
         }
-      } else if (steeringGlwWei > 0n) {
-        let pts = glwWeiToPointsScaled6(
-          steeringGlwWei,
-          STEERING_POINTS_PER_GLW_SCALED6
-        );
-        if (steeringBoostScaled6 !== MULTIPLIER_SCALE_SCALED6) {
-          pts = applyMultiplierScaled6({
-            pointsScaled6: pts,
-            multiplierScaled6: steeringBoostScaled6,
-          });
-        }
-        addToRegion(0, pts);
       }
 
       totalInflationGlwWei += inflationGlwWei;
@@ -3281,19 +3381,23 @@ export async function computeGlowImpactScores(params: {
       }
 
       // Region Logic: Apply Multipliers
-      for (const [ridKey, pts] of weeklyRegionPoints) {
-        const finalPts = applyMultiplierScaled6({
-          pointsScaled6: pts,
-          multiplierScaled6: totalMultiplierScaled6,
-        });
-        totalPointsPerRegionScaled6.set(
-          ridKey,
-          (totalPointsPerRegionScaled6.get(ridKey) || 0n) + finalPts
-        );
-        totalDirectPointsPerRegionScaled6.set(
-          ridKey,
-          (totalDirectPointsPerRegionScaled6.get(ridKey) || 0n) + finalPts
-        );
+      if (shouldComputeAggregateRegionPoints && weeklyRegionPoints) {
+        for (const [ridKey, pts] of weeklyRegionPoints) {
+          const finalPts = applyMultiplierScaled6({
+            pointsScaled6: pts,
+            multiplierScaled6: totalMultiplierScaled6,
+          });
+          totalPointsPerRegionScaled6!.set(
+            ridKey,
+            (totalPointsPerRegionScaled6!.get(ridKey) || 0n) + finalPts
+          );
+          if (totalDirectPointsPerRegionScaled6) {
+            totalDirectPointsPerRegionScaled6.set(
+              ridKey,
+              (totalDirectPointsPerRegionScaled6.get(ridKey) || 0n) + finalPts
+            );
+          }
+        }
       }
 
       const pdCumulative = pdCumulativeByWeek.get(week) || 0n;
@@ -3328,37 +3432,40 @@ export async function computeGlowImpactScores(params: {
         multiplierScaled6: totalMultiplierScaled6,
       });
 
-      // Distribute worth points by emission share for the aggregate breakdown
-      const emissionData = regionRewardsByWeek.get(week);
-      if (
-        continuousPtsMultiplied > 0n &&
-        emissionData &&
-        emissionData.totalGlw > 0n
-      ) {
-        for (const [rid, amount] of emissionData.byRegion) {
-          const distributedWorth =
-            (continuousPtsMultiplied * amount) / emissionData.totalGlw;
-          const k = String(rid);
-          totalWorthPointsPerRegionScaled6.set(
+      if (shouldComputeAggregateRegionPoints) {
+        // Distribute worth points by emission share for the aggregate breakdown
+        const emissionData = regionRewardsByWeek.get(week);
+        if (
+          continuousPtsMultiplied > 0n &&
+          emissionData &&
+          emissionData.totalGlw > 0n
+        ) {
+          for (const [rid, amount] of emissionData.byRegion) {
+            const distributedWorth =
+              (continuousPtsMultiplied * amount) / emissionData.totalGlw;
+            const k = String(rid);
+            totalWorthPointsPerRegionScaled6!.set(
+              k,
+              (totalWorthPointsPerRegionScaled6!.get(k) || 0n) +
+                distributedWorth
+            );
+            totalPointsPerRegionScaled6!.set(
+              k,
+              (totalPointsPerRegionScaled6!.get(k) || 0n) + distributedWorth
+            );
+          }
+        } else if (continuousPtsMultiplied > 0n) {
+          const k = "0";
+          totalWorthPointsPerRegionScaled6!.set(
             k,
-            (totalWorthPointsPerRegionScaled6.get(k) || 0n) + distributedWorth
+            (totalWorthPointsPerRegionScaled6!.get(k) || 0n) +
+              continuousPtsMultiplied
           );
-          totalPointsPerRegionScaled6.set(
+          totalPointsPerRegionScaled6!.set(
             k,
-            (totalPointsPerRegionScaled6.get(k) || 0n) + distributedWorth
+            (totalPointsPerRegionScaled6!.get(k) || 0n) + continuousPtsMultiplied
           );
         }
-      } else if (continuousPtsMultiplied > 0n) {
-        const k = "0";
-        totalWorthPointsPerRegionScaled6.set(
-          k,
-          (totalWorthPointsPerRegionScaled6.get(k) || 0n) +
-            continuousPtsMultiplied
-        );
-        totalPointsPerRegionScaled6.set(
-          k,
-          (totalPointsPerRegionScaled6.get(k) || 0n) + continuousPtsMultiplied
-        );
       }
 
       const totalWeekPts = rollover + continuousPtsMultiplied;
@@ -3398,19 +3505,21 @@ export async function computeGlowImpactScores(params: {
 
       if (includeWeeklyBreakdown || includeWeeklyRegionBreakdown) {
         const weeklyPointsPerRegionRecord: Record<string, string> = {};
-        for (const [rid, pts] of weeklyRegionPoints) {
-          // Apply multiplier here too for the weekly view?
-          // The score logic applies multiplier before adding to total.
-          // Yes, weekly breakdown usually shows "final points" for that week.
-          // But wait, `weeklyRegionPoints` in my loop holds PRE-MULTIPLIER points?
-          // "Region Logic: Apply Multipliers and Accumulate" loop calculates `finalPts` and adds to `total`.
-          // But `weeklyRegionPoints` itself is not modified in place to be post-multiplier.
-          // So I need to apply multiplier here.
-          const finalPts = applyMultiplierScaled6({
-            pointsScaled6: pts,
-            multiplierScaled6: totalMultiplierScaled6,
-          });
-          weeklyPointsPerRegionRecord[rid] = formatPointsScaled6(finalPts);
+        if (weeklyRegionPoints) {
+          for (const [rid, pts] of weeklyRegionPoints) {
+            // Apply multiplier here too for the weekly view?
+            // The score logic applies multiplier before adding to total.
+            // Yes, weekly breakdown usually shows "final points" for that week.
+            // But wait, `weeklyRegionPoints` in my loop holds PRE-MULTIPLIER points?
+            // "Region Logic: Apply Multipliers and Accumulate" loop calculates `finalPts` and adds to `total`.
+            // But `weeklyRegionPoints` itself is not modified in place to be post-multiplier.
+            // So I need to apply multiplier here.
+            const finalPts = applyMultiplierScaled6({
+              pointsScaled6: pts,
+              multiplierScaled6: totalMultiplierScaled6,
+            });
+            weeklyPointsPerRegionRecord[rid] = formatPointsScaled6(finalPts);
+          }
         }
 
         weekly.push({
@@ -3469,10 +3578,16 @@ export async function computeGlowImpactScores(params: {
     const activeMultiplier = endWeekMultiplier > 1;
     const hasMinerMultiplier = cashMinerWeeks.has(endWeek);
 
-    const pointsPerRegionRecord: Record<string, string> = {};
-    for (const [rid, pts] of totalPointsPerRegionScaled6) {
-      pointsPerRegionRecord[rid] = formatPointsScaled6(pts);
-    }
+    const pointsPerRegionRecord: Record<string, string> | undefined =
+      shouldComputeAggregateRegionPoints
+        ? (() => {
+            const record: Record<string, string> = {};
+            for (const [rid, pts] of totalPointsPerRegionScaled6 || []) {
+              record[rid] = formatPointsScaled6(pts);
+            }
+            return record;
+          })()
+        : undefined;
 
     const scoreResult: GlowImpactScoreResult = {
       walletAddress: wallet,
@@ -3497,17 +3612,18 @@ export async function computeGlowImpactScores(params: {
       pointsPerRegion: pointsPerRegionRecord,
       regionBreakdown: includeRegionBreakdown
         ? (function () {
+            const directPointsByRegion = totalDirectPointsPerRegionScaled6 || new Map();
+            const worthPointsByRegion = totalWorthPointsPerRegionScaled6 || new Map();
             const allRegionIds = new Set<string>();
-            for (const rid of totalDirectPointsPerRegionScaled6.keys())
+            for (const rid of directPointsByRegion.keys())
               allRegionIds.add(rid);
-            for (const rid of totalWorthPointsPerRegionScaled6.keys())
+            for (const rid of worthPointsByRegion.keys())
               allRegionIds.add(rid);
 
             const breakdown: RegionBreakdown[] = [];
             for (const ridKey of allRegionIds) {
-              const direct =
-                totalDirectPointsPerRegionScaled6.get(ridKey) || 0n;
-              const worth = totalWorthPointsPerRegionScaled6.get(ridKey) || 0n;
+              const direct = directPointsByRegion.get(ridKey) || 0n;
+              const worth = worthPointsByRegion.get(ridKey) || 0n;
 
               breakdown.push({
                 regionId: parseInt(ridKey) || 0,
@@ -3699,9 +3815,7 @@ export async function computeGlowImpactScores(params: {
         // 4. GlowWorth continuous points for this week (multiplier already applied in weeklyRow.continuousPoints)
         // See "GLOW WORTH REGIONAL DISTRIBUTION" comment above for the rationale
         // on distributing worth across all regions with emissions.
-        const weeklyWorthPts = BigInt(
-          Math.floor(parseFloat(weeklyRow.continuousPoints) * 1_000_000)
-        );
+        const weeklyWorthPts = parsePointsScaled6(weeklyRow.continuousPoints);
         const weekEmissions = regionRewardsByWeek.get(week);
         if (weeklyWorthPts > 0n && weekEmissions) {
           const totalEmissions = Array.from(

@@ -18,6 +18,28 @@ export function formatPointsScaled6(pointsScaled6: bigint): string {
   return formatUnits(pointsScaled6, 6);
 }
 
+export function parsePointsScaled6(value: string | undefined): bigint {
+  if (!value) return 0n;
+  const raw = value.trim();
+  if (!raw) return 0n;
+
+  const isNeg = raw.startsWith("-");
+  const abs = isNeg ? raw.slice(1) : raw;
+  const parts = abs.split(".");
+  if (parts.length > 2) return 0n;
+
+  const intPartRaw = parts[0] ?? "";
+  const fracPartRaw = parts[1] ?? "";
+  const intPart = intPartRaw === "" ? "0" : intPartRaw;
+  if (!/^\d+$/.test(intPart)) return 0n;
+  if (fracPartRaw !== "" && !/^\d+$/.test(fracPartRaw)) return 0n;
+
+  const fracPart = (fracPartRaw + "000000").slice(0, 6);
+  let out = BigInt(intPart) * POINTS_SCALE + BigInt(fracPart);
+  if (isNeg) out = -out;
+  return out;
+}
+
 export function formatGlwWei(glwWei: bigint): string {
   return formatUnits(glwWei, 18);
 }

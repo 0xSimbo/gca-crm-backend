@@ -1873,6 +1873,7 @@ export const fractionRefunds = pgTable(
       "fraction_refunds_tx_hash_log_index_unique_ix"
     ).on(t.transactionHash, t.logIndex),
     userIndex: index("fraction_refunds_user_ix").on(t.user),
+    refundToIndex: index("fraction_refunds_refund_to_ix").on(t.refundTo),
     fractionIdIndex: index("fraction_refunds_fraction_id_ix").on(t.fractionId),
   })
 );
@@ -2621,6 +2622,9 @@ export const gctlMintEvents = pgTable(
     epochIdx: index("gctl_mint_events_epoch_ix").on(t.epoch),
     tsIdx: index("gctl_mint_events_ts_ix").on(t.ts),
     walletIdx: index("gctl_mint_events_wallet_ix").on(t.wallet),
+    positiveMintWalletIdx: index("gctl_mint_events_wallet_positive_mint_ix")
+      .on(t.wallet)
+      .where(sql`${t.gctlMintedRaw} > 0::numeric`),
     txIdIdx: index("gctl_mint_events_tx_id_ix").on(t.txId),
   })
 );
@@ -2740,6 +2744,11 @@ export const controlWalletStakeByEpoch = pgTable(
       t.regionId,
       t.weekNumber
     ),
+    activeStakerWeekWalletIdx: index(
+      "control_wallet_stake_by_epoch_week_wallet_active_ix"
+    )
+      .on(t.weekNumber, t.wallet)
+      .where(sql`${t.regionId} > 0 and ${t.totalStakedRaw} > 0::numeric`),
     fetchedAtIdx: index("control_wallet_stake_by_epoch_fetched_at_ix").on(
       t.fetchedAt
     ),

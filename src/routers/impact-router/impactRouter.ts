@@ -20,7 +20,7 @@ import {
   getImpactLeaderboardWalletUniverse,
 } from "./helpers/impact-score";
 import { populateReferralData } from "./helpers/referral-points";
-import { formatPointsScaled6 } from "./helpers/points";
+import { formatPointsScaled6, parsePointsScaled6 } from "./helpers/points";
 import {
   fetchDepositSplitsHistoryBatch,
   fetchGlwBalanceSnapshotByWeekMany,
@@ -898,6 +898,7 @@ export const impactRouter = new Elysia({ prefix: "/impact" })
           startWeek: actualStartWeek,
           endWeek: actualEndWeek,
           includeWeeklyBreakdown: shouldIncludeWeekly,
+          includePointsPerRegion: !!walletAddress,
           includeRegionBreakdown: !!walletAddress,
           debug: shouldLogTimingsForRequest
             ? { requestId: requestId!, recordTiming }
@@ -938,33 +939,6 @@ export const impactRouter = new Elysia({ prefix: "/impact" })
           return currentWeekProjection
             ? { ...match, currentWeekProjection }
             : match;
-        }
-
-        function safePointsNumber(value: string | undefined): number {
-          const num = Number(value);
-          return Number.isFinite(num) ? num : 0;
-        }
-
-        function safePointsScaled6(value: string | undefined): bigint {
-          if (!value) return 0n;
-          const raw = value.trim();
-          if (!raw) return 0n;
-          const isNeg = raw.startsWith("-");
-          const abs = isNeg ? raw.slice(1) : raw;
-
-          const parts = abs.split(".");
-          if (parts.length > 2) return 0n;
-          const intPartRaw = parts[0] ?? "";
-          const fracRaw = parts[1] ?? "";
-
-          const intPart = intPartRaw === "" ? "0" : intPartRaw;
-          if (!/^\d+$/.test(intPart)) return 0n;
-          if (fracRaw !== "" && !/^\d+$/.test(fracRaw)) return 0n;
-
-          const frac = (fracRaw + "000000").slice(0, 6);
-          let out = BigInt(intPart) * 1_000_000n + BigInt(frac);
-          if (isNeg) out = -out;
-          return out;
         }
 
         function safeBigInt(value: string | undefined): bigint {
@@ -1009,8 +983,8 @@ export const impactRouter = new Elysia({ prefix: "/impact" })
 
           for (const row of refereeRows) {
             const bonusTotal =
-              safePointsScaled6(row.referralBonusTotal) +
-              safePointsScaled6(row.activationBonusTotal);
+              parsePointsScaled6(row.referralBonusTotal) +
+              parsePointsScaled6(row.activationBonusTotal);
             referralBonusByWallet.set(
               row.wallet.toLowerCase(),
               formatPointsScaled6(bonusTotal)
@@ -1019,14 +993,14 @@ export const impactRouter = new Elysia({ prefix: "/impact" })
 
           for (const r of results) {
             const wallet = r.walletAddress.toLowerCase();
-            const referralPointsScaled6 = safePointsScaled6(
+            const referralPointsScaled6 = parsePointsScaled6(
               referralPointsByWallet.get(wallet)
             );
-            const referralBonusPointsScaled6 = safePointsScaled6(
+            const referralBonusPointsScaled6 = parsePointsScaled6(
               referralBonusByWallet.get(wallet)
             );
             if (referralPointsScaled6 > 0n || referralBonusPointsScaled6 > 0n) {
-              const baseTotal = safePointsScaled6(r.totals.totalPoints);
+              const baseTotal = parsePointsScaled6(r.totals.totalPoints);
               r.totals.totalPoints = formatPointsScaled6(
                 baseTotal + referralPointsScaled6 + referralBonusPointsScaled6
               );
@@ -1063,12 +1037,12 @@ export const impactRouter = new Elysia({ prefix: "/impact" })
           } else {
             const av =
               params.sort === "lastWeekPoints"
-                ? safePointsScaled6(a.lastWeekPoints)
-                : safePointsScaled6(a.totalPoints);
+                ? parsePointsScaled6(a.lastWeekPoints)
+                : parsePointsScaled6(a.totalPoints);
             const bv =
               params.sort === "lastWeekPoints"
-                ? safePointsScaled6(b.lastWeekPoints)
-                : safePointsScaled6(b.totalPoints);
+                ? parsePointsScaled6(b.lastWeekPoints)
+                : parsePointsScaled6(b.totalPoints);
             if (av !== bv) return av > bv ? factor : -factor;
           }
 

@@ -193,11 +193,13 @@ interface GlowWorthResponse {
   walletAddress: string;
   liquidGlwWei: string;
   delegatedActiveGlwWei: string;
+  pendingRecoveredGlwWei: string;
   unclaimedGlwRewardsWei: string;
   glowWorthWei: string;
   dataSources: {
     liquidGlw: string;
     delegatedActiveGlw: string;
+    pendingRecoveredGlw: string;
     unclaimedGlwRewards: string;
   };
 }
@@ -232,7 +234,7 @@ export async function getGlowWorth(params: {
 
 There are two shapes, based on `walletAddress`:
 
-- **Single wallet** (`walletAddress=0x...`): returns `glowWorth`, `totals`, `regionBreakdown`, and `currentWeekProjection` (live preview). **Weekly breakdown is only included when `includeWeekly=1`.**
+- **Single wallet** (`walletAddress=0x...`): returns `glowWorth`, `totals`, optional `regionBreakdown`, and optional `currentWeekProjection` (live preview). **Weekly breakdown rows are only populated when `includeWeekly=1`.**
 - **Leaderboard/list** (omit `walletAddress`): returns lightweight rows with totals + a `composition` breakdown + `lastWeekPoints` + `activeMultiplier` (no weekly data).
 - **Leaderboard/list**: response includes `totalWalletCount` so UIs can show “displaying 200 of N”.
 
@@ -240,12 +242,17 @@ There are two shapes, based on `walletAddress`:
 
 By default, weekly breakdown is **not** returned. Set `includeWeekly=1` (or `includeWeekly=true`) to include the `weekly[]` array and `pointsPerRegion` breakdown in weekly rows.
 
+#### `includeProjection` / `includeReferral` (single-wallet mode)
+
+- `includeProjection` (default `true`): when set to `0|false`, omits `currentWeekProjection`.
+- `includeReferral` (default `true`): when set to `0|false`, omits populated referral fields/composition additions.
+
 #### Leaderboard eligibility (who can show up?)
 
 The leaderboard is **not** limited to "protocol participants" anymore. In list mode, the backend builds an eligible wallet universe from:
 
 - **All GLW holders** (ponder listener `glowBalances` where balance > 0)
-- **All wallets with staked GCTL** (Control API `wallets.stakedControl > 0`)
+- **All wallets with GCTL stake activity** (DB snapshots, with Control API fallback)
 - **Protocol wallets** already known to the backend (fraction buyers + reward split wallets)
 
 **Exclusions**:
@@ -278,6 +285,9 @@ interface ImpactScoreTotals {
   inflationPoints: string;
   steeringPoints: string;
   vaultBonusPoints: string;
+  worthPoints: string;
+  basePointsPreMultiplierScaled6: string;
+  basePointsPreMultiplierScaled6ThisWeek: string;
   totalInflationGlwWei: string;
   totalSteeringGlwWei: string;
 }
@@ -288,6 +298,8 @@ interface ImpactScoreWeeklyRow {
   steeringGlwWei: string;
   delegatedActiveGlwWei: string;
   protocolDepositRecoveredGlwWei: string;
+  liquidGlwWei: string;
+  unclaimedGlwWei: string;
   inflationPoints: string;
   steeringPoints: string;
   vaultBonusPoints: string;
@@ -298,6 +310,10 @@ interface ImpactScoreWeeklyRow {
   continuousPoints: string;
   totalPoints: string;
   hasCashMinerBonus: boolean;
+  baseMultiplier: number;
+  streakBonusMultiplier: number;
+  impactStreakWeeks: number;
+  pointsPerRegion: Record<string, string>;
 }
 
 interface ImpactScoreResponse {
@@ -310,21 +326,30 @@ interface ImpactScoreResponse {
     inflationPoints: string;
     worthPoints: string;
     vaultPoints: string;
+    referralPoints?: string;
+    referralBonusPoints?: string;
   };
   lastWeekPoints: string;
   activeMultiplier: boolean;
   hasMinerMultiplier: boolean;
   endWeekMultiplier: number;
   weekly: ImpactScoreWeeklyRow[];
-  currentWeekProjection: {
+  currentWeekProjection?: {
     weekNumber: number;
     hasMinerMultiplier: boolean;
     hasSteeringStake: boolean;
+    impactStreakWeeks: number;
+    streakAsOfPreviousWeek: number;
+    hasImpactActionThisWeek: boolean;
+    baseMultiplier: number;
+    streakBonusMultiplier: number;
+    totalMultiplier: number;
     projectedPoints: {
       steeringGlwWei: string;
       inflationGlwWei: string;
       delegatedGlwWei: string;
       glowWorthWei: string;
+      basePointsPreMultiplierScaled6: string;
       totalProjectedScore: string;
     };
   };
@@ -373,6 +398,8 @@ interface ImpactScoreLeaderboardRow {
   hasMinerMultiplier: boolean;
   hasSteeringStake: boolean;
   hasVaultBonus: boolean;
+  hasReferralPoints?: boolean;
+  referralPointsScaled6?: string;
   endWeekMultiplier: number;
   // Stable rank by totalPoints (descending) for the scored candidate set.
   // This does NOT change when you sort by lastWeekPoints or glowWorth.
@@ -477,7 +504,7 @@ Computes the wallet's GLW-denominated position:
 
 - `GlowWorth = LiquidGLW + DelegatedActiveGLW + PendingRecoveredGLW + UnclaimedGLWRewards`
 - `LiquidGLW`: onchain ERC20 GLW `balanceOf` via `viem`
-- `DelegatedActiveGLW`: launchpad GLW delegated minus protocol-deposit rewards received (converted to GLW using current spot price)
+- `DelegatedActiveGLW`: launchpad GLW delegated minus GLW-denominated protocol-deposit principal already distributed (`paymentCurrency=GLW` only; non-GLW protocol deposits are not converted)
 - `PendingRecoveredGLW`: protocol-deposit rewards earned but not yet claimable (included in Glow Worth so totals don't dip before finalization)
 - `UnclaimedGLWRewards`: computed as:
   - **Claimable GLW** from Control API weekly rewards (`/wallets/address/:wallet/weekly-rewards?paymentCurrency=GLW&limit=520`)
@@ -494,7 +521,7 @@ Computes the wallet's GLW-denominated position:
   - Claims are attributed to the **reward week** (not the claim timestamp):
     - **RewardsKernel** claims include `nonce` → week mapping (v2 nonce 0 corresponds to week 97): `week = 97 + nonce`
     - **MinerPool** claims are indexed from GLW `Transfer` logs and do not include a week; we infer the reward week by matching the claim `amount` to the Control API `glowInflationTotal` for that week (with a 10M wei epsilon to tolerate downstream rounding)
-  - **All wallets** now use "accurate" mode (both single wallet and leaderboard). The leaderboard performance is maintained by caching the results daily in `impact_leaderboard_cache` table.
+  - **All wallets** now use "accurate" mode (both single wallet and leaderboard). The leaderboard performance is maintained by cache + weekly cron refresh in `impact_leaderboard_cache`.
 
 Query:
 
@@ -527,10 +554,15 @@ Notes:
 
 Query:
 
-- `walletAddress` (optional): when provided returns full weekly breakdown
+- `walletAddress` (optional): when provided returns single-wallet breakdown shape
 - `startWeek`, `endWeek` (optional)
 - `limit` (optional): default `200`
-- `includeWeekly` (optional): `true|1` to include weekly rows when querying multiple wallets (can be large)
+- `includeWeekly` (optional): `true|1` to include weekly rows (`weekly[]`) and per-week `pointsPerRegion`
+- `includeProjection` (optional, single-wallet): `false|0` to omit `currentWeekProjection`
+- `includeReferral` (optional, single-wallet): `false|0` to omit referral enrichment
+- `sort` (optional, list-only): `totalPoints | lastWeekPoints | glowWorth`
+- `dir` (optional, list-only): `desc | asc`
+- `debugTimings` (optional, list-only): `true|1` to emit timing logs
 
 ## UI Indicator Behavior (Current vs Finalized)
 
@@ -615,7 +647,7 @@ Time series of **new wallets per protocol week**. A wallet is “new” in the *
 **Query**
 
 - `startWeek` (optional, default `97`)
-- `endWeek` (optional, default current protocol week)
+- `endWeek` (optional, default last completed protocol week = `getCurrentEpoch() - 1`)
 - `includeWallets` (optional): include wallet lists per week (`true|1`)
 
 **Response**
@@ -663,8 +695,6 @@ Time series of **new GLW holders per protocol week**, based strictly on **end‑
 ```bash
 curl -s "http://localhost:3005/impact/new-glw-holders-by-week?startWeek=100&endWeek=114"
 ```
-
-This endpoint triggers the same cron job that runs weekly on Sunday at 01:00 UTC. The update typically takes 20-30 seconds for ~1000 wallets.
 
 ### Cache Table Schema
 
@@ -719,8 +749,8 @@ Delegators-only leaderboard (launchpad/vault participants) with **net rewards** 
 
 ### Query
 
-- `startWeek` (optional): defaults to `getWeekRange().startWeek` (97)
-- `endWeek` (optional): defaults to `getWeekRange().endWeek` (last completed week)
+- `startWeek` (optional): defaults to `getWeekRangeForImpact().startWeek` (97)
+- `endWeek` (optional): defaults to `getWeekRangeForImpact().endWeek` (last completed protocol week)
 - `limit` (optional): default `200`
 
 Example:
