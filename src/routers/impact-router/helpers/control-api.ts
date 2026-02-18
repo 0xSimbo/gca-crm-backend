@@ -5,6 +5,7 @@ import {
   controlWalletStakeByEpoch,
 } from "../../../db/schema";
 import { getCurrentEpoch } from "../../../utils/getProtocolWeek";
+import { getWeekRange } from "../../fractions-router/helpers/apy-helpers";
 
 export interface ControlApiFarmReward {
   weekNumber: number;
@@ -116,6 +117,8 @@ const CONTROL_API_EPOCH_REWARDS_TTL_CURRENT_MS = 30_000;
 const CONTROL_API_EPOCH_REWARDS_TTL_FINALIZED_MS = 10 * 60_000;
 const CONTROL_API_WALLET_STAKE_TTL_CURRENT_MS = 30_000;
 const CONTROL_API_WALLET_STAKE_TTL_FINALIZED_MS = 5 * 60_000;
+const CONTROL_API_FARM_REWARDS_TTL_CURRENT_MS = 30_000;
+const CONTROL_API_FARM_REWARDS_TTL_FINALIZED_MS = 24 * 60 * 60_000;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -189,6 +192,37 @@ async function mapWithConcurrency<T, R>(
   });
   await Promise.all(workers);
   return results;
+}
+
+const cachedFarmRewardsByFarmWeek = new Map<
+  string,
+  {
+    rows: ControlApiFarmRewardsHistoryRewardRow[];
+    expiresAtMs: number;
+  }
+>();
+const inFlightFarmRewardsBatches = new Map<
+  string,
+  Promise<Map<string, ControlApiFarmRewardsHistoryRewardRow[]>>
+>();
+
+function makeFarmRewardsWeekCacheKey(farmId: string, week: number): string {
+  return `${farmId}|${week}`;
+}
+
+function makeFarmRewardsBatchCacheKey(params: {
+  farmIds: string[];
+  startWeek: number;
+  endWeek: number;
+}): string {
+  const farmIds = params.farmIds.slice().sort();
+  return `${params.startWeek}|${params.endWeek}|${farmIds.join(",")}`;
+}
+
+function cloneFarmRewardsRows(
+  rows: ControlApiFarmRewardsHistoryRewardRow[]
+): ControlApiFarmRewardsHistoryRewardRow[] {
+  return rows.map((row) => ({ ...row }));
 }
 
 interface GlwHolderRow {
@@ -1071,8 +1105,8 @@ export async function fetchFarmRewardsHistoryBatch(params: {
 }): Promise<Map<string, ControlApiFarmRewardsHistoryRewardRow[]>> {
   const { startWeek, endWeek } = params;
   const normalizedFarmIds = Array.from(new Set(params.farmIds));
-  const result = new Map<string, ControlApiFarmRewardsHistoryRewardRow[]>();
-  if (normalizedFarmIds.length === 0) return result;
+  if (normalizedFarmIds.length === 0)
+    return new Map<string, ControlApiFarmRewardsHistoryRewardRow[]>();
 
   const mergeMaps = (
     target: Map<string, ControlApiFarmRewardsHistoryRewardRow[]>,
@@ -1105,6 +1139,31 @@ export async function fetchFarmRewardsHistoryBatch(params: {
       return (a.paymentCurrency || "").localeCompare(b.paymentCurrency || "");
     });
     return deduped;
+  };
+
+  const buildResultFromWeekCache = (
+    farmIds: string[],
+    fromWeek: number,
+    toWeek: number
+  ): Map<string, ControlApiFarmRewardsHistoryRewardRow[]> => {
+    const out = new Map<string, ControlApiFarmRewardsHistoryRewardRow[]>();
+    const nowMs = Date.now();
+    for (const farmId of farmIds) {
+      const rows: ControlApiFarmRewardsHistoryRewardRow[] = [];
+      let hasMissingWeek = false;
+      for (let week = fromWeek; week <= toWeek; week++) {
+        const key = makeFarmRewardsWeekCacheKey(farmId, week);
+        const cached = cachedFarmRewardsByFarmWeek.get(key);
+        if (!cached || nowMs >= cached.expiresAtMs) {
+          hasMissingWeek = true;
+          break;
+        }
+        if (cached.rows.length > 0) rows.push(...cloneFarmRewardsRows(cached.rows));
+      }
+      if (hasMissingWeek) continue;
+      if (rows.length > 0) out.set(farmId, dedupeRows(rows));
+    }
+    return out;
   };
 
   const fetchBatchOnce = async (
@@ -1227,16 +1286,86 @@ export async function fetchFarmRewardsHistoryBatch(params: {
       : new Error("Control API batch farm rewards history failed");
   };
 
-  const fetched = await fetchBatchWithFallback(
-    normalizedFarmIds,
-    startWeek,
-    endWeek
-  );
-  for (const [farmId, rows] of fetched) {
-    result.set(farmId, dedupeRows(rows));
+  const finalizedWeek = getWeekRange().endWeek;
+  const nowMs = Date.now();
+  const missingFarmIds = new Set<string>();
+  let missingStartWeek = Number.POSITIVE_INFINITY;
+  let missingEndWeek = Number.NEGATIVE_INFINITY;
+
+  for (const farmId of normalizedFarmIds) {
+    for (let week = startWeek; week <= endWeek; week++) {
+      const key = makeFarmRewardsWeekCacheKey(farmId, week);
+      const cached = cachedFarmRewardsByFarmWeek.get(key);
+      if (cached && nowMs < cached.expiresAtMs) continue;
+      missingFarmIds.add(farmId);
+      if (week < missingStartWeek) missingStartWeek = week;
+      if (week > missingEndWeek) missingEndWeek = week;
+    }
   }
 
-  return result;
+  if (missingFarmIds.size > 0) {
+    const missingFarmIdsList = Array.from(missingFarmIds);
+    const batchKey = makeFarmRewardsBatchCacheKey({
+      farmIds: missingFarmIdsList,
+      startWeek: missingStartWeek,
+      endWeek: missingEndWeek,
+    });
+
+    let inFlight = inFlightFarmRewardsBatches.get(batchKey);
+    if (!inFlight) {
+      inFlight = (async () => {
+        const fetched = await fetchBatchWithFallback(
+          missingFarmIdsList,
+          missingStartWeek,
+          missingEndWeek
+        );
+
+        const writeNowMs = Date.now();
+        for (const farmId of missingFarmIdsList) {
+          const rows = fetched.get(farmId) || [];
+          const rowsByWeek = new Map<
+            number,
+            ControlApiFarmRewardsHistoryRewardRow[]
+          >();
+          for (const row of rows) {
+            const week = Number(row.weekNumber);
+            if (!Number.isFinite(week)) continue;
+            if (week < missingStartWeek || week > missingEndWeek) continue;
+            if (!rowsByWeek.has(week)) rowsByWeek.set(week, []);
+            rowsByWeek.get(week)!.push({ ...row, weekNumber: week });
+          }
+
+          for (let week = missingStartWeek; week <= missingEndWeek; week++) {
+            const weekRows = dedupeRows(rowsByWeek.get(week) || []);
+            const ttlMs =
+              week <= finalizedWeek
+                ? CONTROL_API_FARM_REWARDS_TTL_FINALIZED_MS
+                : CONTROL_API_FARM_REWARDS_TTL_CURRENT_MS;
+            cachedFarmRewardsByFarmWeek.set(
+              makeFarmRewardsWeekCacheKey(farmId, week),
+              {
+                rows: weekRows,
+                expiresAtMs: writeNowMs + ttlMs,
+              }
+            );
+          }
+        }
+
+        return fetched;
+      })();
+      inFlightFarmRewardsBatches.set(batchKey, inFlight);
+    }
+
+    try {
+      await inFlight;
+    } finally {
+      if (inFlightFarmRewardsBatches.get(batchKey) === inFlight) {
+        inFlightFarmRewardsBatches.delete(batchKey);
+      }
+    }
+  }
+
+  return buildResultFromWeekCache(normalizedFarmIds, startWeek, endWeek);
 }
 
 export async function fetchWalletRewardsHistoryMany(params: {

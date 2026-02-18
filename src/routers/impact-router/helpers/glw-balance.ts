@@ -12,7 +12,7 @@ const FALLBACK_RPC_TIMEOUT_MS = 15_000;
 const FALLBACK_RPC_RETRY_COUNT = 2;
 const FALLBACK_RPC_RETRY_DELAY_MS = 200;
 
-type ReadContractClient = Pick<typeof viemClient, "readContract">;
+type ReadContractClient = Pick<typeof viemClient, "readContract" | "multicall">;
 
 let cachedFallbackViemClient: ReadContractClient | null = null;
 
@@ -100,6 +100,39 @@ async function readGlwBalanceWei({
   });
 }
 
+async function readGlwBalancesWeiBatch(params: {
+  client: ReadContractClient;
+  glw: `0x${string}`;
+  walletAddresses: `0x${string}`[];
+}): Promise<Map<string, bigint>> {
+  const { client, glw, walletAddresses } = params;
+  const balances = new Map<string, bigint>();
+  if (walletAddresses.length === 0) return balances;
+
+  const contracts = walletAddresses.map((walletAddress) => ({
+    address: glw,
+    abi: ERC20_ABI,
+    functionName: "balanceOf" as const,
+    args: [walletAddress] as const,
+  }));
+
+  const response = await client.multicall({
+    contracts,
+    allowFailure: true,
+  });
+
+  response.forEach((item, idx) => {
+    const wallet = walletAddresses[idx]!.toLowerCase();
+    if (item.status === "success") {
+      balances.set(wallet, typeof item.result === "bigint" ? item.result : 0n);
+      return;
+    }
+    balances.set(wallet, 0n);
+  });
+
+  return balances;
+}
+
 export async function getLiquidGlwBalanceWei(
   walletAddress: `0x${string}`
 ): Promise<bigint> {
@@ -126,6 +159,47 @@ export async function getLiquidGlwBalanceWei(
     } catch (fallbackError) {
       throw new Error(
         `Failed to fetch GLW balance from primary and fallback RPC providers. primary=${getErrorText(
+          primaryError
+        )}; fallback=${getErrorText(fallbackError)}`
+      );
+    }
+  }
+}
+
+export async function getLiquidGlwBalancesWeiBatch(
+  walletAddresses: `0x${string}`[]
+): Promise<Map<string, bigint>> {
+  const normalizedWallets = Array.from(
+    new Set(walletAddresses.map((wallet) => wallet.toLowerCase() as `0x${string}`))
+  );
+
+  const balances = new Map<string, bigint>();
+  if (normalizedWallets.length === 0) return balances;
+
+  if (process.env.NODE_ENV !== "production") {
+    for (const wallet of normalizedWallets) balances.set(wallet, 0n);
+    return balances;
+  }
+
+  const glw = getGlowTokenAddress();
+  try {
+    return await readGlwBalancesWeiBatch({
+      client: viemClient,
+      glw,
+      walletAddresses: normalizedWallets,
+    });
+  } catch (primaryError) {
+    if (!isRetryableRpcTransportError(primaryError)) throw primaryError;
+
+    try {
+      return await readGlwBalancesWeiBatch({
+        client: getFallbackViemClient(),
+        glw,
+        walletAddresses: normalizedWallets,
+      });
+    } catch (fallbackError) {
+      throw new Error(
+        `Failed to fetch GLW balances from primary and fallback RPC providers. primary=${getErrorText(
           primaryError
         )}; fallback=${getErrorText(fallbackError)}`
       );

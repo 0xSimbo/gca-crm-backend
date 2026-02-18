@@ -13,11 +13,14 @@ import {
   applications,
   RewardSplits,
   gctlStakedByRegionWeek,
+  controlWalletStakeByEpoch,
+  controlRegionRewardsWeek,
+  gctlMintEvents,
 } from "../../../db/schema";
 import { GENESIS_TIMESTAMP } from "../../../constants/genesis-timestamp";
 import { getCurrentEpoch } from "../../../utils/getProtocolWeek";
 import { getWeekRange } from "../../fractions-router/helpers/apy-helpers";
-import { getLiquidGlwBalanceWei } from "./glw-balance";
+import { getLiquidGlwBalancesWeiBatch } from "./glw-balance";
 import {
   fetchDepositSplitsHistoryBatch,
   fetchFarmRewardsHistoryBatch,
@@ -48,6 +51,8 @@ import {
 } from "./points";
 
 const BATCH_SIZE = 500;
+const FARM_REWARDS_BATCH_SIZE = 100;
+const FARM_REWARDS_BATCH_CONCURRENCY = 3;
 const DELEGATION_START_WEEK = 97;
 const ZERO_POINTS_SCALED6 = formatPointsScaled6(0n);
 const ZERO_WEI_STRING = "0";
@@ -195,6 +200,8 @@ type RegionRewardsAggregateByWeek = Map<
   number,
   { totalGlw: bigint; byRegion: Map<number, bigint>; totalGctlStaked: bigint }
 >;
+type WalletStakeByWeek = Map<number, Array<{ regionId: number; totalStakedWei: bigint }>>;
+type WalletStakeByWallet = Map<string, WalletStakeByWeek>;
 
 async function loadDbGctlStakeByRegionByWeek(params: {
   startWeek: number;
@@ -228,6 +235,141 @@ async function loadDbGctlStakeByRegionByWeek(params: {
     byWeek.get(row.weekNumber)!.set(regionId, staked);
   }
   return byWeek;
+}
+
+async function loadControlRegionRewardsByWeekFromDb(params: {
+  startWeek: number;
+  endWeek: number;
+}): Promise<Map<number, RegionRewardsResponse>> {
+  const rows = await db
+    .select({
+      weekNumber: controlRegionRewardsWeek.weekNumber,
+      regionId: controlRegionRewardsWeek.regionId,
+      glwRewardRaw: controlRegionRewardsWeek.glwRewardRaw,
+      gctlStakedRaw: controlRegionRewardsWeek.gctlStakedRaw,
+      rewardShareRaw: controlRegionRewardsWeek.rewardShareRaw,
+    })
+    .from(controlRegionRewardsWeek)
+    .where(
+      and(
+        gte(controlRegionRewardsWeek.weekNumber, params.startWeek),
+        lte(controlRegionRewardsWeek.weekNumber, params.endWeek)
+      )
+    );
+
+  const byWeek = new Map<
+    number,
+    { regionRewards: RegionRewardsResponse["regionRewards"]; totalGlw: bigint; totalGctl: bigint }
+  >();
+  for (const row of rows) {
+    if (!byWeek.has(row.weekNumber)) {
+      byWeek.set(row.weekNumber, {
+        regionRewards: [],
+        totalGlw: 0n,
+        totalGctl: 0n,
+      });
+    }
+    const bucket = byWeek.get(row.weekNumber)!;
+    const glw = safeBigInt(row.glwRewardRaw);
+    const gctl = safeBigInt(row.gctlStakedRaw);
+
+    if (row.regionId > 0) {
+      bucket.regionRewards.push({
+        regionId: row.regionId,
+        gctlStaked: gctl.toString(),
+        glwReward: glw.toString(),
+        rewardShare: String(row.rewardShareRaw ?? "0"),
+      });
+    }
+
+    if (glw > 0n) bucket.totalGlw += glw;
+    if (gctl > 0n) bucket.totalGctl += gctl;
+  }
+
+  const out = new Map<number, RegionRewardsResponse>();
+  for (const [week, bucket] of byWeek) {
+    out.set(week, {
+      totalGctlStaked: bucket.totalGctl.toString(),
+      totalGlwRewards: bucket.totalGlw.toString(),
+      regionRewards: bucket.regionRewards,
+    });
+  }
+  return out;
+}
+
+async function loadWalletStakeByEpochFromDbMany(params: {
+  wallets: string[];
+  startWeek: number;
+  endWeek: number;
+}): Promise<{
+  byWallet: WalletStakeByWallet;
+  coveredWallets: Set<string>;
+  missingWallets: string[];
+}> {
+  const normalizedWallets = Array.from(
+    new Set(params.wallets.map((w) => w.toLowerCase()).filter(Boolean))
+  );
+  const byWallet: WalletStakeByWallet = new Map();
+  const coveredWeeksByWallet = new Map<string, Set<number>>();
+  for (const wallet of normalizedWallets) {
+    const byWeek: WalletStakeByWeek = new Map();
+    for (let week = params.startWeek; week <= params.endWeek; week++) {
+      byWeek.set(week, []);
+    }
+    byWallet.set(wallet, byWeek);
+    coveredWeeksByWallet.set(wallet, new Set());
+  }
+
+  if (normalizedWallets.length === 0) {
+    return { byWallet, coveredWallets: new Set(), missingWallets: [] };
+  }
+
+  const rows = await db
+    .select({
+      wallet: controlWalletStakeByEpoch.wallet,
+      weekNumber: controlWalletStakeByEpoch.weekNumber,
+      regionId: controlWalletStakeByEpoch.regionId,
+      totalStakedRaw: controlWalletStakeByEpoch.totalStakedRaw,
+    })
+    .from(controlWalletStakeByEpoch)
+    .where(
+      and(
+        inArray(controlWalletStakeByEpoch.wallet, normalizedWallets),
+        gte(controlWalletStakeByEpoch.weekNumber, params.startWeek),
+        lte(controlWalletStakeByEpoch.weekNumber, params.endWeek)
+      )
+    );
+
+  for (const row of rows) {
+    const wallet = (row.wallet || "").toLowerCase();
+    const byWeek = byWallet.get(wallet);
+    if (!byWeek) continue;
+    coveredWeeksByWallet.get(wallet)?.add(row.weekNumber);
+    if (row.regionId <= 0) continue;
+    const stakeRows = byWeek.get(row.weekNumber);
+    if (!stakeRows) continue;
+    stakeRows.push({
+      regionId: row.regionId,
+      totalStakedWei: safeBigInt(row.totalStakedRaw),
+    });
+  }
+
+  const coveredWallets = new Set<string>();
+  const missingWallets: string[] = [];
+  for (const wallet of normalizedWallets) {
+    const coveredWeeks = coveredWeeksByWallet.get(wallet) || new Set<number>();
+    let isCovered = true;
+    for (let week = params.startWeek; week <= params.endWeek; week++) {
+      if (!coveredWeeks.has(week)) {
+        isCovered = false;
+        break;
+      }
+    }
+    if (isCovered) coveredWallets.add(wallet);
+    else missingWallets.push(wallet);
+  }
+
+  return { byWallet, coveredWallets, missingWallets };
 }
 
 function toRegionRewardsAggregate(params: {
@@ -290,21 +432,56 @@ async function loadRegionRewardsByWeek(params: {
 
   const rawByWeek = new Map<number, RegionRewardsResponse>();
   const aggregateByWeek: RegionRewardsAggregateByWeek = new Map();
+  const dbRewardsStart = nowMs();
+  const dbRewardsByWeek = await loadControlRegionRewardsByWeekFromDb({
+    startWeek: params.startWeek,
+    endWeek: params.endWeek,
+  }).catch((error) => {
+    console.error("[impact-score] failed to load DB control region rewards", error);
+    return new Map<number, RegionRewardsResponse>();
+  });
+  recordTimingSafe(params.debug, {
+    label: "compute.regionRewards.dbRewardsLookup",
+    ms: nowMs() - dbRewardsStart,
+    meta: {
+      weeks: params.endWeek - params.startWeek + 1,
+      weeksWithRewardSnapshot: dbRewardsByWeek.size,
+    },
+  });
+
+  const missingWeeks: number[] = [];
+  for (let w = params.startWeek; w <= params.endWeek; w++) {
+    if (!dbRewardsByWeek.has(w)) missingWeeks.push(w);
+  }
+
+  const fetchedMissingRewards = new Map<number, RegionRewardsResponse>();
+  if (missingWeeks.length > 0) {
+    await Promise.all(
+      missingWeeks.map(async (week) => {
+        try {
+          const rewards = await getRegionRewardsAtEpoch({ epoch: week });
+          fetchedMissingRewards.set(week, rewards);
+        } catch (error) {
+          console.error(
+            `[impact-score] failed to fetch region rewards for week ${week}`,
+            error
+          );
+        }
+      })
+    );
+  }
 
   for (let w = params.startWeek; w <= params.endWeek; w++) {
-    try {
-      const rewards = await getRegionRewardsAtEpoch({ epoch: w });
-      rawByWeek.set(w, rewards);
-      aggregateByWeek.set(
-        w,
-        toRegionRewardsAggregate({
-          rewards,
-          dbStakeByRegion: dbStakeByWeek.get(w),
-        })
-      );
-    } catch (e) {
-      console.error(`[impact-score] failed to fetch region rewards for week ${w}`, e);
-    }
+    const rewards = dbRewardsByWeek.get(w) || fetchedMissingRewards.get(w);
+    if (!rewards) continue;
+    rawByWeek.set(w, rewards);
+    aggregateByWeek.set(
+      w,
+      toRegionRewardsAggregate({
+        rewards,
+        dbStakeByRegion: dbStakeByWeek.get(w),
+      })
+    );
   }
 
   return { rawByWeek, aggregateByWeek };
@@ -395,27 +572,24 @@ async function getSteeringBoostByWeek(params: {
 
   const foundationStakeByWeek = new Map<number, bigint>();
   const foundationStart = nowMs();
-  const stakeRows = await Promise.all(
-    normalizedWallets.map(async (wallet) => {
-      try {
-        const stakeByWeek = await fetchWalletStakeByEpochRange({
-          walletAddress: wallet,
-          startWeek,
-          endWeek,
-        });
-        return { wallet, stakeByWeek };
-      } catch (error) {
-        console.error(
-          `[impact-score] foundation stake fetch failed for wallet=${wallet}`,
-          error
-        );
-        return { wallet, stakeByWeek: new Map() };
-      }
-    })
-  );
+  const stakeByWallet = await loadWalletStakeByEpochFromDbMany({
+    wallets: normalizedWallets,
+    startWeek,
+    endWeek,
+  }).catch((error) => {
+    console.error(
+      "[impact-score] failed to load foundation stake snapshots from DB",
+      error
+    );
+    return {
+      byWallet: new Map<string, WalletStakeByWeek>(),
+      coveredWallets: new Set<string>(),
+      missingWallets: normalizedWallets,
+    };
+  });
 
-  for (const row of stakeRows) {
-    for (const [week, regions] of row.stakeByWeek) {
+  const addStakeByWeek = (stakeMap: WalletStakeByWeek) => {
+    for (const [week, regions] of stakeMap) {
       const totalForWeek = regions.reduce(
         (sum: bigint, r: { totalStakedWei: bigint }) => sum + r.totalStakedWei,
         0n
@@ -426,6 +600,33 @@ async function getSteeringBoostByWeek(params: {
         (foundationStakeByWeek.get(week) || 0n) + totalForWeek
       );
     }
+  };
+
+  for (const wallet of stakeByWallet.coveredWallets) {
+    addStakeByWeek(stakeByWallet.byWallet.get(wallet) || new Map());
+  }
+
+  if (stakeByWallet.missingWallets.length > 0) {
+    const fallbackStakeRows = await Promise.all(
+      stakeByWallet.missingWallets.map(async (wallet) => {
+        try {
+          const stakeByWeek = await fetchWalletStakeByEpochRange({
+            walletAddress: wallet,
+            startWeek,
+            endWeek,
+          });
+          return { wallet, stakeByWeek };
+        } catch (error) {
+          console.error(
+            `[impact-score] foundation stake fetch failed for wallet=${wallet}`,
+            error
+          );
+          return { wallet, stakeByWeek: new Map() };
+        }
+      })
+    );
+
+    for (const row of fallbackStakeRows) addStakeByWeek(row.stakeByWeek);
   }
 
   recordTimingSafe(debug, {
@@ -434,6 +635,8 @@ async function getSteeringBoostByWeek(params: {
     meta: {
       wallets: normalizedWallets.length,
       weeks: endWeek - startWeek + 1,
+      dbCoveredWallets: stakeByWallet.coveredWallets.size,
+      fallbackWallets: stakeByWallet.missingWallets.length,
     },
   });
 
@@ -484,6 +687,35 @@ function chunkArray<T>(items: T[], size: number): T[][] {
   for (let i = 0; i < items.length; i += size)
     out.push(items.slice(i, i + size));
   return out;
+}
+
+async function mapChunksWithConcurrency<T>(params: {
+  items: T[];
+  chunkSize: number;
+  concurrency: number;
+  worker: (chunk: T[]) => Promise<void>;
+}): Promise<void> {
+  const { items, chunkSize, worker } = params;
+  const chunks = chunkArray(items, chunkSize);
+  if (chunks.length === 0) return;
+
+  const workerCount = Math.max(
+    1,
+    Math.min(params.concurrency, chunks.length)
+  );
+  let cursor = 0;
+
+  const workers = Array.from({ length: workerCount }, () =>
+    (async () => {
+      for (;;) {
+        const index = cursor++;
+        if (index >= chunks.length) break;
+        await worker(chunks[index]!);
+      }
+    })()
+  );
+
+  await Promise.all(workers);
 }
 
 function getFinalizedRewardsWeek(startWeek: number, endWeek: number): number {
@@ -759,6 +991,102 @@ function getSteeringFallback(params: {
   };
 }
 
+function computeSteeringByWeekFromStakeAndRewards(params: {
+  walletStakeByWeek: WalletStakeByWeek;
+  startWeek: number;
+  endWeek: number;
+  regionRewardsByEpoch: Map<number, RegionRewardsResponse>;
+}): SteeringByWeekResult {
+  const byWeek = new Map<number, bigint>();
+  const byWeekAndRegion = new Map<number, Map<number, bigint>>();
+
+  for (let week = params.startWeek; week <= params.endWeek; week++) {
+    const rewards = params.regionRewardsByEpoch.get(week);
+    if (!rewards) continue;
+
+    const rewardsByRegion = new Map<
+      number,
+      { gctlStaked: bigint; glwRewardWei: bigint }
+    >();
+    for (const row of rewards.regionRewards || []) {
+      rewardsByRegion.set(row.regionId, {
+        gctlStaked: safeBigInt(row.gctlStaked),
+        glwRewardWei: safeBigInt(row.glwReward),
+      });
+    }
+
+    const stakeRows = params.walletStakeByWeek.get(week) || [];
+    const regionSteering = new Map<number, bigint>();
+    let steeringTotal = 0n;
+    for (const row of stakeRows) {
+      if (row.totalStakedWei <= 0n) continue;
+      const regionReward = rewardsByRegion.get(row.regionId);
+      if (!regionReward || regionReward.gctlStaked <= 0n) continue;
+      const regionSteered =
+        (regionReward.glwRewardWei * row.totalStakedWei) / regionReward.gctlStaked;
+      steeringTotal += regionSteered;
+      regionSteering.set(row.regionId, regionSteered);
+    }
+
+    byWeek.set(week, steeringTotal);
+    byWeekAndRegion.set(week, regionSteering);
+  }
+
+  return { byWeek, byWeekAndRegion, dataSource: "control-api" };
+}
+
+async function precomputeSteeringByWalletFromDb(params: {
+  wallets: string[];
+  startWeek: number;
+  endWeek: number;
+  regionRewardsByEpoch: Map<number, RegionRewardsResponse>;
+  debug?: ImpactTimingCollector;
+}): Promise<{
+  steeringByWallet: Map<string, SteeringByWeekResult>;
+  missingWallets: Set<string>;
+}> {
+  const loadStart = nowMs();
+  const dbStakeByWallet = await loadWalletStakeByEpochFromDbMany({
+    wallets: params.wallets,
+    startWeek: params.startWeek,
+    endWeek: params.endWeek,
+  }).catch((error) => {
+    console.error("[impact-score] failed to bulk-load wallet stakes from DB", error);
+    return {
+      byWallet: new Map<string, WalletStakeByWeek>(),
+      coveredWallets: new Set<string>(),
+      missingWallets: params.wallets.map((w) => w.toLowerCase()),
+    };
+  });
+
+  const steeringByWallet = new Map<string, SteeringByWeekResult>();
+  for (const wallet of dbStakeByWallet.coveredWallets) {
+    const walletStakeByWeek = dbStakeByWallet.byWallet.get(wallet) || new Map();
+    const steering = computeSteeringByWeekFromStakeAndRewards({
+      walletStakeByWeek,
+      startWeek: params.startWeek,
+      endWeek: params.endWeek,
+      regionRewardsByEpoch: params.regionRewardsByEpoch,
+    });
+    steeringByWallet.set(wallet, steering);
+  }
+
+  recordTimingSafe(params.debug, {
+    label: "compute.walletInputs.steeringDbBulk",
+    ms: nowMs() - loadStart,
+    meta: {
+      wallets: params.wallets.length,
+      dbCoveredWallets: dbStakeByWallet.coveredWallets.size,
+      fallbackWallets: dbStakeByWallet.missingWallets.length,
+    },
+  });
+
+  return {
+    steeringByWallet,
+    missingWallets: new Set(dbStakeByWallet.missingWallets),
+  };
+}
+
 export async function getAllImpactWallets(): Promise<string[]> {
   const wallets = new Set<string>();
 
@@ -800,6 +1128,66 @@ export async function getAllDelegatorWallets(): Promise<string[]> {
   return Array.from(wallets);
 }
 
+async function getDbDrivenGctlWalletUniverse(): Promise<{
+  wallets: string[];
+  source: "db" | "control-api";
+}> {
+  try {
+    const stakerWallets = new Set<string>();
+    const maxWeekRow = await db
+      .select({
+        maxWeek: sql<number>`max(${controlWalletStakeByEpoch.weekNumber})`,
+      })
+      .from(controlWalletStakeByEpoch);
+    const latestStakeWeek = Number(maxWeekRow[0]?.maxWeek ?? -1);
+
+    if (Number.isFinite(latestStakeWeek) && latestStakeWeek >= 0) {
+      const stakeRows = await db
+        .select({ wallet: controlWalletStakeByEpoch.wallet })
+        .from(controlWalletStakeByEpoch)
+        .where(
+          and(
+            eq(controlWalletStakeByEpoch.weekNumber, latestStakeWeek),
+            sql`${controlWalletStakeByEpoch.regionId} > 0`,
+            sql`${controlWalletStakeByEpoch.totalStakedRaw} > 0::numeric`
+          )
+        );
+      for (const row of stakeRows) {
+        const wallet = (row.wallet || "").toLowerCase();
+        if (!wallet) continue;
+        stakerWallets.add(wallet);
+      }
+    }
+
+    if (stakerWallets.size > 0) {
+      return { wallets: Array.from(stakerWallets), source: "db" };
+    }
+
+    const mintedWallets = new Set<string>();
+    const mintRows = await db
+      .select({ wallet: gctlMintEvents.wallet })
+      .from(gctlMintEvents)
+      .where(sql`${gctlMintEvents.gctlMintedRaw} > 0::numeric`);
+    for (const row of mintRows) {
+      const wallet = (row.wallet || "").toLowerCase();
+      if (!wallet) continue;
+      mintedWallets.add(wallet);
+    }
+
+    if (mintedWallets.size > 0) {
+      return { wallets: Array.from(mintedWallets), source: "db" };
+    }
+  } catch (error) {
+    console.error("[impact-score] failed to load GCTL wallet universe from DB", error);
+  }
+
+  const controlApi = await fetchGctlStakersFromControlApi();
+  return {
+    wallets: controlApi.stakers.map((w) => w.toLowerCase()),
+    source: "control-api",
+  };
+}
+
 export async function getImpactLeaderboardWalletUniverse(params: {
   limit: number;
   debug?: ImpactTimingCollector;
@@ -811,17 +1199,13 @@ export async function getImpactLeaderboardWalletUniverse(params: {
   const limit = Math.max(params.limit, 1);
 
   const { debug } = params;
-  const [protocolWallets, glwHolders, gctlStakers] = await Promise.all([
+  const [protocolWallets, glwHolders, gctlWalletUniverse] = await Promise.all([
     timePromise(debug, "universe.protocolWallets", getAllImpactWallets()),
     timePromise(debug, "universe.glwHolders", fetchGlwHoldersFromPonder()),
-    timePromise(
-      debug,
-      "universe.gctlStakers",
-      fetchGctlStakersFromControlApi()
-    ),
+    timePromise(debug, "universe.gctlStakers", getDbDrivenGctlWalletUniverse()),
   ]);
 
-  const gctlStakerWallets = gctlStakers.stakers.map((w) => w.toLowerCase());
+  const gctlStakerWallets = gctlWalletUniverse.wallets.map((w) => w.toLowerCase());
 
   const eligibleSet = new Set<string>();
   for (const w of protocolWallets) eligibleSet.add(w.toLowerCase());
@@ -846,7 +1230,8 @@ export async function getImpactLeaderboardWalletUniverse(params: {
       candidateWallets: candidateSet.size,
       protocolWallets: protocolWallets.length,
       glwHolders: glwHolders.holders.length,
-      gctlStakers: gctlStakers.stakers.length,
+      gctlStakers: gctlStakerWallets.length,
+      gctlStakersSource: gctlWalletUniverse.source,
     },
   });
 
@@ -1027,6 +1412,7 @@ export async function computeDelegatorsLeaderboard(params: {
     const p = principalByFarm.get(id) || 0n;
     return p > 0n;
   });
+  const farmRewardsTimelineEndWeek = Math.min(endWeek, finalizedWeek);
 
   const farmDistributedTimelineByFarm = new Map<
     string,
@@ -1034,34 +1420,45 @@ export async function computeDelegatorsLeaderboard(params: {
   >();
   const farmRewardsStart = nowMs();
   let farmRewardsBatches = 0;
-  for (const farmIdBatch of chunkArray(glwPrincipalFarmIds, 100)) {
-    const batchStart = nowMs();
-    const m = await fetchFarmRewardsHistoryBatch({
-      farmIds: farmIdBatch,
-      startWeek: DELEGATION_START_WEEK,
-      endWeek,
-    });
-    farmRewardsBatches++;
-    recordTimingSafe(debug, {
-      label: "delegators.farmRewards.batch",
-      ms: nowMs() - batchStart,
-      meta: {
-        batchSize: farmIdBatch.length,
-        startWeek: DELEGATION_START_WEEK,
-        endWeek,
+  if (farmRewardsTimelineEndWeek >= DELEGATION_START_WEEK) {
+    await mapChunksWithConcurrency({
+      items: glwPrincipalFarmIds,
+      chunkSize: FARM_REWARDS_BATCH_SIZE,
+      concurrency: FARM_REWARDS_BATCH_CONCURRENCY,
+      worker: async (farmIdBatch) => {
+        const batchStart = nowMs();
+        const m = await fetchFarmRewardsHistoryBatch({
+          farmIds: farmIdBatch,
+          startWeek: DELEGATION_START_WEEK,
+          endWeek: farmRewardsTimelineEndWeek,
+        });
+        farmRewardsBatches++;
+        recordTimingSafe(debug, {
+          label: "delegators.farmRewards.batch",
+          ms: nowMs() - batchStart,
+          meta: {
+            batchSize: farmIdBatch.length,
+            startWeek: DELEGATION_START_WEEK,
+            endWeek: farmRewardsTimelineEndWeek,
+          },
+        });
+        for (const [farmId, rows] of m) {
+          farmDistributedTimelineByFarm.set(
+            farmId,
+            buildFarmCumulativeDistributedTimeline({ rows })
+          );
+        }
       },
     });
-    for (const [farmId, rows] of m) {
-      farmDistributedTimelineByFarm.set(
-        farmId,
-        buildFarmCumulativeDistributedTimeline({ rows })
-      );
-    }
   }
   recordTimingSafe(debug, {
     label: "delegators.farmRewards.total",
     ms: nowMs() - farmRewardsStart,
-    meta: { farms: glwPrincipalFarmIds.length, batches: farmRewardsBatches },
+    meta: {
+      farms: glwPrincipalFarmIds.length,
+      batches: farmRewardsBatches,
+      timelineEndWeek: farmRewardsTimelineEndWeek,
+    },
   });
 
   // 3) Compute leaderboard rows.
@@ -1316,102 +1713,186 @@ export async function computeGlowImpactScores(params: {
   // Run independent fetches in parallel
   const parallelFetchStart = nowMs();
   const glwToken = addresses.glow.toLowerCase();
-  const [
-    liquidSnapshotResult,
-    walletRewardsResult,
-    miningRowsResult,
-    depositSplitsResult,
-    glwSplitRowsResult,
-    glwRefundRowsResult,
-  ] = await Promise.all([
-    // 1. Liquid GLW balance snapshots
-    fetchGlwBalanceSnapshotByWeekMany({ wallets, startWeek, endWeek }).catch(
-      (error) => {
-        console.error(
-          `[impact-score] Balance snapshot fetch failed (wallets=${wallets.length}, startWeek=${startWeek}, endWeek=${endWeek})`,
-          error
-        );
-        return new Map<
-          string,
-          Map<number, { balanceWei: bigint; source: GlwBalanceSnapshotSource }>
-        >();
-      }
-    ),
-    // 2. Wallet rewards history
-    fetchWalletRewardsHistoryBatch({
-      wallets,
-      startWeek: rewardsFetchStartWeek,
-      endWeek,
-    }),
-    // 3. Mining rows DB query
-    db
-      .select({
-        buyer: fractionSplits.buyer,
-        timestamp: fractionSplits.timestamp,
-      })
-      .from(fractionSplits)
-      .innerJoin(fractions, eq(fractionSplits.fractionId, fractions.id))
-      .where(
-        and(
-          inArray(fractionSplits.buyer, wallets),
-          eq(fractions.type, "mining-center"),
-          gte(fractionSplits.timestamp, miningStartTimestamp),
-          lte(fractionSplits.timestamp, miningEndTimestamp)
-        )
-      ),
-    // 4. Deposit splits history
-    fetchDepositSplitsHistoryBatch({
-      wallets,
-      startWeek: DELEGATION_START_WEEK,
-      endWeek,
-    }),
-    // 5. Launchpad GLW purchases (fraction splits)
-    db
-      .select({
-        buyer: fractionSplits.buyer,
-        amount: fractionSplits.amount,
-        timestamp: fractionSplits.timestamp,
-      })
-      .from(fractionSplits)
-      .innerJoin(fractions, eq(fractionSplits.fractionId, fractions.id))
-      .where(
-        and(
-          inArray(fractionSplits.buyer, wallets),
-          eq(fractions.type, "launchpad"),
-          or(
-            isNull(fractions.token),
-            eq(sql`lower(${fractions.token})`, glwToken)
-          )
-        )
-      ),
-    // 6. Launchpad GLW refunds
-    db
-      .select({
-        refundTo: fractionRefunds.refundTo,
-        amount: fractionRefunds.amount,
-        timestamp: fractionRefunds.timestamp,
-      })
-      .from(fractionRefunds)
-      .innerJoin(fractions, eq(fractionRefunds.fractionId, fractions.id))
-      .where(
-        and(
-          inArray(fractionRefunds.refundTo, wallets),
-          eq(fractions.type, "launchpad"),
-          or(
-            isNull(fractions.token),
-            eq(sql`lower(${fractions.token})`, glwToken)
-          )
-        )
-      ),
-  ]);
+  const liquidSnapshotPromise = fetchGlwBalanceSnapshotByWeekMany({
+    wallets,
+    startWeek,
+    endWeek,
+  }).catch((error) => {
+    console.error(
+      `[impact-score] Balance snapshot fetch failed (wallets=${wallets.length}, startWeek=${startWeek}, endWeek=${endWeek})`,
+      error
+    );
+    return new Map<
+      string,
+      Map<number, { balanceWei: bigint; source: GlwBalanceSnapshotSource }>
+    >();
+  });
+  const walletRewardsPromise = fetchWalletRewardsHistoryBatch({
+    wallets,
+    startWeek: rewardsFetchStartWeek,
+    endWeek,
+  });
+  const miningRowsPromise = db
+    .select({
+      buyer: fractionSplits.buyer,
+      timestamp: fractionSplits.timestamp,
+    })
+    .from(fractionSplits)
+    .innerJoin(fractions, eq(fractionSplits.fractionId, fractions.id))
+    .where(
+      and(
+        inArray(fractionSplits.buyer, wallets),
+        eq(fractions.type, "mining-center"),
+        gte(fractionSplits.timestamp, miningStartTimestamp),
+        lte(fractionSplits.timestamp, miningEndTimestamp)
+      )
+    );
+  const depositSplitsPromise = fetchDepositSplitsHistoryBatch({
+    wallets,
+    startWeek: DELEGATION_START_WEEK,
+    endWeek,
+  });
+  const glwSplitRowsPromise = db
+    .select({
+      buyer: fractionSplits.buyer,
+      amount: fractionSplits.amount,
+      timestamp: fractionSplits.timestamp,
+    })
+    .from(fractionSplits)
+    .innerJoin(fractions, eq(fractionSplits.fractionId, fractions.id))
+    .where(
+      and(
+        inArray(fractionSplits.buyer, wallets),
+        eq(fractions.type, "launchpad"),
+        or(isNull(fractions.token), eq(sql`lower(${fractions.token})`, glwToken))
+      )
+    );
+  const glwRefundRowsPromise = db
+    .select({
+      refundTo: fractionRefunds.refundTo,
+      amount: fractionRefunds.amount,
+      timestamp: fractionRefunds.timestamp,
+    })
+    .from(fractionRefunds)
+    .innerJoin(fractions, eq(fractionRefunds.fractionId, fractions.id))
+    .where(
+      and(
+        inArray(fractionRefunds.refundTo, wallets),
+        eq(fractions.type, "launchpad"),
+        or(isNull(fractions.token), eq(sql`lower(${fractions.token})`, glwToken))
+      )
+    );
 
-  // Process results
-  const liquidSnapshotByWalletWeek = liquidSnapshotResult;
-  const walletRewardsMap = walletRewardsResult;
-  const miningRows = miningRowsResult;
-  const depositSplitHistoryByWallet = depositSplitsResult;
-  const glwSplitRows = glwSplitRowsResult;
-  const glwRefundRows = glwRefundRowsResult;
+  const depositSplitHistoryByWallet = await depositSplitsPromise;
+  const farmIdsSet = new Set<string>();
+  for (const segs of depositSplitHistoryByWallet.values()) {
+    for (const s of segs) farmIdsSet.add(s.farmId);
+  }
+  const farmIds = Array.from(farmIdsSet);
+
+  const principalByFarm = new Map<string, bigint>();
+  const regionByFarm = new Map<string, number>();
+  if (farmIds.length > 0) {
+    const principalQueryStart = nowMs();
+    const principalRows = await db
+      .select({
+        farmId: applications.farmId,
+        paymentAmount: applications.paymentAmount,
+        zoneId: applications.zoneId,
+      })
+      .from(applications)
+      .where(
+        and(
+          inArray(applications.farmId, farmIds),
+          eq(applications.isCancelled, false),
+          eq(applications.status, "completed"),
+          eq(applications.paymentCurrency, "GLW")
+        )
+      );
+    recordTimingSafe(debug, {
+      label: "compute.db.principalRows",
+      ms: nowMs() - principalQueryStart,
+      meta: { rows: principalRows.length, farms: farmIds.length },
+    });
+    for (const row of principalRows) {
+      if (!row.farmId) continue;
+      const amountWei = safeBigInt(row.paymentAmount);
+      if (amountWei > BigInt(0)) {
+        principalByFarm.set(
+          row.farmId,
+          (principalByFarm.get(row.farmId) || BigInt(0)) + amountWei
+        );
+      }
+      regionByFarm.set(row.farmId, row.zoneId);
+    }
+  }
+
+  const glwPrincipalFarmIds = farmIds.filter(
+    (id) => (principalByFarm.get(id) || BigInt(0)) > BigInt(0)
+  );
+  const farmRewardsTimelineEndWeek = Math.min(endWeek, finalizedWeek);
+  const farmDistributedTimelineByFarmPromise = (async () => {
+    const farmDistributedTimelineByFarm = new Map<
+      string,
+      FarmDistributionTimelinePoint[]
+    >();
+    const farmRewardsStart = nowMs();
+    let farmRewardsBatches = 0;
+    if (farmRewardsTimelineEndWeek >= DELEGATION_START_WEEK) {
+      await mapChunksWithConcurrency({
+        items: glwPrincipalFarmIds,
+        chunkSize: FARM_REWARDS_BATCH_SIZE,
+        concurrency: FARM_REWARDS_BATCH_CONCURRENCY,
+        worker: async (farmIdBatch) => {
+          const batchStart = nowMs();
+          const m = await fetchFarmRewardsHistoryBatch({
+            farmIds: farmIdBatch,
+            startWeek: DELEGATION_START_WEEK,
+            endWeek: farmRewardsTimelineEndWeek,
+          });
+          farmRewardsBatches++;
+          recordTimingSafe(debug, {
+            label: "compute.farmRewards.batch",
+            ms: nowMs() - batchStart,
+            meta: {
+              batchSize: farmIdBatch.length,
+              startWeek: DELEGATION_START_WEEK,
+              endWeek: farmRewardsTimelineEndWeek,
+            },
+          });
+          for (const [farmId, rows] of m)
+            farmDistributedTimelineByFarm.set(
+              farmId,
+              buildFarmCumulativeDistributedTimeline({ rows })
+            );
+        },
+      });
+    }
+    recordTimingSafe(debug, {
+      label: "compute.farmRewards.total",
+      ms: nowMs() - farmRewardsStart,
+      meta: {
+        farms: glwPrincipalFarmIds.length,
+        batches: farmRewardsBatches,
+        timelineEndWeek: farmRewardsTimelineEndWeek,
+      },
+    });
+    return farmDistributedTimelineByFarm;
+  })();
+
+  const [
+    liquidSnapshotByWalletWeek,
+    walletRewardsMap,
+    miningRows,
+    glwSplitRows,
+    glwRefundRows,
+  ] = await Promise.all([
+    liquidSnapshotPromise,
+    walletRewardsPromise,
+    miningRowsPromise,
+    glwSplitRowsPromise,
+    glwRefundRowsPromise,
+  ]);
 
   recordTimingSafe(debug, {
     label: "compute.parallelFetches",
@@ -1466,88 +1947,6 @@ export async function computeGlowImpactScores(params: {
     const week = getCurrentEpoch(row.timestamp);
     addNetPurchaseByWeek(wallet, week, -amountWei);
   }
-
-  const farmIdsSet = new Set<string>();
-  for (const segs of depositSplitHistoryByWallet.values()) {
-    for (const s of segs) farmIdsSet.add(s.farmId);
-  }
-  const farmIds = Array.from(farmIdsSet);
-
-  const principalByFarm = new Map<string, bigint>();
-  const regionByFarm = new Map<string, number>();
-  if (farmIds.length > 0) {
-    const principalQueryStart = nowMs();
-    const principalRows = await db
-      .select({
-        farmId: applications.farmId,
-        paymentAmount: applications.paymentAmount,
-        zoneId: applications.zoneId,
-      })
-      .from(applications)
-      .where(
-        and(
-          inArray(applications.farmId, farmIds),
-          eq(applications.isCancelled, false),
-          eq(applications.status, "completed"),
-          eq(applications.paymentCurrency, "GLW")
-        )
-      );
-    recordTimingSafe(debug, {
-      label: "compute.db.principalRows",
-      ms: nowMs() - principalQueryStart,
-      meta: { rows: principalRows.length, farms: farmIds.length },
-    });
-    for (const row of principalRows) {
-      if (!row.farmId) continue;
-      const amountWei = safeBigInt(row.paymentAmount);
-      if (amountWei > BigInt(0)) {
-        principalByFarm.set(
-          row.farmId,
-          (principalByFarm.get(row.farmId) || BigInt(0)) + amountWei
-        );
-      }
-      regionByFarm.set(row.farmId, row.zoneId);
-    }
-  }
-
-  const glwPrincipalFarmIds = farmIds.filter(
-    (id) => (principalByFarm.get(id) || BigInt(0)) > BigInt(0)
-  );
-
-  const farmDistributedTimelineByFarm = new Map<
-    string,
-    FarmDistributionTimelinePoint[]
-  >();
-  const farmRewardsStart = nowMs();
-  let farmRewardsBatches = 0;
-  for (const farmIdBatch of chunkArray(glwPrincipalFarmIds, 100)) {
-    const batchStart = nowMs();
-    const m = await fetchFarmRewardsHistoryBatch({
-      farmIds: farmIdBatch,
-      startWeek: DELEGATION_START_WEEK,
-      endWeek,
-    });
-    farmRewardsBatches++;
-    recordTimingSafe(debug, {
-      label: "compute.farmRewards.batch",
-      ms: nowMs() - batchStart,
-      meta: {
-        batchSize: farmIdBatch.length,
-        startWeek: DELEGATION_START_WEEK,
-        endWeek,
-      },
-    });
-    for (const [farmId, rows] of m)
-      farmDistributedTimelineByFarm.set(
-        farmId,
-        buildFarmCumulativeDistributedTimeline({ rows })
-      );
-  }
-  recordTimingSafe(debug, {
-    label: "compute.farmRewards.total",
-    ms: nowMs() - farmRewardsStart,
-    meta: { farms: glwPrincipalFarmIds.length, batches: farmRewardsBatches },
-  });
 
   // Fetch onchain liquid balances + mock unclaimed rewards and steering (per wallet).
   const liquidByWallet = new Map<string, bigint>();
@@ -1756,6 +2155,39 @@ export async function computeGlowImpactScores(params: {
     },
   });
 
+  const {
+    steeringByWallet: precomputedSteeringByWallet,
+    missingWallets: steeringFallbackWallets,
+  } = await precomputeSteeringByWalletFromDb({
+    wallets,
+    startWeek,
+    endWeek,
+    regionRewardsByEpoch: regionRewardsRawByWeek,
+    debug,
+  });
+
+  const hexWallets = wallets.filter(isHexWallet) as Array<`0x${string}`>;
+  const liquidBatchStart = nowMs();
+  const liquidByWalletBatch = await getLiquidGlwBalancesWeiBatch(
+    hexWallets
+  ).catch((error) => {
+    console.error(
+      `[impact-score] liquid balance batch fetch failed for wallets=${hexWallets.length}; using zero fallback`,
+      error
+    );
+    const zeros = new Map<string, bigint>();
+    for (const wallet of hexWallets) zeros.set(wallet.toLowerCase(), 0n);
+    return zeros;
+  });
+  recordTimingSafe(debug, {
+    label: "compute.walletInputs.liquidBatch",
+    ms: nowMs() - liquidBatchStart,
+    meta: {
+      wallets: hexWallets.length,
+      returned: liquidByWalletBatch.size,
+    },
+  });
+
   const concurrency = 8;
   const walletInputsStart = nowMs();
   const perWalletTimings: Array<
@@ -1792,15 +2224,11 @@ export async function computeGlowImpactScores(params: {
         try {
           const liquidStart = nowMs();
           const liquid = isHexWallet(wallet)
-            ? await getLiquidGlwBalanceWei(wallet).catch((error) => {
-                liquidUsedFallback = true;
-                console.error(
-                  `[impact-score] liquid balance fetch failed for wallet=${wallet}; using zero fallback`,
-                  error
-                );
-                return 0n;
-              })
+            ? liquidByWalletBatch.get(wallet.toLowerCase()) ?? 0n
             : BigInt(0);
+          liquidUsedFallback = isHexWallet(wallet)
+            ? !liquidByWalletBatch.has(wallet.toLowerCase())
+            : false;
           liquidMs = nowMs() - liquidStart;
 
           const unclaimedStart = nowMs();
@@ -1811,18 +2239,22 @@ export async function computeGlowImpactScores(params: {
           unclaimedMs = nowMs() - unclaimedStart;
 
           const steeringStart = nowMs();
-          const steering = await getGctlSteeringByWeekWei({
-            walletAddress: wallet,
-            startWeek,
-            endWeek,
-            regionRewardsByEpoch: regionRewardsRawByWeek,
-          }).catch((error) => {
-            console.error(
-              `[impact-score] steering fetch failed for wallet=${wallet}`,
-              error
-            );
-            return getSteeringFallback({ startWeek, endWeek, error });
-          });
+          const precomputedSteering = precomputedSteeringByWallet.get(wallet);
+          const steering =
+            precomputedSteering && !steeringFallbackWallets.has(wallet)
+              ? precomputedSteering
+              : await getGctlSteeringByWeekWei({
+                  walletAddress: wallet,
+                  startWeek,
+                  endWeek,
+                  regionRewardsByEpoch: regionRewardsRawByWeek,
+                }).catch((error) => {
+                  console.error(
+                    `[impact-score] steering fetch failed for wallet=${wallet}`,
+                    error
+                  );
+                  return getSteeringFallback({ startWeek, endWeek, error });
+                });
           steeringMs = nowMs() - steeringStart;
 
           const totalMs = nowMs() - walletStart;
@@ -1952,6 +2384,7 @@ export async function computeGlowImpactScores(params: {
     },
   });
 
+  const farmDistributedTimelineByFarm = await farmDistributedTimelineByFarmPromise;
   const results: GlowImpactScoreResult[] = [];
 
   const steeringBoostByWeek = await getSteeringBoostByWeek({
