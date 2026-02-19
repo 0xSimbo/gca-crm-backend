@@ -454,10 +454,12 @@ async function loadRegionRewardsByWeek(params: {
     },
   });
 
-  const finalizedWeek = getWeekRange().endWeek;
+  const currentEpoch = getCurrentEpoch(Math.floor(Date.now() / 1000));
+  const maxFetchableWeek = Math.min(params.endWeek, currentEpoch);
   const missingWeeks: number[] = [];
   for (let w = params.startWeek; w <= params.endWeek; w++) {
-    if (!dbRewardsByWeek.has(w) && w <= finalizedWeek) missingWeeks.push(w);
+    // Fetch finalized gaps + current week gaps (for projection paths).
+    if (!dbRewardsByWeek.has(w) && w <= maxFetchableWeek) missingWeeks.push(w);
   }
 
   const fetchedMissingRewards = new Map<number, RegionRewardsResponse>();
