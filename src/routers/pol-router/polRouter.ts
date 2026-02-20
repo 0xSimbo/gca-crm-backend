@@ -1,5 +1,5 @@
 import { Elysia, t } from "elysia";
-import { and, desc, eq, inArray, lt, lte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lt, lte, sql } from "drizzle-orm";
 import { TAG } from "../../constants";
 import { db } from "../../db/db";
 import {
@@ -274,6 +274,361 @@ export const polRouter = new Elysia({ prefix: "/pol" })
     }
   )
   .get(
+    "/revenue/aggregate/series",
+    async ({ query, set }) => {
+      try {
+        const range = query.range ?? "90d";
+        const weeks = getWeeksForRange(range);
+        const endWeek = getCompletedWeekNumber();
+        const startWeek = Math.max(0, endWeek - (weeks - 1));
+
+        const rows = await db
+          .select({
+            week: polRevenueByRegionWeek.weekNumber,
+            total: sql<string>`coalesce(sum(${polRevenueByRegionWeek.totalLq}), 0)`,
+            minerSales: sql<string>`coalesce(sum(${polRevenueByRegionWeek.minerSalesLq}), 0)`,
+            gctlMints: sql<string>`coalesce(sum(${polRevenueByRegionWeek.gctlMintsLq}), 0)`,
+            polYield: sql<string>`coalesce(sum(${polRevenueByRegionWeek.polYieldLq}), 0)`,
+          })
+          .from(polRevenueByRegionWeek)
+          .where(
+            and(
+              gte(polRevenueByRegionWeek.weekNumber, startWeek),
+              lte(polRevenueByRegionWeek.weekNumber, endWeek)
+            )
+          )
+          .groupBy(polRevenueByRegionWeek.weekNumber)
+          .orderBy(polRevenueByRegionWeek.weekNumber);
+
+        const byWeek = new Map<
+          number,
+          {
+            total: string;
+            minerSales: string;
+            gctlMints: string;
+            polYield: string;
+          }
+        >();
+
+        for (const row of rows) {
+          byWeek.set(Number(row.week), {
+            total: String(row.total ?? "0"),
+            minerSales: String(row.minerSales ?? "0"),
+            gctlMints: String(row.gctlMints ?? "0"),
+            polYield: String(row.polYield ?? "0"),
+          });
+        }
+
+        const series = [] as {
+          week: number;
+          week_start_timestamp: number;
+          week_end_timestamp: number;
+          total_lq: string;
+          miner_sales_lq: string;
+          gctl_mints_lq: string;
+          pol_yield_lq: string;
+        }[];
+
+        for (let week = startWeek; week <= endWeek; week++) {
+          const current = byWeek.get(week);
+          series.push({
+            week,
+            week_start_timestamp: getProtocolWeekStartTimestamp(week),
+            week_end_timestamp: getProtocolWeekEndTimestamp(week),
+            total_lq: current?.total ?? "0",
+            miner_sales_lq: current?.minerSales ?? "0",
+            gctl_mints_lq: current?.gctlMints ?? "0",
+            pol_yield_lq: current?.polYield ?? "0",
+          });
+        }
+
+        return {
+          range,
+          weekRange: { startWeek, endWeek },
+          series,
+        };
+      } catch (e) {
+        if (e instanceof Error) {
+          set.status = 400;
+          return { error: e.message };
+        }
+        set.status = 500;
+        return { error: "Internal Server Error" };
+      }
+    },
+    {
+      query: t.Object({
+        range: t.Optional(t.String()),
+      }),
+      detail: {
+        summary: "PoL revenue aggregate weekly series",
+        description:
+          "Returns protocol-week aggregate revenue attribution totals (sum of all regions) over the selected range.",
+        tags: [TAG.POL],
+      },
+    }
+  )
+  .get(
+    "/revenue/farms/series",
+    async ({ query, set }) => {
+      try {
+        const range = query.range ?? "90d";
+        const weeks = getWeeksForRange(range);
+        const endWeek = getCompletedWeekNumber();
+        const startWeek = Math.max(0, endWeek - (weeks - 1));
+
+        const rows = await db
+          .select({
+            farmId: polRevenueByFarmWeek.farmId,
+            week: polRevenueByFarmWeek.weekNumber,
+            total: sql<string>`coalesce(sum(${polRevenueByFarmWeek.totalLq}), 0)`,
+            minerSales: sql<string>`coalesce(sum(${polRevenueByFarmWeek.minerSalesLq}), 0)`,
+            gctlMints: sql<string>`coalesce(sum(${polRevenueByFarmWeek.gctlMintsLq}), 0)`,
+            polYield: sql<string>`coalesce(sum(${polRevenueByFarmWeek.polYieldLq}), 0)`,
+          })
+          .from(polRevenueByFarmWeek)
+          .where(
+            and(
+              gte(polRevenueByFarmWeek.weekNumber, startWeek),
+              lte(polRevenueByFarmWeek.weekNumber, endWeek)
+            )
+          )
+          .groupBy(polRevenueByFarmWeek.farmId, polRevenueByFarmWeek.weekNumber)
+          .orderBy(polRevenueByFarmWeek.farmId, polRevenueByFarmWeek.weekNumber);
+
+        if (rows.length === 0) {
+          return {
+            range,
+            weekRange: { startWeek, endWeek },
+            farms: [],
+          };
+        }
+
+        const farmIds = Array.from(new Set(rows.map((r) => r.farmId)));
+        const farmMetaRows = await db
+          .select({
+            farmId: farms.id,
+            name: farms.name,
+            zoneId: farms.zoneId,
+          })
+          .from(farms)
+          .where(inArray(farms.id, farmIds));
+
+        const farmMetaById = new Map<
+          string,
+          {
+            name: string | null;
+            zoneId: number | null;
+          }
+        >();
+        for (const meta of farmMetaRows) {
+          farmMetaById.set(meta.farmId, {
+            name: meta.name ?? null,
+            zoneId: Number.isFinite(Number(meta.zoneId))
+              ? Number(meta.zoneId)
+              : null,
+          });
+        }
+
+        const byFarmWeek = new Map<
+          string,
+          Map<
+            number,
+            {
+              total: string;
+              minerSales: string;
+              gctlMints: string;
+              polYield: string;
+            }
+          >
+        >();
+        for (const row of rows) {
+          const byWeek = byFarmWeek.get(row.farmId) ?? new Map();
+          byWeek.set(Number(row.week), {
+            total: String(row.total ?? "0"),
+            minerSales: String(row.minerSales ?? "0"),
+            gctlMints: String(row.gctlMints ?? "0"),
+            polYield: String(row.polYield ?? "0"),
+          });
+          byFarmWeek.set(row.farmId, byWeek);
+        }
+
+        const farmsSeries = farmIds
+          .slice()
+          .sort((a, b) => a.localeCompare(b))
+          .map((farmId) => {
+            const meta = farmMetaById.get(farmId);
+            const byWeek = byFarmWeek.get(farmId) ?? new Map();
+            const series = [] as {
+              week: number;
+              week_start_timestamp: number;
+              week_end_timestamp: number;
+              total_lq: string;
+              miner_sales_lq: string;
+              gctl_mints_lq: string;
+              pol_yield_lq: string;
+            }[];
+
+            for (let week = startWeek; week <= endWeek; week++) {
+              const current = byWeek.get(week);
+              series.push({
+                week,
+                week_start_timestamp: getProtocolWeekStartTimestamp(week),
+                week_end_timestamp: getProtocolWeekEndTimestamp(week),
+                total_lq: current?.total ?? "0",
+                miner_sales_lq: current?.minerSales ?? "0",
+                gctl_mints_lq: current?.gctlMints ?? "0",
+                pol_yield_lq: current?.polYield ?? "0",
+              });
+            }
+
+            return {
+              farm_id: farmId,
+              name: meta?.name ?? null,
+              zone_id: meta?.zoneId ?? null,
+              series,
+            };
+          });
+
+        return {
+          range,
+          weekRange: { startWeek, endWeek },
+          farms: farmsSeries,
+        };
+      } catch (e) {
+        if (e instanceof Error) {
+          set.status = 400;
+          return { error: e.message };
+        }
+        set.status = 500;
+        return { error: "Internal Server Error" };
+      }
+    },
+    {
+      query: t.Object({
+        range: t.Optional(t.String()),
+      }),
+      detail: {
+        summary: "PoL revenue farm weekly series (all farms)",
+        description:
+          "Returns weekly revenue attribution components for each farm over the selected protocol-week range.",
+        tags: [TAG.POL],
+      },
+    }
+  )
+  .get(
+    "/revenue/farms/:farmId/series",
+    async ({ params, query, set }) => {
+      try {
+        const farmId = (params.farmId || "").trim();
+        if (!farmId) {
+          set.status = 400;
+          return { error: "farmId is required" };
+        }
+
+        const range = query.range ?? "20w";
+        const weeks = getWeeksForRange(range);
+        const endWeek = getCompletedWeekNumber();
+        const startWeek = Math.max(0, endWeek - (weeks - 1));
+
+        const rows = await db
+          .select({
+            week: polRevenueByFarmWeek.weekNumber,
+            total: sql<string>`coalesce(sum(${polRevenueByFarmWeek.totalLq}), 0)`,
+            minerSales: sql<string>`coalesce(sum(${polRevenueByFarmWeek.minerSalesLq}), 0)`,
+            gctlMints: sql<string>`coalesce(sum(${polRevenueByFarmWeek.gctlMintsLq}), 0)`,
+            polYield: sql<string>`coalesce(sum(${polRevenueByFarmWeek.polYieldLq}), 0)`,
+          })
+          .from(polRevenueByFarmWeek)
+          .where(
+            and(
+              eq(polRevenueByFarmWeek.farmId, farmId),
+              gte(polRevenueByFarmWeek.weekNumber, startWeek),
+              lte(polRevenueByFarmWeek.weekNumber, endWeek)
+            )
+          )
+          .groupBy(polRevenueByFarmWeek.weekNumber)
+          .orderBy(polRevenueByFarmWeek.weekNumber);
+
+        const meta = await db.query.farms.findFirst({
+          where: (t, { eq }) => eq(t.id, farmId),
+          columns: { id: true, name: true, zoneId: true },
+        });
+
+        const byWeek = new Map<
+          number,
+          {
+            total: string;
+            minerSales: string;
+            gctlMints: string;
+            polYield: string;
+          }
+        >();
+        for (const row of rows) {
+          byWeek.set(Number(row.week), {
+            total: String(row.total ?? "0"),
+            minerSales: String(row.minerSales ?? "0"),
+            gctlMints: String(row.gctlMints ?? "0"),
+            polYield: String(row.polYield ?? "0"),
+          });
+        }
+
+        const series = [] as {
+          week: number;
+          week_start_timestamp: number;
+          week_end_timestamp: number;
+          total_lq: string;
+          miner_sales_lq: string;
+          gctl_mints_lq: string;
+          pol_yield_lq: string;
+        }[];
+
+        for (let week = startWeek; week <= endWeek; week++) {
+          const current = byWeek.get(week);
+          series.push({
+            week,
+            week_start_timestamp: getProtocolWeekStartTimestamp(week),
+            week_end_timestamp: getProtocolWeekEndTimestamp(week),
+            total_lq: current?.total ?? "0",
+            miner_sales_lq: current?.minerSales ?? "0",
+            gctl_mints_lq: current?.gctlMints ?? "0",
+            pol_yield_lq: current?.polYield ?? "0",
+          });
+        }
+
+        return {
+          range,
+          weekRange: { startWeek, endWeek },
+          farm_id: farmId,
+          name: meta?.name ?? null,
+          zone_id: meta?.zoneId != null ? Number(meta.zoneId) : null,
+          series,
+        };
+      } catch (e) {
+        if (e instanceof Error) {
+          set.status = 400;
+          return { error: e.message };
+        }
+        set.status = 500;
+        return { error: "Internal Server Error" };
+      }
+    },
+    {
+      params: t.Object({
+        farmId: t.String(),
+      }),
+      query: t.Object({
+        range: t.Optional(t.String()),
+      }),
+      detail: {
+        summary: "PoL revenue weekly series (single farm)",
+        description:
+          "Returns weekly revenue attribution components for a single farm over the selected protocol-week range.",
+        tags: [TAG.POL],
+      },
+    }
+  )
+  .get(
     "/revenue/farms",
     async ({ query, set }) => {
       try {
@@ -496,6 +851,126 @@ export const polRouter = new Elysia({ prefix: "/pol" })
         summary: "PoL cash bounties by farm",
         description:
           "Returns cash bounty totals (USD) per farm from pol_cash_bounties, grouped by farm.",
+        tags: [TAG.POL],
+      },
+    }
+  )
+  .get(
+    "/revenue/regions/series",
+    async ({ query, set }) => {
+      try {
+        const range = query.range ?? "90d";
+        const weeks = getWeeksForRange(range);
+        const endWeek = getCompletedWeekNumber();
+        const startWeek = Math.max(0, endWeek - (weeks - 1));
+
+        const rows = await db
+          .select({
+            region: polRevenueByRegionWeek.region,
+            week: polRevenueByRegionWeek.weekNumber,
+            total: sql<string>`coalesce(sum(${polRevenueByRegionWeek.totalLq}), 0)`,
+            minerSales: sql<string>`coalesce(sum(${polRevenueByRegionWeek.minerSalesLq}), 0)`,
+            gctlMints: sql<string>`coalesce(sum(${polRevenueByRegionWeek.gctlMintsLq}), 0)`,
+            polYield: sql<string>`coalesce(sum(${polRevenueByRegionWeek.polYieldLq}), 0)`,
+          })
+          .from(polRevenueByRegionWeek)
+          .where(
+            and(
+              gte(polRevenueByRegionWeek.weekNumber, startWeek),
+              lte(polRevenueByRegionWeek.weekNumber, endWeek)
+            )
+          )
+          .groupBy(polRevenueByRegionWeek.region, polRevenueByRegionWeek.weekNumber)
+          .orderBy(polRevenueByRegionWeek.region, polRevenueByRegionWeek.weekNumber);
+
+        if (rows.length === 0) {
+          return {
+            range,
+            weekRange: { startWeek, endWeek },
+            regions: [],
+          };
+        }
+
+        const byZoneWeek = new Map<
+          number,
+          Map<
+            number,
+            {
+              total: string;
+              minerSales: string;
+              gctlMints: string;
+              polYield: string;
+            }
+          >
+        >();
+        for (const row of rows) {
+          const zoneId = Number(row.region);
+          if (!Number.isFinite(zoneId)) continue;
+          const byWeek = byZoneWeek.get(zoneId) ?? new Map();
+          byWeek.set(Number(row.week), {
+            total: String(row.total ?? "0"),
+            minerSales: String(row.minerSales ?? "0"),
+            gctlMints: String(row.gctlMints ?? "0"),
+            polYield: String(row.polYield ?? "0"),
+          });
+          byZoneWeek.set(zoneId, byWeek);
+        }
+
+        const regions = Array.from(byZoneWeek.keys())
+          .sort((a, b) => a - b)
+          .map((zoneId) => {
+            const byWeek = byZoneWeek.get(zoneId) ?? new Map();
+            const series = [] as {
+              week: number;
+              week_start_timestamp: number;
+              week_end_timestamp: number;
+              total_lq: string;
+              miner_sales_lq: string;
+              gctl_mints_lq: string;
+              pol_yield_lq: string;
+            }[];
+
+            for (let week = startWeek; week <= endWeek; week++) {
+              const current = byWeek.get(week);
+              series.push({
+                week,
+                week_start_timestamp: getProtocolWeekStartTimestamp(week),
+                week_end_timestamp: getProtocolWeekEndTimestamp(week),
+                total_lq: current?.total ?? "0",
+                miner_sales_lq: current?.minerSales ?? "0",
+                gctl_mints_lq: current?.gctlMints ?? "0",
+                pol_yield_lq: current?.polYield ?? "0",
+              });
+            }
+
+            return {
+              zone_id: zoneId,
+              series,
+            };
+          });
+
+        return {
+          range,
+          weekRange: { startWeek, endWeek },
+          regions,
+        };
+      } catch (e) {
+        if (e instanceof Error) {
+          set.status = 400;
+          return { error: e.message };
+        }
+        set.status = 500;
+        return { error: "Internal Server Error" };
+      }
+    },
+    {
+      query: t.Object({
+        range: t.Optional(t.String()),
+      }),
+      detail: {
+        summary: "PoL revenue region weekly series",
+        description:
+          "Returns weekly revenue attribution components for each region over the selected protocol-week range.",
         tags: [TAG.POL],
       },
     }

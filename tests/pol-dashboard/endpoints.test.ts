@@ -5,6 +5,7 @@ import { db } from "../../src/db/db";
 import {
   fmiWeeklyInputs,
   gctlStakedByRegionWeek,
+  polRevenueByFarmWeek,
   polRevenueByRegionWeek,
   polYieldWeek,
 } from "../../src/db/schema";
@@ -30,6 +31,7 @@ describe("PoL Dashboard: endpoint integration-ish", () => {
   const completedWeek = 9_999;
   const nowUnixSeconds = GENESIS_TIMESTAMP + (completedWeek + 1) * 604800 + 123;
   const testZoneId = 9_999;
+  const testFarmId = "00000000-0000-0000-0000-00000000f001";
   const testWeeks = [completedWeek - 1, completedWeek];
 
   beforeEach(async () => {
@@ -56,6 +58,14 @@ describe("PoL Dashboard: endpoint integration-ish", () => {
           eq(gctlStakedByRegionWeek.region, String(testZoneId))
         )
       );
+    await db
+      .delete(polRevenueByFarmWeek)
+      .where(
+        and(
+          inArray(polRevenueByFarmWeek.weekNumber, testWeeks),
+          eq(polRevenueByFarmWeek.farmId, testFarmId)
+        )
+      );
   });
 
   afterEach(async () => {
@@ -80,6 +90,14 @@ describe("PoL Dashboard: endpoint integration-ish", () => {
         and(
           inArray(gctlStakedByRegionWeek.weekNumber, testWeeks),
           eq(gctlStakedByRegionWeek.region, String(testZoneId))
+        )
+      );
+    await db
+      .delete(polRevenueByFarmWeek)
+      .where(
+        and(
+          inArray(polRevenueByFarmWeek.weekNumber, testWeeks),
+          eq(polRevenueByFarmWeek.farmId, testFarmId)
         )
       );
   });
@@ -152,6 +170,140 @@ describe("PoL Dashboard: endpoint integration-ish", () => {
       // The test database may have existing applications; just validate the field shape.
       expect(typeof json.active_farms).toBe("number");
       expect(json.active_farms).toBeGreaterThanOrEqual(0);
+    });
+  });
+
+  it("GET /pol/revenue/aggregate/series returns weekly aggregate buckets", async () => {
+    await db.insert(polRevenueByRegionWeek).values({
+      weekNumber: completedWeek,
+      region: String(testZoneId),
+      totalLq: "200",
+      minerSalesLq: "50",
+      gctlMintsLq: "120",
+      polYieldLq: "30",
+    });
+
+    await withFrozenNow(nowUnixSeconds, async () => {
+      const res = await app.handle(
+        new Request("http://localhost/pol/revenue/aggregate/series?range=7d")
+      );
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json.range).toBe("7d");
+      expect(json.weekRange.startWeek).toBe(completedWeek);
+      expect(json.weekRange.endWeek).toBe(completedWeek);
+      expect(Array.isArray(json.series)).toBe(true);
+      expect(json.series.length).toBe(1);
+
+      const row = json.series[0];
+      expect(row.week).toBe(completedWeek);
+      expect(row.week_start_timestamp).toBe(
+        GENESIS_TIMESTAMP + completedWeek * 604800
+      );
+      expect(row.week_end_timestamp).toBe(
+        GENESIS_TIMESTAMP + (completedWeek + 1) * 604800
+      );
+      expect(BigInt(row.total_lq)).toBeGreaterThanOrEqual(200n);
+      expect(BigInt(row.miner_sales_lq)).toBeGreaterThanOrEqual(50n);
+      expect(BigInt(row.gctl_mints_lq)).toBeGreaterThanOrEqual(120n);
+      expect(BigInt(row.pol_yield_lq)).toBeGreaterThanOrEqual(30n);
+    });
+  });
+
+  it("GET /pol/revenue/regions/series returns per-region weekly buckets", async () => {
+    await db.insert(polRevenueByRegionWeek).values({
+      weekNumber: completedWeek,
+      region: String(testZoneId),
+      totalLq: "200",
+      minerSalesLq: "50",
+      gctlMintsLq: "120",
+      polYieldLq: "30",
+    });
+
+    await withFrozenNow(nowUnixSeconds, async () => {
+      const res = await app.handle(
+        new Request("http://localhost/pol/revenue/regions/series?range=7d")
+      );
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json.range).toBe("7d");
+      expect(json.weekRange.startWeek).toBe(completedWeek);
+      expect(json.weekRange.endWeek).toBe(completedWeek);
+      expect(Array.isArray(json.regions)).toBe(true);
+
+      const region = json.regions.find((r: any) => r.zone_id === testZoneId);
+      expect(region).toBeTruthy();
+      expect(Array.isArray(region.series)).toBe(true);
+      expect(region.series.length).toBe(1);
+      expect(BigInt(region.series[0].total_lq)).toBeGreaterThanOrEqual(200n);
+      expect(BigInt(region.series[0].miner_sales_lq)).toBeGreaterThanOrEqual(50n);
+      expect(BigInt(region.series[0].gctl_mints_lq)).toBeGreaterThanOrEqual(120n);
+      expect(BigInt(region.series[0].pol_yield_lq)).toBeGreaterThanOrEqual(30n);
+    });
+  });
+
+  it("GET /pol/revenue/farms/:farmId/series returns weekly buckets for a farm", async () => {
+    await db.insert(polRevenueByFarmWeek).values({
+      weekNumber: completedWeek,
+      farmId: testFarmId,
+      totalLq: "200",
+      minerSalesLq: "50",
+      gctlMintsLq: "120",
+      polYieldLq: "30",
+      computedAt: new Date(),
+    });
+
+    await withFrozenNow(nowUnixSeconds, async () => {
+      const res = await app.handle(
+        new Request(
+          `http://localhost/pol/revenue/farms/${testFarmId}/series?range=7d`
+        )
+      );
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json.range).toBe("7d");
+      expect(json.farm_id).toBe(testFarmId);
+      expect(json.weekRange.startWeek).toBe(completedWeek);
+      expect(json.weekRange.endWeek).toBe(completedWeek);
+      expect(Array.isArray(json.series)).toBe(true);
+      expect(json.series.length).toBe(1);
+      expect(BigInt(json.series[0].total_lq)).toBeGreaterThanOrEqual(200n);
+      expect(BigInt(json.series[0].miner_sales_lq)).toBeGreaterThanOrEqual(50n);
+      expect(BigInt(json.series[0].gctl_mints_lq)).toBeGreaterThanOrEqual(120n);
+      expect(BigInt(json.series[0].pol_yield_lq)).toBeGreaterThanOrEqual(30n);
+    });
+  });
+
+  it("GET /pol/revenue/farms/series returns per-farm weekly buckets", async () => {
+    await db.insert(polRevenueByFarmWeek).values({
+      weekNumber: completedWeek,
+      farmId: testFarmId,
+      totalLq: "200",
+      minerSalesLq: "50",
+      gctlMintsLq: "120",
+      polYieldLq: "30",
+      computedAt: new Date(),
+    });
+
+    await withFrozenNow(nowUnixSeconds, async () => {
+      const res = await app.handle(
+        new Request("http://localhost/pol/revenue/farms/series?range=7d")
+      );
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json.range).toBe("7d");
+      expect(json.weekRange.startWeek).toBe(completedWeek);
+      expect(json.weekRange.endWeek).toBe(completedWeek);
+      expect(Array.isArray(json.farms)).toBe(true);
+
+      const farm = json.farms.find((f: any) => f.farm_id === testFarmId);
+      expect(farm).toBeTruthy();
+      expect(Array.isArray(farm.series)).toBe(true);
+      expect(farm.series.length).toBe(1);
+      expect(BigInt(farm.series[0].total_lq)).toBeGreaterThanOrEqual(200n);
+      expect(BigInt(farm.series[0].miner_sales_lq)).toBeGreaterThanOrEqual(50n);
+      expect(BigInt(farm.series[0].gctl_mints_lq)).toBeGreaterThanOrEqual(120n);
+      expect(BigInt(farm.series[0].pol_yield_lq)).toBeGreaterThanOrEqual(30n);
     });
   });
 
